@@ -5,6 +5,7 @@ out/
 build/
 dist/
 *.log
+*.tsbuildinfo
 
 # Python / FastAPI
 __pycache__/
