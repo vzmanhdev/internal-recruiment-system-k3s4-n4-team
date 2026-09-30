@@ -12,11 +12,11 @@ export function Header() {
 
   const navLinks = [
     { label: "Trang chủ", href: "/" },
-    { label: "Cơ hội nghề nghiệp", href: "#jobs" },
-    { label: "Lộ trình phát triển", href: "#development" },
-    { label: "Tin tức nội bộ", href: "#news" },
-    { label: "Quy trình", href: "#process" },
-    { label: "FAQ", href: "#faq" },
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Cơ hội nghề nghiệp", href: "/#jobs" },
+    { label: "Lộ trình phát triển", href: "/#development" },
+    { label: "Quy trình", href: "/process" },
+    { label: "FAQ", href: "/faq" },
   ];
 
   return (
