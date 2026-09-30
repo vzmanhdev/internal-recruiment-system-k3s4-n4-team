@@ -7,10 +7,11 @@ Hệ thống Tuyển dụng Nội bộ (Internal Recruitment System) — Giải 
 ## 📋 Mục lục
 1. [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
 2. [Cấu trúc dự án](#-cấu-trúc-dự-án)
-3. [Hướng dẫn Khởi chạy nhanh (Quick Start)](#-hướng-dẫn-khởi-chạy-nhanh-quick-start)
-4. [Chạy thủ công không dùng Docker (Local Development)](#-chạy-thủ-công-không-dùng-docker-local-development)
-5. [Quy trình Git & Coding Convention](#-quy-trình-git--coding-convention)
-6. [Công nghệ sử dụng](#-công-nghệ-sử-dụng)
+3. [Tải Môi trường & Khởi chạy Tự động (Đề xuất)](#-tải-môi-trường--khởi-chạy-tự-động-đề-xuất)
+4. [Chạy bằng Docker Compose](#-chạy-bằng-docker-compose)
+5. [Chạy thủ công không dùng Docker (Local Development)](#-chạy-thủ-công-không-dùng-docker-local-development)
+6. [Quy trình Git & Coding Convention](#-quy-trình-git--coding-convention)
+7. [Công nghệ sử dụng](#-công-nghệ-sử-dụng)
 
 ---
 
@@ -29,124 +30,130 @@ Trước khi bắt đầu, đảm bảo máy tính của bạn đã cài đặt:
 ```
 internal-recruiment-system-k3s4-n4-team/
 ├── frontend/                 # Ứng dụng Next.js (App Router, Tailwind CSS)
-│   ├── src/
-│   │   ├── app/              # Trang & định tuyến (Landing, Login, Register, Jobs, etc.)
-│   │   ├── components/       # UI Components tái sử dụng (Button, Input, Card, Modal, etc.)
-│   │   ├── features/         # Logic chức năng theo module (Auth, Landing, Jobs)
-│   │   ├── styles/           # Design System & Color Tokens (design-tokens.css)
-│   │   └── lib/              # Utility functions & API helpers
-│   ├── public/               # Ảnh và tài nguyên tĩnh
+│   ├── src/                  # Mã nguồn ứng dụng
 │   ├── Dockerfile            # Cấu hình Docker Frontend
 │   ├── package.json          # Dependencies Node.js
 │   └── .env.example          # Biến môi trường mẫu Frontend
 │
 ├── backend/                  # Ứng dụng FastAPI (Python)
-│   ├── app/
-│   │   ├── api/v1/           # API endpoints
-│   │   ├── core/             # Security, JWT, Config
-│   │   ├── db/               # SQLAlchemy Database session
-│   │   ├── models/           # ORM Database Models
-│   │   ├── schemas/          # Pydantic Schemas
-│   │   ├── services/         # Business logic layer
-│   │   └── repositories/     # Data Access Layer
+│   ├── app/                  # Mã nguồn FastAPI
 │   ├── alembic/              # Database Migrations
 │   ├── tests/                # Unit & Integration Tests (pytest)
+│   ├── requirements.txt      # Thư viện Python Backend
+│   ├── pyproject.toml        # Cấu hình dự án Python
 │   ├── Dockerfile            # Cấu hình Docker Backend
-│   ├── pyproject.toml        # Dependencies Python
 │   └── .env.example          # Biến môi trường mẫu Backend
 │
-├── compose.yaml              # Docker Compose toàn hệ thống (Frontend + Backend + PostgreSQL)
-├── .env.example              # Biến môi trường tổng
-├── .gitignore                # Danh sách file bỏ qua khi commit Git
+├── setup.bat                 # Script tự động cài đặt môi trường (Windows)
+├── setup.sh                  # Script tự động cài đặt môi trường (Linux/macOS)
+├── run-dev.bat               # Script chạy đồng thời Backend & Frontend (Windows)
+├── run-dev.sh                # Script chạy đồng thời Backend & Frontend (Linux/macOS)
+├── compose.yaml              # Docker Compose toàn hệ thống
+├── .env.example              # Biến môi trường mẫu toàn hệ thống
 └── README.md                 # Tài liệu hướng dẫn dự án
 ```
 
 ---
 
-## ⚡ Hướng dẫn Khởi chạy nhanh (Quick Start)
+## ⚡ Tải Môi trường & Khởi chạy Tự động (Đề xuất)
 
-### Cách 1: Chạy bằng Docker Compose (Khuyên dùng)
-
-Cách nhanh nhất để chạy toàn bộ hệ thống (bao gồm Frontend, Backend và PostgreSQL Database):
-
+Sau khi clone dự án về máy:
 ```bash
-# 1. Clone repository về máy
 git clone <URL-REPO-CUA-TEAM>
 cd internal-recruiment-system-k3s4-n4-team
-
-# 2. Tạo file môi trường từ mẫu
-cp .env.example .env
-cp frontend/.env.example frontend/.env
-cp backend/.env.example backend/.env
-
-# 3. Khởi chạy toàn bộ hệ thống bằng Docker Compose
-docker compose up -d --build
 ```
 
-Sau khi khởi chạy thành công:
-- **Frontend App**: Truy cập tại `http://localhost:3000`
-- **Trang Đăng nhập**: `http://localhost:3000/login`
+### 1. Cài đặt tự động môi trường (Chỉ cần 1 lệnh)
+
+Tự động copy file môi trường (`.env`), tạo virtual environment cho Python backend, cài đặt `requirements.txt` và `npm install` frontend:
+
+- **Trên Windows (Cmd / PowerShell)**:
+  ```cmd
+  setup.bat
+  ```
+
+- **Trên Linux / macOS**:
+  ```bash
+  chmod +x setup.sh run-dev.sh
+  ./setup.sh
+  ```
+
+### 2. Khởi chạy ứng dụng Dev
+
+- **Trên Windows**:
+  ```cmd
+  run-dev.bat
+  ```
+
+- **Trên Linux / macOS**:
+  ```bash
+  ./run-dev.sh
+  ```
+
+Truy cập hệ thống:
+- **Frontend App**: `http://localhost:3000`
 - **Backend API Docs (Swagger UI)**: `http://localhost:8000/docs`
-- **Backend Health Check**: `http://localhost:8000/health`
+
+---
+
+## 🐳 Chạy bằng Docker Compose
+
+Chạy toàn bộ hệ thống bao gồm Frontend, Backend và Database PostgreSQL độc lập trong container:
+
+```bash
+# 1. Tạo file môi trường từ mẫu nếu chưa có
+cp .env.example .env
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+
+# 2. Khởi chạy bằng Docker Compose
+docker compose up -d --build
+```
 
 ---
 
 ## 🛠 Chạy thủ công không dùng Docker (Local Development)
 
-Nếu bạn muốn phát triển và sửa code trực tiếp trên từng môi trường:
+Nếu bạn muốn cấu hình và cài đặt từng bước thủ công:
 
-### 1. Khởi chạy Frontend (Next.js)
-
-```bash
-# Di chuyển vào thư mục frontend
-cd frontend
-
-# Cài đặt dependencies
-npm install
-
-# Tạo file .env
-cp .env.example .env
-
-# Chạy môi trường Dev (Hot-Reloading)
-npm run dev
-```
-🌐 Frontend sẽ chạy tại: **`http://localhost:3000`**
-
-Các lệnh hữu ích cho Frontend:
-- `npm run lint` — Kiểm tra lỗi syntax & style
-- `npm run build` — Build sản phẩm kiểm tra lỗi TypeScript
-
----
-
-### 2. Khởi chạy Backend (FastAPI)
+### 1. Khởi chạy Backend (FastAPI)
 
 ```bash
-# Di chuyển vào thư mục backend
 cd backend
 
-# Tạo môi trường ảo Python (Virtual Environment)
+# Tạo môi trường ảo Python
 python -m venv venv
 
 # Kích hoạt môi trường ảo:
-# Trên Windows (PowerShell):
+# Windows (PowerShell):
 .\venv\Scripts\Activate.ps1
-# Trên macOS / Linux:
+# macOS / Linux:
 source venv/bin/activate
 
-# Cài đặt dependencies (dùng pip hoặc uv/poetry)
-pip install -e .
+# Cài đặt thư viện backend
+pip install -r requirements.txt
 
-# Tạo file .env
+# Tạo file cấu hình môi trường
 cp .env.example .env
 
 # Chạy Server Backend (Uvicorn)
 uvicorn app.main:app --reload --port 8000
 ```
-🌐 Backend API sẽ chạy tại: **`http://localhost:8000`**  
-📄 Tài liệu API Swagger UI: **`http://localhost:8000/docs`**
 
-Các lệnh hữu ích cho Backend:
-- `pytest` — Chạy toàn bộ các bài test backend
+### 2. Khởi chạy Frontend (Next.js)
+
+```bash
+cd frontend
+
+# Cài đặt các gói npm
+npm install
+
+# Tạo file cấu hình môi trường
+cp .env.example .env.local
+
+# Chạy môi trường Dev
+npm run dev
+```
 
 ---
 
@@ -161,22 +168,11 @@ git checkout -b feature/ten-tinh-nang
 ```
 
 ### 2. Quy tắc Commit Message
-Sử dụng tiền tố chuẩn theo từng loại thay đổi:
 - `feat:` Thêm tính năng mới (Ví dụ: `feat: add user login API endpoint`)
 - `fix:` Sửa lỗi UI/Logic (Ví dụ: `fix: resolve input icon overlap on login form`)
-- `style:` Thay đổi UI/CSS mà không đổi logic (Ví dụ: `style: update royal blue color tokens`)
+- `style:` Thay đổi UI/CSS mà không đổi logic
 - `docs:` Thêm hoặc cập nhật tài liệu (Ví dụ: `docs: update README setup guide`)
 - `refactor:` Cải tiến cấu trúc code mà không đổi tính năng
-
-### 3. Kiểm tra trước khi đẩy code (Push)
-Trước khi push code lên nhánh làm việc, luôn chạy kiểm tra:
-```bash
-# Ở thư mục frontend:
-npm run lint && npm run build
-
-# Ở thư mục backend:
-pytest
-```
 
 ---
 
@@ -186,7 +182,3 @@ pytest
 - **Backend**: Python 3.10+, FastAPI, SQLAlchemy, Pydantic, Alembic.
 - **Database**: PostgreSQL 16 (Alpine).
 - **DevOps**: Docker, Docker Compose, GitHub Actions.
-
----
-
-Chúc cả team làm việc hiệu quả và hoàn thành dự án xuất sắc! 🎉
