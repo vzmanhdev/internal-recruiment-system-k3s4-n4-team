@@ -8,31 +8,51 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Card } from "@/components/ui/Card";
 import { BrandLogo } from "@/components/layout/BrandLogo";
+import { authService } from "@/features/auth/services/auth.service";
+import { ApiError } from "@/lib/api-client";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [fieldError, setFieldError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    setFieldError("");
     setSuccessMsg("");
 
-    if (!email) {
-      setErrorMsg("Vui lòng nhập email công ty của bạn.");
+    if (!email.trim()) {
+      setFieldError("Vui lòng nhập email công ty của bạn.");
+      setErrorMsg("Vui lòng nhập đầy đủ thông tin.");
+      return;
+    }
+
+    if (!email.includes("@")) {
+      setFieldError("Email không đúng định dạng (Ví dụ: name@company.com).");
+      setErrorMsg("Email không hợp lệ.");
       return;
     }
 
     setIsLoading(true);
 
-    setTimeout(() => {
+    try {
+      const res = await authService.forgotPassword(email.trim());
+      setSuccessMsg(res.message || `Hướng dẫn khôi phục mật khẩu đã được gửi đến email ${email}. Vui lòng kiểm tra hộp thư đến.`);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+        if (err.fieldErrors?.email) {
+          setFieldError(err.fieldErrors.email);
+        }
+      } else {
+        setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng thử lại sau.");
+      }
+    } finally {
       setIsLoading(false);
-      setSuccessMsg(
-        `Hướng dẫn khôi phục mật khẩu đã được gửi đến email ${email}. Vui lòng kiểm tra hộp thư đến.`
-      );
-    }, 1200);
+    }
   };
 
   return (
@@ -52,7 +72,7 @@ export default function ForgotPasswordPage() {
         </div>
 
         {errorMsg && (
-          <Alert variant="error" title="Thông báo">
+          <Alert variant="error" title="Lỗi yêu cầu">
             {errorMsg}
           </Alert>
         )}
@@ -73,8 +93,12 @@ export default function ForgotPasswordPage() {
               type="email"
               placeholder="user@company.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setFieldError("");
+              }}
               leftIcon={<Mail className="w-4 h-4" />}
+              error={fieldError}
               required
             />
 

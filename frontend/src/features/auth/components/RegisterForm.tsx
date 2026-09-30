@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Card } from "@/components/ui/Card";
 import { BrandLogo } from "@/components/layout/BrandLogo";
+import { authService } from "../services/auth.service";
+import { ApiError } from "@/lib/api-client";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -28,41 +30,88 @@ export function RegisterForm() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
 
   const handleChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    // Clear field-level error when user edits
+    if (fieldErrors[field] || fieldErrors[field.toLowerCase()]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        delete next[field.toLowerCase()];
+        return next;
+      });
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    setFieldErrors({});
     setSuccessMsg("");
 
-    if (!formData.employeeCode || !formData.fullName || !formData.companyEmail || !formData.department) {
-      setErrorMsg("Vui lòng điền đầy đủ các thông tin bắt buộc.");
-      return;
+    const errors: Record<string, string> = {};
+
+    if (!formData.fullName.trim()) {
+      errors["full_name"] = "Họ và tên là bắt buộc, không được để trống.";
+    }
+
+    if (!formData.companyEmail.trim()) {
+      errors["companyEmail"] = "Email công ty là bắt buộc.";
+    } else if (!formData.companyEmail.includes("@")) {
+      errors["companyEmail"] = "Email không đúng định dạng (Ví dụ: name@company.com).";
+    }
+
+    if (!formData.password) {
+      errors["password"] = "Mật khẩu là bắt buộc.";
+    } else if (formData.password.length < 6) {
+      errors["password"] = "Mật khẩu phải chứa ít nhất 6 ký tự.";
     }
 
     if (formData.password !== formData.confirmPassword) {
-      setErrorMsg("Mật khẩu xác nhận không khớp.");
-      return;
+      errors["confirmPassword"] = "Mật khẩu xác nhận không trùng khớp với mật khẩu.";
     }
 
     if (!formData.agreeTerms) {
-      setErrorMsg("Bạn cần đồng ý với Điều khoản sử dụng và Chính sách bảo mật.");
+      setErrorMsg("Bạn cần đồng ý với Điều khoản sử dụng và Chính sách bảo mật để đăng ký.");
+      return;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setErrorMsg("Vui lòng kiểm tra lại thông tin nhập vào.");
       return;
     }
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
-      setSuccessMsg("Tạo tài khoản thành công! Đang chuyển hướng đến trang đăng nhập...");
+    try {
+      await authService.register({
+        full_name: formData.fullName,
+        email: formData.companyEmail,
+        password: formData.password,
+        phone: formData.phone || undefined,
+        role: "employee",
+      });
+
+      setSuccessMsg("Tạo tài khoản thành công! Đang chuyển hướng đến trang Đăng nhập...");
       setTimeout(() => {
         router.push("/login");
       }, 1500);
-    }, 1000);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+        if (err.fieldErrors) {
+          setFieldErrors(err.fieldErrors);
+        }
+      } else {
+        setErrorMsg("Đã xảy ra lỗi không xác định. Vui lòng thử lại sau.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -102,12 +151,11 @@ export function RegisterForm() {
         {/* Row 1: Employee Code & Full Name */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
-            label="Mã nhân viên *"
+            label="Mã nhân viên"
             placeholder="VD: NV001"
             value={formData.employeeCode}
             onChange={(e) => handleChange("employeeCode", e.target.value)}
             leftIcon={<IdCard className="w-4 h-4 text-slate-400" />}
-            required
           />
           <Input
             label="Họ và tên *"
@@ -115,6 +163,7 @@ export function RegisterForm() {
             value={formData.fullName}
             onChange={(e) => handleChange("fullName", e.target.value)}
             leftIcon={<User className="w-4 h-4 text-slate-400" />}
+            error={fieldErrors.full_name || fieldErrors.fullName}
             required
           />
         </div>
@@ -128,24 +177,26 @@ export function RegisterForm() {
             value={formData.companyEmail}
             onChange={(e) => handleChange("companyEmail", e.target.value)}
             leftIcon={<Mail className="w-4 h-4 text-slate-400" />}
+            error={fieldErrors.email || fieldErrors.companyEmail}
             required
           />
+
           <Input
-            label="Số điện thoại *"
+            label="Số điện thoại"
             type="tel"
-            placeholder="+84 - Nhập số điện thoại"
+            placeholder="+84 - Số điện thoại"
             value={formData.phone}
             onChange={(e) => handleChange("phone", e.target.value)}
             leftIcon={<Phone className="w-4 h-4 text-slate-400" />}
+            error={fieldErrors.phone}
           />
         </div>
 
         {/* Row 3: Department Select */}
         <Select
-          label="Phòng ban hiện tại *"
+          label="Phòng ban hiện tại"
           value={formData.department}
           onChange={(e) => handleChange("department", e.target.value)}
-          required
           options={[
             { value: "", label: "Chọn phòng ban" },
             { value: "it", label: "Khối Công nghệ Thông tin" },
@@ -159,10 +210,11 @@ export function RegisterForm() {
         {/* Row 4: Passwords */}
         <PasswordInput
           label="Mật khẩu *"
-          placeholder="Tạo mật khẩu (ít nhất 8 ký tự)"
+          placeholder="Tạo mật khẩu (ít nhất 6 ký tự)"
           value={formData.password}
           onChange={(e) => handleChange("password", e.target.value)}
           leftIcon={<Lock className="w-4 h-4 text-slate-400" />}
+          error={fieldErrors.password}
           required
         />
 
@@ -172,6 +224,7 @@ export function RegisterForm() {
           value={formData.confirmPassword}
           onChange={(e) => handleChange("confirmPassword", e.target.value)}
           leftIcon={<Lock className="w-4 h-4 text-slate-400" />}
+          error={fieldErrors.confirmPassword}
           required
         />
 

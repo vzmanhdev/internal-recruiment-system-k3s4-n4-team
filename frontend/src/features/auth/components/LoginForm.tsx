@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Mail, Lock, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -9,31 +10,67 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { BrandLogo } from "@/components/layout/BrandLogo";
+import { authService } from "../services/auth.service";
+import { ApiError } from "@/lib/api-client";
 
 export function LoginForm() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    setFieldErrors({});
     setSuccessMsg("");
 
-    if (!email || !password) {
-      setErrorMsg("Vui lòng nhập đầy đủ email công việc và mật khẩu.");
+    const errors: Record<string, string> = {};
+
+    if (!email.trim()) {
+      errors["email"] = "Vui lòng nhập email công việc.";
+    } else if (!email.includes("@")) {
+      errors["email"] = "Email không đúng định dạng (Ví dụ: name@company.com).";
+    }
+
+    if (!password) {
+      errors["password"] = "Vui lòng nhập mật khẩu.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setErrorMsg("Vui lòng nhập đầy đủ và chính xác thông tin đăng nhập.");
       return;
     }
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await authService.login({
+        email: email.trim(),
+        password: password,
+      });
+
       setSuccessMsg("Đăng nhập thành công! Đang chuyển hướng...");
-    }, 1200);
+      setTimeout(() => {
+        router.push("/");
+      }, 1200);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+        if (err.fieldErrors) {
+          setFieldErrors(err.fieldErrors);
+        }
+      } else {
+        setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại dịch vụ Backend.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -77,9 +114,13 @@ export function LoginForm() {
           type="email"
           placeholder="Nhập email công việc"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: "" }));
+          }}
           leftIcon={<Mail className="w-[18px] h-[18px] text-slate-400" />}
           autoComplete="email"
+          error={fieldErrors.email}
           required
         />
 
@@ -88,9 +129,13 @@ export function LoginForm() {
           label="Mật khẩu"
           placeholder="Nhập mật khẩu"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: "" }));
+          }}
           leftIcon={<Lock className="w-[18px] h-[18px] text-slate-400" />}
           autoComplete="current-password"
+          error={fieldErrors.password}
           required
         />
 
