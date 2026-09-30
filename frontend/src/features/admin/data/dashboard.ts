@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   UserCheck,
   UserPlus,
+  UserRoundCheck,
   Users,
   UserX,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import type {
 export const adminNavItems: AdminNavItem[] = [
   { label: "Tổng quan", href: "/admin/dashboard", icon: LayoutDashboard },
   { label: "Quản lý tài khoản", href: "/admin/users", icon: Users },
+  { label: "Phê duyệt đăng ký", href: "/admin/approvals", icon: UserRoundCheck },
   { label: "Vai trò và phân quyền", href: "/admin/roles", icon: ShieldCheck },
   { label: "Vị trí tuyển dụng", href: "/admin/jobs", icon: BriefcaseBusiness },
   { label: "Nhật ký hệ thống", href: "/admin/audit-logs", icon: FileText },

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Caveat } from "next/font/google";
 import "./globals.css";
+import { SessionGuard } from "@/features/auth/components/SessionGuard";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -26,7 +27,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="vi" className={`${inter.variable} ${caveat.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><SessionGuard />{children}</body>
     </html>
   );
 }

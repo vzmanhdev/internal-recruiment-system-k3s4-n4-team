@@ -5,6 +5,9 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 from fastapi.testclient import TestClient
 from app.main import app
+from app.core.security import hash_password
+from app.db.session import SessionLocal
+from app.models.user import User
 import json
 
 client = TestClient(app)
@@ -58,8 +61,9 @@ def run_tests():
     data = res.json()
     print("Response JSON:", json.dumps(data, ensure_ascii=False, indent=2))
     assert res.status_code == 201
-    assert "access_token" in data
+    assert "message" in data
     assert data["user"]["email"] == "tranthib@company.com"
+    assert data["user"]["is_active"] is False
 
     # 5. Duplicate Email Registration
     res = client.post("/api/v1/auth/register", json=valid_user_req)
@@ -91,17 +95,40 @@ def run_tests():
     assert "password" in data.get("field_errors", {})
     assert "không chính xác" in data["detail"]
 
-    # 8. Successful Login
+    # 8. Login is blocked until an Admin approves the account
     res = client.post("/api/v1/auth/login", json={"email": "tranthib@company.com", "password": "SecurePassword123!"})
-    print("\n[TEST 7] Successful Login:")
+    print("\n[TEST 7] Login Before Approval:")
     print("Status code:", res.status_code)
     data = res.json()
     print("Response JSON:", json.dumps(data, ensure_ascii=False, indent=2))
+    assert res.status_code == 400
+    assert "chờ" in data["detail"]
+
+    # 9. Create an Admin, approve the pending user, then login normally
+    db = SessionLocal()
+    admin = db.query(User).filter(User.email == "admin@company.com").first()
+    if not admin:
+        admin = User(email="admin@company.com", hashed_password=hash_password("Admin12345"), full_name="System Admin", role="admin", is_active=True)
+        db.add(admin)
+        db.commit()
+    db.close()
+
+    admin_login = client.post("/api/v1/auth/login", json={"email": "admin@company.com", "password": "Admin12345"})
+    admin_token = admin_login.json()["access_token"]
+    pending = client.get("/api/v1/auth/pending-users", headers={"Authorization": f"Bearer {admin_token}"})
+    pending_user = next(item for item in pending.json() if item["email"] == "tranthib@company.com")
+    approved = client.post(f"/api/v1/auth/users/{pending_user['id']}/approve", headers={"Authorization": f"Bearer {admin_token}"})
+    assert approved.status_code == 200
+    assert approved.json()["is_active"] is True
+
+    res = client.post("/api/v1/auth/login", json={"email": "tranthib@company.com", "password": "SecurePassword123!"})
+    print("\n[TEST 8] Successful Login After Approval:")
+    data = res.json()
     assert res.status_code == 200
     assert "access_token" in data
     token = data["access_token"]
 
-    # 9. Get Me Profile with Token
+    # 10. Get Me Profile with Token
     res = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     print("\n[TEST 8] Get Me Profile with Token:")
     print("Status code:", res.status_code)
@@ -111,7 +138,7 @@ def run_tests():
     assert data["email"] == "tranthib@company.com"
 
     print("\n==================================================")
-    print("ALL 8 AUTHENTICATION & ERROR REPORTING TESTS PASSED PERFECTLY!")
+    print("ALL AUTHENTICATION, APPROVAL & ERROR REPORTING TESTS PASSED!")
     print("==================================================")
 
 if __name__ == "__main__":

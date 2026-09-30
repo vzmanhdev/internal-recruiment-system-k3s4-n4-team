@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api-client";
-import type { LoginRequest, RegisterRequest } from "../types/auth.types";
+import { clearStoredSession, saveSessionExpiration } from "../lib/session";
 
 export interface AuthResponse {
   access_token: string;
@@ -15,6 +15,11 @@ export interface AuthResponse {
   };
 }
 
+export interface RegistrationResponse {
+  message: string;
+  user: AuthResponse["user"];
+}
+
 export const authService = {
   async register(payload: {
     full_name: string;
@@ -22,17 +27,11 @@ export const authService = {
     password: string;
     phone?: string;
     role?: string;
-  }): Promise<AuthResponse> {
-    const res = await apiRequest<AuthResponse>("/auth/register", {
+  }): Promise<RegistrationResponse> {
+    return await apiRequest<RegistrationResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify(payload),
     });
-
-    if (res.access_token) {
-      localStorage.setItem("access_token", res.access_token);
-      localStorage.setItem("user_info", JSON.stringify(res.user));
-    }
-    return res;
   },
 
   async login(payload: {
@@ -47,6 +46,7 @@ export const authService = {
     if (res.access_token) {
       localStorage.setItem("access_token", res.access_token);
       localStorage.setItem("user_info", JSON.stringify(res.user));
+      saveSessionExpiration(res.access_token);
     }
     return res;
   },
@@ -64,10 +64,19 @@ export const authService = {
     });
   },
 
+  async changePassword(payload: {
+    current_password: string;
+    new_password: string;
+  }): Promise<{ message: string }> {
+    return await apiRequest<{ message: string }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   logout() {
     if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_info");
+      clearStoredSession();
     }
   }
 };

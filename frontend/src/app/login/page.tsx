@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { LoginVisualColumn } from "@/features/auth/components/LoginVisualColumn";
 import { LoginForm } from "@/features/auth/components/LoginForm";
 
@@ -15,7 +15,9 @@ export default function LoginPage() {
         }}
         className="flex flex-col justify-center items-center p-5 sm:p-10 lg:p-16 min-h-screen"
       >
-        <LoginForm />
+        <Suspense fallback={<div className="h-[520px] w-full max-w-[440px] animate-pulse rounded-[20px] bg-slate-100" />}>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );

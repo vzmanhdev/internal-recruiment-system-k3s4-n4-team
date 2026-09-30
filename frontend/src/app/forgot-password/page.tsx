@@ -41,7 +41,7 @@ export default function ForgotPasswordPage() {
     try {
       const res = await authService.forgotPassword(email.trim());
       setSuccessMsg(res.message || `Hướng dẫn khôi phục mật khẩu đã được gửi đến email ${email}. Vui lòng kiểm tra hộp thư đến.`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
         if (err.fieldErrors?.email) {

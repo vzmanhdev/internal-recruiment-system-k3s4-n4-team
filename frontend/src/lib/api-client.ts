@@ -8,6 +8,15 @@ export class ApiError extends Error {
   }
 }
 
+function redirectExpiredSession(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("user_info");
+  localStorage.removeItem("auth_expires_at");
+  sessionStorage.setItem("auth-session-notice", "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.");
+  if (window.location.pathname !== "/login") window.location.replace("/login?reason=session-expired");
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -46,7 +55,7 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
         if (errorData.field_errors) {
           fieldErrors = errorData.field_errors;
         }
-      } catch (e) {
+      } catch {
         const defaultMessages: Record<number, string> = {
           400: "Dữ liệu chưa hợp lệ hoặc bị trùng lặp.",
           401: "Vui lòng đăng nhập lại.",
@@ -58,18 +67,20 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
         errorDetail = defaultMessages[response.status] ?? errorDetail;
       }
 
+      if (response.status === 401) redirectExpiredSession();
+
       throw new ApiError(response.status, errorDetail, fieldErrors);
     }
 
     return await response.json() as T;
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(timeoutId);
 
     if (err instanceof ApiError) {
       throw err;
     }
 
-    if (err.name === "AbortError") {
+    if (err instanceof DOMException && err.name === "AbortError") {
       throw new ApiError(0, "Kết nối bị quá thời gian (Timeout). Vui lòng đảm bảo dịch vụ Backend (http://localhost:8000) đã được bật.");
     }
 
