@@ -204,6 +204,18 @@ def require_admin(authorization: Optional[str], db: Session) -> User:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ Quản trị viên mới có quyền phê duyệt tài khoản")
     return admin
 
+def require_roles(authorization: Optional[str], db: Session, allowed_roles: set[str]) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Vui lòng đăng nhập để tiếp tục")
+    user_id = decode_access_token(authorization.split(" ", 1)[1])
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    roles = set(user.role.split(",")) if user else set()
+    if not user or not user.is_active or not roles.intersection(allowed_roles):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền quản lý dữ liệu nhân sự")
+    return user
+
 @router.get("/pending-users", response_model=list[UserResponse])
 def list_pending_users(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     require_admin(authorization, db)

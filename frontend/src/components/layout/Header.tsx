@@ -17,6 +17,7 @@ export function Header() {
     { label: "Trang chủ", href: "/" },
     ...(session ? [{ label: "Dashboard", href: "/dashboard" }] : []),
     ...(roles.includes("admin") ? [{ label: "Quản trị", href: "/admin/dashboard" }] : []),
+    ...(roles.includes("hr_manager") || roles.includes("admin") ? [{ label: "Thiết lập HR", href: "/hr/dashboard" }] : []),
     { label: "Cơ hội nghề nghiệp", href: "/#jobs" },
     { label: "Lộ trình phát triển", href: "/#development" },
     { label: "Quy trình", href: "/process" },

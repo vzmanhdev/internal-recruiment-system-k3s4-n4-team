@@ -7,8 +7,10 @@ from sqlalchemy import inspect, text
 
 from app.db.session import engine, Base
 from app.models.user import User  # Register model
+from app.models.hr import Competency, Department, JobTitle, SharedCategory  # Register HR models
 from app.api.v1.auth import router as auth_router
 from app.api.v1.admin import router as admin_router
+from app.api.v1.hr import router as hr_router
 
 # Create database tables automatically
 Base.metadata.create_all(bind=engine)
@@ -75,3 +77,4 @@ def health_check() -> Dict[str, str]:
 
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["Account administration"])
+app.include_router(hr_router, prefix="/api/v1/hr", tags=["Human resources"])
