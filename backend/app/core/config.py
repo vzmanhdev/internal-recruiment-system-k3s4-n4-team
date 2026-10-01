@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-change-in-production-1234567890")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 hours
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+    APP_ENV: str = "development"
+    FRONTEND_URL: str = "http://localhost:3000"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "no-reply@company.com"
+    SMTP_USE_TLS: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

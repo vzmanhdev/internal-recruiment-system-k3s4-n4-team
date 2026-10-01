@@ -16,6 +16,21 @@ class UserLogin(BaseModel):
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr = Field(..., description="Email công ty để nhận liên kết khôi phục mật khẩu")
 
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    reset_url: Optional[str] = None
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=20)
+    new_password: str = Field(..., min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
+            raise ValueError("Mật khẩu mới phải gồm ít nhất một chữ và một số")
+        return value
+
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., description="Mật khẩu hiện tại")
     new_password: str = Field(..., min_length=8, description="Mật khẩu mới có ít nhất 8 ký tự, gồm chữ và số")

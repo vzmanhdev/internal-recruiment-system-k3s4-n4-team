@@ -52,8 +52,8 @@ export const authService = {
     return res;
   },
 
-  async forgotPassword(email: string): Promise<{ message: string }> {
-    return await apiRequest<{ message: string }>("/auth/forgot-password", {
+  async forgotPassword(email: string): Promise<{ message: string; reset_url?: string }> {
+    return await apiRequest<{ message: string; reset_url?: string }>("/auth/forgot-password", {
       method: "POST",
       body: JSON.stringify({ email }),
     });
@@ -62,6 +62,13 @@ export const authService = {
   async getCurrentUser() {
     return await apiRequest("/auth/me", {
       method: "GET",
+    });
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    return await apiRequest<{ message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
     });
   },
 

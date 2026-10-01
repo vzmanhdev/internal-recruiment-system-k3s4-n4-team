@@ -17,6 +17,7 @@ export default function ForgotPasswordPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [fieldError, setFieldError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [developmentUrl, setDevelopmentUrl] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +42,7 @@ export default function ForgotPasswordPage() {
     try {
       const res = await authService.forgotPassword(email.trim());
       setSuccessMsg(res.message || `Hướng dẫn khôi phục mật khẩu đã được gửi đến email ${email}. Vui lòng kiểm tra hộp thư đến.`);
+      setDevelopmentUrl(res.reset_url ?? "");
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
@@ -79,9 +81,10 @@ export default function ForgotPasswordPage() {
 
         {successMsg ? (
           <div className="space-y-6 text-center">
-            <Alert variant="success" title="Đã gửi email thành công">
+            <Alert variant="success" title="Đã tiếp nhận yêu cầu">
               {successMsg}
             </Alert>
+            {developmentUrl && <Alert variant="info" title="Liên kết kiểm thử local"><Link className="break-all font-semibold underline" href={developmentUrl}>Mở trang đặt lại mật khẩu</Link></Alert>}
             <Button variant="outline" href="/login" className="w-full h-11" leftIcon={<ArrowLeft className="w-4 h-4" />}>
               Quay lại trang Đăng nhập
             </Button>

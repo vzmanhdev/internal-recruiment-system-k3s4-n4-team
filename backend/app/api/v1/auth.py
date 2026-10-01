@@ -5,8 +5,10 @@ from typing import Optional
 
 from app.db.session import get_db
 from app.models.user import User
-from app.core.security import hash_password, verify_password, create_access_token, decode_access_token
-from app.schemas.auth import ChangePasswordRequest, RegistrationResponse, UserRegister, UserLogin, ForgotPasswordRequest, Token, UserResponse, ErrorResponse
+from app.core.config import settings
+from app.core.security import hash_password, verify_password, create_access_token, decode_access_token, create_password_reset_token, decode_password_reset_token, get_password_reset_subject
+from app.schemas.auth import ChangePasswordRequest, ForgotPasswordResponse, RegistrationResponse, ResetPasswordRequest, UserRegister, UserLogin, ForgotPasswordRequest, Token, UserResponse, ErrorResponse
+from app.services.email import send_password_reset_email
 
 router = APIRouter()
 
@@ -114,27 +116,43 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
 
 @router.post(
     "/forgot-password",
+    response_model=ForgotPasswordResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Email không tồn tại trong hệ thống"}
     }
 )
 def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    # Verify email exists in database
     user = db.query(User).filter(User.email == req.email).first()
+    response = {"message": "Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu sẽ được gửi đến hộp thư."}
     if not user:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "detail": "Tài khoản Email không tồn tại trong hệ thống. Vui lòng kiểm tra lại.",
-                "field_errors": {
-                    "email": "Tài khoản Email không tồn tại trong hệ thống."
-                }
-            }
-        )
+        return response
 
-    return {
-        "message": f"Hướng dẫn khôi phục mật khẩu đã được gửi đến email {req.email}. Vui lòng kiểm tra hộp thư đến."
-    }
+    token = create_password_reset_token(user.id, user.hashed_password)
+    reset_url = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
+    try:
+        send_password_reset_email(user.email, reset_url)
+    except Exception:
+        # Do not expose mail-server details or whether the account exists.
+        pass
+    if settings.APP_ENV != "production":
+        response["reset_url"] = reset_url
+    return response
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    try:
+        subject = get_password_reset_subject(payload.token)
+        user_id = int(subject) if subject else None
+    except (TypeError, ValueError):
+        user_id = None
+    user = db.query(User).filter(User.id == user_id).first() if user_id else None
+    if not user or not decode_password_reset_token(payload.token, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn")
+    if verify_password(payload.new_password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mật khẩu mới phải khác mật khẩu hiện tại")
+    user.hashed_password = hash_password(payload.new_password)
+    db.commit()
+    return {"message": "Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới."}
 
 @router.post(
     "/change-password",

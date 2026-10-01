@@ -147,7 +147,20 @@ def run_tests():
     assert res.status_code == 200
     assert data["email"] == "tranthib@company.com"
 
-    # 11. Admin account management: create, search, roles, lock and unlock
+    # 11. Request a reset link, reject it as an access token, and set a new password.
+    forgot = client.post("/api/v1/auth/forgot-password", json={"email": "tranthib@company.com"})
+    assert forgot.status_code == 200 and "reset_url" in forgot.json()
+    reset_token = forgot.json()["reset_url"].split("token=", 1)[1]
+    reset_as_access = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {reset_token}"})
+    assert reset_as_access.status_code == 401
+    reset = client.post("/api/v1/auth/reset-password", json={"token": reset_token, "new_password": "NewSecure123"})
+    assert reset.status_code == 200
+    reused = client.post("/api/v1/auth/reset-password", json={"token": reset_token, "new_password": "AnotherSecure123"})
+    assert reused.status_code == 400
+    login_with_new_password = client.post("/api/v1/auth/login", json={"email": "tranthib@company.com", "password": "NewSecure123"})
+    assert login_with_new_password.status_code == 200
+
+    # 12. Admin account management: create, search, roles, lock and unlock
     headers = {"Authorization": f"Bearer {admin_token}"}
     managed_payload = {
         "full_name": "Managed User",
