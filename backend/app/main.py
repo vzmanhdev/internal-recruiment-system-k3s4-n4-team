@@ -5,11 +5,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.session import engine, Base
+from app.db.init_db import init_db
 from app.models.user import User  # Register model
 from app.api.v1.auth import router as auth_router
 
-# Create database tables automatically
+# Create database tables automatically and seed initial data
 Base.metadata.create_all(bind=engine)
+init_db()
 
 app = FastAPI(
     title="Internal Recruitment System API",
