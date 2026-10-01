@@ -882,15 +882,6 @@ III. QUYỀN LỢI ĐÃI NGỘ:
 
           {/* Right: Actions, Notifications & Profile */}
           <div className="flex items-center gap-3 sm:gap-4">
-            {/* Nút nổi bật: Tạo yêu cầu tuyển dụng (Màu xanh #4285F4) */}
-            <button
-              onClick={() => setIsCreateReqOpen(true)}
-              className="bg-[#4285F4] hover:bg-blue-600 text-white px-5 sm:px-6 py-2.5 rounded-full font-medium text-xs sm:text-sm inline-flex items-center gap-2 shadow-sm shadow-blue-500/20 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Tạo yêu cầu tuyển dụng</span>
-            </button>
-
             {/* Notification Bell */}
             <button
               title="Thông báo tuyển dụng"
@@ -1055,9 +1046,9 @@ III. QUYỀN LỢI ĐÃI NGỘ:
       {/* MAIN CONTAINER */}
       {/* ========================================================================= */}
       <main className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Banner Welcome & Fast Summary */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-blue-900 to-indigo-900 rounded-[32px] p-6 sm:p-8 text-white shadow-[0_8px_30px_rgb(0,0,0,0.06)] relative overflow-hidden">
-          <div className="relative z-10 max-w-2xl">
+        {/* Banner Welcome & Fast Summary: Cấu trúc flex justify-between items-center, lời chào bên trái */}
+        <div className="flex justify-between items-center bg-gradient-to-r from-blue-900 to-indigo-900 rounded-[32px] p-6 sm:p-8 text-white shadow-[0_8px_30px_rgb(0,0,0,0.06)] relative overflow-hidden">
+          <div className="relative z-10 max-w-3xl">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white/10 text-blue-200 backdrop-blur-sm border border-white/10 mb-3">
               <Sparkles className="w-3.5 h-3.5 text-blue-300" />
               Cổng Điều Phối Tuyển Dụng Bộ Phận
@@ -1068,23 +1059,6 @@ III. QUYỀN LỢI ĐÃI NGỘ:
             <p className="text-sm text-blue-100 mt-2 leading-relaxed">
               Bạn có <span className="font-bold text-white underline">{pendingCandidates} ứng viên Shortlist</span> đã qua 2 vòng phỏng vấn đang chờ quyết định chốt tuyển.
             </p>
-          </div>
-
-          <div className="relative z-10 flex items-center gap-3">
-            <button
-              onClick={() => handleOpenCloneModal()}
-              className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-5 py-2.5 rounded-full text-xs sm:text-sm font-semibold transition-all inline-flex items-center gap-2 cursor-pointer"
-            >
-              <Copy className="w-4 h-4" />
-              <span>Sao chép yêu cầu cũ</span>
-            </button>
-            <button
-              onClick={() => setIsCreateReqOpen(true)}
-              className="bg-white text-blue-900 hover:bg-blue-50 px-6 py-2.5 rounded-full text-xs sm:text-sm font-bold shadow-md transition-all inline-flex items-center gap-2 cursor-pointer"
-            >
-              <Plus className="w-4 h-4 text-[#4285F4]" />
-              <span>Tạo yêu cầu mới</span>
-            </button>
           </div>
 
           {/* Decorative Background Circles */}
@@ -1246,14 +1220,14 @@ III. QUYỀN LỢI ĐÃI NGỘ:
                 <span>Sao chép yêu cầu cũ</span>
               </button>
 
-              {/* Nút: Tạo yêu cầu mới */}
+              {/* Nút: Tạo yêu cầu tuyển dụng */}
               <button
                 type="button"
                 onClick={() => setIsCreateReqOpen(true)}
                 className="bg-[#4285F4] hover:bg-blue-600 text-white px-5 py-2 rounded-full text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-all shadow-sm shadow-blue-500/20 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Mở tuyển mới</span>
+                <span>Tạo yêu cầu tuyển dụng</span>
               </button>
             </div>
           </div>
