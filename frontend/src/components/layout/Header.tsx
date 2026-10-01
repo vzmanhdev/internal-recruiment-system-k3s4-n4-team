@@ -5,14 +5,18 @@ import Link from "next/link";
 import { Search, Menu, X } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
 import { Container } from "./Container";
-import { Button } from "@/components/ui/Button";
+import { AuthActions } from "@/features/auth/components/AuthActions";
+import { getSessionRoles, useAuthSession } from "@/features/auth/lib/auth-session";
 
 export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const session = useAuthSession();
+  const roles = getSessionRoles(session);
 
   const navLinks = [
     { label: "Trang chủ", href: "/" },
-    { label: "Dashboard", href: "/dashboard" },
+    ...(session ? [{ label: "Dashboard", href: "/dashboard" }] : []),
+    ...(roles.includes("admin") ? [{ label: "Quản trị", href: "/admin/dashboard" }] : []),
     { label: "Cơ hội nghề nghiệp", href: "/#jobs" },
     { label: "Lộ trình phát triển", href: "/#development" },
     { label: "Quy trình", href: "/process" },
@@ -48,12 +52,7 @@ export function Header() {
             >
               <Search className="w-5 h-5" />
             </button>
-            <Button variant="ghost" href="/login">
-              Đăng nhập
-            </Button>
-            <Button variant="primary" href="/register">
-              Đăng ký
-            </Button>
+            <AuthActions />
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -84,14 +83,7 @@ export function Header() {
                 </Link>
               ))}
             </nav>
-            <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 px-4">
-              <Button variant="outline" href="/login" className="w-full">
-                Đăng nhập
-              </Button>
-              <Button variant="primary" href="/register" className="w-full">
-                Đăng ký
-              </Button>
-            </div>
+            <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 px-4"><AuthActions mobile /></div>
           </div>
         )}
       </Container>

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Bell,
   ChevronDown,
@@ -15,10 +15,24 @@ import {
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { cn } from "@/lib/utils";
 import { adminNavItems } from "../data/dashboard";
+import { clearAuthSession, getSessionRoles, useAuthSession } from "@/features/auth/lib/auth-session";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const session = useAuthSession();
+  const roles = getSessionRoles(session);
+  const roleKey = roles.join(",");
+  const roleLabels: Record<string,string> = {admin:"Quản trị viên",hr_manager:"Nhân sự",manager:"Quản lý",employee:"Nhân viên"};
+  const displayName = session?.full_name ?? "Quản trị viên";
+  const handleLogout = () => { clearAuthSession(); router.push("/login"); };
+
+  useEffect(() => {
+    const hasToken = Boolean(window.localStorage.getItem("access_token"));
+    if (!hasToken) router.replace("/login");
+    else if (session && !roleKey.split(",").includes("admin")) router.replace("/dashboard");
+  }, [roleKey, router, session]);
 
   const sidebar = (
     <>
@@ -65,7 +79,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <div className="border-t border-slate-200 p-4">
-        <button className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600">
+        <button onClick={handleLogout} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600">
           <LogOut className="h-[18px] w-[18px]" />
           Đăng xuất
         </button>
@@ -134,11 +148,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </button>
             <button className="flex items-center gap-2.5 rounded-xl p-1.5 pr-2 hover:bg-slate-50">
               <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-bold text-white">
-                NA
+                {displayName.split(" ").slice(-2).map(part=>part[0]).join("").toUpperCase()}
               </span>
               <span className="hidden text-left sm:block">
-                <span className="block text-sm font-bold text-slate-900">Nguyễn Văn A</span>
-                <span className="block text-xs text-slate-500">Quản trị viên</span>
+                <span className="block text-sm font-bold text-slate-900">{displayName}</span>
+                <span className="block text-xs text-slate-500">{roles.map(role=>roleLabels[role]??role).join(", ") || "Quản trị viên"}</span>
               </span>
               <ChevronDown className="hidden h-4 w-4 text-slate-400 sm:block" />
             </button>

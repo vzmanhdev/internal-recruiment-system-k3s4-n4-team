@@ -14,6 +14,11 @@ client = TestClient(app)
 
 def run_tests():
     print("==================================================")
+
+    db = SessionLocal()
+    db.query(User).filter(User.email.in_(["tranthib@company.com", "managed.user@company.com"])).delete(synchronize_session=False)
+    db.commit()
+    db.close()
     print("RUNNING AUTHENTICATION & ERROR REPORTING TESTS")
     print("==================================================")
 
@@ -108,9 +113,14 @@ def run_tests():
     db = SessionLocal()
     admin = db.query(User).filter(User.email == "admin@company.com").first()
     if not admin:
-        admin = User(email="admin@company.com", hashed_password=hash_password("Admin12345"), full_name="System Admin", role="admin", is_active=True)
+        admin = User(email="admin@company.com", hashed_password=hash_password("Admin12345"), full_name="System Admin", role="admin", is_active=True, account_status="active")
         db.add(admin)
-        db.commit()
+    else:
+        admin.hashed_password = hash_password("Admin12345")
+        admin.role = "admin"
+        admin.is_active = True
+        admin.account_status = "active"
+    db.commit()
     db.close()
 
     admin_login = client.post("/api/v1/auth/login", json={"email": "admin@company.com", "password": "Admin12345"})
@@ -136,6 +146,28 @@ def run_tests():
     print("Response JSON:", json.dumps(data, ensure_ascii=False, indent=2))
     assert res.status_code == 200
     assert data["email"] == "tranthib@company.com"
+
+    # 11. Admin account management: create, search, roles, lock and unlock
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    managed_payload = {
+        "full_name": "Managed User",
+        "email": "managed.user@company.com",
+        "password": "Managed123",
+        "roles": ["employee", "manager"]
+    }
+    created = client.post("/api/v1/admin/users", json=managed_payload, headers=headers)
+    assert created.status_code == 201
+    managed_id = created.json()["id"]
+    listed = client.get("/api/v1/admin/users?search=managed.user&page=1&page_size=20", headers=headers)
+    assert listed.status_code == 200 and listed.json()["total"] == 1
+    changed = client.put(f"/api/v1/admin/users/{managed_id}/roles", json={"roles": ["employee", "hr_manager"]}, headers=headers)
+    assert changed.status_code == 200 and "hr_manager" in changed.json()["roles"]
+    invalid_lock = client.post(f"/api/v1/admin/users/{managed_id}/lock", json={"reason": ""}, headers=headers)
+    assert invalid_lock.status_code == 422
+    locked = client.post(f"/api/v1/admin/users/{managed_id}/lock", json={"reason": "Tạm khóa để kiểm tra tài khoản"}, headers=headers)
+    assert locked.status_code == 200 and locked.json()["account_status"] == "locked"
+    unlocked = client.post(f"/api/v1/admin/users/{managed_id}/unlock", headers=headers)
+    assert unlocked.status_code == 200 and unlocked.json()["account_status"] == "active"
 
     print("\n==================================================")
     print("ALL AUTHENTICATION, APPROVAL & ERROR REPORTING TESTS PASSED!")

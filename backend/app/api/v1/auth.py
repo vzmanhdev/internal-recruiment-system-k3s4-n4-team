@@ -43,7 +43,8 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         # Public registration always creates a normal employee account.
         # Elevated roles must be assigned separately by an administrator.
         role="employee",
-        is_active=False
+        is_active=False,
+        account_status="pending"
     )
     db.add(new_user)
     db.commit()
@@ -88,12 +89,16 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
         )
 
     if not user.is_active:
+        if user.account_status == "locked":
+            message = "Tài khoản đã bị khóa. Vui lòng liên hệ Quản trị viên."
+        else:
+            message = "Tài khoản đang chờ Quản trị viên phê duyệt. Vui lòng thử lại sau khi yêu cầu được chấp nhận."
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "detail": "Tài khoản đang chờ Quản trị viên phê duyệt. Vui lòng thử lại sau khi yêu cầu được chấp nhận.",
+                "detail": message,
                 "field_errors": {
-                    "email": "Tài khoản đang chờ phê duyệt."
+                    "email": "Tài khoản đã bị khóa." if user.account_status == "locked" else "Tài khoản đang chờ phê duyệt."
                 }
             }
         )
@@ -177,14 +182,14 @@ def require_admin(authorization: Optional[str], db: Session) -> User:
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
     admin = db.query(User).filter(User.id == int(user_id)).first()
-    if not admin or admin.role != "admin" or not admin.is_active:
+    if not admin or "admin" not in admin.role.split(",") or not admin.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ Quản trị viên mới có quyền phê duyệt tài khoản")
     return admin
 
 @router.get("/pending-users", response_model=list[UserResponse])
 def list_pending_users(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     require_admin(authorization, db)
-    return [user.to_dict() for user in db.query(User).filter(User.is_active.is_(False)).order_by(User.created_at.desc()).all()]
+    return [user.to_dict() for user in db.query(User).filter(User.account_status == "pending").order_by(User.created_at.desc()).all()]
 
 @router.post("/users/{user_id}/approve", response_model=UserResponse)
 def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
@@ -193,6 +198,8 @@ def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: 
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy yêu cầu đăng ký")
     user.is_active = True
+    user.account_status = "active"
+    user.lock_reason = None
     db.commit()
     db.refresh(user)
     return user.to_dict()

@@ -3,13 +3,24 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from app.db.session import engine, Base
 from app.models.user import User  # Register model
 from app.api.v1.auth import router as auth_router
+from app.api.v1.admin import router as admin_router
 
 # Create database tables automatically
 Base.metadata.create_all(bind=engine)
+
+# Lightweight compatibility migration for existing local databases.
+with engine.begin() as connection:
+    user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
+    if "account_status" not in user_columns:
+        connection.execute(text("ALTER TABLE users ADD COLUMN account_status VARCHAR(20) NOT NULL DEFAULT 'active'"))
+        connection.execute(text("UPDATE users SET account_status = 'pending' WHERE is_active = false"))
+    if "lock_reason" not in user_columns:
+        connection.execute(text("ALTER TABLE users ADD COLUMN lock_reason VARCHAR(500)"))
 
 app = FastAPI(
     title="Internal Recruitment System API",
@@ -63,3 +74,4 @@ def health_check() -> Dict[str, str]:
     return {"status": "ok", "message": "Backend connected & database ready"}
 
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["Account administration"])

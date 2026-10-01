@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 class UserRegister(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100, description="Họ và tên người dùng")
@@ -33,7 +33,10 @@ class UserResponse(BaseModel):
     full_name: str
     phone: Optional[str] = None
     role: str
+    roles: List[str] = Field(default_factory=list)
     is_active: bool
+    account_status: str = "active"
+    lock_reason: Optional[str] = None
     created_at: Optional[str] = None
 
 class Token(BaseModel):

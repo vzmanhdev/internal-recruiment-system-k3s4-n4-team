@@ -1,5 +1,6 @@
 import { apiRequest } from "@/lib/api-client";
 import { clearStoredSession, saveSessionExpiration } from "../lib/session";
+import { saveAuthSession } from "../lib/auth-session";
 
 export interface AuthResponse {
   access_token: string;
@@ -45,7 +46,7 @@ export const authService = {
 
     if (res.access_token) {
       localStorage.setItem("access_token", res.access_token);
-      localStorage.setItem("user_info", JSON.stringify(res.user));
+      saveAuthSession(res.user);
       saveSessionExpiration(res.access_token);
     }
     return res;
