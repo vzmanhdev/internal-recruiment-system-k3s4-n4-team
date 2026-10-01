@@ -42,6 +42,18 @@ class ChangePasswordRequest(BaseModel):
             raise ValueError("Mật khẩu mới phải gồm ít nhất một chữ và một số")
         return value
 
+class ProfileUpdateRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100)
+    phone: Optional[str] = Field(None, max_length=20)
+    avatar_url: Optional[str] = Field(None, max_length=4_000_000)
+
+    @field_validator("phone")
+    @classmethod
+    def validate_vietnam_phone(cls, value: Optional[str]) -> Optional[str]:
+        if value and not re.fullmatch(r"(?:\+84|0)(?:3|5|7|8|9)\d{8}", value.replace(" ", "")):
+            raise ValueError("Số điện thoại Việt Nam không hợp lệ")
+        return value
+
 class UserResponse(BaseModel):
     id: int
     email: str
@@ -52,6 +64,7 @@ class UserResponse(BaseModel):
     is_active: bool
     account_status: str = "active"
     lock_reason: Optional[str] = None
+    avatar_url: Optional[str] = None
     created_at: Optional[str] = None
 
 class Token(BaseModel):

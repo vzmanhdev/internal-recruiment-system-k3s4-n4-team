@@ -28,6 +28,7 @@ class CompetencyCreate(BaseModel):
     category: str = Field(..., min_length=2, max_length=80)
     description: Optional[str] = None
     required_level: int = Field(3, ge=1, le=5)
+    weight: float = Field(0, ge=0, le=100)
     sort_order: int = Field(0, ge=0)
 
 class CategoryCreate(BaseModel):

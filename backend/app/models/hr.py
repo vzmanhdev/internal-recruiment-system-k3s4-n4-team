@@ -37,11 +37,12 @@ class Competency(Base):
     category = Column(String(80), nullable=False)
     description = Column(Text, nullable=True)
     required_level = Column(Integer, default=3, nullable=False)
+    weight = Column(Float, default=0, nullable=False)
     sort_order = Column(Integer, default=0, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 
     def to_dict(self):
-        return {"id": self.id, "name": self.name, "category": self.category, "description": self.description, "required_level": self.required_level, "sort_order": self.sort_order, "is_active": self.is_active}
+        return {"id": self.id, "name": self.name, "category": self.category, "description": self.description, "required_level": self.required_level, "weight": self.weight, "sort_order": self.sort_order, "is_active": self.is_active}
 
 class SharedCategory(Base):
     __tablename__ = "shared_categories"

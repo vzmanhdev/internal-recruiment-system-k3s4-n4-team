@@ -23,6 +23,11 @@ with engine.begin() as connection:
         connection.execute(text("UPDATE users SET account_status = 'pending' WHERE is_active = false"))
     if "lock_reason" not in user_columns:
         connection.execute(text("ALTER TABLE users ADD COLUMN lock_reason VARCHAR(500)"))
+    if "avatar_url" not in user_columns:
+        connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(4000000)"))
+    competency_columns = {column["name"] for column in inspect(engine).get_columns("competencies")}
+    if "weight" not in competency_columns:
+        connection.execute(text("ALTER TABLE competencies ADD COLUMN weight FLOAT NOT NULL DEFAULT 0"))
 
 app = FastAPI(
     title="Internal Recruitment System API",

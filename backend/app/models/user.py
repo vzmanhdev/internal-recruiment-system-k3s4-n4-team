@@ -14,6 +14,7 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     account_status = Column(String(20), default="active", nullable=False)
     lock_reason = Column(String(500), nullable=True)
+    avatar_url = Column(String(4000000), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):
@@ -27,5 +28,6 @@ class User(Base):
             "is_active": self.is_active,
             "account_status": self.account_status,
             "lock_reason": self.lock_reason,
+            "avatar_url": self.avatar_url,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }

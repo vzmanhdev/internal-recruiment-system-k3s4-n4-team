@@ -2,7 +2,7 @@ import { apiRequest } from "@/lib/api-client";
 
 export interface Department { id:number; name:string; code:string; parent_id:number|null; sort_order:number; is_active:boolean; }
 export interface JobTitle { id:number; name:string; department_id:number|null; level:string; min_salary:number; max_salary:number; description?:string; is_active:boolean; }
-export interface Competency { id:number; name:string; category:string; description?:string; required_level:number; sort_order:number; is_active:boolean; }
+export interface Competency { id:number; name:string; category:string; description?:string; required_level:number; weight?:number; sort_order:number; is_active:boolean; }
 export interface SharedCategory { id:number; category_type:string; name:string; sort_order:number; is_active:boolean; }
 
 export const hrService = {

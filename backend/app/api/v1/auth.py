@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_access_token, decode_access_token, create_password_reset_token, decode_password_reset_token, get_password_reset_subject
-from app.schemas.auth import ChangePasswordRequest, ForgotPasswordResponse, RegistrationResponse, ResetPasswordRequest, UserRegister, UserLogin, ForgotPasswordRequest, Token, UserResponse, ErrorResponse
+from app.schemas.auth import ChangePasswordRequest, ForgotPasswordResponse, ProfileUpdateRequest, RegistrationResponse, ResetPasswordRequest, UserRegister, UserLogin, ForgotPasswordRequest, Token, UserResponse, ErrorResponse
 from app.services.email import send_password_reset_email
 
 router = APIRouter()
@@ -263,4 +263,18 @@ def get_me(authorization: Optional[str] = Header(None), db: Session = Depends(ge
             detail="Không tìm thấy người dùng"
         )
 
+    return user.to_dict()
+
+@router.put("/me", response_model=UserResponse)
+def update_me(payload: ProfileUpdateRequest, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
+    user_id = decode_access_token(authorization.split(" ", 1)[1])
+    user = db.query(User).filter(User.id == int(user_id)).first() if user_id else None
+    if not user:
+        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
+    user.full_name = payload.full_name.strip()
+    user.phone = payload.phone.replace(" ", "") if payload.phone else None
+    user.avatar_url = payload.avatar_url
+    db.commit(); db.refresh(user)
     return user.to_dict()

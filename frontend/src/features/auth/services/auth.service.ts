@@ -12,6 +12,7 @@ export interface AuthResponse {
     phone?: string;
     role: string;
     is_active: boolean;
+    avatar_url?: string;
     created_at?: string;
   };
 }
@@ -63,6 +64,13 @@ export const authService = {
     return await apiRequest("/auth/me", {
       method: "GET",
     });
+  },
+
+  async updateProfile(payload: {full_name:string; phone?:string; avatar_url?:string}) {
+    const user = await apiRequest<AuthResponse["user"]>("/auth/me", {method:"PUT", body:JSON.stringify(payload)});
+    saveAuthSession(user);
+    localStorage.setItem("user_info", JSON.stringify(user));
+    return user;
   },
 
   async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
