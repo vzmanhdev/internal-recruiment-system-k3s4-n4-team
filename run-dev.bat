@@ -1,6 +1,6 @@
 @echo off
 echo ===================================================
-echo   STARTING BACKEND & FRONTEND DEVELOPMENT SERVERS
+echo   STARTING BACKEND ^& FRONTEND DEVELOPMENT SERVERS
 echo ===================================================
 echo.
 
