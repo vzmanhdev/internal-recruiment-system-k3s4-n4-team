@@ -1,12 +1,277 @@
 "use client";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icons";
-import { authService } from "../services/auth.service";
-import type { FormStatus } from "../types/auth.types";
-import { PasswordInput } from "./PasswordInput";
-import { saveAuthSession } from "../lib/auth-session";
 
-export function LoginForm(){const router=useRouter();const [status,setStatus]=useState<FormStatus>("idle");const [message,setMessage]=useState("");async function submit(event:React.FormEvent<HTMLFormElement>){event.preventDefault();const form=new FormData(event.currentTarget);const identifier=String(form.get("identifier")??"").trim();if(!identifier){setStatus("error");setMessage("Vui lòng nhập email hoặc mã nhân viên.");return}setStatus("submitting");setMessage("");try{await authService.login({identifier,password:String(form.get("password")),rememberMe:form.get("rememberMe")==="on"});saveAuthSession({displayName:identifier.includes("@")?"Nhân viên nội bộ":identifier});setStatus("success");setMessage("Đăng nhập thành công. Đang chuyển đến trang chủ…");router.push("/");}catch{setStatus("error");setMessage("Không thể đăng nhập. Vui lòng thử lại.")}}return <div className="auth-card"><Link className="auth-brand" href="/"><span className="brand__icon"><Icon name="people"/></span><strong>TUYỂN DỤNG NỘI BỘ</strong><small>Phát triển cùng những con người tuyệt vời</small></Link><div className="short-line"/><h2>Chào mừng trở lại</h2><p>Đăng nhập để khám phá những cơ hội phát triển trong chính tổ chức của bạn.</p><form onSubmit={submit} noValidate><label className="field" htmlFor="identifier"><span>Email hoặc mã nhân viên</span><span className="input-wrap"><Icon name="mail"/><input id="identifier" name="identifier" autoComplete="username" placeholder="Nhập email hoặc mã nhân viên" required/></span></label><PasswordInput id="password" name="password" label="Mật khẩu" autoComplete="current-password"/><div className="form-row"><label className="checkbox"><input type="checkbox" name="rememberMe"/> Ghi nhớ đăng nhập</label><a href="#">Quên mật khẩu?</a></div>{message&&<p className={`form-message form-message--${status}`} role="status">{message}</p>}<Button type="submit" disabled={status==="submitting"}>{status==="submitting"?"Đang đăng nhập…":<>Đăng nhập <Icon name="arrow"/></>}</Button></form><div className="auth-divider"><span>hoặc</span></div><p className="auth-footer">Chưa có tài khoản? <Link href="/register">Đăng ký</Link></p></div>}
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Mail, Lock, ArrowRight } from "lucide-react";
+import { Input } from "@/components/ui/Input";
+import { PasswordInput } from "@/components/ui/PasswordInput";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Button } from "@/components/ui/Button";
+import { Alert } from "@/components/ui/Alert";
+import { BrandLogo } from "@/components/layout/BrandLogo";
+import { authService } from "../services/auth.service";
+import { ApiError } from "@/lib/api-client";
+import {
+  formatLockDuration,
+  getLoginLockState,
+  recordFailedLogin,
+  resetLoginAttempts,
+} from "../lib/login-security";
+
+export function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [successMsg, setSuccessMsg] = useState("");
+  const [lockRemainingSeconds, setLockRemainingSeconds] = useState(0);
+
+  const sessionNotice = searchParams.get("reason") === "session-expired"
+    ? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục."
+    : "";
+
+  useEffect(() => {
+    if (lockRemainingSeconds <= 0) return;
+    const intervalId = window.setInterval(() => {
+      const lock = getLoginLockState(email);
+      setLockRemainingSeconds(lock.remainingSeconds);
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [email, lockRemainingSeconds]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg("");
+    setFieldErrors({});
+    setSuccessMsg("");
+
+    const currentLock = getLoginLockState(email);
+    if (currentLock.isLocked) {
+      setLockRemainingSeconds(currentLock.remainingSeconds);
+      setErrorMsg(`Tạm khóa đăng nhập do nhập sai quá 5 lần. Vui lòng thử lại sau ${formatLockDuration(currentLock.remainingSeconds)}.`);
+      return;
+    }
+
+    const errors: Record<string, string> = {};
+
+    if (!email.trim()) {
+      errors["email"] = "Vui lòng nhập email công việc.";
+    } else if (!email.includes("@")) {
+      errors["email"] = "Email không đúng định dạng (Ví dụ: name@company.com).";
+    }
+
+    if (!password) {
+      errors["password"] = "Vui lòng nhập mật khẩu.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setErrorMsg("Vui lòng nhập đầy đủ và chính xác thông tin đăng nhập.");
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const auth = await authService.login({
+        email: email.trim(),
+        password: password,
+      });
+
+      resetLoginAttempts(email);
+      setSuccessMsg("Đăng nhập thành công! Đang chuyển hướng...");
+      const roles = auth.user.roles ?? auth.user.role.split(",").filter(Boolean);
+      const destination = roles.includes("admin")
+        ? "/admin/dashboard"
+        : roles.includes("hr_manager")
+          ? "/hr/dashboard"
+          : "/";
+      setTimeout(() => {
+        router.push(destination);
+      }, 1200);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        if (err.message.toLowerCase().includes("chờ") && err.message.toLowerCase().includes("phê duyệt")) {
+          setErrorMsg("Tài khoản đang chờ Quản trị viên phê duyệt. Sau khi được chấp nhận, bạn có thể đăng nhập bình thường.");
+        } else if (err.status === 400 || err.status === 401) {
+          const lock = recordFailedLogin(email);
+          setLockRemainingSeconds(lock.remainingSeconds);
+          if (lock.isLocked) {
+            setErrorMsg(`Bạn đã nhập sai 5 lần. Giao diện đăng nhập bị khóa trong 15 phút (${formatLockDuration(lock.remainingSeconds)}).`);
+          } else {
+            setErrorMsg(`Email hoặc mật khẩu không chính xác. Bạn còn ${lock.remainingAttempts} lần thử.`);
+          }
+        } else {
+          setErrorMsg(err.message);
+        }
+      } else {
+        setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại dịch vụ Backend.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-[440px] bg-white rounded-[20px] border border-[#E2E8F0] shadow-[0_20px_50px_rgba(15,23,42,0.08)] p-7 sm:p-[36px] sm:py-[40px] space-y-0">
+      {/* Mobile Compact Brand Header */}
+      <div className="lg:hidden flex justify-center mb-6">
+        <BrandLogo size="md" href="/" />
+      </div>
+
+      {/* Card Header: Title & Subtitle */}
+      <div className="text-center mb-7">
+        <h2 className="text-[28px] font-bold text-[#0F172A] tracking-tight leading-tight">
+          Chào mừng trở lại
+        </h2>
+        <p className="text-[14px] text-[#64748B] max-w-[320px] mx-auto mt-2 leading-relaxed">
+          Đăng nhập để tiếp tục sử dụng hệ thống tuyển dụng nội bộ
+        </p>
+      </div>
+
+      {(errorMsg || sessionNotice) && (
+        <div className="mb-5">
+          <Alert variant="error" title="Đăng nhập không thành công">
+            {errorMsg || sessionNotice}
+          </Alert>
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="mb-5">
+          <Alert variant="success" title="Thông báo">
+            {successMsg}
+          </Alert>
+        </div>
+      )}
+
+      {/* Direct Email + Password Form */}
+      <form onSubmit={handleSubmit} className="space-y-[20px]">
+        {/* Email Field */}
+        <Input
+          label="Email"
+          type="email"
+          placeholder="Nhập email công việc"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            const lock = getLoginLockState(e.target.value);
+            setLockRemainingSeconds(lock.remainingSeconds);
+            if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: "" }));
+          }}
+          leftIcon={<Mail className="w-[18px] h-[18px] text-slate-400" />}
+          autoComplete="email"
+          error={fieldErrors.email}
+          required
+        />
+
+        {/* Password Field */}
+        <PasswordInput
+          label="Mật khẩu"
+          placeholder="Nhập mật khẩu"
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: "" }));
+          }}
+          leftIcon={<Lock className="w-[18px] h-[18px] text-slate-400" />}
+          autoComplete="current-password"
+          error={fieldErrors.password}
+          required
+        />
+
+        {/* Options Row: Remember Me + Forgot Password */}
+        <div className="flex items-center justify-between text-[14px] pt-1 pb-1">
+          <Checkbox
+            label="Ghi nhớ đăng nhập"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+          />
+          <Link
+            href="/forgot-password"
+            className="font-medium text-[#3B82F6] hover:text-[#2563EB] transition-colors hover:underline"
+          >
+            Quên mật khẩu?
+          </Link>
+        </div>
+
+        {/* Primary Login Button */}
+        <div className="pt-[4px]">
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            isLoading={isLoading}
+            disabled={lockRemainingSeconds > 0}
+            rightIcon={<ArrowRight className="w-[18px] h-[18px]" />}
+            className="w-full h-[48px] bg-[#3B82F6] hover:bg-[#2563EB] active:bg-[#1D4ED8] text-[16px] font-semibold text-white rounded-[12px] shadow-md shadow-blue-500/10 disabled:opacity-60 flex-row whitespace-nowrap"
+          >
+            {lockRemainingSeconds > 0 ? `Đã khóa ${formatLockDuration(lockRemainingSeconds)}` : "Đăng nhập"}
+          </Button>
+        </div>
+
+        {/* Divider: Line - HOẶC ĐĂNG NHẬP VỚI - Line */}
+        <div className="relative pt-[4px] pb-[4px]">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className="w-full border-t border-[#E2E8F0]" />
+          </div>
+          <div className="relative flex justify-center text-[11px] font-semibold uppercase tracking-wider">
+            <span className="bg-white px-3 text-[#94A3B8]">
+              HOẶC ĐĂNG NHẬP VỚI
+            </span>
+          </div>
+        </div>
+
+        {/* Google SSO Button */}
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsLoading(true);
+              setTimeout(() => setIsLoading(false), 1000);
+            }}
+            className="w-full h-[48px] border border-[#E2E8F0] rounded-[12px] bg-white hover:bg-[#F8FAFC] transition-all flex items-center justify-center gap-[10px] text-[15px] font-medium text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-blue-100"
+          >
+            <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+              />
+            </svg>
+            <span>Đăng nhập với Google</span>
+          </button>
+        </div>
+      </form>
+
+      {/* Footer Register Link */}
+      <div className="text-center pt-5 mt-[24px] border-t border-[#F1F5F9]">
+        <p className="text-[13px] sm:text-[14px] text-[#64748B]">
+          Chưa có tài khoản?{" "}
+          <Link
+            href="/register"
+            className="font-semibold text-[#3B82F6] hover:text-[#2563EB] transition-colors hover:underline"
+          >
+            Đăng ký ngay
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
