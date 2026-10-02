@@ -33,6 +33,7 @@ import {
   Phone,
   Briefcase
 } from "lucide-react";
+import { UserProfileModal } from "@/components/UserProfileModal";
 
 // Types
 export interface UserAccount {
@@ -197,6 +198,7 @@ export default function AdminDashboardPage() {
   // Admin Profile & Dropdown State
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState<"profile" | "security">("profile");
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
 
   const [adminProfile, setAdminProfile] = useState({
@@ -673,6 +675,7 @@ export default function AdminDashboardPage() {
                       type="button"
                       onClick={() => {
                         setIsProfileDropdownOpen(false);
+                        setProfileModalTab("profile");
                         setIsProfileModalOpen(true);
                       }}
                       className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors text-left cursor-pointer"
@@ -681,23 +684,18 @@ export default function AdminDashboardPage() {
                       <span>Hồ sơ cá nhân</span>
                     </button>
 
-                    {/* Tùy chọn 3: Chỉnh sửa hồ sơ */}
+                    {/* Tùy chọn 3: Đổi mật khẩu & Bảo mật */}
                     <button
                       type="button"
                       onClick={() => {
                         setIsProfileDropdownOpen(false);
-                        setEditProfileForm({
-                          name: adminProfile.name,
-                          phone: adminProfile.phone,
-                          department: adminProfile.department,
-                          bio: adminProfile.bio,
-                        });
-                        setIsEditProfileModalOpen(true);
+                        setProfileModalTab("security");
+                        setIsProfileModalOpen(true);
                       }}
                       className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors text-left cursor-pointer"
                     >
-                      <Edit3 className="w-4 h-4 text-slate-400" />
-                      <span>Chỉnh sửa hồ sơ</span>
+                      <ShieldCheck className="w-4 h-4 text-slate-400" />
+                      <span>Đổi mật khẩu & Bảo mật</span>
                     </button>
                   </div>
 
@@ -1799,137 +1797,41 @@ export default function AdminDashboardPage() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 5: HỒ SƠ CÁ NHÂN (PERSONAL PROFILE) */}
       {/* ========================================================================= */}
-      {isProfileModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-[24px] border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-[#4285F4] flex items-center justify-center">
-                  <UserIcon className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">
-                    Hồ Sơ Quản Trị Viên
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Thông tin tài khoản System Administrator
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsProfileModalOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              {/* Avatar & Main info */}
-              <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 border border-gray-100">
-                <div
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="relative group cursor-pointer shrink-0"
-                  title="Nhấp để thay đổi ảnh đại diện"
-                >
-                  {adminProfile.avatarUrl ? (
-                    <img
-                      src={adminProfile.avatarUrl}
-                      alt="Avatar"
-                      className="w-16 h-16 rounded-2xl object-cover ring-2 ring-blue-200 shadow-sm"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-2xl bg-[#4285F4] text-white flex items-center justify-center font-bold text-xl shadow-sm">
-                      AS
-                    </div>
-                  )}
-                  <div className="absolute inset-0 bg-black/40 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Camera className="w-5 h-5 text-white" />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-base font-bold text-slate-900">{adminProfile.name}</h4>
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" title="Trực tuyến"></span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">{adminProfile.email}</p>
-                  <span className="inline-block mt-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-50 text-[#4285F4] border border-blue-100">
-                    {adminProfile.role}
-                  </span>
-                </div>
-              </div>
-
-              {/* Details Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div className="p-3 bg-slate-50/60 rounded-xl border border-gray-100">
-                  <span className="text-slate-400 block font-medium">Số điện thoại:</span>
-                  <span className="text-slate-800 font-semibold text-sm mt-0.5 block">{adminProfile.phone}</span>
-                </div>
-                <div className="p-3 bg-slate-50/60 rounded-xl border border-gray-100">
-                  <span className="text-slate-400 block font-medium">Phòng ban / Đơn vị:</span>
-                  <span className="text-slate-800 font-semibold text-sm mt-0.5 block">{adminProfile.department}</span>
-                </div>
-                <div className="p-3 bg-slate-50/60 rounded-xl border border-gray-100">
-                  <span className="text-slate-400 block font-medium">Trạng thái tài khoản:</span>
-                  <span className="text-emerald-600 font-semibold text-sm mt-0.5 inline-flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Hoạt động (Active)
-                  </span>
-                </div>
-                <div className="p-3 bg-slate-50/60 rounded-xl border border-gray-100">
-                  <span className="text-slate-400 block font-medium">Quyền hạn truy cập:</span>
-                  <span className="text-[#4285F4] font-semibold text-sm mt-0.5 block">Toàn quyền hệ thống</span>
-                </div>
-              </div>
-
-              {/* Bio / Description */}
-              <div className="p-3.5 bg-slate-50/60 rounded-xl border border-gray-100 text-xs">
-                <span className="text-slate-400 block font-medium mb-1">Mô tả trách nhiệm:</span>
-                <p className="text-slate-600 leading-relaxed">{adminProfile.bio}</p>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="pt-2 flex items-center justify-between border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => avatarInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 text-xs font-semibold text-[#4285F4] hover:underline cursor-pointer"
-                >
-                  <Camera className="w-3.5 h-3.5" />
-                  Upload ảnh mới
-                </button>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsProfileModalOpen(false)}
-                    className="px-5 py-2.5 rounded-full border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors cursor-pointer"
-                  >
-                    Đóng
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsProfileModalOpen(false);
-                      setEditProfileForm({
-                        name: adminProfile.name,
-                        phone: adminProfile.phone,
-                        department: adminProfile.department,
-                        bio: adminProfile.bio,
-                      });
-                      setIsEditProfileModalOpen(true);
-                    }}
-                    className="bg-[#4285F4] text-white px-6 py-2.5 rounded-full hover:bg-blue-600 transition-all font-medium text-sm shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    <span>Chỉnh sửa hồ sơ</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODAL 5: QUẢN LÝ HỒ SƠ CÁ NHÂN & ĐỔI MẬT KHẨU (REUSABLE USER PROFILE MODAL) */}
+      {/* ========================================================================= */}
+      <UserProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        userRole="Quản trị viên cấp cao (System Administrator)"
+        initialTab={profileModalTab}
+        initialData={{
+          employeeCode: "ADM-2026-001",
+          name: adminProfile.name,
+          email: adminProfile.email,
+          role: adminProfile.role,
+          department: adminProfile.department,
+          phone: adminProfile.phone,
+          avatarUrl: adminProfile.avatarUrl,
+          bio: adminProfile.bio,
+          gender: "Nam",
+          dateOfBirth: "1988-12-10",
+        }}
+        onSaveProfile={(updated) => {
+          setAdminProfile((prev) => ({
+            ...prev,
+            name: updated.name,
+            phone: updated.phone,
+            avatarUrl: updated.avatarUrl || prev.avatarUrl,
+            bio: updated.bio || prev.bio,
+          }));
+          showToast("Đã cập nhật thông tin Quản trị viên thành công!");
+        }}
+        onChangePassword={async ({ currentPass, newPass }) => {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          showToast("Đổi mật khẩu Quản trị viên thành công! Mật khẩu mới đã được lưu.");
+        }}
+      />
 
       {/* ========================================================================= */}
       {/* MODAL 6: CHỈNH SỬA HỒ SƠ (EDIT PROFILE) */}
