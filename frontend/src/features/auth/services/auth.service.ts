@@ -11,6 +11,7 @@ export interface AuthResponse {
     full_name: string;
     phone?: string;
     role: string;
+    roles?: string[];
     is_active: boolean;
     avatar_url?: string;
     created_at?: string;

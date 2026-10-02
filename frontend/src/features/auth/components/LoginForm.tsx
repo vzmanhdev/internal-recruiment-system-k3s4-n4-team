@@ -78,15 +78,21 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
-      await authService.login({
+      const auth = await authService.login({
         email: email.trim(),
         password: password,
       });
 
       resetLoginAttempts(email);
       setSuccessMsg("Đăng nhập thành công! Đang chuyển hướng...");
+      const roles = auth.user.roles ?? auth.user.role.split(",").filter(Boolean);
+      const destination = roles.includes("admin")
+        ? "/admin/dashboard"
+        : roles.includes("hr_manager")
+          ? "/hr/dashboard"
+          : "/";
       setTimeout(() => {
-        router.push("/");
+        router.push(destination);
       }, 1200);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
