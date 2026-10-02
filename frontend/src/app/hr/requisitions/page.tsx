@@ -1,2 +1,5 @@
-import { RecruitmentRequestForm } from "@/features/hr/components/ContentAndRecruitment";
-export default function HrRequisitionsPage(){return <RecruitmentRequestForm/>;}
+import { RequisitionManagement } from "@/features/hr/components/RequisitionManagement";
+
+export default function HrRequisitionsPage() {
+  return <RequisitionManagement />;
+}

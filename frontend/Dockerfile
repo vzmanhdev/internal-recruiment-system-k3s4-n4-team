@@ -1,31 +1,26 @@
-FROM node:18-alpine AS base
+FROM node:20-alpine
 
-# Install dependencies only when needed
-FROM base AS deps
 WORKDIR /app
+
+# Copy package descriptors & install dependencies
 COPY package.json package-lock.json* ./
 RUN npm ci
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+# Copy application source code
 COPY . .
-RUN npm run build
 
-# Production image, copy all the files and run next
-FROM base AS runner
-WORKDIR /app
-
+# Set API Endpoint for build time
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NODE_ENV=production
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Build Next.js application
+RUN npm run build
 
+# Expose Next.js server port
 EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+CMD ["npm", "run", "start"]

@@ -16,3 +16,7 @@ export const hrService = {
   createCategory:(payload:Omit<SharedCategory,"id"|"is_active">)=>apiRequest<SharedCategory>("/hr/categories",{method:"POST",body:JSON.stringify(payload)}),
   reorderCategories:(ids:number[])=>apiRequest<SharedCategory[]>("/hr/categories/reorder",{method:"PUT",body:JSON.stringify({ids})}),
 };
+
+export const fetchDepartments = () => hrService.departments();
+export const fetchJobTitles = () => hrService.jobTitles();
+
