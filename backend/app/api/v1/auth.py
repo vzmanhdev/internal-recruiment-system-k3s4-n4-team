@@ -1,14 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from datetime import timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.db.session import get_db
 from app.models.user import User
+from app.models.system import SystemSetting
 from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_access_token, decode_access_token, create_password_reset_token, decode_password_reset_token, get_password_reset_subject
 from app.schemas.auth import ChangePasswordRequest, ForgotPasswordResponse, ProfileUpdateRequest, RegistrationResponse, ResetPasswordRequest, UserRegister, UserLogin, ForgotPasswordRequest, Token, UserResponse, ErrorResponse
 from app.services.email import send_password_reset_email
+from app.services.audit import write_audit_log
 
 router = APIRouter()
 
@@ -21,7 +25,10 @@ router = APIRouter()
         422: {"model": ErrorResponse, "description": "Sai định dạng dữ liệu"}
     }
 )
-def register(user_in: UserRegister, db: Session = Depends(get_db)):
+def register(user_in: UserRegister, request: Request, db: Session = Depends(get_db)):
+    system_settings = db.query(SystemSetting).filter(SystemSetting.id == 1).first()
+    if system_settings and not system_settings.allow_registration:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Hệ thống đang tạm dừng đăng ký tài khoản mới")
     # Check if email exists
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
@@ -36,6 +43,7 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         )
 
     # Create new user
+    requires_approval = system_settings.require_approval if system_settings else True
     hashed_pwd = hash_password(user_in.password)
     new_user = User(
         email=user_in.email,
@@ -45,15 +53,16 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         # Public registration always creates a normal employee account.
         # Elevated roles must be assigned separately by an administrator.
         role="employee",
-        is_active=False,
-        account_status="pending"
+        is_active=not requires_approval,
+        account_status="pending" if requires_approval else "active"
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
+    write_audit_log(db, action="Đăng ký tài khoản", module="Xác thực (Auth)", request=request, user=new_user, details="Tài khoản chờ phê duyệt" if requires_approval else "Tài khoản được kích hoạt tự động")
     return {
-        "message": "Yêu cầu đăng ký đã được gửi. Tài khoản sẽ sử dụng được sau khi Quản trị viên phê duyệt.",
+        "message": "Yêu cầu đăng ký đã được gửi. Tài khoản sẽ sử dụng được sau khi Quản trị viên phê duyệt." if requires_approval else "Đăng ký thành công. Bạn có thể đăng nhập ngay.",
         "user": new_user.to_dict()
     }
 
@@ -64,10 +73,11 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         400: {"model": ErrorResponse, "description": "Email không tồn tại hoặc sai mật khẩu"}
     }
 )
-def login(user_in: UserLogin, db: Session = Depends(get_db)):
+def login(user_in: UserLogin, request: Request, db: Session = Depends(get_db)):
     # Find user by email
     user = db.query(User).filter(User.email == user_in.email).first()
     if not user:
+        write_audit_log(db, action="Đăng nhập thất bại", module="Xác thực (Auth)", request=request, email=user_in.email, status="warning", details="Email không tồn tại")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -80,6 +90,7 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
 
     # Verify password
     if not verify_password(user_in.password, user.hashed_password):
+        write_audit_log(db, action="Đăng nhập thất bại", module="Xác thực (Auth)", request=request, user=user, status="warning", details="Mật khẩu không chính xác")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -95,6 +106,7 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
             message = "Tài khoản đã bị khóa. Vui lòng liên hệ Quản trị viên."
         else:
             message = "Tài khoản đang chờ Quản trị viên phê duyệt. Vui lòng thử lại sau khi yêu cầu được chấp nhận."
+        write_audit_log(db, action="Đăng nhập bị từ chối", module="Xác thực (Auth)", request=request, user=user, status="warning", details=message)
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -106,7 +118,10 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
         )
 
     # Generate JWT token
-    access_token = create_access_token(subject=user.id)
+    system_settings = db.query(SystemSetting).filter(SystemSetting.id == 1).first()
+    timeout_minutes = system_settings.session_timeout if system_settings else settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    access_token = create_access_token(subject=user.id, expires_delta=timedelta(minutes=timeout_minutes))
+    write_audit_log(db, action="Đăng nhập hệ thống", module="Xác thực (Auth)", request=request, user=user, details="Đăng nhập thành công")
     
     return {
         "access_token": access_token,
@@ -222,8 +237,8 @@ def list_pending_users(authorization: Optional[str] = Header(None), db: Session 
     return [user.to_dict() for user in db.query(User).filter(User.account_status == "pending").order_by(User.created_at.desc()).all()]
 
 @router.post("/users/{user_id}/approve", response_model=UserResponse)
-def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    require_admin(authorization, db)
+def approve_user(user_id: int, request: Request, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    admin = require_admin(authorization, db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy yêu cầu đăng ký")
@@ -232,6 +247,7 @@ def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: 
     user.lock_reason = None
     db.commit()
     db.refresh(user)
+    write_audit_log(db, action="Phê duyệt tài khoản", module="Quản lý tài khoản", request=request, user=admin, details=user.email)
     return user.to_dict()
 
 @router.get(

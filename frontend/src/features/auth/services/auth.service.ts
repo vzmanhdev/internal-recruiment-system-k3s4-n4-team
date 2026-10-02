@@ -39,7 +39,7 @@ export const authService = {
   async login(payload: {
     email: string;
     password: string;
-  }): Promise<AuthResponse> {
+  }, rememberMe = false): Promise<AuthResponse> {
     const res = await apiRequest<AuthResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -47,6 +47,9 @@ export const authService = {
 
     if (res.access_token) {
       localStorage.setItem("access_token", res.access_token);
+      localStorage.setItem("auth_remember_me", String(rememberMe));
+      if (rememberMe) localStorage.setItem("remembered_login_email", payload.email);
+      else localStorage.removeItem("remembered_login_email");
       saveAuthSession(res.user);
       saveSessionExpiration(res.access_token);
     }
@@ -93,6 +96,7 @@ export const authService = {
   logout() {
     if (typeof window !== "undefined") {
       clearStoredSession();
+      localStorage.removeItem("auth_remember_me");
     }
   }
 };

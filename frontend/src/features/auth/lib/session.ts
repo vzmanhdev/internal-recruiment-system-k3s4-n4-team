@@ -17,6 +17,13 @@ export function saveSessionExpiration(token: string): void {
   if (expiresAt) window.localStorage.setItem("auth_expires_at", String(expiresAt));
 }
 
+export function getDashboardPath(role: string, roles?: string[]): string {
+  const allRoles = roles?.length ? roles : role.split(",").filter(Boolean);
+  if (allRoles.includes("admin")) return "/admin/dashboard";
+  if (allRoles.includes("hr_manager")) return "/hr/dashboard";
+  return "/dashboard";
+}
+
 export function clearStoredSession(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem("access_token");

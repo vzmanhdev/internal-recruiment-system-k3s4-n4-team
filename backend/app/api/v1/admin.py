@@ -1,7 +1,7 @@
 from math import ceil
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -10,10 +10,64 @@ from app.api.v1.auth import require_admin
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.user import User
+from app.models.system import AuditLog, SystemSetting
 from app.schemas.admin import AdminCreateUserRequest, LockUserRequest, PaginatedUsersResponse, UpdateRolesRequest
 from app.schemas.auth import UserResponse
+from app.schemas.system import SystemSettingsUpdate
+from app.services.audit import write_audit_log
 
 router = APIRouter()
+
+
+def get_or_create_settings(db: Session) -> SystemSetting:
+    current = db.query(SystemSetting).filter(SystemSetting.id == 1).first()
+    if not current:
+        current = SystemSetting(id=1)
+        db.add(current)
+        db.commit()
+        db.refresh(current)
+    return current
+
+
+@router.get("/settings")
+def get_settings(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    require_admin(authorization, db)
+    return get_or_create_settings(db).to_dict()
+
+
+@router.put("/settings")
+def update_settings(
+    payload: SystemSettingsUpdate,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    admin = require_admin(authorization, db)
+    current = get_or_create_settings(db)
+    for key, value in payload.model_dump().items():
+        setattr(current, key, value)
+    db.commit()
+    db.refresh(current)
+    write_audit_log(db, action="Cập nhật cấu hình hệ thống", module="Cấu hình", request=request, user=admin, details="Đã lưu các thiết lập hệ thống")
+    return current.to_dict()
+
+
+@router.get("/audit-logs")
+def list_audit_logs(
+    search: str = "",
+    module: str = "all",
+    limit: int = Query(200, ge=1, le=500),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    require_admin(authorization, db)
+    query = db.query(AuditLog)
+    if search.strip():
+        term = f"%{search.strip()}%"
+        query = query.filter(or_(AuditLog.actor.ilike(term), AuditLog.email.ilike(term), AuditLog.action.ilike(term)))
+    if module != "all":
+        query = query.filter(AuditLog.module == module)
+    return [item.to_dict() for item in query.order_by(AuditLog.created_at.desc()).limit(limit).all()]
 
 
 @router.get("/users", response_model=PaginatedUsersResponse)
@@ -45,10 +99,11 @@ def list_users(
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: AdminCreateUserRequest,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    require_admin(authorization, db)
+    admin = require_admin(authorization, db)
     if db.query(User).filter(User.email == payload.email).first():
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -66,6 +121,7 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+    write_audit_log(db, action="Tạo tài khoản", module="Quản lý tài khoản", request=request, user=admin, details=f"Đã tạo {user.email}")
     return user.to_dict()
 
 
@@ -73,6 +129,7 @@ def create_user(
 def update_roles(
     user_id: int,
     payload: UpdateRolesRequest,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
@@ -85,6 +142,7 @@ def update_roles(
     user.role = ",".join(payload.roles)
     db.commit()
     db.refresh(user)
+    write_audit_log(db, action="Cập nhật vai trò", module="Quản lý tài khoản", request=request, user=admin, details=f"{user.email}: {user.role}")
     return user.to_dict()
 
 
@@ -92,6 +150,7 @@ def update_roles(
 def lock_user(
     user_id: int,
     payload: LockUserRequest,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
@@ -106,16 +165,18 @@ def lock_user(
     user.lock_reason = payload.reason.strip()
     db.commit()
     db.refresh(user)
+    write_audit_log(db, action="Khóa tài khoản", module="Bảo mật", request=request, user=admin, status="warning", details=f"{user.email}: {user.lock_reason}")
     return user.to_dict()
 
 
 @router.post("/users/{user_id}/unlock", response_model=UserResponse)
 def unlock_user(
     user_id: int,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    require_admin(authorization, db)
+    admin = require_admin(authorization, db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
@@ -124,4 +185,5 @@ def unlock_user(
     user.lock_reason = None
     db.commit()
     db.refresh(user)
+    write_audit_log(db, action="Mở khóa tài khoản", module="Bảo mật", request=request, user=admin, details=user.email)
     return user.to_dict()

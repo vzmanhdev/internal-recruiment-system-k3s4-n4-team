@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
     APP_ENV: str = "development"
     FRONTEND_URL: str = "http://localhost:3000"
+    DEV_ADMIN_EMAIL: str = "admin@company.com"
+    DEV_ADMIN_PASSWORD: str = "Admin12345"
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""

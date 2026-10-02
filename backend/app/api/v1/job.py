@@ -1,7 +1,7 @@
 from datetime import datetime
 from math import ceil
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from app.schemas.job import (
     JobPostingUpdate,
     PaginatedJobPostingsResponse,
 )
+from app.services.audit import write_audit_log
 
 router = APIRouter()
 
@@ -138,6 +139,7 @@ def list_manage_jobs(
 @router.post("", response_model=JobPostingResponse, status_code=status.HTTP_201_CREATED)
 def create_job_posting(
     payload: JobPostingCreate,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
@@ -178,6 +180,7 @@ def create_job_posting(
     db.add(job)
     db.commit()
     db.refresh(job)
+    write_audit_log(db, action="Tạo vị trí tuyển dụng", module="Tin tuyển dụng", request=request, user=current_user, details=f"{job.code} - {job.title}")
 
     return job.to_dict()
 
@@ -185,10 +188,11 @@ def create_job_posting(
 def update_job_posting(
     job_id: int,
     payload: JobPostingUpdate,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    get_hr_user(authorization, db)
+    current_user = get_hr_user(authorization, db)
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
@@ -200,16 +204,18 @@ def update_job_posting(
     job.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(job)
+    write_audit_log(db, action="Cập nhật vị trí tuyển dụng", module="Tin tuyển dụng", request=request, user=current_user, details=f"{job.code} - {job.title}")
 
     return job.to_dict()
 
 @router.post("/{job_id}/publish", response_model=JobPostingResponse)
 def publish_job_posting(
     job_id: int,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    get_hr_user(authorization, db)
+    current_user = get_hr_user(authorization, db)
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
@@ -218,16 +224,18 @@ def publish_job_posting(
     job.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(job)
+    write_audit_log(db, action="Xuất bản vị trí tuyển dụng", module="Tin tuyển dụng", request=request, user=current_user, details=f"{job.code} - {job.title}")
 
     return job.to_dict()
 
 @router.post("/{job_id}/pause", response_model=JobPostingResponse)
 def pause_job_posting(
     job_id: int,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    get_hr_user(authorization, db)
+    current_user = get_hr_user(authorization, db)
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
@@ -236,19 +244,23 @@ def pause_job_posting(
     job.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(job)
+    write_audit_log(db, action="Tạm dừng vị trí tuyển dụng", module="Tin tuyển dụng", request=request, user=current_user, status="warning", details=f"{job.code} - {job.title}")
 
     return job.to_dict()
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_job_posting(
     job_id: int,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    get_hr_user(authorization, db)
+    current_user = get_hr_user(authorization, db)
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
 
+    details = f"{job.code} - {job.title}"
     db.delete(job)
     db.commit()
+    write_audit_log(db, action="Xóa vị trí tuyển dụng", module="Tin tuyển dụng", request=request, user=current_user, status="warning", details=details)

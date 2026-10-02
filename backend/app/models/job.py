@@ -1,7 +1,10 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean
+
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
+
 from app.db.session import Base
+
 
 class JobPosting(Base):
     __tablename__ = "job_postings"
@@ -17,20 +20,19 @@ class JobPosting(Base):
     max_salary = Column(Float, nullable=True)
     is_salary_negotiable = Column(Boolean, default=False, nullable=False)
     work_location = Column(String(255), default="Trụ sở chính", nullable=False)
-    employment_type = Column(String(50), default="full_time", nullable=False)  # full_time, part_time, contract, remote
+    employment_type = Column(String(50), default="full_time", nullable=False)
     experience_years = Column(String(50), default="1-3 năm", nullable=False)
     deadline = Column(DateTime, nullable=True)
     is_featured = Column(Boolean, default=False, nullable=False)
     job_description = Column(Text, nullable=True)
     requirements = Column(Text, nullable=True)
     benefits = Column(Text, nullable=True)
-    status = Column(String(50), default="published", nullable=False)  # draft, published, paused, expired
+    status = Column(String(50), default="published", nullable=False)
     views_count = Column(Integer, default=0, nullable=False)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    # Relationships
     requisition = relationship("JobRequisition", foreign_keys=[requisition_id])
     department = relationship("Department", foreign_keys=[department_id])
     job_title = relationship("JobTitle", foreign_keys=[job_title_id])
