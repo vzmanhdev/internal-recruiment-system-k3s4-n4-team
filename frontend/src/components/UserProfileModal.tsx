@@ -20,6 +20,8 @@ import {
   Save,
   Check
 } from "lucide-react";
+import { AvatarCropModal } from "@/components/AvatarCropModal";
+import { CroppedAvatarResult } from "@/lib/cropImage";
 
 export interface UserProfileData {
   employeeCode?: string;
@@ -30,7 +32,8 @@ export interface UserProfileData {
   phone: string;
   gender?: "Nam" | "Nữ" | "Khác";
   dateOfBirth?: string;
-  avatarUrl?: string;
+  avatarUrl?: string; // 500x500 bản chất lượng cao
+  thumbnailUrl?: string; // 150x150 bản thu nhỏ
   bio?: string;
 }
 
@@ -41,6 +44,7 @@ export interface UserProfileModalProps {
   initialTab?: "profile" | "security";
   initialData?: Partial<UserProfileData>;
   onSaveProfile?: (updatedData: UserProfileData) => void;
+  onAvatarChange?: (result: CroppedAvatarResult) => void;
   onChangePassword?: (data: {
     currentPass: string;
     newPass: string;
@@ -54,10 +58,15 @@ export function UserProfileModal({
   initialTab = "profile",
   initialData,
   onSaveProfile,
+  onAvatarChange,
   onChangePassword,
 }: UserProfileModalProps) {
   // Tabs: "profile" | "security"
   const [activeTab, setActiveTab] = useState<"profile" | "security">(initialTab);
+
+  // Avatar Cropper Modal State
+  const [selectedRawImage, setSelectedRawImage] = useState<string | null>(null);
+  const [isCropModalOpen, setIsCropModalOpen] = useState<boolean>(false);
 
   // Sync initialTab when modal opens
   useEffect(() => {
@@ -126,20 +135,49 @@ export function UserProfileModal({
   const hasLetterAndNumber =
     /[a-zA-Z]/.test(newPassword) && /[0-9]/.test(newPassword);
 
-  // Avatar Upload Handler
+  // Avatar Upload Handler: Kích hoạt chọn file và mở Modal Crop
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!file.type.startsWith("image/")) {
+        alert("Vui lòng chọn một tệp hình ảnh hợp lệ (JPG, PNG, WebP).");
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (event) => {
         const result = event.target?.result as string;
-        setProfile((prev) => ({
-          ...prev,
-          avatarUrl: result,
-        }));
+        setSelectedRawImage(result);
+        setIsCropModalOpen(true);
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // Áp dụng ảnh sau khi cắt và tạo thumbnail
+  const handleCropSave = (result: CroppedAvatarResult) => {
+    setProfile((prev) => {
+      const updated = {
+        ...prev,
+        avatarUrl: result.avatarUrl,
+        thumbnailUrl: result.thumbnailUrl,
+      };
+      if (onAvatarChange) {
+        onAvatarChange(result);
+      }
+      if (onSaveProfile) {
+        onSaveProfile(updated);
+      }
+      return updated;
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    setProfileSuccess(true);
+    setTimeout(() => {
+      setProfileSuccess(false);
+    }, 3500);
   };
 
   // Submit Profile Form
@@ -307,12 +345,16 @@ export function UserProfileModal({
               {/* Avatar Section */}
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 p-4 rounded-2xl bg-slate-50/80 border border-gray-100">
                 <div className="relative shrink-0">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-2 border-white shadow-md bg-gradient-to-tr from-[#4285F4] to-indigo-600 flex items-center justify-center text-white text-2xl font-bold">
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-2 border-white shadow-md bg-gradient-to-tr from-[#4285F4] to-indigo-600 flex items-center justify-center text-white text-2xl font-bold cursor-pointer group relative"
+                    title="Nhấp để tải lên và chỉnh sửa ảnh đại diện"
+                  >
                     {profile.avatarUrl ? (
                       <img
                         src={profile.avatarUrl}
                         alt={profile.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                       />
                     ) : (
                       <span>
@@ -323,6 +365,10 @@ export function UserProfileModal({
                           .join("")}
                       </span>
                     )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center rounded-2xl text-white gap-1">
+                      <Camera className="w-5 h-5 text-white" />
+                      <span className="text-[10px] font-semibold">Đổi ảnh</span>
+                    </div>
                   </div>
 
                   {/* Camera Upload Button */}
@@ -738,6 +784,20 @@ export function UserProfileModal({
           )}
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL CẮT & CHỈNH SỬA ẢNH ĐẠI DIỆN (AVATAR CROP MODAL) */}
+      {/* ========================================================================= */}
+      <AvatarCropModal
+        isOpen={isCropModalOpen}
+        imageSrc={selectedRawImage}
+        onClose={() => {
+          setIsCropModalOpen(false);
+          setSelectedRawImage(null);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }}
+        onCropSave={handleCropSave}
+      />
     </div>
   );
 }

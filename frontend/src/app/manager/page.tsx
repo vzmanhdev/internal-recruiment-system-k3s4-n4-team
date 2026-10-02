@@ -66,6 +66,8 @@ import {
   FileCheck
 } from "lucide-react";
 import { UserProfileModal } from "@/components/UserProfileModal";
+import { AvatarCropModal } from "@/components/AvatarCropModal";
+import { CroppedAvatarResult } from "@/lib/cropImage";
 
 // Types
 export interface JobRequisition {
@@ -1047,6 +1049,8 @@ export default function HiringManagerDashboardPage() {
   const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [selectedRawAvatar, setSelectedRawAvatar] = useState<string | null>(null);
+  const [isAvatarCropOpen, setIsAvatarCropOpen] = useState(false);
 
   // Modals State
   const [isCreateReqOpen, setIsCreateReqOpen] = useState(false);
@@ -1485,14 +1489,30 @@ III. QUYỀN LỢI ĐÃI NGỘ:
     }, 600);
   };
 
-  // Avatar Upload Handler
+  // Avatar Upload Handler: Đọc file và mở Modal Crop
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setManagerProfile((prev) => ({ ...prev, avatarUrl: url }));
-      showToast("Đã cập nhật ảnh đại diện mới thành công!");
+      if (!file.type.startsWith("image/")) {
+        showToast("Vui lòng chọn file hình ảnh hợp lệ!");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSelectedRawAvatar(event.target?.result as string);
+        setIsAvatarCropOpen(true);
+      };
+      reader.readAsDataURL(file);
     }
+  };
+
+  const handleAvatarCropComplete = (result: CroppedAvatarResult) => {
+    setManagerProfile((prev) => ({
+      ...prev,
+      avatarUrl: result.avatarUrl,
+    }));
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+    showToast("Đã cắt và cập nhật ảnh đại diện chuẩn thành công!");
   };
 
   // Filtered Requisitions (Danh sách chính: ẨN HOÀN TOÀN các yêu cầu có trạng thái "Draft")
@@ -5280,6 +5300,18 @@ III. QUYỀN LỢI ĐÃI NGỘ:
           await new Promise((resolve) => setTimeout(resolve, 600));
           showToast("Đổi mật khẩu thành công! Mật khẩu mới đã được lưu.");
         }}
+      />
+
+      {/* MODAL CẮT ẢNH CHO HEADER UPLOAD NHAH */}
+      <AvatarCropModal
+        isOpen={isAvatarCropOpen}
+        imageSrc={selectedRawAvatar}
+        onClose={() => {
+          setIsAvatarCropOpen(false);
+          setSelectedRawAvatar(null);
+          if (avatarInputRef.current) avatarInputRef.current.value = "";
+        }}
+        onCropSave={handleAvatarCropComplete}
       />
 
       {/* ========================================================================= */}

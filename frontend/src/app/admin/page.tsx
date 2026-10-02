@@ -34,6 +34,8 @@ import {
   Briefcase
 } from "lucide-react";
 import { UserProfileModal } from "@/components/UserProfileModal";
+import { AvatarCropModal } from "@/components/AvatarCropModal";
+import { CroppedAvatarResult } from "@/lib/cropImage";
 
 // Types
 export interface UserAccount {
@@ -220,6 +222,8 @@ export default function AdminDashboardPage() {
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
+  const [selectedRawAvatar, setSelectedRawAvatar] = useState<string | null>(null);
+  const [isAvatarCropOpen, setIsAvatarCropOpen] = useState(false);
 
   // Đồng bộ thông tin quản trị viên đăng nhập từ session/localStorage
   useEffect(() => {
@@ -303,14 +307,30 @@ export default function AdminDashboardPage() {
     }, 3500);
   };
 
-  // Avatar Upload Handler
+  // Avatar Upload Handler: Đọc file và mở Modal Crop
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setAdminProfile((prev) => ({ ...prev, avatarUrl: url }));
-      showToast("Đã cập nhật ảnh đại diện thành công!");
+      if (!file.type.startsWith("image/")) {
+        showToast("Vui lòng chọn file hình ảnh hợp lệ!");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSelectedRawAvatar(event.target?.result as string);
+        setIsAvatarCropOpen(true);
+      };
+      reader.readAsDataURL(file);
     }
+  };
+
+  const handleAvatarCropComplete = (result: CroppedAvatarResult) => {
+    setAdminProfile((prev) => ({
+      ...prev,
+      avatarUrl: result.avatarUrl,
+    }));
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+    showToast("Đã cắt và cập nhật ảnh đại diện Quản trị viên chuẩn thành công!");
   };
 
   // Logout Handler
@@ -1831,6 +1851,18 @@ export default function AdminDashboardPage() {
           await new Promise((resolve) => setTimeout(resolve, 600));
           showToast("Đổi mật khẩu Quản trị viên thành công! Mật khẩu mới đã được lưu.");
         }}
+      />
+
+      {/* MODAL CẮT ẢNH CHO HEADER UPLOAD NHANH */}
+      <AvatarCropModal
+        isOpen={isAvatarCropOpen}
+        imageSrc={selectedRawAvatar}
+        onClose={() => {
+          setIsAvatarCropOpen(false);
+          setSelectedRawAvatar(null);
+          if (avatarInputRef.current) avatarInputRef.current.value = "";
+        }}
+        onCropSave={handleAvatarCropComplete}
       />
 
       {/* ========================================================================= */}
