@@ -8,12 +8,31 @@ from sqlalchemy import inspect, text
 from app.db.session import engine, Base
 from app.models.user import User  # Register model
 from app.models.hr import Competency, Department, JobTitle, SharedCategory  # Register HR models
+from app.models.requisition import JobRequisition, RequisitionApprovalLog  # Register Requisition models
+from app.models.job import JobPosting  # Register JobPosting model
+from app.models.application import JobApplication, ApplicationLog  # Register Application models
+from app.models.referral_eval import InternalReferral, CandidateEvaluation  # Register Referral & Evaluation models
+from app.models.interview import InterviewSchedule, InterviewInterviewer  # Register Interview models
+from app.models.offer_onboarding import JobOffer, OnboardingChecklist  # Register Offer & Onboarding models
 from app.api.v1.auth import router as auth_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.hr import router as hr_router
+from app.api.v1.requisition import router as requisition_router
+from app.api.v1.job import router as job_router
+from app.api.v1.application import router as application_router
+from app.api.v1.referral_eval import router as referral_eval_router
+from app.api.v1.interview import router as interview_router
+from app.api.v1.offer_onboarding import router as offer_onboarding_router
+from app.api.v1.analytics import router as analytics_router
 
 # Create database tables automatically
 Base.metadata.create_all(bind=engine)
+
+
+
+
+
+
 
 # Lightweight compatibility migration for existing local databases.
 with engine.begin() as connection:
@@ -83,3 +102,17 @@ def health_check() -> Dict[str, str]:
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["Account administration"])
 app.include_router(hr_router, prefix="/api/v1/hr", tags=["Human resources"])
+app.include_router(requisition_router, prefix="/api/v1/requisitions", tags=["Job Requisitions"])
+app.include_router(job_router, prefix="/api/v1/jobs", tags=["Job Postings"])
+app.include_router(application_router, prefix="/api/v1/applications", tags=["Job Applications"])
+app.include_router(referral_eval_router, prefix="/api/v1", tags=["Internal Referrals & Evaluations"])
+app.include_router(interview_router, prefix="/api/v1", tags=["Interview Scheduling & Panel"])
+app.include_router(offer_onboarding_router, prefix="/api/v1", tags=["Offer Management & Onboarding"])
+app.include_router(analytics_router, prefix="/api/v1", tags=["Recruitment Analytics & Reports"])
+
+
+
+
+
+
+
