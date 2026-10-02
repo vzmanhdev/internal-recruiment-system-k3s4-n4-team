@@ -14,8 +14,18 @@ trap cleanup EXIT
 
 echo "Starting Backend on http://localhost:8000..."
 cd backend
-source venv/bin/activate
-uvicorn app.main:app --reload --port 8000 &
+if [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+    uvicorn app.main:app --reload --port 8000 &
+elif [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+    uvicorn app.main:app --reload --port 8000 &
+elif [ -f "venv/Scripts/python.exe" ]; then
+    echo "Phát hiện môi trường Windows venv. Đang khởi chạy uvicorn qua Windows Python..."
+    ./venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000 &
+else
+    echo "Lưu ý: Chưa tìm thấy môi trường ảo backend/venv cho Linux. Nếu cần chạy Backend, hãy tạo venv: python3 -m venv backend/venv && source backend/venv/bin/activate && pip install -r backend/requirements.txt"
+fi
 cd ..
 
 echo "Starting Frontend on http://localhost:3000..."
