@@ -67,6 +67,7 @@ import {
 } from "lucide-react";
 import { UserProfileModal } from "@/components/UserProfileModal";
 import { AvatarCropModal } from "@/components/AvatarCropModal";
+import { ApprovalWorkflowTimeline } from "@/components/ApprovalWorkflowTimeline";
 import { CroppedAvatarResult } from "@/lib/cropImage";
 
 // Types
@@ -184,9 +185,9 @@ const MOCK_APPROVAL_WORKFLOWS: Record<string, ApprovalWorkflowRecord> = {
         approverRole: "Trưởng phòng Nhân sự",
         department: "Phòng Quản Trị Nhân Sự (HR)",
         status: "APPROVED",
-        timestamp: "10/01/2026 - 14:30",
+        timestamp: "03/10/2026 - 14:30",
         comment:
-          "Đã kiểm tra ngân sách headcount, đồng ý tuyển. Mức lương 28 - 38 triệu nằm đúng khung dải lương quy chế ban hành của Khối Công nghệ.",
+          "Đồng ý tuyển, ngân sách hợp lệ. Mức lương 28 - 38 triệu nằm đúng khung dải lương quy chế ban hành của Khối Công nghệ.",
       },
       {
         id: "STP-03",
@@ -5443,7 +5444,7 @@ III. QUYỀN LỢI ĐÃI NGỘ:
       {/* MODAL 6: CHUỖI CẤP DUYỆT & NHẬT KÝ THẨM ĐỊNH (APPROVAL WORKFLOW & AUDIT TRAIL) */}
       {/* ========================================================================= */}
       {isApprovalModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-fadeIn font-sans">
           <div className="bg-white w-full max-w-4xl rounded-[24px] sm:rounded-[28px] shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh] my-auto">
             {/* Modal Header */}
             <div className="px-6 py-5 sm:px-8 sm:py-6 border-b border-gray-100 flex items-start justify-between bg-gradient-to-r from-slate-50 via-white to-blue-50/30">
@@ -5601,7 +5602,7 @@ III. QUYỀN LỢI ĐÃI NGỘ:
                 </div>
               </div>
 
-              {/* VERTICAL TIMELINE SECTION */}
+              {/* VERTICAL TIMELINE SECTION: CHUỖI CẤP DUYỆT & NHẬT KÝ THẨM ĐỊNH */}
               <div className="bg-white rounded-2xl p-4 sm:p-7 border border-slate-100 shadow-xs">
                 <div className="mb-6 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -5615,160 +5616,13 @@ III. QUYỀN LỢI ĐÃI NGỘ:
                   </span>
                 </div>
 
-                {/* Vertical Timeline container with continuous bar */}
-                <div className="relative pl-10 sm:pl-14 space-y-7">
-                  {/* Continuous Vertical Bar */}
-                  <div className="absolute left-[18px] sm:left-[22px] top-4 bottom-6 w-0.5 bg-slate-200" />
-
-                  {currentWorkflowRecord.steps.map((step, idx) => {
-                    const isApproved = step.status === "APPROVED";
-                    const isPending = step.status === "PENDING";
-                    const isNotReached = step.status === "NOT_REACHED";
-                    const isRejected = step.status === "REJECTED";
-
-                    return (
-                      <div key={step.id || idx} className="relative group">
-                        {/* Node / Icon on the vertical bar */}
-                        <div
-                          className={`absolute -left-[30px] sm:-left-[36px] top-1.5 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center ring-4 ring-white shadow-sm z-10 transition-transform duration-200 ${
-                            isApproved
-                              ? "bg-emerald-500 text-white shadow-emerald-500/30"
-                              : isPending
-                              ? "bg-[#4285F4] text-white shadow-blue-500/40 animate-pulse"
-                              : isRejected
-                              ? "bg-rose-500 text-white shadow-rose-500/30"
-                              : "bg-slate-100 border-2 border-slate-300 text-slate-400"
-                          }`}
-                        >
-                          {isApproved && <Check className="w-4 h-4 sm:w-4.5 sm:h-4.5 stroke-[2.8]" />}
-                          {isPending && <Circle className="w-3.5 h-3.5 fill-white text-white" />}
-                          {isRejected && <X className="w-4 h-4 sm:w-4.5 sm:h-4.5 stroke-[2.8]" />}
-                          {isNotReached && <Circle className="w-2.5 h-2.5 fill-slate-300 text-slate-300" />}
-                        </div>
-
-                        {/* Step Card Content */}
-                        <div
-                          className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 ${
-                            isApproved
-                              ? "bg-white border-emerald-100 hover:border-emerald-200 shadow-xs"
-                              : isPending
-                              ? "bg-blue-50/20 border-blue-200 shadow-sm ring-1 ring-blue-100"
-                              : isRejected
-                              ? "bg-rose-50/20 border-rose-200 shadow-xs"
-                              : "bg-slate-50/40 border-slate-200/70"
-                          }`}
-                        >
-                          {/* Step Header Row */}
-                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-2 border-b border-gray-100">
-                            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                              {step.stepName}
-                            </span>
-
-                            {/* Status Badge */}
-                            <div>
-                              {isApproved && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  <Check className="w-3 h-3 stroke-[2.5]" />
-                                  Đã duyệt
-                                </span>
-                              )}
-                              {isPending && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-[#4285F4] border border-blue-200">
-                                  <span className="w-2 h-2 rounded-full bg-[#4285F4] animate-ping inline-block" />
-                                  Đang chờ duyệt
-                                </span>
-                              )}
-                              {isNotReached && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
-                                  Chưa đến lượt
-                                </span>
-                              )}
-                              {isRejected && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                  <X className="w-3 h-3 stroke-[2.5]" />
-                                  Từ chối
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Approver & Role & Timestamp */}
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-3">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h5 className="font-bold text-slate-900 text-sm sm:text-base">
-                                  {step.approverName}
-                                </h5>
-                                <span className="text-xs text-slate-400">•</span>
-                                <span className="text-xs sm:text-sm font-semibold text-slate-700">
-                                  {step.approverRole}
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                                {step.department}
-                              </p>
-                            </div>
-
-                            {/* Detailed Timestamp */}
-                            <div className="flex items-center gap-1.5 text-xs text-slate-500 shrink-0 mt-1 sm:mt-0 font-medium">
-                              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                              <span
-                                className={
-                                  isPending
-                                    ? "text-[#4285F4] font-semibold"
-                                    : isNotReached
-                                    ? "text-slate-400"
-                                    : "text-slate-600"
-                                }
-                              >
-                                {step.timestamp}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Comment / Justification Box */}
-                          <div className="mt-2 p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-100/90">
-                            <p className="text-[11px] font-semibold text-slate-500 mb-1 flex items-center gap-1">
-                              <span>Ý kiến phê duyệt:</span>
-                            </p>
-                            <p className="text-xs sm:text-sm text-slate-700 italic leading-relaxed">
-                              "{step.comment}"
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Cryptographic Immutability Notice (Read-only guarantee) */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-start gap-3">
-                <div className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 shrink-0 shadow-xs">
-                  <Lock className="w-5 h-5 text-slate-600" />
-                </div>
-                <div className="space-y-1 text-xs">
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-slate-800">
-                      Bảo Toàn Toàn Vẹn Audit Trail (Chỉ Đọc - Read-Only)
-                    </p>
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100/80 text-emerald-800">
-                      Đã Khóa Niêm Phong
-                    </span>
-                  </div>
-                  <p className="text-slate-600 leading-relaxed">
-                    Hồ sơ và nhật ký duyệt được niêm phong mật mã số. Tuyệt đối không có chức năng Chỉnh sửa (Edit) hoặc Xóa (Delete) đối với bất kỳ bước nào trong lịch sử phê duyệt, đảm bảo tính tuân thủ pháp lý và minh bạch nội bộ.
-                  </p>
-                  <div className="pt-1 flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Hash className="w-3.5 h-3.5 text-slate-400" />
-                      Mã băm khối xác thực:
-                    </span>
-                    <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700 select-all">
-                      {currentWorkflowRecord.auditHash}
-                    </span>
-                  </div>
-                </div>
+                {/* COMPONENT: APPROVAL WORKFLOW & AUDIT TRAIL TIMELINE */}
+                <ApprovalWorkflowTimeline
+                  steps={currentWorkflowRecord.steps}
+                  auditHash={currentWorkflowRecord.auditHash}
+                  lastAuditedAt={currentWorkflowRecord.lastAuditedAt}
+                  bannerPosition="bottom"
+                />
               </div>
             </div>
 

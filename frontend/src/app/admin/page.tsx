@@ -43,21 +43,74 @@ export interface UserAccount {
   name: string;
   email: string;
   avatarColor: string;
-  role: "Admin" | "HR Manager" | "Recruiter" | "Interviewer" | "Employee";
+  roles: string[];
   department: string;
   status: "Active" | "Locked";
   lastLogin: string;
   createdAt: string;
 }
 
-// Initial mock data
+export interface RoleDefinition {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+export const AVAILABLE_ROLES: RoleDefinition[] = [
+  {
+    id: "System Admin",
+    name: "System Admin",
+    description: "Toàn quyền quản trị hệ thống, bảo mật & phân quyền",
+    color: "blue",
+    icon: Shield,
+  },
+  {
+    id: "HR Manager",
+    name: "HR Manager",
+    description: "Quản lý tuyển dụng & nhân sự cấp phòng ban",
+    color: "purple",
+    icon: Building,
+  },
+  {
+    id: "Hiring Manager",
+    name: "Hiring Manager",
+    description: "Quản lý đề xuất tuyển dụng & duyệt ứng viên chuyên môn",
+    color: "sky",
+    icon: Briefcase,
+  },
+  {
+    id: "Recruiter",
+    name: "Recruiter",
+    description: "Đăng tin tuyển dụng, săn đón & sàng lọc hồ sơ CV",
+    color: "emerald",
+    icon: Users,
+  },
+  {
+    id: "Interviewer",
+    name: "Interviewer",
+    description: "Tham gia hội đồng phỏng vấn & chấm điểm chuyên môn",
+    color: "amber",
+    icon: CheckCircle2,
+  },
+  {
+    id: "Employee",
+    name: "Employee",
+    description: "Cán bộ nhân viên, xem bảng tin & giới thiệu nhân tài",
+    color: "slate",
+    icon: UserIcon,
+  },
+];
+
+// Initial mock data (28 users để kiểm thử phân trang pageSize = 20)
 const INITIAL_USERS: UserAccount[] = [
   {
     id: "USR-001",
     name: "Admin System",
     email: "admin@company.com",
     avatarColor: "bg-[#4285F4]",
-    role: "Admin",
+    roles: ["System Admin"],
     department: "Ban Công Nghệ & Quản Trị Hệ Thống",
     status: "Active",
     lastLogin: "Vừa xong",
@@ -68,7 +121,7 @@ const INITIAL_USERS: UserAccount[] = [
     name: "Nguyễn Thị Thu Hà",
     email: "ha.nguyen@company.com",
     avatarColor: "bg-purple-500",
-    role: "HR Manager",
+    roles: ["HR Manager", "Recruiter"],
     department: "Phòng Nhân Sự & Văn Hóa",
     status: "Active",
     lastLogin: "10 phút trước",
@@ -79,7 +132,7 @@ const INITIAL_USERS: UserAccount[] = [
     name: "Trần Minh Quân",
     email: "quan.tran@company.com",
     avatarColor: "bg-emerald-500",
-    role: "Recruiter",
+    roles: ["Recruiter"],
     department: "Khối Thu Hút Nhân Tài (TA)",
     status: "Active",
     lastLogin: "1 giờ trước",
@@ -90,7 +143,7 @@ const INITIAL_USERS: UserAccount[] = [
     name: "Lê Hoàng Long",
     email: "long.le@company.com",
     avatarColor: "bg-amber-500",
-    role: "Interviewer",
+    roles: ["Hiring Manager", "Interviewer"],
     department: "Phòng Phát Triển Phần Mềm (Software)",
     status: "Active",
     lastLogin: "Hôm qua, 16:45",
@@ -101,7 +154,7 @@ const INITIAL_USERS: UserAccount[] = [
     name: "Phạm Đức Minh",
     email: "minh.pham@company.com",
     avatarColor: "bg-rose-500",
-    role: "Employee",
+    roles: ["Employee"],
     department: "Phòng Kinh Doanh & Dịch Vụ",
     status: "Locked",
     lastLogin: "20 ngày trước",
@@ -112,7 +165,7 @@ const INITIAL_USERS: UserAccount[] = [
     name: "Hoàng Mai Chi",
     email: "chi.hoang@company.com",
     avatarColor: "bg-indigo-500",
-    role: "Recruiter",
+    roles: ["Recruiter", "Interviewer"],
     department: "Khối Thu Hút Nhân Tài (TA)",
     status: "Active",
     lastLogin: "3 giờ trước",
@@ -123,7 +176,7 @@ const INITIAL_USERS: UserAccount[] = [
     name: "Đặng Tiến Dũng",
     email: "dung.dang@company.com",
     avatarColor: "bg-teal-500",
-    role: "Interviewer",
+    roles: ["Interviewer"],
     department: "Phòng Thiết Kế Trải Nghiệm (UI/UX)",
     status: "Active",
     lastLogin: "2 ngày trước",
@@ -134,11 +187,231 @@ const INITIAL_USERS: UserAccount[] = [
     name: "Vũ Khánh Linh",
     email: "linh.vu@company.com",
     avatarColor: "bg-slate-500",
-    role: "Employee",
+    roles: ["Employee"],
     department: "Phòng Tài Chính - Kế Toán",
     status: "Locked",
     lastLogin: "45 ngày trước",
     createdAt: "22/02/2026",
+  },
+  {
+    id: "USR-009",
+    name: "Bùi Quang Huy",
+    email: "huy.bui@company.com",
+    avatarColor: "bg-cyan-600",
+    roles: ["Hiring Manager"],
+    department: "Phòng Phát Triển Phần Mềm (Software)",
+    status: "Active",
+    lastLogin: "5 giờ trước",
+    createdAt: "01/03/2026",
+  },
+  {
+    id: "USR-010",
+    name: "Đỗ Phương Thảo",
+    email: "thao.do@company.com",
+    avatarColor: "bg-pink-500",
+    roles: ["HR Manager"],
+    department: "Phòng Nhân Sự & Văn Hóa",
+    status: "Active",
+    lastLogin: "Hôm qua, 09:30",
+    createdAt: "03/03/2026",
+  },
+  {
+    id: "USR-011",
+    name: "Ngô Quốc Bảo",
+    email: "bao.ngo@company.com",
+    avatarColor: "bg-blue-600",
+    roles: ["Recruiter"],
+    department: "Khối Thu Hút Nhân Tài (TA)",
+    status: "Active",
+    lastLogin: "30 phút trước",
+    createdAt: "05/03/2026",
+  },
+  {
+    id: "USR-012",
+    name: "Phan Mỹ Duyên",
+    email: "duyen.phan@company.com",
+    avatarColor: "bg-emerald-600",
+    roles: ["Employee", "Interviewer"],
+    department: "Phòng Thiết Kế Trải Nghiệm (UI/UX)",
+    status: "Active",
+    lastLogin: "4 ngày trước",
+    createdAt: "08/03/2026",
+  },
+  {
+    id: "USR-013",
+    name: "Trương Gia Bình",
+    email: "binh.truong@company.com",
+    avatarColor: "bg-amber-600",
+    roles: ["Hiring Manager"],
+    department: "Phòng Hạ Tầng & An Ninh Mạng",
+    status: "Active",
+    lastLogin: "Hôm nay, 08:15",
+    createdAt: "10/03/2026",
+  },
+  {
+    id: "USR-014",
+    name: "Mai Thanh Tú",
+    email: "tu.mai@company.com",
+    avatarColor: "bg-violet-500",
+    roles: ["Recruiter"],
+    department: "Khối Thu Hút Nhân Tài (TA)",
+    status: "Active",
+    lastLogin: "2 giờ trước",
+    createdAt: "12/03/2026",
+  },
+  {
+    id: "USR-015",
+    name: "Dương Hoài Nam",
+    email: "nam.duong@company.com",
+    avatarColor: "bg-orange-500",
+    roles: ["Interviewer"],
+    department: "Phòng Phát Triển Phần Mềm (Software)",
+    status: "Active",
+    lastLogin: "3 ngày trước",
+    createdAt: "14/03/2026",
+  },
+  {
+    id: "USR-016",
+    name: "Nguyễn Hải Yến",
+    email: "yen.nguyen@company.com",
+    avatarColor: "bg-rose-600",
+    roles: ["HR Manager", "Hiring Manager"],
+    department: "Phòng Nhân Sự & Văn Hóa",
+    status: "Active",
+    lastLogin: "Hôm qua, 14:00",
+    createdAt: "16/03/2026",
+  },
+  {
+    id: "USR-017",
+    name: "Lương Thế Vinh",
+    email: "vinh.luong@company.com",
+    avatarColor: "bg-teal-600",
+    roles: ["Employee"],
+    department: "Phòng Kinh Doanh & Dịch Vụ",
+    status: "Active",
+    lastLogin: "1 tuần trước",
+    createdAt: "18/03/2026",
+  },
+  {
+    id: "USR-018",
+    name: "Cao Thái Sơn",
+    email: "son.cao@company.com",
+    avatarColor: "bg-sky-600",
+    roles: ["Interviewer"],
+    department: "Phòng Hạ Tầng & An Ninh Mạng",
+    status: "Active",
+    lastLogin: "Hôm nay, 11:20",
+    createdAt: "20/03/2026",
+  },
+  {
+    id: "USR-019",
+    name: "Đinh Thị Ngọc",
+    email: "ngoc.dinh@company.com",
+    avatarColor: "bg-indigo-600",
+    roles: ["Recruiter"],
+    department: "Khối Thu Hút Nhân Tài (TA)",
+    status: "Active",
+    lastLogin: "1 ngày trước",
+    createdAt: "22/03/2026",
+  },
+  {
+    id: "USR-020",
+    name: "Hà Kiều Anh",
+    email: "anh.ha@company.com",
+    avatarColor: "bg-fuchsia-500",
+    roles: ["Employee"],
+    department: "Phòng Tài Chính - Kế Toán",
+    status: "Active",
+    lastLogin: "6 ngày trước",
+    createdAt: "23/03/2026",
+  },
+  {
+    id: "USR-021",
+    name: "Đoàn Văn Hậu",
+    email: "hau.doan@company.com",
+    avatarColor: "bg-emerald-500",
+    roles: ["Interviewer"],
+    department: "Phòng Phát Triển Phần Mềm (Software)",
+    status: "Active",
+    lastLogin: "Hôm qua, 17:30",
+    createdAt: "24/03/2026",
+  },
+  {
+    id: "USR-022",
+    name: "Trần Thị Thanh",
+    email: "thanh.tran@company.com",
+    avatarColor: "bg-purple-600",
+    roles: ["Recruiter"],
+    department: "Khối Thu Hút Nhân Tài (TA)",
+    status: "Active",
+    lastLogin: "4 giờ trước",
+    createdAt: "25/03/2026",
+  },
+  {
+    id: "USR-023",
+    name: "Phạm Thanh Hưng",
+    email: "hung.pham@company.com",
+    avatarColor: "bg-blue-500",
+    roles: ["Hiring Manager"],
+    department: "Phòng Kinh Doanh & Dịch Vụ",
+    status: "Active",
+    lastLogin: "2 ngày trước",
+    createdAt: "26/03/2026",
+  },
+  {
+    id: "USR-024",
+    name: "Lê Quỳnh Nga",
+    email: "nga.le@company.com",
+    avatarColor: "bg-rose-500",
+    roles: ["HR Manager"],
+    department: "Phòng Nhân Sự & Văn Hóa",
+    status: "Active",
+    lastLogin: "Vừa xong",
+    createdAt: "27/03/2026",
+  },
+  {
+    id: "USR-025",
+    name: "Võ Trọng Nghĩa",
+    email: "nghia.vo@company.com",
+    avatarColor: "bg-amber-500",
+    roles: ["Interviewer"],
+    department: "Phòng Thiết Kế Trải Nghiệm (UI/UX)",
+    status: "Locked",
+    lastLogin: "15 ngày trước",
+    createdAt: "28/03/2026",
+  },
+  {
+    id: "USR-026",
+    name: "Tạ Bích Loan",
+    email: "loan.ta@company.com",
+    avatarColor: "bg-slate-600",
+    roles: ["Employee"],
+    department: "Phòng Truyền Thông & Thương Hiệu",
+    status: "Active",
+    lastLogin: "3 ngày trước",
+    createdAt: "29/03/2026",
+  },
+  {
+    id: "USR-027",
+    name: "Hồ Ngọc Hà",
+    email: "ha.ho@company.com",
+    avatarColor: "bg-pink-600",
+    roles: ["Recruiter", "Interviewer"],
+    department: "Khối Thu Hút Nhân Tài (TA)",
+    status: "Active",
+    lastLogin: "Hôm qua, 10:15",
+    createdAt: "30/03/2026",
+  },
+  {
+    id: "USR-028",
+    name: "Chu Văn An",
+    email: "an.chu@company.com",
+    avatarColor: "bg-indigo-700",
+    roles: ["System Admin", "Hiring Manager"],
+    department: "Ban Công Nghệ & Quản Trị Hệ Thống",
+    status: "Active",
+    lastLogin: "2 giờ trước",
+    createdAt: "01/04/2026",
   },
 ];
 
@@ -193,6 +466,13 @@ export default function AdminDashboardPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState<string>("ALL");
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
+
+  // Requirement 1: Pagination State (Mặc định 20 dòng trên 1 trang)
+  const pageSize = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Requirement 3: Giả lập logic nhận diện người đang đăng nhập (ví dụ currentUserId = 1 hoặc "USR-001")
+  const currentUserId = "USR-001";
 
   // Toast / Feedback State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -263,14 +543,24 @@ export default function AdminDashboardPage() {
   // Audit Logs State
   const [auditLogs, setAuditLogs] = useState(INITIAL_AUDIT_LOGS);
 
-  // Form State for Add / Edit
+  // Form State for Add / Edit (Requirement 2: roles mảng các chuỗi)
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    role: "Recruiter" as UserAccount["role"],
+    roles: ["Recruiter"] as string[],
     department: "Khối Thu Hút Nhân Tài (TA)",
     password: "company123",
   });
+
+  // Requirement 3: Kiểm tra người dùng đang được chỉnh sửa có phải là người đang đăng nhập không
+  const isEditingCurrentUser = Boolean(
+    selectedUser &&
+      (selectedUser.id === currentUserId ||
+        selectedUser.id === "1" ||
+        (selectedUser as unknown as { id: number }).id === 1 ||
+        selectedUser.id === "USR-001" ||
+        selectedUser.email === adminProfile.email)
+  );
 
   // Permissions Mock State for selected user
   const [userPermissions, setUserPermissions] = useState<Record<string, boolean>>({
@@ -365,18 +655,130 @@ export default function AdminDashboardPage() {
   const activeAccounts = users.filter((u) => u.status === "Active").length;
   const lockedAccounts = users.filter((u) => u.status === "Locked").length;
 
-  // Filtered Users
+  // Filtered Users (Requirement 2: hỗ trợ lọc theo roles mảng)
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const matchSearch =
         user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.department.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchRole = selectedRole === "ALL" || user.role === selectedRole;
-      const matchStatus = selectedStatus === "ALL" || user.status === selectedStatus;
+      const matchRole =
+        selectedRole === "ALL" ||
+        user.roles.includes(selectedRole) ||
+        (selectedRole === "Admin" && user.roles.includes("System Admin"));
+      const matchStatus =
+        selectedStatus === "ALL" || user.status === selectedStatus;
       return matchSearch && matchRole && matchStatus;
     });
   }, [users, searchTerm, selectedRole, selectedStatus]);
+
+  // Requirement 1: Pagination Logic
+  const totalItems = filteredUsers.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+  // Tự động chuyển về trang 1 khi thay đổi tìm kiếm hoặc bộ lọc
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedRole, selectedStatus]);
+
+  // Đảm bảo trang hiện tại không vượt quá tổng số trang sau khi lọc
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  // Paginated users slice (useMemo)
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredUsers.slice(startIndex, startIndex + pageSize);
+  }, [filteredUsers, currentPage, pageSize]);
+
+  const fromIndex = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const toIndex = Math.min(currentPage * pageSize, totalItems);
+
+  // Requirement 2: Helper render các badge vai trò xếp cạnh nhau
+  const renderRoleBadges = (roles: string[]) => {
+    if (!roles || roles.length === 0) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+          <UserIcon className="w-3 h-3" />
+          <span>Employee</span>
+        </span>
+      );
+    }
+
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 max-w-[280px]">
+        {roles.map((roleName) => {
+          switch (roleName) {
+            case "System Admin":
+            case "Admin":
+              return (
+                <span
+                  key={roleName}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-[#4285F4] border border-blue-200 shadow-xs"
+                >
+                  <Shield className="w-3 h-3" />
+                  <span>System Admin</span>
+                </span>
+              );
+            case "HR Manager":
+              return (
+                <span
+                  key={roleName}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 shadow-xs"
+                >
+                  <Building className="w-3 h-3" />
+                  <span>HR Manager</span>
+                </span>
+              );
+            case "Hiring Manager":
+              return (
+                <span
+                  key={roleName}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200 shadow-xs"
+                >
+                  <Briefcase className="w-3 h-3" />
+                  <span>Hiring Manager</span>
+                </span>
+              );
+            case "Recruiter":
+              return (
+                <span
+                  key={roleName}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs"
+                >
+                  <Users className="w-3 h-3" />
+                  <span>Recruiter</span>
+                </span>
+              );
+            case "Interviewer":
+              return (
+                <span
+                  key={roleName}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-xs"
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  <span>Interviewer</span>
+                </span>
+              );
+            case "Employee":
+            default:
+              return (
+                <span
+                  key={roleName}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 shadow-xs"
+                >
+                  <UserIcon className="w-3 h-3" />
+                  <span>{roleName}</span>
+                </span>
+              );
+          }
+        })}
+      </div>
+    );
+  };
 
   // Actions
   const handleOpenLockModal = (user: UserAccount) => {
@@ -447,21 +849,31 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Requirement 2 & 3: Mở modal chỉnh sửa và nạp danh sách vai trò
   const handleOpenEdit = (user: UserAccount) => {
     setSelectedUser(user);
     setFormData({
       name: user.name,
       email: user.email,
-      role: user.role,
+      roles: user.roles && user.roles.length > 0 ? [...user.roles] : ["Employee"],
       department: user.department,
       password: "",
     });
     setIsEditUserOpen(true);
   };
 
+  // Requirement 4: Cập nhật trực tiếp vào React state users để bảng render ngay lập tức
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
+
+    let updatedRoles = formData.roles.length > 0 ? [...formData.roles] : ["Employee"];
+
+    // Requirement 3: Bảo vệ không thể tự thu hồi quyền System Admin của chính mình
+    if (isEditingCurrentUser && !updatedRoles.includes("System Admin")) {
+      updatedRoles.push("System Admin");
+    }
+
     setUsers((prev) =>
       prev.map((u) =>
         u.id === selectedUser.id
@@ -469,27 +881,37 @@ export default function AdminDashboardPage() {
               ...u,
               name: formData.name,
               email: formData.email,
-              role: formData.role,
+              roles: updatedRoles,
               department: formData.department,
             }
           : u
       )
     );
+
+    if (isEditingCurrentUser) {
+      setAdminProfile((prev) => ({
+        ...prev,
+        name: formData.name,
+        department: formData.department,
+      }));
+    }
+
     setIsEditUserOpen(false);
-    showToast(`Đã cập nhật thông tin tài khoản ${formData.name}`);
+    showToast(`Đã cập nhật thông tin và vai trò tài khoản ${formData.name} thành công!`);
   };
 
   const handleOpenPermission = (user: UserAccount) => {
     setSelectedUser(user);
-    const isAdmin = user.role === "Admin";
-    const isHR = user.role === "HR Manager";
-    const isRecruiter = user.role === "Recruiter";
+    const isAdmin = user.roles.includes("System Admin") || user.roles.includes("Admin");
+    const isHR = user.roles.includes("HR Manager");
+    const isRecruiter = user.roles.includes("Recruiter");
+    const isInterviewer = user.roles.includes("Interviewer");
     setUserPermissions({
       view_jobs: true,
       create_jobs: isAdmin || isHR || isRecruiter,
       approve_jobs: isAdmin || isHR,
       view_candidates: isAdmin || isHR || isRecruiter,
-      interview_candidates: isAdmin || isHR || user.role === "Interviewer",
+      interview_candidates: isAdmin || isHR || isInterviewer,
       export_reports: isAdmin || isHR,
       manage_system: isAdmin,
     });
@@ -501,6 +923,7 @@ export default function AdminDashboardPage() {
     showToast(`Đã lưu thiết lập phân quyền cho ${selectedUser?.name}`);
   };
 
+  // Requirement 2: Tạo tài khoản mới hỗ trợ mảng roles
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) {
@@ -508,11 +931,11 @@ export default function AdminDashboardPage() {
       return;
     }
     const newUser: UserAccount = {
-      id: `USR-00${users.length + 1}`,
+      id: `USR-${String(users.length + 1).padStart(3, "0")}`,
       name: formData.name,
       email: formData.email,
       avatarColor: "bg-[#4285F4]",
-      role: formData.role,
+      roles: formData.roles.length > 0 ? formData.roles : ["Recruiter"],
       department: formData.department,
       status: "Active",
       lastLogin: "Chưa đăng nhập",
@@ -523,7 +946,7 @@ export default function AdminDashboardPage() {
     setFormData({
       name: "",
       email: "",
-      role: "Recruiter",
+      roles: ["Recruiter"],
       department: "Khối Thu Hút Nhân Tài (TA)",
       password: "company123",
     });
@@ -956,8 +1379,9 @@ export default function AdminDashboardPage() {
                       className="appearance-none bg-slate-50 border border-gray-200 rounded-full pl-4 pr-9 py-2.5 text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30 focus:border-[#4285F4] cursor-pointer"
                     >
                       <option value="ALL">Tất cả vai trò</option>
-                      <option value="Admin">Admin</option>
+                      <option value="System Admin">System Admin</option>
                       <option value="HR Manager">HR Manager</option>
+                      <option value="Hiring Manager">Hiring Manager</option>
                       <option value="Recruiter">Recruiter</option>
                       <option value="Interviewer">Interviewer</option>
                       <option value="Employee">Employee</option>
@@ -1025,7 +1449,7 @@ export default function AdminDashboardPage() {
                         </td>
                       </tr>
                     ) : (
-                      filteredUsers.map((user) => (
+                      paginatedUsers.map((user) => (
                         <tr
                           key={user.id}
                           className="hover:bg-blue-50/30 transition-colors duration-150 group"
@@ -1066,37 +1490,9 @@ export default function AdminDashboardPage() {
                             </span>
                           </td>
 
-                          {/* 3. Vai trò */}
+                          {/* 3. Vai trò (Requirement 2: Hiển thị các badge xếp cạnh nhau) */}
                           <td className="py-4 px-6">
-                            {user.role === "Admin" && (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-[#4285F4] border border-blue-200">
-                                <Shield className="w-3 h-3" />
-                                Quản trị viên
-                              </span>
-                            )}
-                            {user.role === "HR Manager" && (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                                <Building className="w-3 h-3" />
-                                HR Manager
-                              </span>
-                            )}
-                            {user.role === "Recruiter" && (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <Users className="w-3 h-3" />
-                                Recruiter
-                              </span>
-                            )}
-                            {user.role === "Interviewer" && (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                <CheckCircle2 className="w-3 h-3" />
-                                Interviewer
-                              </span>
-                            )}
-                            {user.role === "Employee" && (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                                Nhân viên
-                              </span>
-                            )}
+                            {renderRoleBadges(user.roles)}
                           </td>
 
                           {/* 4. Trạng thái (Active / Locked) */}
@@ -1120,7 +1516,7 @@ export default function AdminDashboardPage() {
                               {/* Nút Sửa */}
                               <button
                                 onClick={() => handleOpenEdit(user)}
-                                title="Chỉnh sửa thông tin tài khoản"
+                                title="Chỉnh sửa thông tin & vai trò tài khoản"
                                 className="w-9 h-9 rounded-xl bg-slate-50 hover:bg-blue-50 hover:text-[#4285F4] text-slate-600 flex items-center justify-center transition-colors border border-gray-100 cursor-pointer"
                               >
                                 <Edit3 className="w-4 h-4" />
@@ -1162,38 +1558,72 @@ export default function AdminDashboardPage() {
                 </table>
               </div>
 
-              {/* TABLE FOOTER / PAGINATION */}
+              {/* TABLE FOOTER / PAGINATION (Requirement 1: Phân trang góc dưới cùng bên phải) */}
               <div className="p-4 sm:px-6 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 bg-slate-50/50">
-                <div>
-                  Hiển thị{" "}
-                  <span className="font-semibold text-slate-700">
-                    {filteredUsers.length}
-                  </span>{" "}
-                  trong tổng số{" "}
-                  <span className="font-semibold text-slate-700">
-                    {users.length}
-                  </span>{" "}
-                  tài khoản
+                <div className="text-xs text-slate-500">
+                  Trang <span className="font-semibold text-slate-700">{currentPage}</span> /{" "}
+                  <span className="font-semibold text-slate-700">{totalPages}</span> (Mỗi trang {pageSize} dòng)
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    disabled
-                    className="p-2 rounded-lg border border-gray-200 bg-white text-slate-300 cursor-not-allowed"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button className="w-8 h-8 rounded-lg bg-[#4285F4] text-white font-semibold text-xs flex items-center justify-center shadow-sm">
-                    1
-                  </button>
-                  <button className="w-8 h-8 rounded-lg bg-white border border-gray-200 hover:bg-slate-50 text-slate-600 font-medium text-xs flex items-center justify-center cursor-pointer">
-                    2
-                  </button>
-                  <button className="w-8 h-8 rounded-lg bg-white border border-gray-200 hover:bg-slate-50 text-slate-600 font-medium text-xs flex items-center justify-center cursor-pointer">
-                    3
-                  </button>
-                  <button className="p-2 rounded-lg border border-gray-200 bg-white text-slate-600 hover:bg-slate-50 cursor-pointer">
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+
+                {/* Thanh phân trang ở góc dưới cùng bên phải của bảng */}
+                <div className="flex items-center gap-3 sm:gap-4 ml-auto">
+                  <span className="font-medium text-slate-600 text-xs sm:text-sm">
+                    {totalItems === 0
+                      ? "Hiển thị 0 trên tổng số 0"
+                      : `Hiển thị ${fromIndex}-${toIndex} trên tổng số ${totalItems}`}
+                  </span>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* Nút mũi tên Trước (Prev) */}
+                    <button
+                      type="button"
+                      disabled={currentPage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                        currentPage <= 1
+                          ? "border-gray-200 bg-gray-100/70 text-slate-300 cursor-not-allowed opacity-50"
+                          : "border-gray-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-xs cursor-pointer"
+                      }`}
+                      title="Trang trước"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span>Trước</span>
+                    </button>
+
+                    {/* Nút số trang */}
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                        <button
+                          key={page}
+                          type="button"
+                          onClick={() => setCurrentPage(page)}
+                          className={`w-7 h-7 rounded-xl text-xs font-semibold flex items-center justify-center transition-all ${
+                            currentPage === page
+                              ? "bg-[#4285F4] text-white shadow-xs shadow-blue-500/20"
+                              : "bg-white border border-gray-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Nút mũi tên Sau (Next) */}
+                    <button
+                      type="button"
+                      disabled={currentPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                        currentPage >= totalPages
+                          ? "border-gray-200 bg-gray-100/70 text-slate-300 cursor-not-allowed opacity-50"
+                          : "border-gray-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-xs cursor-pointer"
+                      }`}
+                      title="Trang sau"
+                    >
+                      <span>Sau</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1448,46 +1878,81 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                    Vai trò hệ thống <span className="text-rose-500">*</span>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Phòng ban / Bộ phận <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={formData.department}
+                  onChange={(e) =>
+                    setFormData({ ...formData, department: e.target.value })
+                  }
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30 focus:border-[#4285F4]"
+                >
+                  <option value="Ban Công Nghệ & Quản Trị Hệ Thống">Ban Công Nghệ & Quản Trị Hệ Thống</option>
+                  <option value="Khối Thu Hút Nhân Tài (TA)">Khối Thu Hút Nhân Tài (TA)</option>
+                  <option value="Phòng Nhân Sự & Văn Hóa">Phòng Nhân Sự & Văn Hóa</option>
+                  <option value="Phòng Phát Triển Phần Mềm (Software)">Phòng Phát Triển Phần Mềm (Software)</option>
+                  <option value="Phòng Thiết Kế Trải Nghiệm (UI/UX)">Phòng Thiết Kế Trải Nghiệm (UI/UX)</option>
+                  <option value="Phòng Hạ Tầng & An Ninh Mạng">Phòng Hạ Tầng & An Ninh Mạng</option>
+                  <option value="Phòng Kinh Doanh & Dịch Vụ">Phòng Kinh Doanh & Dịch Vụ</option>
+                  <option value="Phòng Tài Chính - Kế Toán">Phòng Tài Chính - Kế Toán</option>
+                  <option value="Phòng Truyền Thông & Thương Hiệu">Phòng Truyền Thông & Thương Hiệu</option>
+                </select>
+              </div>
+
+              {/* Requirement 2: Danh sách Checkbox chọn nhiều vai trò */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Vai trò hệ thống (Tích chọn một hoặc nhiều vai trò) <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        role: e.target.value as UserAccount["role"],
-                      })
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30 focus:border-[#4285F4]"
-                  >
-                    <option value="Admin">Admin (Quản trị hệ thống)</option>
-                    <option value="HR Manager">HR Manager (Trưởng phòng)</option>
-                    <option value="Recruiter">Recruiter (Tuyển dụng)</option>
-                    <option value="Interviewer">Interviewer (Phỏng vấn)</option>
-                    <option value="Employee">Employee (Nhân viên)</option>
-                  </select>
+                  <span className="text-[11px] text-slate-400">
+                    Đã chọn: <strong className="text-[#4285F4]">{formData.roles.length}</strong> vai trò
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                    Phòng ban
-                  </label>
-                  <select
-                    value={formData.department}
-                    onChange={(e) =>
-                      setFormData({ ...formData, department: e.target.value })
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30 focus:border-[#4285F4]"
-                  >
-                    <option value="Khối Thu Hút Nhân Tài (TA)">Khối Thu Hút Nhân Tài</option>
-                    <option value="Phòng Nhân Sự & Văn Hóa">Phòng Nhân Sự</option>
-                    <option value="Phòng Phát Triển Phần Mềm">Phát Triển Phần Mềm</option>
-                    <option value="Phòng Thiết Kế Trải Nghiệm">Thiết Kế UI/UX</option>
-                    <option value="Phòng Kinh Doanh & Dịch Vụ">Kinh Doanh & Dịch Vụ</option>
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-52 overflow-y-auto pr-1">
+                  {AVAILABLE_ROLES.map((role) => {
+                    const isChecked = formData.roles.includes(role.id);
+                    const RoleIcon = role.icon;
+                    return (
+                      <label
+                        key={role.id}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          isChecked
+                            ? "bg-blue-50/70 border-blue-200 text-slate-900 shadow-xs"
+                            : "bg-slate-50/70 border-gray-200 text-slate-700 hover:bg-slate-100/60"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setFormData((prev) => {
+                              const exists = prev.roles.includes(role.id);
+                              const nextRoles = exists
+                                ? prev.roles.filter((r) => r !== role.id)
+                                : [...prev.roles, role.id];
+                              return { ...prev, roles: nextRoles };
+                            });
+                          }}
+                          className="mt-0.5 w-4 h-4 rounded text-[#4285F4] focus:ring-[#4285F4] accent-[#4285F4] cursor-pointer"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <RoleIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span className="text-xs font-bold text-slate-900">
+                              {role.name}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-tight mt-0.5 line-clamp-1">
+                            {role.description}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1668,42 +2133,93 @@ export default function AdminDashboardPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                    Vai trò
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  Phòng ban / Bộ phận
+                </label>
+                <input
+                  type="text"
+                  value={formData.department}
+                  onChange={(e) =>
+                    setFormData({ ...formData, department: e.target.value })
+                  }
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30"
+                />
+              </div>
+
+              {/* Requirement 2 & 3: Danh sách Checkbox chọn nhiều vai trò & Khóa quyền Admin cho chính mình */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Vai trò hệ thống (Tích chọn các quyền) <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        role: e.target.value as UserAccount["role"],
-                      })
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30"
-                  >
-                    <option value="Admin">Admin</option>
-                    <option value="HR Manager">HR Manager</option>
-                    <option value="Recruiter">Recruiter</option>
-                    <option value="Interviewer">Interviewer</option>
-                    <option value="Employee">Employee</option>
-                  </select>
+                  <span className="text-[11px] text-slate-400">
+                    Đã chọn: <strong className="text-[#4285F4]">{formData.roles.length}</strong> vai trò
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                    Phòng ban
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.department}
-                    onChange={(e) =>
-                      setFormData({ ...formData, department: e.target.value })
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-52 overflow-y-auto pr-1">
+                  {AVAILABLE_ROLES.map((role) => {
+                    const isChecked = formData.roles.includes(role.id);
+                    const isSelfAdmin = isEditingCurrentUser && role.id === "System Admin";
+                    const RoleIcon = role.icon;
+                    return (
+                      <label
+                        key={role.id}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all ${
+                          isSelfAdmin
+                            ? "bg-slate-100/90 border-slate-300 opacity-80 cursor-not-allowed"
+                            : isChecked
+                            ? "bg-blue-50/70 border-blue-200 text-slate-900 shadow-xs cursor-pointer"
+                            : "bg-slate-50/70 border-gray-200 text-slate-700 hover:bg-slate-100/60 cursor-pointer"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          disabled={isSelfAdmin}
+                          onChange={() => {
+                            if (isSelfAdmin) return;
+                            setFormData((prev) => {
+                              const exists = prev.roles.includes(role.id);
+                              const nextRoles = exists
+                                ? prev.roles.filter((r) => r !== role.id)
+                                : [...prev.roles, role.id];
+                              return { ...prev, roles: nextRoles };
+                            });
+                          }}
+                          className={`mt-0.5 w-4 h-4 rounded text-[#4285F4] focus:ring-[#4285F4] accent-[#4285F4] ${
+                            isSelfAdmin ? "cursor-not-allowed" : "cursor-pointer"
+                          }`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <RoleIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span className="text-xs font-bold text-slate-900">
+                              {role.name}
+                            </span>
+                            {isSelfAdmin && (
+                              <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded">
+                                Cố định
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-tight mt-0.5 line-clamp-1">
+                            {role.description}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
+
+                {/* Requirement 3: Thông báo không thể tự thu hồi quyền quản trị của chính mình */}
+                {isEditingCurrentUser && (
+                  <p className="text-xs text-rose-500 bg-rose-50/80 border border-rose-200/80 rounded-xl px-3 py-2 flex items-center gap-2 mt-2.5 font-medium">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                    <span>Bạn không thể tự thu hồi quyền quản trị của chính mình.</span>
+                  </p>
+                )}
               </div>
 
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-gray-100">
@@ -1714,11 +2230,12 @@ export default function AdminDashboardPage() {
                 >
                   Hủy
                 </button>
+                {/* Requirement 4: Nút Lưu cập nhật để áp dụng ngay lập tức */}
                 <button
                   type="submit"
                   className="bg-[#4285F4] text-white px-6 py-2.5 rounded-full hover:bg-blue-600 transition-all font-medium text-sm shadow-sm cursor-pointer"
                 >
-                  Lưu thay đổi
+                  Lưu cập nhật
                 </button>
               </div>
             </form>
@@ -1746,7 +2263,7 @@ export default function AdminDashboardPage() {
                     <span className="font-semibold text-slate-700">
                       {selectedUser.name}
                     </span>{" "}
-                    ({selectedUser.role})
+                    ({selectedUser.roles.join(", ")})
                   </p>
                 </div>
               </div>
@@ -2068,13 +2585,20 @@ export default function AdminDashboardPage() {
                     .join("")}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="font-bold text-slate-900 text-sm truncate">
                       {lockTargetUser.name}
                     </h4>
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-white border border-gray-200 text-slate-600 shrink-0">
-                      {lockTargetUser.role}
-                    </span>
+                    <div className="flex flex-wrap gap-1 shrink-0">
+                      {lockTargetUser.roles.map((r) => (
+                        <span
+                          key={r}
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white border border-gray-200 text-slate-600"
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-1 truncate">
                     <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
