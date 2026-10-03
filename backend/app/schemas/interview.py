@@ -27,6 +27,9 @@ class InterviewUpdate(BaseModel):
     status: Optional[str] = Field(None, description="scheduled, completed, cancelled, rescheduled")
     interviewer_ids: Optional[List[int]] = Field(None)
 
+class CandidateInterviewResponse(BaseModel):
+    response: str = Field(..., pattern="^(confirmed|declined)$")
+
 class InterviewResponse(BaseModel):
     id: int
     code: str
@@ -40,6 +43,8 @@ class InterviewResponse(BaseModel):
     end_time: str
     notes: Optional[str] = None
     status: str
+    candidate_response: str = "pending"
+    candidate_response_at: Optional[str] = None
     interviewers: List[InterviewerInfo] = []
     created_at: str
     updated_at: str

@@ -1,11 +1,12 @@
 from datetime import datetime
 from math import ceil
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import require_roles
+from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.application import JobApplication
 from app.models.offer_onboarding import JobOffer, OnboardingChecklist
@@ -19,6 +20,7 @@ from app.schemas.offer_onboarding import (
     OnboardingResponse,
     PaginatedOnboardingResponse,
 )
+from app.services.audit import write_audit_log
 
 router = APIRouter()
 
@@ -26,6 +28,22 @@ HR_ADMIN_ROLES = {"admin", "hr_manager"}
 
 def get_hr_user(authorization: Optional[str], db: Session) -> User:
     return require_roles(authorization, db, HR_ADMIN_ROLES)
+
+def get_current_user(authorization: Optional[str], db: Session) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Vui lòng đăng nhập để thực hiện thao tác này")
+    user_id = decode_access_token(authorization.split(" ", 1)[1])
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Phiên làm việc không hợp lệ hoặc đã hết hạn")
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=403, detail="Tài khoản chưa được kích hoạt hoặc không khả dụng")
+    return user
+
+def ensure_onboarding(db: Session, application_id: int) -> None:
+    checklist = db.query(OnboardingChecklist).filter(OnboardingChecklist.application_id == application_id).first()
+    if not checklist:
+        db.add(OnboardingChecklist(application_id=application_id, status="in_progress"))
 
 def generate_offer_code(db: Session) -> str:
     year = datetime.utcnow().year
@@ -111,6 +129,69 @@ def list_offers(
         "pages": pages,
     }
 
+@router.get("/offers/my", response_model=PaginatedOffersResponse)
+def list_my_offers(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user(authorization, db)
+    query = (
+        db.query(JobOffer)
+        .join(JobApplication, JobOffer.application_id == JobApplication.id)
+        .filter(or_(JobApplication.candidate_id == current_user.id, JobApplication.email == current_user.email.lower()))
+    )
+    total = query.count()
+    items = query.order_by(JobOffer.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "items": [offer.to_dict() for offer in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": max(1, ceil(total / page_size)),
+    }
+
+@router.post("/offers/{offer_id}/respond", response_model=OfferResponse)
+def respond_to_offer(
+    offer_id: int,
+    payload: OfferStatusUpdate,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    if payload.status not in {"accepted", "declined"}:
+        raise HTTPException(status_code=422, detail="Ứng viên chỉ có thể chấp nhận hoặc từ chối thư mời")
+    current_user = get_current_user(authorization, db)
+    offer = db.query(JobOffer).filter(JobOffer.id == offer_id).first()
+    if not offer or not offer.application:
+        raise HTTPException(status_code=404, detail="Không tìm thấy thư mời làm việc")
+    application = offer.application
+    if application.candidate_id != current_user.id and application.email != current_user.email.lower():
+        raise HTTPException(status_code=403, detail="Bạn không có quyền phản hồi thư mời này")
+    if offer.status != "sent":
+        raise HTTPException(status_code=400, detail="Thư mời này đã được phản hồi hoặc không còn hiệu lực")
+
+    offer.status = payload.status
+    if payload.notes:
+        offer.notes = payload.notes
+    offer.updated_at = datetime.utcnow()
+    application.status = "hired" if payload.status == "accepted" else "rejected"
+    if payload.status == "accepted":
+        ensure_onboarding(db, offer.application_id)
+    db.commit()
+    db.refresh(offer)
+    write_audit_log(
+        db,
+        action="Chấp nhận thư mời" if payload.status == "accepted" else "Từ chối thư mời",
+        module="Thư mời làm việc",
+        request=request,
+        user=current_user,
+        status="success" if payload.status == "accepted" else "warning",
+        details=offer.code,
+    )
+    return offer.to_dict()
+
 @router.post("/offers/{offer_id}/status", response_model=OfferResponse)
 def update_offer_status(
     offer_id: int,
@@ -135,14 +216,7 @@ def update_offer_status(
         if app_record:
             app_record.status = "hired"
 
-        # Check if onboarding checklist exists
-        ob = db.query(OnboardingChecklist).filter(OnboardingChecklist.application_id == offer.application_id).first()
-        if not ob:
-            ob = OnboardingChecklist(
-                application_id=offer.application_id,
-                status="in_progress",
-            )
-            db.add(ob)
+        ensure_onboarding(db, offer.application_id)
 
     db.commit()
     db.refresh(offer)

@@ -43,6 +43,12 @@ with engine.begin() as connection:
     competency_columns = {column["name"] for column in inspect(engine).get_columns("competencies")}
     if "weight" not in competency_columns:
         connection.execute(text("ALTER TABLE competencies ADD COLUMN weight FLOAT NOT NULL DEFAULT 0"))
+    interview_columns = {column["name"] for column in inspect(engine).get_columns("interview_schedules")}
+    if "candidate_response" not in interview_columns:
+        connection.execute(text("ALTER TABLE interview_schedules ADD COLUMN candidate_response VARCHAR(30) NOT NULL DEFAULT 'pending'"))
+    if "candidate_response_at" not in interview_columns:
+        timestamp_type = "TIMESTAMP" if engine.dialect.name == "postgresql" else "DATETIME"
+        connection.execute(text(f"ALTER TABLE interview_schedules ADD COLUMN candidate_response_at {timestamp_type}"))
 
 if settings.APP_ENV != "production":
     db = SessionLocal()

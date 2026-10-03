@@ -84,7 +84,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         full_name: appForm.full_name,
         email: appForm.email,
         phone: appForm.phone,
-        cv_url: appForm.cv_url || "https://example.com/cv_sample.pdf",
+        cv_url: appForm.cv_url,
         cover_letter: appForm.cover_letter,
         current_department: appForm.current_department,
         referral_code: appForm.referral_code,

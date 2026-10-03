@@ -1,7 +1,7 @@
 from datetime import datetime
 from math import ceil
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -15,8 +15,10 @@ from app.schemas.interview import (
     InterviewCreate,
     InterviewResponse,
     InterviewUpdate,
+    CandidateInterviewResponse,
     PaginatedInterviewsResponse,
 )
+from app.services.audit import write_audit_log
 
 router = APIRouter()
 
@@ -120,6 +122,50 @@ def get_my_interviews(
         "page_size": page_size,
         "pages": pages,
     }
+
+
+@router.get("/interviews/candidate/my", response_model=PaginatedInterviewsResponse)
+def get_candidate_interviews(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_header(authorization, db)
+    query = (
+        db.query(InterviewSchedule)
+        .join(JobApplication, InterviewSchedule.application_id == JobApplication.id)
+        .filter(or_(JobApplication.candidate_id == current_user.id, JobApplication.email == current_user.email.lower()))
+    )
+    total = query.count()
+    items = query.order_by(InterviewSchedule.start_time.asc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"items": [item.to_dict() for item in items], "total": total, "page": page, "page_size": page_size, "pages": max(1, ceil(total / page_size))}
+
+
+@router.post("/interviews/{interview_id}/respond", response_model=InterviewResponse)
+def respond_to_interview(
+    interview_id: int,
+    payload: CandidateInterviewResponse,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_header(authorization, db)
+    schedule = db.query(InterviewSchedule).filter(InterviewSchedule.id == interview_id).first()
+    if not schedule or not schedule.application:
+        raise HTTPException(status_code=404, detail="Không tìm thấy lịch phỏng vấn")
+    application = schedule.application
+    if application.candidate_id != current_user.id and application.email != current_user.email.lower():
+        raise HTTPException(status_code=403, detail="Bạn không có quyền phản hồi lịch phỏng vấn này")
+    if schedule.status not in {"scheduled", "rescheduled"}:
+        raise HTTPException(status_code=400, detail="Lịch phỏng vấn hiện không nhận phản hồi")
+    schedule.candidate_response = payload.response
+    schedule.candidate_response_at = datetime.utcnow()
+    db.commit()
+    db.refresh(schedule)
+    action = "Xác nhận lịch phỏng vấn" if payload.response == "confirmed" else "Từ chối lịch phỏng vấn"
+    write_audit_log(db, action=action, module="Phỏng vấn", request=request, user=current_user, status="success" if payload.response == "confirmed" else "warning", details=schedule.code)
+    return schedule.to_dict()
 
 @router.get("/interviews/manage/all", response_model=PaginatedInterviewsResponse)
 def list_manage_interviews(

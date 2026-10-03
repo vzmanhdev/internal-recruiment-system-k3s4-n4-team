@@ -21,7 +21,8 @@ export function getDashboardPath(role: string, roles?: string[]): string {
   const allRoles = roles?.length ? roles : role.split(",").filter(Boolean);
   if (allRoles.includes("admin")) return "/admin/dashboard";
   if (allRoles.includes("hr_manager")) return "/hr/dashboard";
-  return "/dashboard";
+  if (allRoles.includes("candidate")) return "/candidate/dashboard";
+  return "/employee/dashboard";
 }
 
 export function clearStoredSession(): void {

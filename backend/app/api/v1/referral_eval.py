@@ -40,6 +40,13 @@ def get_current_user_from_header(authorization: Optional[str], db: Session) -> U
 def get_hr_user(authorization: Optional[str], db: Session) -> User:
     return require_roles(authorization, db, HR_ADMIN_ROLES)
 
+def get_internal_user(authorization: Optional[str], db: Session) -> User:
+    user = get_current_user_from_header(authorization, db)
+    roles = {role.strip() for role in user.role.split(",") if role.strip()}
+    if not roles.intersection({"employee", "manager", "hr_manager", "admin"}):
+        raise HTTPException(status_code=403, detail="Chức năng giới thiệu ứng viên chỉ dành cho nhân sự nội bộ")
+    return user
+
 def generate_ref_code(db: Session) -> str:
     year = datetime.utcnow().year
     count = db.query(InternalReferral).count() + 1
@@ -53,7 +60,7 @@ def create_referral(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    current_user = get_current_user_from_header(authorization, db)
+    current_user = get_internal_user(authorization, db)
 
     job = db.query(JobPosting).filter(JobPosting.id == payload.job_id).first()
     if not job or job.status != "published":
@@ -87,7 +94,7 @@ def get_my_referrals(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    current_user = get_current_user_from_header(authorization, db)
+    current_user = get_internal_user(authorization, db)
 
     query = db.query(InternalReferral).filter(InternalReferral.referrer_id == current_user.id)
     total = query.count()

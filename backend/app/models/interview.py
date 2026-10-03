@@ -16,6 +16,8 @@ class InterviewSchedule(Base):
     end_time = Column(DateTime, nullable=False)
     notes = Column(Text, nullable=True)
     status = Column(String(50), default="scheduled", nullable=False)  # scheduled, completed, cancelled, rescheduled
+    candidate_response = Column(String(30), default="pending", nullable=False)  # pending, confirmed, declined
+    candidate_response_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -37,6 +39,8 @@ class InterviewSchedule(Base):
             "end_time": self.end_time.isoformat() if self.end_time else None,
             "notes": self.notes,
             "status": self.status,
+            "candidate_response": self.candidate_response,
+            "candidate_response_at": self.candidate_response_at.isoformat() if self.candidate_response_at else None,
             "interviewers": [
                 {
                     "id": item.interviewer.id,

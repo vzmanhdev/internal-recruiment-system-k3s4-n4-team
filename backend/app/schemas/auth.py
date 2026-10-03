@@ -7,7 +7,15 @@ class UserRegister(BaseModel):
     email: EmailStr = Field(..., description="Email làm việc hợp lệ")
     password: str = Field(..., min_length=6, description="Mật khẩu phải từ 6 ký tự trở lên")
     phone: Optional[str] = Field(None, max_length=20, description="Số điện thoại liên hệ")
-    role: Optional[str] = Field("employee", description="Vai trò: employee, hr_manager, admin")
+    role: Optional[str] = Field("employee", description="Vai trò đăng ký công khai: employee hoặc candidate")
+
+    @field_validator("role")
+    @classmethod
+    def validate_public_role(cls, value: Optional[str]) -> str:
+        normalized = value or "employee"
+        if normalized not in {"employee", "candidate"}:
+            raise ValueError("Vai trò đăng ký chỉ có thể là Nhân sự nội bộ hoặc Ứng viên")
+        return normalized
 
 class UserLogin(BaseModel):
     email: EmailStr = Field(..., description="Email làm việc")

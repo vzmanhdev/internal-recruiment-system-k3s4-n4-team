@@ -26,7 +26,7 @@ export interface ApplicationItem {
   cover_letter?: string;
   current_department?: string;
   referral_code?: string;
-  status: "applied" | "screening" | "interviewing" | "offered" | "hired" | "rejected";
+  status: "applied" | "screening" | "interviewing" | "offered" | "hired" | "rejected" | "withdrawn";
   created_at: string;
   updated_at: string;
   logs: ApplicationLogItem[];
@@ -89,4 +89,8 @@ export async function updateApplicationStage(id: number, to_status: string, note
     method: "POST",
     body: JSON.stringify({ to_status, note }),
   });
+}
+
+export async function withdrawApplication(id: number): Promise<ApplicationItem> {
+  return apiRequest<ApplicationItem>(`/applications/${id}/withdraw`, { method: "POST" });
 }

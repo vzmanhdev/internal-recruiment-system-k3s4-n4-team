@@ -19,6 +19,8 @@ export interface InterviewItem {
   end_time: string;
   notes?: string;
   status: "scheduled" | "completed" | "cancelled" | "rescheduled";
+  candidate_response?: "pending" | "confirmed" | "declined";
+  candidate_response_at?: string;
   interviewers: InterviewerInfo[];
   created_at: string;
   updated_at: string;
@@ -63,6 +65,17 @@ export async function createInterview(payload: CreateInterviewPayload): Promise<
 
 export async function fetchMyInterviews(): Promise<PaginatedInterviews> {
   return apiRequest<PaginatedInterviews>("/interviews/my");
+}
+
+export async function fetchCandidateInterviews(): Promise<PaginatedInterviews> {
+  return apiRequest<PaginatedInterviews>("/interviews/candidate/my");
+}
+
+export async function respondToInterview(id: number, response: "confirmed" | "declined"): Promise<InterviewItem> {
+  return apiRequest<InterviewItem>(`/interviews/${id}/respond`, {
+    method: "POST",
+    body: JSON.stringify({ response }),
+  });
 }
 
 export async function fetchManageInterviews(params?: {

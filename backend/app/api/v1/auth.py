@@ -43,7 +43,8 @@ def register(user_in: UserRegister, request: Request, db: Session = Depends(get_
         )
 
     # Create new user
-    requires_approval = system_settings.require_approval if system_settings else True
+    requested_role = user_in.role if user_in.role in {"employee", "candidate"} else "employee"
+    requires_approval = requested_role == "employee" and (system_settings.require_approval if system_settings else True)
     hashed_pwd = hash_password(user_in.password)
     new_user = User(
         email=user_in.email,
@@ -52,7 +53,7 @@ def register(user_in: UserRegister, request: Request, db: Session = Depends(get_
         phone=user_in.phone,
         # Public registration always creates a normal employee account.
         # Elevated roles must be assigned separately by an administrator.
-        role="employee",
+        role=requested_role,
         is_active=not requires_approval,
         account_status="pending" if requires_approval else "active"
     )

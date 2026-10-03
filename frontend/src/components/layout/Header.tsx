@@ -7,6 +7,7 @@ import { BrandLogo } from "./BrandLogo";
 import { Container } from "./Container";
 import { AuthActions } from "@/features/auth/components/AuthActions";
 import { getSessionRoles, useAuthSession } from "@/features/auth/lib/auth-session";
+import { getDashboardPath } from "@/features/auth/lib/session";
 
 export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -15,9 +16,11 @@ export function Header() {
 
   const navLinks = [
     { label: "Trang chủ", href: "/" },
-    ...(session ? [{ label: "Dashboard", href: "/dashboard" }] : []),
+    ...(session ? [{ label: "Dashboard", href: getDashboardPath(session.role, roles) }] : []),
     ...(roles.includes("admin") ? [{ label: "Quản trị", href: "/admin/dashboard" }] : []),
     ...(roles.includes("hr_manager") || roles.includes("admin") ? [{ label: "Thiết lập HR", href: "/hr/dashboard" }] : []),
+    ...(roles.includes("employee") ? [{ label: "Giới thiệu ứng viên", href: "/referrals" }] : []),
+    ...(session ? [{ label: "Hồ sơ cá nhân", href: "/profile" }] : []),
     { label: "Cơ hội nghề nghiệp", href: "/#jobs" },
     { label: "Lộ trình phát triển", href: "/#development" },
     { label: "Quy trình", href: "/process" },

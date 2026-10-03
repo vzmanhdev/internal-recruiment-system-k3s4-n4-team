@@ -24,7 +24,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const session = useAuthSession();
   const roles = getSessionRoles(session);
   const roleKey = roles.join(",");
-  const roleLabels: Record<string,string> = {admin:"Quản trị viên",hr_manager:"Nhân sự",manager:"Quản lý",employee:"Nhân viên"};
+  const roleLabels: Record<string,string> = {admin:"Quản trị viên",hr_manager:"Nhân sự",manager:"Quản lý",employee:"Nhân sự nội bộ",candidate:"Ứng viên"};
   const displayName = session?.full_name ?? "Quản trị viên";
   const handleLogout = () => { clearAuthSession(); router.push("/login"); };
 

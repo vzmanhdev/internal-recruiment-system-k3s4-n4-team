@@ -84,6 +84,21 @@ export async function fetchManageOffers(params?: {
   return apiRequest<PaginatedOffers>(`/offers/manage/all${queryString}`);
 }
 
+export async function fetchMyOffers(): Promise<PaginatedOffers> {
+  return apiRequest<PaginatedOffers>("/offers/my");
+}
+
+export async function respondToOffer(
+  id: number,
+  status: "accepted" | "declined",
+  notes?: string
+): Promise<OfferItem> {
+  return apiRequest<OfferItem>(`/offers/${id}/respond`, {
+    method: "POST",
+    body: JSON.stringify({ status, notes }),
+  });
+}
+
 export async function updateOfferStatus(
   id: number,
   status: string,

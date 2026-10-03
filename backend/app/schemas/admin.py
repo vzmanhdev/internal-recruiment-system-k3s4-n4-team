@@ -5,7 +5,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.schemas.auth import UserResponse
 
-VALID_ROLES = {"employee", "manager", "hr_manager", "admin"}
+VALID_ROLES = {"candidate", "employee", "manager", "hr_manager", "admin"}
 
 
 class AdminCreateUserRequest(BaseModel):

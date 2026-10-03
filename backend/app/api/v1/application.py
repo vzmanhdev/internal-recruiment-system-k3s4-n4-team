@@ -1,7 +1,7 @@
 from datetime import datetime
 from math import ceil
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from app.schemas.application import (
     ApplicationStageUpdate,
     PaginatedApplicationsResponse,
 )
+from app.services.audit import write_audit_log
 
 router = APIRouter()
 
@@ -222,4 +223,39 @@ def update_application_stage(
     db.commit()
     db.refresh(app_record)
 
+    return app_record.to_dict()
+
+
+@router.post("/{application_id}/withdraw", response_model=ApplicationResponse)
+def withdraw_application(
+    application_id: int,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    current_user = get_user_from_token(authorization, db)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Bạn cần đăng nhập để rút hồ sơ")
+    app_record = db.query(JobApplication).filter(JobApplication.id == application_id).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
+    is_owner = app_record.candidate_id == current_user.id or app_record.email == current_user.email.lower()
+    if not is_owner:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền rút hồ sơ này")
+    if app_record.status in {"withdrawn", "rejected", "hired"}:
+        raise HTTPException(status_code=400, detail="Hồ sơ ở trạng thái hiện tại không thể rút")
+
+    previous_status = app_record.status
+    app_record.status = "withdrawn"
+    app_record.updated_at = datetime.utcnow()
+    db.add(ApplicationLog(
+        application_id=app_record.id,
+        user_id=current_user.id,
+        from_status=previous_status,
+        to_status="withdrawn",
+        note="Ứng viên chủ động rút hồ sơ",
+    ))
+    db.commit()
+    db.refresh(app_record)
+    write_audit_log(db, action="Rút hồ sơ ứng tuyển", module="Ứng tuyển", request=request, user=current_user, status="warning", details=app_record.code)
     return app_record.to_dict()
