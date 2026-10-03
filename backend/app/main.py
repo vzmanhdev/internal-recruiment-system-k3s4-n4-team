@@ -40,6 +40,13 @@ with engine.begin() as connection:
         connection.execute(text("ALTER TABLE users ADD COLUMN lock_reason VARCHAR(500)"))
     if "avatar_url" not in user_columns:
         connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(4000000)"))
+    setting_columns = {column["name"] for column in inspect(engine).get_columns("system_settings")}
+    if "landing_title" not in setting_columns:
+        connection.execute(text("ALTER TABLE system_settings ADD COLUMN landing_title VARCHAR(255) NOT NULL DEFAULT 'Cùng nhau tạo nên những điều lớn lao'"))
+    if "landing_body" not in setting_columns:
+        connection.execute(text("ALTER TABLE system_settings ADD COLUMN landing_body TEXT NOT NULL DEFAULT 'Khám phá cơ hội phát triển sự nghiệp ngay trong nội bộ, đóng góp giá trị và cùng phát triển tiến xa hơn mỗi ngày.'"))
+    if "landing_image" not in setting_columns:
+        connection.execute(text("ALTER TABLE system_settings ADD COLUMN landing_image TEXT"))
     competency_columns = {column["name"] for column in inspect(engine).get_columns("competencies")}
     if "weight" not in competency_columns:
         connection.execute(text("ALTER TABLE competencies ADD COLUMN weight FLOAT NOT NULL DEFAULT 0"))
@@ -60,6 +67,17 @@ if settings.APP_ENV != "production":
                 hashed_password=hash_password(settings.DEV_ADMIN_PASSWORD),
                 full_name="System Admin",
                 role="admin",
+                is_active=True,
+                account_status="active",
+            ))
+            db.commit()
+        has_hr_manager = db.query(User).filter(User.role.ilike("%hr_manager%")).first()
+        if not has_hr_manager:
+            db.add(User(
+                email=settings.DEV_HR_EMAIL,
+                hashed_password=hash_password(settings.DEV_HR_PASSWORD),
+                full_name="Trưởng phòng Nhân sự",
+                role="hr_manager",
                 is_active=True,
                 account_status="active",
             ))

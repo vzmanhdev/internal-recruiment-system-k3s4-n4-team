@@ -1,24 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Users,
   Search,
   Filter,
   FileText,
-  Clock,
   CheckCircle2,
   XCircle,
-  ChevronRight,
-  Send,
   ExternalLink,
-  Briefcase,
   Mail,
   Phone,
-  Building2,
   ArrowRight,
   Star,
-  Award,
   Calendar,
 } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
@@ -37,6 +30,7 @@ import {
 } from "@/features/referrals/services/referral.service";
 import { createInterview } from "@/features/interviews/services/interview.service";
 import { createOffer } from "@/features/offers/services/offer.service";
+import { ApiError } from "@/lib/api-client";
 
 
 
@@ -87,8 +81,8 @@ export function ApplicationManagement() {
     title: "Phỏng vấn Chuyên môn Vòng 1",
     interview_type: "online",
     location_or_link: "https://meet.google.com/abc-xyz-def",
-    start_time: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
-    end_time: new Date(Date.now() + 86400000 + 3600000).toISOString().slice(0, 16),
+    start_time: "",
+    end_time: "",
     notes: "Vui lòng chuẩn bị thiết bị micro và camera sẵn sàng 5 phút trước giờ hẹn.",
   });
 
@@ -108,8 +102,8 @@ export function ApplicationManagement() {
         notes: scheduleForm.notes,
       });
       setNotice("Đã lên lịch phỏng vấn và gửi thông báo thành công!");
-    } catch (err: any) {
-      setActionError(err.message || "Không thể lên lịch phỏng vấn.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Không thể lên lịch phỏng vấn.");
     } finally {
       setSubmittingSchedule(false);
     }
@@ -121,10 +115,10 @@ export function ApplicationManagement() {
   const [offerForm, setOfferForm] = useState({
     position_title: "",
     offered_salary: 35000000,
-    start_date: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+    start_date: "",
     probation_period_months: 2,
     work_location: "Hà Nội / Hồ Chí Minh",
-    expiration_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+    expiration_date: "",
     notes: "Hưởng 85% lương trong 2 tháng thử việc. Bảo hiểm XH đầy đủ theo quy định.",
   });
 
@@ -147,8 +141,8 @@ export function ApplicationManagement() {
       setNotice("Đã phát hành Thư mời Nhận việc (Offer Letter) thành công!");
       setShowOfferModal(false);
       loadData();
-    } catch (err: any) {
-      setActionError(err.message || "Không thể tạo Thư mời nhận việc.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Không thể tạo Thư mời nhận việc.");
     } finally {
       setSubmittingOffer(false);
     }
@@ -156,7 +150,7 @@ export function ApplicationManagement() {
 
 
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -165,24 +159,24 @@ export function ApplicationManagement() {
         search: searchTerm,
       });
       setApplications(res.items);
-    } catch (err: any) {
-      setError(err.message || "Không thể tải danh sách hồ sơ ứng tuyển.");
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : "Không thể tải danh sách hồ sơ ứng tuyển.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, statusTab]);
 
   useEffect(() => {
-    loadData();
-  }, [statusTab]);
+    queueMicrotask(() => void loadData());
+  }, [loadData]);
 
   useEffect(() => {
     if (selectedApp) {
-      fetchEvaluations(selectedApp.id)
+      void fetchEvaluations(selectedApp.id)
         .then(setEvaluations)
         .catch((err) => console.error("Failed to load evaluations:", err));
     } else {
-      setEvaluations([]);
+      queueMicrotask(() => setEvaluations([]));
     }
   }, [selectedApp]);
 
@@ -199,8 +193,8 @@ export function ApplicationManagement() {
       setSelectedApp(updated);
       setStageNote("");
       loadData();
-    } catch (err: any) {
-      setActionError(err.message || "Không thể chuyển giai đoạn hồ sơ.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Không thể chuyển giai đoạn hồ sơ.");
     }
   };
 
@@ -225,11 +219,33 @@ export function ApplicationManagement() {
         recommendation: "hire",
         feedback: "",
       });
-    } catch (err: any) {
-      setActionError(err.message || "Không thể gửi đánh giá ứng viên.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Không thể gửi đánh giá ứng viên.");
     } finally {
       setSubmittingEval(false);
     }
+  };
+
+  const openScheduleModal = () => {
+    const start = new Date(Date.now() + 86400000);
+    const end = new Date(start.getTime() + 3600000);
+    setScheduleForm((current) => ({
+      ...current,
+      start_time: start.toISOString().slice(0, 16),
+      end_time: end.toISOString().slice(0, 16),
+    }));
+    setShowScheduleModal(true);
+  };
+
+  const openOfferModal = () => {
+    const now = Date.now();
+    setOfferForm((current) => ({
+      ...current,
+      position_title: selectedApp?.job_title ?? "",
+      start_date: new Date(now + 14 * 86400000).toISOString().slice(0, 10),
+      expiration_date: new Date(now + 7 * 86400000).toISOString().slice(0, 10),
+    }));
+    setShowOfferModal(true);
   };
 
   return (
@@ -413,10 +429,10 @@ export function ApplicationManagement() {
                   <Button size="sm" variant="secondary" onClick={() => handleStageChange(selectedApp.id, "interviewing")}>
                     Phỏng vấn (Interviewing)
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setShowOfferModal(true)}>
+                  <Button size="sm" variant="secondary" onClick={openOfferModal}>
                     <FileText className="h-3.5 w-3.5 text-teal-600" /> Phát Hành Offer
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setShowScheduleModal(true)}>
+                  <Button size="sm" variant="secondary" onClick={openScheduleModal}>
                     <Calendar className="h-3.5 w-3.5 text-blue-600" /> Lên Lịch Phỏng Vấn
                   </Button>
                   <Button size="sm" onClick={() => handleStageChange(selectedApp.id, "hired")}>

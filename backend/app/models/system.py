@@ -42,6 +42,9 @@ class SystemSetting(Base):
     require_approval = Column(Boolean, nullable=False, default=True)
     email_notifications = Column(Boolean, nullable=False, default=True)
     session_timeout = Column(Integer, nullable=False, default=60)
+    landing_title = Column(String(255), nullable=False, default="Cùng nhau tạo nên những điều lớn lao")
+    landing_body = Column(Text, nullable=False, default="Khám phá cơ hội phát triển sự nghiệp ngay trong nội bộ, đóng góp giá trị và cùng phát triển tiến xa hơn mỗi ngày.")
+    landing_image = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     def to_dict(self):
@@ -51,5 +54,8 @@ class SystemSetting(Base):
             "require_approval": self.require_approval,
             "email_notifications": self.email_notifications,
             "session_timeout": self.session_timeout,
+            "landing_title": self.landing_title,
+            "landing_body": self.landing_body,
+            "landing_image": self.landing_image,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

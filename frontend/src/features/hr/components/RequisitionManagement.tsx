@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  FileText,
   Plus,
   Search,
   Filter,
@@ -11,21 +10,15 @@ import {
   Clock,
   Send,
   AlertCircle,
-  ChevronRight,
-  UserCheck,
-  Building2,
-  DollarSign,
-  Calendar,
-  Briefcase,
   Trash2,
-  Edit3,
+  type LucideIcon,
 } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { HrShell } from "./HrShell";
-import { useAuthSession } from "@/features/auth/lib/auth-session";
+import { ApiError } from "@/lib/api-client";
 import { fetchDepartments, fetchJobTitles, Department, JobTitle } from "../services/hr.service";
 import {
   fetchRequisitions,
@@ -38,7 +31,7 @@ import {
   CreateRequisitionPayload,
 } from "../services/requisition.service";
 
-const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; icon: any }> = {
+const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; icon: LucideIcon }> = {
   draft: { label: "Bản nháp", bg: "bg-slate-100", text: "text-slate-700", icon: Clock },
   pending_dept: { label: "Chờ Trưởng phòng duyệt", bg: "bg-amber-50", text: "text-amber-700", icon: Clock },
   pending_hr: { label: "Chờ HR Manager duyệt", bg: "bg-blue-50", text: "text-blue-700", icon: Clock },
@@ -48,7 +41,6 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; i
 };
 
 export function RequisitionManagement() {
-  const session = useAuthSession();
   const [requisitions, setRequisitions] = useState<RequisitionItem[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [jobTitles, setJobTitles] = useState<JobTitle[]>([]);
@@ -87,7 +79,7 @@ export function RequisitionManagement() {
     submit_immediately: false,
   });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -99,19 +91,19 @@ export function RequisitionManagement() {
       setRequisitions(reqData.items);
       setDepartments(depts);
       setJobTitles(titles);
-      if (depts.length > 0 && formData.department_id === 0) {
-        setFormData((prev) => ({ ...prev, department_id: depts[0].id }));
+      if (depts.length > 0) {
+        setFormData((prev) => prev.department_id === 0 ? { ...prev, department_id: depts[0].id } : prev);
       }
-    } catch (err: any) {
-      setError(err.message || "Không thể tải danh sách tờ trình tuyển dụng.");
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : "Không thể tải danh sách tờ trình tuyển dụng.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, selectedDeptId, statusTab]);
 
   useEffect(() => {
-    loadData();
-  }, [statusTab, selectedDeptId]);
+    queueMicrotask(() => void loadData());
+  }, [loadData]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,8 +118,8 @@ export function RequisitionManagement() {
       setNotice(formData.submit_immediately ? "Đã gửi tờ trình tuyển dụng lên Trưởng phòng phê duyệt." : "Đã lưu bản nháp tờ trình.");
       setShowCreateModal(false);
       loadData();
-    } catch (err: any) {
-      setActionError(err.message || "Không thể tạo tờ trình tuyển dụng.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Không thể tạo tờ trình tuyển dụng.");
     }
   };
 
@@ -137,8 +129,8 @@ export function RequisitionManagement() {
       setNotice("Đã gửi tờ trình lên Trưởng phòng phê duyệt.");
       if (selectedReq) setSelectedReq(null);
       loadData();
-    } catch (err: any) {
-      setActionError(err.message || "Lỗi khi gửi duyệt tờ trình.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Lỗi khi gửi duyệt tờ trình.");
     }
   };
 
@@ -149,8 +141,8 @@ export function RequisitionManagement() {
       setSelectedReq(null);
       setCommentInput("");
       loadData();
-    } catch (err: any) {
-      setActionError(err.message || "Lỗi khi phê duyệt tờ trình.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Lỗi khi phê duyệt tờ trình.");
     }
   };
 
@@ -165,8 +157,8 @@ export function RequisitionManagement() {
       setSelectedReq(null);
       setCommentInput("");
       loadData();
-    } catch (err: any) {
-      setActionError(err.message || "Lỗi khi từ chối tờ trình.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Lỗi khi từ chối tờ trình.");
     }
   };
 
@@ -177,12 +169,10 @@ export function RequisitionManagement() {
       setNotice("Đã xóa bản nháp tờ trình.");
       setSelectedReq(null);
       loadData();
-    } catch (err: any) {
-      setActionError(err.message || "Lỗi khi xóa tờ trình.");
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : "Lỗi khi xóa tờ trình.");
     }
   };
-
-  const isHrOrAdmin = session?.roles?.some((r) => ["admin", "hr_manager"].includes(r)) || ["admin", "hr_manager"].includes(session?.role || "");
 
   return (
     <HrShell>

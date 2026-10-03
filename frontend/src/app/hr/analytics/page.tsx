@@ -5,15 +5,10 @@ import {
   TrendingUp,
   Users,
   Briefcase,
-  UserCheck,
   Gift,
   Building2,
   Award,
-  Filter,
   BarChart3,
-  PieChart,
-  DollarSign,
-  ChevronRight,
   ArrowUpRight,
 } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
@@ -29,6 +24,7 @@ import {
   DepartmentStat,
   ReferralAnalytics,
 } from "@/features/analytics/services/analytics.service";
+import { ApiError } from "@/lib/api-client";
 
 export default function HrAnalyticsPage() {
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
@@ -53,15 +49,15 @@ export default function HrAnalyticsPage() {
       setFunnel(funData);
       setDepartments(deptData);
       setReferrals(refData);
-    } catch (err: any) {
-      setError(err.message || "Không thể tải dữ liệu báo cáo thống kê.");
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : "Không thể tải dữ liệu báo cáo thống kê.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadAllAnalytics();
+    queueMicrotask(() => void loadAllAnalytics());
   }, []);
 
   return (

@@ -1,9 +1,20 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { Sparkles, ShieldCheck, TrendingUp } from "lucide-react";
 import { Container } from "@/components/layout/Container";
+import { fetchPublicCompanyContent } from "../services/content.service";
+
+const DEFAULT_TITLE = "Cùng nhau tạo nên những điều lớn lao";
+const DEFAULT_BODY = "Khám phá cơ hội phát triển sự nghiệp ngay trong nội bộ, đóng góp giá trị, lan tỏa tài năng và cùng phát triển tiến xa hơn mỗi ngày.";
+const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop";
 
 export function HeroSection() {
+  const [content, setContent] = useState({ title: DEFAULT_TITLE, body: DEFAULT_BODY, image: DEFAULT_IMAGE });
+  useEffect(() => {
+    queueMicrotask(() => void fetchPublicCompanyContent().then((data) => setContent({ title: data.title, body: data.body, image: data.image || DEFAULT_IMAGE })).catch(() => undefined));
+  }, []);
   return (
     <section className="relative pt-10 pb-16 lg:pt-16 lg:pb-24 overflow-hidden">
       {/* Subtle Background Glow Decorative Elements */}
@@ -21,14 +32,11 @@ export function HeroSection() {
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-[var(--color-heading)] tracking-tight leading-[1.12]">
-              Cùng nhau tạo nên{" "}
-              <span className="text-[var(--color-primary)] relative inline-block">
-                những điều lớn lao
-              </span>
+              {content.title}
             </h1>
 
             <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-2xl font-normal">
-              Khám phá cơ hội phát triển sự nghiệp ngay trong nội bộ, đóng góp giá trị, lan tỏa tài năng và cùng phát triển tiến xa hơn mỗi ngày.
+              {content.body}
             </p>
 
             {/* Micro Highlights */}
@@ -60,7 +68,7 @@ export function HeroSection() {
 
               <div className="relative rounded-3xl overflow-hidden shadow-2xl border-4 border-white bg-slate-100 aspect-[4/3] sm:aspect-[4/3]">
                 <Image
-                  src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop"
+                  src={content.image}
                   alt="Nhân sự công sở làm việc nhóm chuyên nghiệp"
                   fill
                   priority
@@ -72,7 +80,7 @@ export function HeroSection() {
               {/* Handwriting speech bubble on right */}
               <div className="absolute -bottom-4 right-2 bg-blue-50/90 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-blue-200/80 shadow-lg z-20">
                 <p className="font-handwriting text-xl text-blue-700 font-bold leading-snug">
-                  &quot;Cùng nhau tạo nên những điều lớn lao&quot;
+                  &quot;{content.title}&quot;
                 </p>
               </div>
             </div>

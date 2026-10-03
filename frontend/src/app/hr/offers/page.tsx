@@ -2,13 +2,9 @@
 
 import { useEffect, useState } from "react";
 import {
-  FileText,
   UserCheck,
-  CheckCircle2,
-  XCircle,
   Clock,
   DollarSign,
-  Briefcase,
   Mail,
   Laptop,
   UserPlus,
@@ -17,17 +13,16 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { HrShell } from "@/features/hr/components/HrShell";
 import {
   fetchManageOffers,
   fetchManageOnboarding,
-  updateOfferStatus,
   updateOnboarding,
   OfferItem,
   OnboardingItem,
 } from "@/features/offers/services/offer.service";
+import { ApiError } from "@/lib/api-client";
 
 const OFFER_STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   draft: { label: "Nháp", bg: "bg-slate-100", text: "text-slate-600" },
@@ -43,7 +38,6 @@ export default function HrOffersPage() {
   const [onboardings, setOnboardings] = useState<OnboardingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   const loadOffersData = async () => {
     setLoading(true);
@@ -51,8 +45,8 @@ export default function HrOffersPage() {
     try {
       const res = await fetchManageOffers();
       setOffers(res.items);
-    } catch (err: any) {
-      setError(err.message || "Không thể tải danh sách Thư mời nhận việc.");
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : "Không thể tải danh sách Thư mời nhận việc.");
     } finally {
       setLoading(false);
     }
@@ -64,8 +58,8 @@ export default function HrOffersPage() {
     try {
       const res = await fetchManageOnboarding();
       setOnboardings(res.items);
-    } catch (err: any) {
-      setError(err.message || "Không thể tải tiến độ Onboarding nhân sự mới.");
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : "Không thể tải tiến độ Onboarding nhân sự mới.");
     } finally {
       setLoading(false);
     }
@@ -73,25 +67,11 @@ export default function HrOffersPage() {
 
   useEffect(() => {
     if (activeTab === "offers") {
-      loadOffersData();
+      queueMicrotask(() => void loadOffersData());
     } else {
-      loadOnboardingData();
+      queueMicrotask(() => void loadOnboardingData());
     }
   }, [activeTab]);
-
-  const handleUpdateOffer = async (id: number, status: string) => {
-    try {
-      await updateOfferStatus(id, status);
-      setNotice(
-        status === "accepted"
-          ? "Ứng viên đã chấp nhận Offer! Tiến độ Onboarding Nhân sự Mới đã được tự động kích hoạt."
-          : `Đã cập nhật trạng thái Offer thành: ${OFFER_STATUS_CONFIG[status]?.label || status}`
-      );
-      loadOffersData();
-    } catch (err: any) {
-      setError(err.message || "Không thể cập nhật trạng thái Offer.");
-    }
-  };
 
   const handleToggleOnboardingItem = async (
     onboardingId: number,
@@ -101,8 +81,8 @@ export default function HrOffersPage() {
     try {
       await updateOnboarding(onboardingId, { [field]: !currentVal });
       loadOnboardingData();
-    } catch (err: any) {
-      setError(err.message || "Không thể cập nhật danh mục Onboarding.");
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : "Không thể cập nhật danh mục Onboarding.");
     }
   };
 
@@ -118,7 +98,6 @@ export default function HrOffersPage() {
         </div>
 
         {error && <Alert variant="error">{error}</Alert>}
-        {notice && <Alert variant="success">{notice}</Alert>}
 
         {/* View Tabs */}
         <div className="flex overflow-x-auto border-b border-slate-200 gap-2 pb-px">
@@ -195,23 +174,7 @@ export default function HrOffersPage() {
                       )}
 
                       {/* Actions */}
-                      {item.status === "sent" && (
-                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                          <Button
-                            size="sm"
-                            onClick={() => handleUpdateOffer(item.id, "accepted")}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Ứng viên Đã đồng ý
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="danger"
-                            onClick={() => handleUpdateOffer(item.id, "declined")}
-                          >
-                            <XCircle className="h-3.5 w-3.5" /> Ứng viên Từ chối
-                          </Button>
-                        </div>
-                      )}
+                      {item.status === "sent" && <div className="border-t border-slate-100 pt-3 text-xs font-semibold text-blue-700">Đang chờ ứng viên phản hồi trên Cổng thông tin ứng viên.</div>}
                     </Card>
                   );
                 })}

@@ -2,17 +2,13 @@
 
 import { useEffect, useState } from "react";
 import {
-  Calendar as CalendarIcon,
   Clock,
   Video,
   MapPin,
-  Users,
   Search,
-  Filter,
   CheckCircle2,
   XCircle,
   ExternalLink,
-  ChevronRight,
   UserCheck,
 } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
@@ -25,6 +21,7 @@ import {
   updateInterview,
   InterviewItem,
 } from "@/features/interviews/services/interview.service";
+import { ApiError } from "@/lib/api-client";
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   scheduled: { label: "Đã lên lịch", bg: "bg-blue-50", text: "text-blue-700" },
@@ -57,15 +54,17 @@ export default function HrInterviewsPage() {
         });
         setInterviews(res.items);
       }
-    } catch (err: any) {
-      setError(err.message || "Không thể tải danh sách lịch phỏng vấn.");
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : "Không thể tải danh sách lịch phỏng vấn.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    queueMicrotask(() => void loadData());
+    // Search is applied explicitly when the filter form is submitted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, statusFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -78,8 +77,8 @@ export default function HrInterviewsPage() {
       await updateInterview(id, { status });
       setNotice(`Đã cập nhật trạng thái lịch phỏng vấn thành: ${STATUS_CONFIG[status]?.label || status}`);
       loadData();
-    } catch (err: any) {
-      setError(err.message || "Không thể cập nhật trạng thái lịch.");
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : "Không thể cập nhật trạng thái lịch.");
     }
   };
 
