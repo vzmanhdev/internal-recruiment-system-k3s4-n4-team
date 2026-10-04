@@ -72,10 +72,10 @@ export function CandidateDashboard() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-7">
-      <section className="rounded-3xl bg-gradient-to-r from-indigo-700 via-blue-700 to-cyan-600 p-7 text-white shadow-xl sm:p-9">
-        <p className="text-sm font-semibold text-blue-100">CỔNG THÔNG TIN ỨNG VIÊN</p>
-        <h1 className="mt-2 text-3xl font-black">Xin chào, {session.full_name}</h1>
-        <p className="mt-2 text-sm text-blue-100">Theo dõi toàn bộ hành trình ứng tuyển, lịch phỏng vấn và thư mời của bạn.</p>
+      <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5 sm:p-7">
+        <p className="text-sm font-semibold text-blue-600">Cổng thông tin ứng viên</p>
+        <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Xin chào, {session.full_name}</h1>
+        <p className="mt-2 text-sm text-slate-500">Theo dõi toàn bộ hành trình ứng tuyển, lịch phỏng vấn và thư mời của bạn.</p>
         <div className="mt-5 flex flex-wrap gap-3"><Button href="/jobs" variant="secondary">Xem việc làm</Button><Button href="/profile" variant="outline">Cập nhật hồ sơ</Button></div>
       </section>
 

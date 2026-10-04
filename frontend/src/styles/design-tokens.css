@@ -2,8 +2,8 @@
 
 :root {
   /* Color Tokens - Primary */
-  --color-primary: #3B82F6;
-  --color-primary-hover: #2563EB;
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
   --color-primary-active: #1D4ED8;
   --color-primary-light: #EFF6FF;
 
@@ -20,17 +20,17 @@
   --color-danger-light: #FEF2F2;
 
   /* Background & Surface Tokens */
-  --color-background-start: #F0F6FF;
-  --color-background-end: #F8FAFC;
+  --color-background-start: #F4F8FE;
+  --color-background-end: #F4F8FE;
   --color-surface: #FFFFFF;
 
   /* Text Tokens */
-  --color-heading: #0F172A;
+  --color-heading: #0B2347;
   --color-body: #475569;
   --color-muted: #64748B;
 
   /* Border Token */
-  --color-border: #E2E8F0;
+  --color-border: #DCE8F5;
 
   /* Radius Tokens */
   --radius-sm: 8px;
@@ -45,7 +45,17 @@
   --shadow-card-hover: 0 14px 40px rgba(59, 130, 246, 0.08);
 
   /* Typography Foundation */
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-sans: var(--font-inter), 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Keep public pages and workspace components on the same theme. */
+  --primary: var(--color-primary);
+  --primary-dark: var(--color-primary-hover);
+  --navy: var(--color-heading);
+  --text: var(--color-body);
+  --muted: var(--color-muted);
+  --soft: var(--color-background-start);
+  --soft-blue: var(--color-primary-light);
+  --border: var(--color-border);
 }
 
 .font-handwriting {
@@ -53,6 +63,7 @@
 }
 
 /* Global Reset & Base Typography */
+@layer base {
 html {
   scroll-behavior: smooth;
 }
@@ -114,6 +125,7 @@ input:disabled, select:disabled, textarea:disabled {
   background-color: #F8FAFC;
   color: #94A3B8;
   cursor: not-allowed;
+}
 }
 
 /* Responsive Container Foundation */

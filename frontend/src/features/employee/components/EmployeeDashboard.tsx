@@ -53,10 +53,10 @@ export function EmployeeDashboard() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-7">
-      <section className="rounded-3xl bg-gradient-to-r from-blue-700 to-indigo-700 p-7 text-white shadow-xl sm:p-9">
-        <p className="text-sm font-semibold text-blue-100">CỔNG NHÂN SỰ NỘI BỘ</p>
-        <h1 className="mt-2 text-3xl font-black">Xin chào, {session.full_name}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-blue-100">Quản lý thông tin cá nhân, giới thiệu nhân tài và theo dõi kết quả ngay tại một nơi.</p>
+      <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5 sm:p-7">
+        <p className="text-sm font-semibold text-blue-600">Cổng nhân sự nội bộ</p>
+        <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Xin chào, {session.full_name}</h1>
+        <p className="mt-2 max-w-2xl text-sm text-slate-500">Quản lý thông tin cá nhân, giới thiệu nhân tài và theo dõi kết quả ngay tại một nơi.</p>
       </section>
 
       {error && <Alert variant="error">{error}</Alert>}

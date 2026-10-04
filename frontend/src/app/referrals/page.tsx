@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Header } from "@/components/layout/Header";
+import { AccountWorkspaceShell } from "@/components/layout/AccountWorkspaceShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -101,9 +101,8 @@ export default function EmployeeReferralPage() {
     .reduce((acc, curr) => acc + (curr.bonus_amount || 0), 0);
 
   return (
-    <>
-      <Header />
-      <main className="inner-page container py-8 space-y-6">
+    <AccountWorkspaceShell>
+      <section className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-slate-900">Cổng Giới thiệu Nhân sự Nội bộ (Internal Referral)</h1>
@@ -273,7 +272,7 @@ export default function EmployeeReferralPage() {
             </Card>
           </div>
         )}
-      </main>
-    </>
+      </section>
+    </AccountWorkspaceShell>
   );
 }

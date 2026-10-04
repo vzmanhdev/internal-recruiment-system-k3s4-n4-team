@@ -21,7 +21,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
     return (
       <div
         ref={ref}
-        className={cn("rounded-2xl p-6 transition-all duration-200", variantStyles[variant], className)}
+        className={cn("rounded-2xl p-5 transition-all duration-200", variantStyles[variant], className)}
         {...props}
       >
         {children}

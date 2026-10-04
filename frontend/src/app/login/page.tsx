@@ -11,7 +11,7 @@ export default function LoginPage() {
       {/* Right Column: Interactive Login Form */}
       <div
         style={{
-          background: "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)",
+          background: "var(--color-background-start)",
         }}
         className="flex flex-col justify-center items-center p-5 sm:p-10 lg:p-16 min-h-screen"
       >
