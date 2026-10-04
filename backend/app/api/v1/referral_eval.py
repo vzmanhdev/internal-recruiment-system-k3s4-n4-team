@@ -43,7 +43,7 @@ def get_hr_user(authorization: Optional[str], db: Session) -> User:
 def get_internal_user(authorization: Optional[str], db: Session) -> User:
     user = get_current_user_from_header(authorization, db)
     roles = {role.strip() for role in user.role.split(",") if role.strip()}
-    if not roles.intersection({"employee", "manager", "hr_manager", "admin"}):
+    if not roles.intersection({"employee", "recruiter", "manager", "hr_manager", "admin"}):
         raise HTTPException(status_code=403, detail="Chức năng giới thiệu ứng viên chỉ dành cho nhân sự nội bộ")
     return user
 

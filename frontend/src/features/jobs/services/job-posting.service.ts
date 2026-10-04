@@ -109,7 +109,7 @@ export async function createJobPosting(payload: CreateJobPostingPayload): Promis
   });
 }
 
-export async function updateJobPosting(id: number, payload: Partial<CreateJobPostingPayload>): Promise<JobPostingItem> {
+export async function updateJobPosting(id: number, payload: Partial<Omit<CreateJobPostingPayload, "deadline">> & {deadline?: string | null}): Promise<JobPostingItem> {
   return apiRequest<JobPostingItem>(`/jobs/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload),

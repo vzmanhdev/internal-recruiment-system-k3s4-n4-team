@@ -3,6 +3,7 @@ from app.main import app
 from app.db.session import get_db, Base, engine
 from app.models.user import User
 from app.core.security import hash_password, create_access_token
+from tests.recruitment_fixtures import approved_requisition
 
 client = TestClient(app)
 
@@ -45,7 +46,10 @@ def test_job_flow():
         dept_id = create_dept.json()["id"]
 
     # 2. Create Job Posting via HR API
+    with next(get_db()) as db:
+        approved_id = approved_requisition(db, dept_id, salary=50000000)
     job_payload = {
+        "requisition_id": approved_id,
         "title": "Lead Product Manager",
         "department_id": dept_id,
         "quantity": 1,

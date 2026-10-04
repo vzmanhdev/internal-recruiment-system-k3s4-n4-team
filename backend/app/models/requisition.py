@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean, Numeric
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
@@ -25,6 +25,9 @@ class JobRequisition(Base):
     benefits = Column(Text, nullable=True)
     status = Column(String(50), default="draft", nullable=False)  # draft, pending_dept, pending_hr, approved, rejected, closed
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    headcount_budget_id = Column(Integer, ForeignKey("headcount_budgets.id"), nullable=True)
+    reserved_monthly_salary = Column(Numeric(18, 2), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -32,6 +35,7 @@ class JobRequisition(Base):
     department = relationship("Department", foreign_keys=[department_id])
     job_title = relationship("JobTitle", foreign_keys=[job_title_id])
     creator = relationship("User", foreign_keys=[created_by_id])
+    recruiter = relationship("User", foreign_keys=[recruiter_id])
     approval_logs = relationship("RequisitionApprovalLog", back_populates="requisition", cascade="all, delete-orphan", order_by="RequisitionApprovalLog.created_at.desc()")
 
     def to_dict(self):
@@ -57,6 +61,10 @@ class JobRequisition(Base):
             "benefits": self.benefits,
             "status": self.status,
             "created_by_id": self.created_by_id,
+            "recruiter_id": self.recruiter_id,
+            "recruiter_name": self.recruiter.full_name if self.recruiter else None,
+            "headcount_budget_id": self.headcount_budget_id,
+            "reserved_monthly_salary": float(self.reserved_monthly_salary) if self.reserved_monthly_salary is not None else None,
             "creator_name": self.creator.full_name if self.creator else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

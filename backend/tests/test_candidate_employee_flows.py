@@ -7,6 +7,7 @@ from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.user import User
+from tests.recruitment_fixtures import approved_requisition
 
 
 client = TestClient(app)
@@ -46,7 +47,9 @@ def test_candidate_application_interview_offer_and_employee_registration():
 
     department = client.post("/api/v1/hr/departments", headers=admin_headers, json={"name": f"Kiểm thử {unique}", "code": f"QA-{unique}", "sort_order": 0})
     assert department.status_code == 201, department.text
-    job = client.post("/api/v1/jobs", headers=admin_headers, json={"title": f"QA Engineer {unique}", "department_id": department.json()["id"], "quantity": 1, "work_location": "Hà Nội", "status": "published"})
+    with SessionLocal() as db:
+        approved_id = approved_requisition(db, department.json()["id"])
+    job = client.post("/api/v1/jobs", headers=admin_headers, json={"title": f"QA Engineer {unique}", "department_id": department.json()["id"], "quantity": 1, "work_location": "Hà Nội", "status": "published", "requisition_id":approved_id,"job_description":"Mô tả QA", "requirements":"Kỹ năng kiểm thử"})
     assert job.status_code == 201, job.text
 
     application = client.post("/api/v1/applications", headers=candidate_headers, json={"job_id": job.json()["id"], "full_name": "Ứng viên Kiểm thử", "email": candidate_email, "phone": "0901234567", "cv_url": "https://example.com/cv.pdf"})

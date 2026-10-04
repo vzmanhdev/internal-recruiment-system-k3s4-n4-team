@@ -1,11 +1,12 @@
 "use client";
 
-import { BarChart3, CalendarDays, ClipboardList, FileText, FolderTree, Gift, UserRound, Users } from "lucide-react";
+import { BarChart3, CalendarDays, ClipboardList, FileText, FolderTree, Gift, UserRound, Users, Wallet } from "lucide-react";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 
 const items = [
   { href: "/hr/dashboard", label: "Thiết lập nhân sự", icon: FolderTree },
   { href: "/hr/requisitions", label: "Yêu cầu tuyển dụng", icon: ClipboardList },
+  { href: "/hr/headcount", label: "Headcount & đăng tin", icon: Wallet },
   { href: "/hr/applications", label: "Hồ sơ ứng tuyển", icon: Users },
   { href: "/hr/interviews", label: "Lịch phỏng vấn", icon: CalendarDays },
   { href: "/hr/offers", label: "Thư mời và nhận việc", icon: Gift },

@@ -5,14 +5,20 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from uuid import uuid4
 
 from app.api.v1.auth import require_roles
 from app.db.session import get_db
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
 from app.models.user import User
+from app.models.headcount import RequisitionPublication
+from app.models.job import JobPosting
+from app.services.headcount import budget_check, reserve_budget, validate_recruiter
 from app.schemas.requisition import (
     PaginatedRequisitionsResponse,
     RequisitionApprovalAction,
+    RequisitionAssignment,
     RequisitionCreate,
     RequisitionResponse,
     RequisitionUpdate,
@@ -265,6 +271,7 @@ def approve_requisition(
         # Step 2 Approval: HR Manager or Admin
         if not user_roles.intersection(HR_ADMIN_ROLES):
             raise HTTPException(status_code=403, detail="Chỉ HR Manager hoặc Admin mới có quyền duyệt vòng HR")
+        reserve_budget(db, requisition)
         requisition.status = "approved"
         log_action = "approve_hr"
         log_comment = f"[HR Manager duyệt]: {comment}"
@@ -284,6 +291,68 @@ def approve_requisition(
     db.refresh(requisition)
 
     return requisition.to_dict()
+
+
+@router.get("/{requisition_id}/budget-check")
+def check_requisition_budget(requisition_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    require_roles(authorization, db, HR_ADMIN_ROLES)
+    req = db.get(JobRequisition, requisition_id)
+    if not req:
+        raise HTTPException(404, "Không tìm thấy tờ trình.")
+    return budget_check(db, req)
+
+
+@router.put("/{requisition_id}/assign", response_model=RequisitionResponse)
+def assign_recruiter(requisition_id: int, payload: RequisitionAssignment, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = require_roles(authorization, db, HR_ADMIN_ROLES)
+    req = db.get(JobRequisition, requisition_id)
+    if not req:
+        raise HTTPException(404, "Không tìm thấy tờ trình.")
+    if req.status != "approved":
+        raise HTTPException(409, "Chỉ phân công nhân viên tuyển dụng cho tờ trình đã được duyệt.")
+    recruiter = db.get(User, payload.recruiter_id)
+    validate_recruiter(recruiter)
+    req.recruiter_id = recruiter.id
+    db.add(RequisitionApprovalLog(requisition_id=req.id, approver_id=user.id, action="assign_recruiter", comment=f"Phân công {recruiter.full_name} phụ trách tuyển dụng."))
+    db.commit()
+    db.refresh(req)
+    return req.to_dict()
+
+
+@router.post("/{requisition_id}/posting")
+def create_posting_from_requisition(requisition_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = require_roles(authorization, db, HR_ADMIN_ROLES)
+    req = db.get(JobRequisition, requisition_id)
+    if not req:
+        raise HTTPException(404, "Không tìm thấy tờ trình.")
+    if req.status != "approved":
+        raise HTTPException(409, "Tờ trình phải được HR phê duyệt trước khi soạn tin.")
+    validate_recruiter(db.get(User, req.recruiter_id) if req.recruiter_id else None)
+    existing = db.query(JobPosting).filter_by(requisition_id=req.id).first()
+    if existing:
+        return existing.to_dict()
+    claim = RequisitionPublication(requisition_id=req.id)
+    db.add(claim)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Tờ trình đã có tin tuyển dụng. Vui lòng tải lại.")
+    reserve_budget(db, req)
+    job = JobPosting(code=f"JOB-{datetime.utcnow().year}-{uuid4().hex[:10].upper()}", requisition_id=req.id,
+                     title=req.title, department_id=req.department_id, job_title_id=req.job_title_id,
+                     quantity=req.quantity, min_salary=req.min_salary, max_salary=req.max_salary,
+                     work_location=req.work_location, employment_type=req.employment_type,
+                     experience_years=req.experience_years, deadline=req.deadline,
+                     job_description=req.job_description, requirements=req.requirements, benefits=req.benefits,
+                     status="draft", created_by_id=user.id)
+    db.add(job)
+    db.flush()
+    claim.job_id = job.id
+    db.add(RequisitionApprovalLog(requisition_id=req.id, approver_id=user.id, action="create_posting", comment=f"Tạo bản nháp tin tuyển dụng {job.code}."))
+    db.commit()
+    db.refresh(job)
+    return job.to_dict()
 
 @router.post("/{requisition_id}/reject", response_model=RequisitionResponse)
 def reject_requisition(

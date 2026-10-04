@@ -113,6 +113,7 @@ export function AdminJobsManagement() {
       </div>
       {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}
       {notice && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{notice}</div>}
+      <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-slate-600">Tin xuất bản cần tờ trình đã duyệt ngân sách và phân công tuyển dụng. <Link href="/hr/headcount" className="font-semibold text-blue-600">Mở luồng Headcount & đăng tin →</Link></div>
 
       {showCreate && (
         <form onSubmit={createJob} className="grid gap-4 rounded-2xl border border-blue-200 bg-white p-5 shadow-sm md:grid-cols-2 xl:grid-cols-3">

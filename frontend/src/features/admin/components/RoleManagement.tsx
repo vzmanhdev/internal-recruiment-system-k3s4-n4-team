@@ -31,6 +31,12 @@ interface RolePermission {
 
 const initialRoles: RolePermission[] = [
   {
+    id: "role-recruiter", name: "Nhân viên tuyển dụng (Recruiter)", code: "recruiter",
+    description: "Được Trưởng phòng Nhân sự phân công phụ trách các tờ trình đã duyệt.",
+    usersCount: 0, isSystem: true,
+    permissions: [{module:"Hồ sơ cá nhân",read:true,write:true,approve:false,delete:false}],
+  },
+  {
     id: "role-admin",
     name: "Quản trị viên (Admin)",
     code: "admin",

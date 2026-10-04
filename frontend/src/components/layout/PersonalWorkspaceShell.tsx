@@ -11,5 +11,5 @@ export function PersonalWorkspaceShell({ children, candidate = false }: { childr
     { href: "/profile", label: "Hồ sơ cá nhân", icon: UserRound },
     { href: "/change-password", label: "Đổi mật khẩu", icon: KeyRound },
   ];
-  return <WorkspaceShell title={candidate ? "Cổng ứng viên" : "Nhân sự nội bộ"} description={candidate ? "Theo dõi hành trình ứng tuyển" : "Phát triển sự nghiệp cùng công ty"} icon={UserRound} items={items} allowedRoles={candidate ? ["candidate"] : ["employee", "manager", "hr_manager", "admin"]}>{children}</WorkspaceShell>;
+  return <WorkspaceShell title={candidate ? "Cổng ứng viên" : "Nhân sự nội bộ"} description={candidate ? "Theo dõi hành trình ứng tuyển" : "Phát triển sự nghiệp cùng công ty"} icon={UserRound} items={items} allowedRoles={candidate ? ["candidate"] : ["employee", "recruiter", "manager", "hr_manager", "admin"]}>{children}</WorkspaceShell>;
 }

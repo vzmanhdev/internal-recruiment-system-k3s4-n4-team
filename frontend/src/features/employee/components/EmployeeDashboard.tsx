@@ -19,7 +19,7 @@ export function EmployeeDashboard() {
   const session = useAuthSession();
   const router = useRouter();
   const roles = getSessionRoles(session);
-  const isInternal = roles.some((role) => ["employee", "manager", "hr_manager", "admin"].includes(role));
+  const isInternal = roles.some((role) => ["employee", "recruiter", "manager", "hr_manager", "admin"].includes(role));
   const sessionId = session?.id;
   const [referrals, setReferrals] = useState<ReferralItem[]>([]);
   const [loading, setLoading] = useState(true);

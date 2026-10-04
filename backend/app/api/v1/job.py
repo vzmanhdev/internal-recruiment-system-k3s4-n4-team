@@ -4,11 +4,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.auth import require_roles
 from app.db.session import get_db
 from app.models.job import JobPosting
 from app.models.requisition import JobRequisition
+from app.models.headcount import RequisitionPublication
 from app.models.user import User
 from app.schemas.job import (
     JobPostingCreate,
@@ -17,6 +19,7 @@ from app.schemas.job import (
     PaginatedJobPostingsResponse,
 )
 from app.services.audit import write_audit_log
+from app.services.headcount import validate_linked_job
 
 router = APIRouter()
 
@@ -152,6 +155,15 @@ def create_job_posting(
             raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình được chỉ định")
         if req.status != "approved":
             raise HTTPException(status_code=400, detail="Chỉ có thể tạo tin tuyển dụng từ Tờ trình đã được phê duyệt (approved)")
+        if db.query(JobPosting).filter_by(requisition_id=req.id).first():
+            raise HTTPException(409, "Tờ trình đã có tin tuyển dụng. Hãy chỉnh sửa tin hiện có.")
+        publication = RequisitionPublication(requisition_id=req.id)
+        db.add(publication)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "Tờ trình đã có tin tuyển dụng. Vui lòng tải lại.")
 
     code = generate_job_code(db)
 
@@ -178,6 +190,10 @@ def create_job_posting(
     )
 
     db.add(job)
+    validate_linked_job(db, job, publishing=job.status == "published")
+    if payload.requisition_id:
+        db.flush()
+        publication.job_id = job.id
     db.commit()
     db.refresh(job)
     write_audit_log(db, action="Tạo vị trí tuyển dụng", module="Tin tuyển dụng", request=request, user=current_user, details=f"{job.code} - {job.title}")
@@ -201,6 +217,8 @@ def update_job_posting(
     for key, value in update_data.items():
         setattr(job, key, value)
 
+    validate_linked_job(db, job, publishing=job.status == "published")
+
     job.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(job)
@@ -220,6 +238,7 @@ def publish_job_posting(
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
 
+    validate_linked_job(db, job, publishing=True)
     job.status = "published"
     job.updated_at = datetime.utcnow()
     db.commit()
@@ -261,6 +280,7 @@ def delete_job_posting(
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
 
     details = f"{job.code} - {job.title}"
+    db.query(RequisitionPublication).filter_by(job_id=job.id).delete()
     db.delete(job)
     db.commit()
     write_audit_log(db, action="Xóa vị trí tuyển dụng", module="Tin tuyển dụng", request=request, user=current_user, status="warning", details=details)

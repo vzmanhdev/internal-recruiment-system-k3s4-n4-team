@@ -12,6 +12,10 @@ export interface RequisitionApprovalLog {
 }
 
 export interface RequisitionItem {
+  recruiter_id?: number;
+  recruiter_name?: string;
+  headcount_budget_id?: number;
+  reserved_monthly_salary?: number;
   id: number;
   code: string;
   title: string;

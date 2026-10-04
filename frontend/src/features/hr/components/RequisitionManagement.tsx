@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Plus,
   Search,
@@ -190,6 +191,7 @@ export function RequisitionManagement() {
 
         {error && <Alert variant="error">{error}</Alert>}
         {notice && <Alert variant="success">{notice}</Alert>}
+        <Card variant="subtle"><p className="text-sm text-slate-600">Tờ trình đến bước HR phải được kiểm soát ngân sách trước khi duyệt.</p><Link href="/hr/headcount" className="mt-2 inline-flex text-sm font-semibold text-blue-600">Mở Headcount, phân công & đăng tin →</Link></Card>
 
         {/* Status Tabs */}
         <div className="flex overflow-x-auto border-b border-slate-200 gap-2 pb-px">

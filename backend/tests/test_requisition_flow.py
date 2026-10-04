@@ -79,6 +79,8 @@ def test_requisition_lifecycle():
         dept_id = create_dept.json()["id"]
 
     # 2. Create Requisition Draft
+    configured = client.put(f"/api/v1/headcount/budgets/{dept_id}", headers=headers_admin, json={"headcount_limit":10000,"monthly_salary_limit":1000000000000})
+    assert configured.status_code == 200
     req_payload = {
         "title": "Senior FastAPI Developer",
         "department_id": dept_id,

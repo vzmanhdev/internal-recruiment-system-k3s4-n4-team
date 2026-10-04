@@ -11,6 +11,7 @@ from app.api.v1.analytics import router as analytics_router
 from app.api.v1.application import router as application_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.hr import router as hr_router
+from app.api.v1.headcount import router as headcount_router
 from app.api.v1.interview import router as interview_router
 from app.api.v1.job import router as job_router
 from app.api.v1.offer_onboarding import router as offer_onboarding_router
@@ -21,6 +22,7 @@ from app.core.security import hash_password
 from app.db.session import Base, SessionLocal, engine
 from app.models.application import ApplicationLog, JobApplication
 from app.models.hr import Competency, Department, JobTitle, SharedCategory
+from app.models.headcount import HeadcountBudget, RequisitionPublication
 from app.models.interview import InterviewInterviewer, InterviewSchedule
 from app.models.job import JobPosting
 from app.models.offer_onboarding import JobOffer, OnboardingChecklist
@@ -32,6 +34,10 @@ from app.models.user import User
 Base.metadata.create_all(bind=engine)
 
 with engine.begin() as connection:
+    requisition_columns = {column["name"] for column in inspect(engine).get_columns("job_requisitions")}
+    for name, definition in {"recruiter_id": "INTEGER REFERENCES users(id)", "headcount_budget_id": "INTEGER REFERENCES headcount_budgets(id)", "reserved_monthly_salary": "NUMERIC(18, 2)"}.items():
+        if name not in requisition_columns:
+            connection.execute(text(f"ALTER TABLE job_requisitions ADD COLUMN {name} {definition}"))
     user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
     if "account_status" not in user_columns:
         connection.execute(text("ALTER TABLE users ADD COLUMN account_status VARCHAR(20) NOT NULL DEFAULT 'active'"))
@@ -93,6 +99,10 @@ if settings.APP_ENV != "production":
                 account_status="active",
             ))
             db.commit()
+        has_recruiter = db.query(User).filter(User.role.ilike("%recruiter%")).first()
+        if not has_recruiter and not db.query(User).filter_by(email=settings.DEV_RECRUITER_EMAIL).first():
+            db.add(User(email=settings.DEV_RECRUITER_EMAIL, hashed_password=hash_password(settings.DEV_RECRUITER_PASSWORD), full_name="Nhân viên tuyển dụng", role="recruiter", is_active=True, account_status="active"))
+            db.commit()
     finally:
         db.close()
 
@@ -143,6 +153,7 @@ def health_check() -> Dict[str, str]:
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["Account administration"])
 app.include_router(hr_router, prefix="/api/v1/hr", tags=["Human resources"])
+app.include_router(headcount_router, prefix="/api/v1/headcount", tags=["Headcount budgets"])
 app.include_router(requisition_router, prefix="/api/v1/requisitions", tags=["Job Requisitions"])
 app.include_router(job_router, prefix="/api/v1/jobs", tags=["Job Postings"])
 app.include_router(application_router, prefix="/api/v1/applications", tags=["Job Applications"])
