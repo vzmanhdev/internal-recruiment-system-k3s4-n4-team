@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     DEV_ADMIN_PASSWORD: str = "Admin12345"
     DEV_HR_EMAIL: str = "hr@company.com"
     DEV_HR_PASSWORD: str = "Admin12345"
+    DEV_MANAGER_EMAIL: str = "manager@company.com"
+    DEV_MANAGER_PASSWORD: str = "Manager12345"
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""

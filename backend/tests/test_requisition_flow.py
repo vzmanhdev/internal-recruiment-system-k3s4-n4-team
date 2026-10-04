@@ -25,29 +25,45 @@ def setup_test_db():
         db.commit()
         db.refresh(admin)
 
-    dept_head = db.query(User).filter(User.email == "depthead_test@company.com").first()
-    if not dept_head:
-        dept_head = User(
+    employee = db.query(User).filter(User.email == "depthead_test@company.com").first()
+    if not employee:
+        employee = User(
             email="depthead_test@company.com",
             hashed_password=hash_password("dept123"),
-            full_name="Dept Head Test",
+            full_name="Employee Requisition Test",
             role="employee",
             is_active=True,
             account_status="active"
         )
-        db.add(dept_head)
+        db.add(employee)
         db.commit()
-        db.refresh(dept_head)
+        db.refresh(employee)
 
-    return admin, dept_head
+    manager = db.query(User).filter(User.email == "manager_req_test@company.com").first()
+    if not manager:
+        manager = User(
+            email="manager_req_test@company.com",
+            hashed_password=hash_password("manager123"),
+            full_name="Department Manager Test",
+            role="manager",
+            is_active=True,
+            account_status="active"
+        )
+        db.add(manager)
+        db.commit()
+        db.refresh(manager)
+
+    return admin, employee, manager
 
 def test_requisition_lifecycle():
-    admin, dept_head = setup_test_db()
+    admin, employee, manager = setup_test_db()
     admin_token = create_access_token(subject=admin.id)
-    dept_token = create_access_token(subject=dept_head.id)
+    employee_token = create_access_token(subject=employee.id)
+    manager_token = create_access_token(subject=manager.id)
 
     headers_admin = {"Authorization": f"Bearer {admin_token}"}
-    headers_dept = {"Authorization": f"Bearer {dept_token}"}
+    headers_employee = {"Authorization": f"Bearer {employee_token}"}
+    headers_manager = {"Authorization": f"Bearer {manager_token}"}
 
     # 1. Create Department first if needed
     dept_resp = client.get("/api/v1/hr/departments", headers=headers_admin)
@@ -77,19 +93,23 @@ def test_requisition_lifecycle():
         "submit_immediately": False
     }
 
-    create_res = client.post("/api/v1/requisitions", json=req_payload, headers=headers_dept)
+    create_res = client.post("/api/v1/requisitions", json=req_payload, headers=headers_employee)
     assert create_res.status_code == 201
     req_data = create_res.json()
     assert req_data["status"] == "draft"
     req_id = req_data["id"]
 
     # 3. Submit Requisition
-    submit_res = client.post(f"/api/v1/requisitions/{req_id}/submit", headers=headers_dept)
+    submit_res = client.post(f"/api/v1/requisitions/{req_id}/submit", headers=headers_employee)
     assert submit_res.status_code == 200
     assert submit_res.json()["status"] == "pending_dept"
 
     # 4. Department Approval
-    app_dept_res = client.post(f"/api/v1/requisitions/{req_id}/approve", json={"comment": "Đồng ý đề xuất"}, headers=headers_admin)
+    manager_queue = client.get("/api/v1/requisitions?status=pending_dept", headers=headers_manager)
+    assert manager_queue.status_code == 200
+    assert any(item["id"] == req_id for item in manager_queue.json()["items"])
+
+    app_dept_res = client.post(f"/api/v1/requisitions/{req_id}/approve", json={"comment": "Đồng ý đề xuất"}, headers=headers_manager)
     assert app_dept_res.status_code == 200
     assert app_dept_res.json()["status"] == "pending_hr"
 

@@ -82,6 +82,17 @@ if settings.APP_ENV != "production":
                 account_status="active",
             ))
             db.commit()
+        has_manager = db.query(User).filter(User.role.ilike("%manager%")).filter(~User.role.ilike("%hr_manager%")).first()
+        if not has_manager:
+            db.add(User(
+                email=settings.DEV_MANAGER_EMAIL,
+                hashed_password=hash_password(settings.DEV_MANAGER_PASSWORD),
+                full_name="Trưởng bộ phận Kỹ thuật",
+                role="manager",
+                is_active=True,
+                account_status="active",
+            ))
+            db.commit()
     finally:
         db.close()
 

@@ -71,7 +71,7 @@ def reset_and_seed_database():
                 email="depthead@company.com",
                 hashed_password=hash_password("admin123"),
                 full_name="Trưởng Phòng Kỹ Thuật (Dept Head)",
-                role="dept_head",
+                role="manager",
                 is_active=True,
                 account_status="active",
             ),
@@ -106,7 +106,7 @@ def reset_and_seed_database():
         print("3. 👨‍💼 DEPT HEAD (Trưởng phòng Ban):")
         print("   - Email:    depthead@company.com")
         print("   - Password: admin123")
-        print("   - Role:     dept_head")
+        print("   - Role:     manager")
         print("------------------------------------------------------------")
         print("4. 🧑‍💻 EMPLOYEE (Nhân viên nội bộ):")
         print("   - Email:    employee@company.com")

@@ -20,8 +20,9 @@ from app.schemas.requisition import (
 
 router = APIRouter()
 
-ALLOWED_ROLES = {"admin", "hr_manager", "employee"}
+ALLOWED_ROLES = {"admin", "hr_manager", "manager", "employee"}
 HR_ADMIN_ROLES = {"admin", "hr_manager"}
+DEPARTMENT_APPROVER_ROLES = {"admin", "manager"}
 
 def get_current_user(authorization: Optional[str], db: Session) -> User:
     return require_roles(authorization, db, ALLOWED_ROLES)
@@ -57,8 +58,16 @@ def list_requisitions(
     if department_id:
         query = query.filter(JobRequisition.department_id == department_id)
 
-    # Non-HR/Admin users only see requisitions they created
-    if not user_roles.intersection(HR_ADMIN_ROLES):
+    # Trưởng bộ phận xem các tờ trình đang chờ duyệt vòng phòng ban và các
+    # tờ trình do chính họ tạo. Nhân viên chỉ xem tờ trình của mình.
+    if "manager" in user_roles and not user_roles.intersection(HR_ADMIN_ROLES):
+        query = query.filter(
+            or_(
+                JobRequisition.created_by_id == current_user.id,
+                JobRequisition.status == "pending_dept",
+            )
+        )
+    elif not user_roles.intersection(HR_ADMIN_ROLES):
         query = query.filter(JobRequisition.created_by_id == current_user.id)
 
     total = query.count()
@@ -142,7 +151,8 @@ def get_requisition(
         raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình tuyển dụng")
     
     user_roles = set(current_user.role.split(","))
-    if not user_roles.intersection(HR_ADMIN_ROLES) and requisition.created_by_id != current_user.id:
+    manager_can_review = "manager" in user_roles and requisition.status == "pending_dept"
+    if not user_roles.intersection(HR_ADMIN_ROLES) and requisition.created_by_id != current_user.id and not manager_can_review:
         raise HTTPException(status_code=403, detail="Bạn không có quyền xem tờ trình này")
 
     return requisition.to_dict()
@@ -210,6 +220,10 @@ def submit_requisition(
     if requisition.status not in ["draft", "rejected"]:
         raise HTTPException(status_code=400, detail="Tờ trình đã được gửi hoặc phê duyệt trước đó")
 
+    user_roles = set(current_user.role.split(","))
+    if requisition.created_by_id != current_user.id and not user_roles.intersection(HR_ADMIN_ROLES):
+        raise HTTPException(status_code=403, detail="Bạn không có quyền gửi tờ trình này")
+
     requisition.status = "pending_dept"
     requisition.updated_at = datetime.utcnow()
 
@@ -242,7 +256,8 @@ def approve_requisition(
     comment = payload.comment.strip() if payload and payload.comment else "Đã phê duyệt"
 
     if requisition.status == "pending_dept":
-        # Step 1 Approval: Dept Lead or Admin/HR Manager
+        if not user_roles.intersection(DEPARTMENT_APPROVER_ROLES):
+            raise HTTPException(status_code=403, detail="Chỉ Trưởng bộ phận hoặc Admin mới có quyền duyệt vòng phòng ban")
         requisition.status = "pending_hr"
         log_action = "approve_dept"
         log_comment = f"[Trưởng phòng duyệt]: {comment}"
@@ -284,6 +299,12 @@ def reject_requisition(
 
     if requisition.status not in ["pending_dept", "pending_hr"]:
         raise HTTPException(status_code=400, detail="Chỉ có thể từ chối tờ trình đang ở trạng thái chờ duyệt")
+
+    user_roles = set(current_user.role.split(","))
+    if requisition.status == "pending_dept" and not user_roles.intersection(DEPARTMENT_APPROVER_ROLES):
+        raise HTTPException(status_code=403, detail="Chỉ Trưởng bộ phận hoặc Admin mới có quyền từ chối vòng phòng ban")
+    if requisition.status == "pending_hr" and not user_roles.intersection(HR_ADMIN_ROLES):
+        raise HTTPException(status_code=403, detail="Chỉ HR Manager hoặc Admin mới có quyền từ chối vòng HR")
 
     comment = payload.comment.strip() if payload and payload.comment else "Từ chối phê duyệt"
 

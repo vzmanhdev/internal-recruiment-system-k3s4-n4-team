@@ -19,6 +19,7 @@ export function Header() {
     ...(session ? [{ label: "Dashboard", href: getDashboardPath(session.role, roles) }] : []),
     ...(roles.includes("admin") ? [{ label: "Quản trị", href: "/admin/dashboard" }] : []),
     ...(roles.includes("hr_manager") || roles.includes("admin") ? [{ label: "Thiết lập HR", href: "/hr/dashboard" }] : []),
+    ...(roles.includes("manager") ? [{ label: "Duyệt tuyển dụng", href: "/manager/requisitions" }] : []),
     ...(roles.includes("employee") ? [{ label: "Giới thiệu ứng viên", href: "/referrals" }] : []),
     ...(session ? [{ label: "Hồ sơ cá nhân", href: "/profile" }] : []),
     { label: "Cơ hội nghề nghiệp", href: "/#jobs" },
