@@ -1,98 +1,68 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { Button } from "@/components/ui/Button";
 import { JobCard } from "./JobCard";
+import { jobService, JobPostingItem } from "@/services/job.service";
 import type { JobOpportunity } from "../types/landing.types";
-
-const mockJobs: JobOpportunity[] = [
-  {
-    id: "job-1",
-    title: "Trưởng nhóm Phát triển Phần mềm (Lead Software Engineer)",
-    department: "Khối Công nghệ Thông tin",
-    location: "Hà Nội",
-    employmentType: "Toàn thời gian",
-    experience: "5+ năm",
-    postedDate: "Đăng 2 ngày trước",
-    badges: [
-      { label: "ƯU TIÊN NỘI BỘ", variant: "primary" },
-      { label: "HOT", variant: "danger" },
-    ],
-    skills: ["React", "Next.js", "Python", "System Design", "Agile"],
-    isBookmarked: true,
-  },
-  {
-    id: "job-2",
-    title: "Chuyên viên Senior UX/UI Designer",
-    department: "Phát triển Sản phẩm",
-    location: "TP. Hồ Chí Minh",
-    employmentType: "Hybrid",
-    experience: "3+ năm",
-    postedDate: "Đăng 1 ngày trước",
-    badges: [
-      { label: "MỚI", variant: "success" },
-      { label: "NỔI BẬT", variant: "warning" },
-    ],
-    skills: ["Figma", "Design System", "User Research", "Prototyping"],
-  },
-  {
-    id: "job-3",
-    title: "Quản lý Dự án Công nghệ (Tech Project Manager)",
-    department: "Khối Công nghệ Thông tin",
-    location: "Hà Nội",
-    employmentType: "Toàn thời gian",
-    experience: "4+ năm",
-    postedDate: "Đăng 3 ngày trước",
-    badges: [{ label: "ƯU TIÊN NỘI BỘ", variant: "primary" }],
-    skills: ["Scrum", "Jira", "Risk Management", "Stakeholder Management"],
-  },
-  {
-    id: "job-4",
-    title: "Chuyên viên Phân tích Dữ liệu (Data Analyst)",
-    department: "Tài chính - Kế toán",
-    location: "TP. Hồ Chí Minh",
-    employmentType: "Toàn thời gian",
-    experience: "2+ năm",
-    postedDate: "Đăng 4 ngày trước",
-    badges: [{ label: "MỚI", variant: "success" }],
-    skills: ["SQL", "Python", "Power BI", "Data Modeling"],
-  },
-  {
-    id: "job-5",
-    title: "Chuyên viên Đào tạo & Phát triển Nhân sự (L&D Specialist)",
-    department: "Quản trị Nhân sự",
-    location: "Hà Nội",
-    employmentType: "Toàn thời gian",
-    experience: "3+ năm",
-    postedDate: "Đăng 5 ngày trước",
-    badges: [{ label: "NỔI BẬT", variant: "warning" }],
-    skills: ["Training", "Talent Management", "Instructional Design"],
-  },
-  {
-    id: "job-6",
-    title: "Chuyên viên Truyền thông Nội bộ (Internal Communications)",
-    department: "Truyền thông & Marketing",
-    location: "Hà Nội",
-    employmentType: "Hybrid",
-    experience: "2+ năm",
-    postedDate: "Đăng 1 tuần trước",
-    badges: [{ label: "ƯU TIÊN NỘI BỘ", variant: "primary" }],
-    skills: ["Content Creation", "Event Management", "Copywriting"],
-  },
-];
 
 export function JobOpportunitiesSection() {
   const [activeCategory, setActiveCategory] = useState("all");
+  const [jobs, setJobs] = useState<JobOpportunity[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    jobService
+      .getJobs()
+      .then((data) => {
+        if (isMounted) {
+          const mapped: JobOpportunity[] = data.map((j) => ({
+            id: j.slug || String(j.id),
+            title: j.title,
+            department: j.department_name || j.department || "Khối Công Nghệ",
+            location: j.location || "Hà Nội",
+            employmentType: j.type || "Toàn thời gian",
+            experience: j.experience_level || "1-3 năm",
+            postedDate: "Tuyển dụng mới",
+            badges: [
+              { label: "ƯU TIÊN NỘI BỘ", variant: "primary" },
+              { label: "HOT", variant: "danger" },
+            ],
+            skills: j.requirements ? j.requirements.split(",").map((s) => s.trim()) : ["Tuyển dụng nội bộ"],
+            isBookmarked: false,
+          }));
+          setJobs(mapped);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load landing jobs:", err);
+        if (isMounted) setLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const categories = [
-    { id: "all", label: "Tất cả vị trí (120+)" },
+    { id: "all", label: `Tất cả vị trí (${jobs.length})` },
     { id: "it", label: "Công nghệ thông tin" },
     { id: "product", label: "Sản phẩm & Thiết kế" },
     { id: "hr", label: "Nhân sự & L&D" },
     { id: "finance", label: "Tài chính & Dữ liệu" },
   ];
+
+  const filteredJobs = jobs.filter((job) => {
+    if (activeCategory === "all") return true;
+    if (activeCategory === "it") return job.department.toLowerCase().includes("công nghệ") || job.department.toLowerCase().includes("it");
+    if (activeCategory === "product") return job.department.toLowerCase().includes("sản phẩm");
+    if (activeCategory === "hr") return job.department.toLowerCase().includes("nhân sự");
+    if (activeCategory === "finance") return job.department.toLowerCase().includes("tài chính") || job.department.toLowerCase().includes("dữ liệu");
+    return true;
+  });
 
   return (
     <section id="jobs" className="py-20 bg-slate-50/50 border-y border-slate-200/60">
@@ -135,12 +105,18 @@ export function JobOpportunitiesSection() {
           ))}
         </div>
 
-        {/* Job Grid: 3 cols desktop, 2 cols tablet, 1 col mobile */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {mockJobs.map((job) => (
-            <JobCard key={job.id} job={job} />
-          ))}
-        </div>
+        {/* Job Grid */}
+        {loading ? (
+          <div className="text-center py-12 text-slate-500 font-medium">Đang tải danh sách vị trí từ máy chủ...</div>
+        ) : filteredJobs.length ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredJobs.map((job) => (
+              <JobCard key={job.id} job={job} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 text-slate-500 font-medium">Chưa có vị trí tuyển dụng trong danh mục này.</div>
+        )}
       </Container>
     </section>
   );

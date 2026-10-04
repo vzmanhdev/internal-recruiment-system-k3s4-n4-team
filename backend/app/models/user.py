@@ -15,6 +15,7 @@ class User(Base):
     account_status = Column(String(20), default="active", nullable=False)
     lock_reason = Column(String(500), nullable=True)
     avatar_url = Column(String(4000000), nullable=True)
+    employee_code = Column(String(50), unique=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):
@@ -23,6 +24,7 @@ class User(Base):
             "email": self.email,
             "full_name": self.full_name,
             "phone": self.phone,
+            "employee_code": self.employee_code,
             "role": self.role,
             "roles": [role for role in self.role.split(",") if role],
             "is_active": self.is_active,

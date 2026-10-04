@@ -18,6 +18,7 @@ export function LoginVisualColumn() {
         src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=1600&auto=format&fit=crop"
         alt="Tòa nhà kiến trúc doanh nghiệp"
         fill
+        sizes="(max-width: 1024px) 100vw, 50vw"
         priority
         className="object-cover opacity-45 mix-blend-overlay"
       />

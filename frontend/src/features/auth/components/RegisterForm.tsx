@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Mail, Phone, Lock, IdCard, User, ArrowRight, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -15,6 +16,7 @@ import { authService } from "../services/auth.service";
 import { ApiError } from "@/lib/api-client";
 
 export function RegisterForm() {
+  const router = useRouter();
   const [formData, setFormData] = useState({
     employeeCode: "",
     fullName: "",
@@ -86,7 +88,7 @@ export function RegisterForm() {
     setIsLoading(true);
 
     try {
-      const result = await authService.register({
+      await authService.register({
         full_name: formData.fullName,
         email: formData.companyEmail,
         password: formData.password,
@@ -94,8 +96,11 @@ export function RegisterForm() {
         role: "employee",
       });
 
-      setSuccessMsg(result.message || "Yêu cầu đăng ký đã được gửi. Bạn có thể đăng nhập sau khi Quản trị viên phê duyệt.");
-    } catch (err: unknown) {
+      setSuccessMsg("Tạo tài khoản thành công! Đang chuyển hướng đến trang Đăng nhập...");
+      setTimeout(() => {
+        router.push("/login");
+      }, 1500);
+    } catch (err: any) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
         if (err.fieldErrors) {

@@ -13,23 +13,60 @@ class UserLogin(BaseModel):
     email: EmailStr = Field(..., description="Email làm việc")
     password: str = Field(..., description="Mật khẩu")
 
+# =========================================================================
+# PASSWORD RESET OTP SCHEMAS
+# =========================================================================
+
+class PasswordResetInitRequest(BaseModel):
+    email: EmailStr = Field(..., description="Email công ty đã đăng ký trong hệ thống")
+
+class PasswordResetInitResponse(BaseModel):
+    message: str
+    reset_session_id: str
+    masked_email: str
+    expires_in_seconds: int = 600
+    resend_cooldown_seconds: int = 60
+
+class PasswordResetVerifyRequest(BaseModel):
+    reset_session_id: str = Field(..., min_length=10, description="Mã phiên reset password (UUID)")
+    otp: str = Field(..., min_length=6, max_length=6, description="Mã OTP 6 chữ số")
+
+    @field_validator("otp")
+    @classmethod
+    def validate_otp_format(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned.isdigit() or len(cleaned) != 6:
+            raise ValueError("Mã OTP phải bao gồm chính xác 6 chữ số")
+        return cleaned
+
+class PasswordResetVerifyResponse(BaseModel):
+    message: str
+    success: bool = True
+    masked_email: str
+
+class PasswordResetResendRequest(BaseModel):
+    reset_session_id: str = Field(..., min_length=10, description="Mã phiên reset password (UUID)")
+
+class PasswordResetResendResponse(BaseModel):
+    message: str
+    reset_session_id: str
+    resend_cooldown_seconds: int = 60
+
+# Backwards compatibility legacy schemas
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr = Field(..., description="Email công ty để nhận liên kết khôi phục mật khẩu")
 
 class ForgotPasswordResponse(BaseModel):
     message: str
     reset_url: Optional[str] = None
+    reset_session_id: Optional[str] = None
+    masked_email: Optional[str] = None
 
 class ResetPasswordRequest(BaseModel):
-    token: str = Field(..., min_length=20)
-    new_password: str = Field(..., min_length=8)
-
-    @field_validator("new_password")
-    @classmethod
-    def validate_password(cls, value: str) -> str:
-        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-            raise ValueError("Mật khẩu mới phải gồm ít nhất một chữ và một số")
-        return value
+    token: Optional[str] = Field(None)
+    reset_session_id: Optional[str] = Field(None)
+    otp: Optional[str] = Field(None)
+    new_password: Optional[str] = Field(None)
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., description="Mật khẩu hiện tại")
@@ -59,6 +96,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     phone: Optional[str] = None
+    employee_code: Optional[str] = None
     role: str
     roles: List[str] = Field(default_factory=list)
     is_active: bool
@@ -78,4 +116,5 @@ class RegistrationResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+    error_code: Optional[str] = None
     field_errors: Optional[Dict[str, str]] = None

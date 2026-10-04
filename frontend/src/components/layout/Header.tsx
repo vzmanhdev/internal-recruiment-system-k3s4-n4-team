@@ -5,23 +5,18 @@ import Link from "next/link";
 import { Search, Menu, X } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
 import { Container } from "./Container";
-import { AuthActions } from "@/features/auth/components/AuthActions";
-import { getSessionRoles, useAuthSession } from "@/features/auth/lib/auth-session";
+import { Button } from "@/components/ui/Button";
 
 export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const session = useAuthSession();
-  const roles = getSessionRoles(session);
 
   const navLinks = [
     { label: "Trang chủ", href: "/" },
-    ...(session ? [{ label: "Dashboard", href: "/dashboard" }] : []),
-    ...(roles.includes("admin") ? [{ label: "Quản trị", href: "/admin/dashboard" }] : []),
-    ...(roles.includes("hr_manager") || roles.includes("admin") ? [{ label: "Thiết lập HR", href: "/hr/dashboard" }] : []),
-    { label: "Cơ hội nghề nghiệp", href: "/#jobs" },
-    { label: "Lộ trình phát triển", href: "/#development" },
-    { label: "Quy trình", href: "/process" },
-    { label: "FAQ", href: "/faq" },
+    { label: "Cơ hội nghề nghiệp", href: "#jobs" },
+    { label: "Lộ trình phát triển", href: "#development" },
+    { label: "Tin tức nội bộ", href: "#news" },
+    { label: "Quy trình", href: "#process" },
+    { label: "FAQ", href: "#faq" },
   ];
 
   return (
@@ -53,7 +48,12 @@ export function Header() {
             >
               <Search className="w-5 h-5" />
             </button>
-            <AuthActions />
+            <Button variant="ghost" href="/login">
+              Đăng nhập
+            </Button>
+            <Button variant="primary" href="/register">
+              Đăng ký
+            </Button>
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -84,7 +84,14 @@ export function Header() {
                 </Link>
               ))}
             </nav>
-            <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 px-4"><AuthActions mobile /></div>
+            <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 px-4">
+              <Button variant="outline" href="/login" className="w-full">
+                Đăng nhập
+              </Button>
+              <Button variant="primary" href="/register" className="w-full">
+                Đăng ký
+              </Button>
+            </div>
           </div>
         )}
       </Container>

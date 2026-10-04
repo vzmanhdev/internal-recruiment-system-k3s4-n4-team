@@ -8,15 +8,6 @@ export class ApiError extends Error {
   }
 }
 
-function redirectExpiredSession(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("user_info");
-  localStorage.removeItem("auth_expires_at");
-  sessionStorage.setItem("auth-session-notice", "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.");
-  if (window.location.pathname !== "/login") window.location.replace("/login?reason=session-expired");
-}
-
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -30,9 +21,9 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  // 5 seconds timeout to prevent request hanging when Backend is offline
+  // 15 seconds timeout to prevent request hanging when Backend is offline
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -55,7 +46,7 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
         if (errorData.field_errors) {
           fieldErrors = errorData.field_errors;
         }
-      } catch {
+      } catch (e) {
         const defaultMessages: Record<number, string> = {
           400: "Dữ liệu chưa hợp lệ hoặc bị trùng lặp.",
           401: "Vui lòng đăng nhập lại.",
@@ -67,20 +58,18 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
         errorDetail = defaultMessages[response.status] ?? errorDetail;
       }
 
-      if (response.status === 401) redirectExpiredSession();
-
       throw new ApiError(response.status, errorDetail, fieldErrors);
     }
 
     return await response.json() as T;
-  } catch (err: unknown) {
+  } catch (err: any) {
     clearTimeout(timeoutId);
 
     if (err instanceof ApiError) {
       throw err;
     }
 
-    if (err instanceof DOMException && err.name === "AbortError") {
+    if (err.name === "AbortError") {
       throw new ApiError(0, "Kết nối bị quá thời gian (Timeout). Vui lòng đảm bảo dịch vụ Backend (http://localhost:8000) đã được bật.");
     }
 

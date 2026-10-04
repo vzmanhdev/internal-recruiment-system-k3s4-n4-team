@@ -17,12 +17,26 @@ class Settings(BaseSettings):
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
     APP_ENV: str = "development"
     FRONTEND_URL: str = "http://localhost:3000"
-    SMTP_HOST: str = ""
+
+    # SMTP Gmail & Email Configuration
+    SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""
-    SMTP_PASSWORD: str = ""
+    SMTP_APP_PASSWORD: str = ""
+    SMTP_FROM_NAME: str = "TUYỂN DỤNG NỘI BỘ"
     SMTP_FROM_EMAIL: str = "no-reply@company.com"
-    SMTP_USE_TLS: bool = True
+    SMTP_STARTTLS: bool = True
+
+    # Password Reset OTP Policies & Security Limits
+    PASSWORD_RESET_OTP_TTL_SECONDS: int = 600 # 10 minutes
+    PASSWORD_RESET_RESEND_COOLDOWN_SECONDS: int = 60 # 60 seconds cooldown
+    PASSWORD_RESET_MAX_ATTEMPTS: int = 5 # 5 max wrong attempts before locking
+    PASSWORD_RESET_MAX_SENDS_PER_SESSION: int = 3 # 3 max sends per session
+    PASSWORD_RESET_EMAIL_LIMIT: int = 5 # 5 requests per 15 mins per email
+    PASSWORD_RESET_EMAIL_WINDOW_SECONDS: int = 900
+    PASSWORD_RESET_IP_LIMIT: int = 15 # 15 requests per 15 mins per IP
+    PASSWORD_RESET_IP_WINDOW_SECONDS: int = 900
+    PASSWORD_RESET_PASSWORD_LENGTH: int = 16
 
     model_config = SettingsConfigDict(
         env_file=".env",

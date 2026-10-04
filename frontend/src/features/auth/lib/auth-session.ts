@@ -2,25 +2,24 @@
 
 import { useSyncExternalStore } from "react";
 
-const SESSION_KEY = "user_info";
+const SESSION_KEY = "internal-recruitment-session";
 const SESSION_EVENT = "internal-recruitment-auth-change";
 
 export interface AuthSession {
-  id: number;
-  email: string;
-  full_name: string;
-  phone?: string;
-  role: string;
-  roles?: string[];
-  is_active: boolean;
-  avatar_url?: string;
+  displayName: string;
 }
 
-function readSession(): string { return window.localStorage.getItem(SESSION_KEY) ?? ""; }
+function readSession(): string {
+  return window.localStorage.getItem(SESSION_KEY) ?? "";
+}
+
 function subscribe(callback: () => void): () => void {
   window.addEventListener(SESSION_EVENT, callback);
   window.addEventListener("storage", callback);
-  return () => { window.removeEventListener(SESSION_EVENT, callback); window.removeEventListener("storage", callback); };
+  return () => {
+    window.removeEventListener(SESSION_EVENT, callback);
+    window.removeEventListener("storage", callback);
+  };
 }
 
 export function useAuthSession(): AuthSession | null {
@@ -36,12 +35,5 @@ export function saveAuthSession(session: AuthSession): void {
 
 export function clearAuthSession(): void {
   window.localStorage.removeItem(SESSION_KEY);
-  window.localStorage.removeItem("access_token");
-  window.localStorage.removeItem("auth_expires_at");
   window.dispatchEvent(new Event(SESSION_EVENT));
-}
-
-export function getSessionRoles(session: AuthSession | null): string[] {
-  if (!session) return [];
-  return session.roles?.length ? session.roles : session.role.split(",").filter(Boolean);
 }

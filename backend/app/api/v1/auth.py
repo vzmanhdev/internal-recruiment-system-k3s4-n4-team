@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -6,9 +6,16 @@ from typing import Optional
 from app.db.session import get_db
 from app.models.user import User
 from app.core.config import settings
-from app.core.security import hash_password, verify_password, create_access_token, decode_access_token, create_password_reset_token, decode_password_reset_token, get_password_reset_subject
-from app.schemas.auth import ChangePasswordRequest, ForgotPasswordResponse, ProfileUpdateRequest, RegistrationResponse, ResetPasswordRequest, UserRegister, UserLogin, ForgotPasswordRequest, Token, UserResponse, ErrorResponse
-from app.services.email import send_password_reset_email
+from app.core.security import hash_password, verify_password, create_access_token, decode_access_token
+from app.schemas.auth import (
+    ChangePasswordRequest, ProfileUpdateRequest, RegistrationResponse, UserRegister, UserLogin,
+    Token, UserResponse, ErrorResponse,
+    PasswordResetInitRequest, PasswordResetInitResponse,
+    PasswordResetVerifyRequest, PasswordResetVerifyResponse,
+    PasswordResetResendRequest, PasswordResetResendResponse,
+    ForgotPasswordRequest, ForgotPasswordResponse
+)
+from app.services.password_reset_service import PasswordResetService
 
 router = APIRouter()
 
@@ -35,6 +42,13 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
             }
         )
 
+    # Generate random unique employee_code (e.g. NV-839201)
+    import random
+    while True:
+        emp_code = f"NV-{random.randint(100000, 999999)}"
+        if not db.query(User).filter(User.employee_code == emp_code).first():
+            break
+
     # Create new user
     hashed_pwd = hash_password(user_in.password)
     new_user = User(
@@ -42,8 +56,7 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         hashed_password=hashed_pwd,
         full_name=user_in.full_name,
         phone=user_in.phone,
-        # Public registration always creates a normal employee account.
-        # Elevated roles must be assigned separately by an administrator.
+        employee_code=emp_code,
         role="employee",
         is_active=False,
         account_status="pending"
@@ -71,7 +84,7 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "detail": "Tài khoản Email không tồn tại trong hệ thống. Vui lòng kiểm tra lại.",
+                "detail": "Tài khoản Email Không Chính Xác.",
                 "field_errors": {
                     "email": "Tài khoản Email không tồn tại trong hệ thống."
                 }
@@ -115,44 +128,62 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
     }
 
 @router.post(
-    "/forgot-password",
-    response_model=ForgotPasswordResponse,
-    responses={
-        400: {"model": ErrorResponse, "description": "Email không tồn tại trong hệ thống"}
-    }
+    "/password-reset/request",
+    response_model=PasswordResetInitResponse,
+    status_code=status.HTTP_202_ACCEPTED
 )
-def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == req.email).first()
-    response = {"message": "Nếu email tồn tại trong hệ thống, hướng dẫn đặt lại mật khẩu sẽ được gửi đến hộp thư."}
-    if not user:
-        return response
+def request_password_reset(
+    payload: PasswordResetInitRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.request_reset(db=db, email=payload.email, client_ip=client_ip)
 
-    token = create_password_reset_token(user.id, user.hashed_password)
-    reset_url = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?token={token}"
-    try:
-        send_password_reset_email(user.email, reset_url)
-    except Exception:
-        # Do not expose mail-server details or whether the account exists.
-        pass
-    if settings.APP_ENV != "production":
-        response["reset_url"] = reset_url
-    return response
+@router.post(
+    "/password-reset/verify",
+    response_model=PasswordResetVerifyResponse,
+    status_code=status.HTTP_200_OK
+)
+def verify_password_reset_otp(
+    payload: PasswordResetVerifyRequest,
+    db: Session = Depends(get_db)
+):
+    return PasswordResetService.verify_otp_and_reset_password(
+        db=db,
+        reset_session_id=payload.reset_session_id,
+        otp=payload.otp
+    )
 
-@router.post("/reset-password")
-def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
-    try:
-        subject = get_password_reset_subject(payload.token)
-        user_id = int(subject) if subject else None
-    except (TypeError, ValueError):
-        user_id = None
-    user = db.query(User).filter(User.id == user_id).first() if user_id else None
-    if not user or not decode_password_reset_token(payload.token, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Liên kết đặt lại mật khẩu không hợp lệ hoặc đã hết hạn")
-    if verify_password(payload.new_password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mật khẩu mới phải khác mật khẩu hiện tại")
-    user.hashed_password = hash_password(payload.new_password)
-    db.commit()
-    return {"message": "Đặt lại mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới."}
+@router.post(
+    "/password-reset/resend",
+    response_model=PasswordResetResendResponse,
+    status_code=status.HTTP_200_OK
+)
+def resend_password_reset_otp(
+    payload: PasswordResetResendRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.resend_otp(
+        db=db,
+        reset_session_id=payload.reset_session_id,
+        client_ip=client_ip
+    )
+
+# Legacy backwards-compatibility alias for /forgot-password
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_202_ACCEPTED
+)
+def forgot_password_legacy(
+    req: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.request_reset(db=db, email=req.email, client_ip=client_ip)
 
 @router.post(
     "/change-password",
@@ -191,7 +222,7 @@ def change_password(
 
     user.hashed_password = hash_password(payload.new_password)
     db.commit()
-    return {"message": "Đổi mật khẩu thành công."}
+    return {"success": True, "message": "Đổi mật khẩu thành công."}
 
 def require_admin(authorization: Optional[str], db: Session) -> User:
     if not authorization or not authorization.startswith("Bearer "):
@@ -201,7 +232,7 @@ def require_admin(authorization: Optional[str], db: Session) -> User:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
     admin = db.query(User).filter(User.id == int(user_id)).first()
     if not admin or "admin" not in admin.role.split(",") or not admin.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ Quản trị viên mới có quyền phê duyệt tài khoản")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ Quản trị viên mới có quyền thực hiện thao tác này")
     return admin
 
 def require_roles(authorization: Optional[str], db: Session, allowed_roles: set[str]) -> User:
@@ -213,8 +244,13 @@ def require_roles(authorization: Optional[str], db: Session, allowed_roles: set[
     user = db.query(User).filter(User.id == int(user_id)).first()
     roles = set(user.role.split(",")) if user else set()
     if not user or not user.is_active or not roles.intersection(allowed_roles):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền quản lý dữ liệu nhân sự")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền thực hiện thao tác này")
     return user
+
+@router.get("/users", response_model=list[UserResponse])
+def list_all_users(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    require_admin(authorization, db)
+    return [user.to_dict() for user in db.query(User).order_by(User.created_at.desc()).all()]
 
 @router.get("/pending-users", response_model=list[UserResponse])
 def list_pending_users(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
@@ -226,7 +262,33 @@ def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: 
     require_admin(authorization, db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy yêu cầu đăng ký")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
+    user.is_active = True
+    user.account_status = "active"
+    user.lock_reason = None
+    db.commit()
+    db.refresh(user)
+    return user.to_dict()
+
+@router.post("/users/{user_id}/lock", response_model=UserResponse)
+def lock_user(user_id: int, reason: Optional[str] = None, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    require_admin(authorization, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
+    user.is_active = False
+    user.account_status = "locked"
+    user.lock_reason = reason or "Bị khóa bởi Quản trị viên"
+    db.commit()
+    db.refresh(user)
+    return user.to_dict()
+
+@router.post("/users/{user_id}/unlock", response_model=UserResponse)
+def unlock_user(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    require_admin(authorization, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
     user.is_active = True
     user.account_status = "active"
     user.lock_reason = None
