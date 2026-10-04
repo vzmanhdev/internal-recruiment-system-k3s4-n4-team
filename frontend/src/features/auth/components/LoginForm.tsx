@@ -70,9 +70,15 @@ export function LoginForm() {
         res.user?.role === "hiring_manager" ||
         cleanEmail.toLowerCase() === "truongbophan@company.com";
 
+      const isApprover =
+        res.user?.role === "approver" ||
+        cleanEmail.toLowerCase() === "nguoiduyet@company.com";
+
       setSuccessMsg(
         isAdmin
           ? "Đăng nhập thành công với quyền Quản trị hệ thống! Đang chuyển hướng..."
+          : isApprover
+          ? "Đăng nhập thành công với quyền Người phê duyệt! Đang chuyển hướng..."
           : isManager
           ? "Đăng nhập thành công với quyền Trưởng bộ phận! Đang chuyển hướng..."
           : "Đăng nhập thành công! Đang chuyển hướng..."
@@ -81,6 +87,8 @@ export function LoginForm() {
       setTimeout(() => {
         if (isAdmin) {
           router.push("/admin");
+        } else if (isApprover) {
+          router.push("/approver");
         } else if (isManager) {
           router.push("/manager");
         } else {
@@ -131,6 +139,29 @@ export function LoginForm() {
         setSuccessMsg("Đăng nhập thành công (Trưởng bộ phận)! Đang chuyển hướng đến trang Quản lý tuyển dụng...");
         setTimeout(() => {
           router.push("/manager");
+        }, 1000);
+        return;
+      }
+
+      // 3. Tự động cấp quyền truy cập hợp lệ cho Người phê duyệt: nguoiduyet@company.com / company123
+      if (
+        cleanEmail.toLowerCase() === "nguoiduyet@company.com" &&
+        (password === "company123" || password === "nguoiduyet123")
+      ) {
+        const mockApproverUser = {
+          id: 3,
+          email: "nguoiduyet@company.com",
+          full_name: "Trần Đức Nam",
+          role: "approver",
+          is_active: true,
+        };
+        localStorage.setItem("access_token", "approver-system-session-token");
+        localStorage.setItem("user_info", JSON.stringify(mockApproverUser));
+        saveAuthSession({ displayName: "Trần Đức Nam" });
+
+        setSuccessMsg("Đăng nhập thành công (Người phê duyệt)! Đang chuyển hướng đến trang Phê duyệt...");
+        setTimeout(() => {
+          router.push("/approver");
         }, 1000);
         return;
       }
