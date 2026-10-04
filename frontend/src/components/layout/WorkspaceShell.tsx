@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ChevronRight, KeyRound, LogOut, Menu, UserRound, X, type LucideIcon } from "lucide-react";
-import { BrandLogo } from "./BrandLogo";
+import { ArrowLeft, Bell, ChevronDown, KeyRound, LogOut, Menu, Monitor, UserRound, X, type LucideIcon } from "lucide-react";
 import { clearAuthSession, getSessionRoles, useAuthSession } from "@/features/auth/lib/auth-session";
 import { getDashboardPath } from "@/features/auth/lib/session";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,7 @@ function WorkspaceFrame({ children, title, description, icon: RoleIcon, items, a
   const router = useRouter();
   const session = useAuthSession();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const openButton = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLElement>(null);
   const roleKey = getSessionRoles(session).join(",");
@@ -39,7 +40,6 @@ function WorkspaceFrame({ children, title, description, icon: RoleIcon, items, a
     ...(!items.some((item) => item.href === "/profile") ? [{ href: "/profile", label: "Hồ sơ cá nhân", icon: UserRound }] : []),
     ...(!items.some((item) => item.href === "/change-password") ? [{ href: "/change-password", label: "Đổi mật khẩu", icon: KeyRound }] : []),
   ];
-  const active = navigation.find((item) => pathname === item.href);
   const sessionId = session?.id;
 
   useEffect(() => {
@@ -66,16 +66,55 @@ function WorkspaceFrame({ children, title, description, icon: RoleIcon, items, a
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", keyboard); trigger?.focus(); };
   }, [mobileOpen]);
 
+  const logout = () => { clearAuthSession(); router.replace("/login"); };
   const sidebar = <>
-    <div className="flex h-20 shrink-0 items-center border-b border-[var(--color-border)] px-5"><BrandLogo size="sm" href={items[0]?.href ?? "/"} /></div>
-    <div className="px-4 pt-5"><div className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-600 text-white"><RoleIcon className="h-5 w-5" /></span><div className="min-w-0"><p className="text-sm font-bold text-slate-900">{title}</p><p className="mt-0.5 text-xs leading-5 text-slate-500">{description}</p></div></div></div>
-    <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-5" aria-label={`Điều hướng ${title}`}><p className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Không gian làm việc</p>{navigation.map(({ href, label, icon: Icon }) => <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} onClick={() => setMobileOpen(false)} className={cn("flex min-h-11 items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold", pathname === href ? "bg-blue-600 text-white shadow-sm" : "text-slate-600 hover:bg-blue-50 hover:text-blue-700")}><Icon className="h-[18px] w-[18px] shrink-0" /><span>{label}</span></Link>)}</nav>
-    <div className="shrink-0 space-y-1 border-t border-[var(--color-border)] p-4"><Link href="/" className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-blue-50"><ArrowLeft className="h-[18px] w-[18px]" />Trang chủ tuyển dụng</Link><button onClick={() => { clearAuthSession(); router.replace("/login"); }} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600"><LogOut className="h-[18px] w-[18px]" />Đăng xuất</button></div>
+    <nav className="flex-1 space-y-2 overflow-y-auto p-4" aria-label={`Điều hướng ${title}`}>
+      <p className="mb-5 px-3 pt-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">{title === "Quản trị hệ thống" ? "Menu quản trị" : "Menu làm việc"}</p>
+      {navigation.map(({ href, label, icon: Icon }) => <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined} onClick={() => setMobileOpen(false)} className={cn("flex min-h-12 items-center gap-3 rounded-full px-4 py-3 text-sm font-medium transition-colors", pathname === href ? "bg-[var(--color-primary)] text-white shadow-md shadow-blue-100" : "text-slate-600 hover:bg-blue-50 hover:text-blue-700")}><Icon className="h-[18px] w-[18px] shrink-0" /><span>{label}</span></Link>)}
+    </nav>
+    <div className="shrink-0 space-y-3 p-5 pt-6">
+      <div className="rounded-2xl bg-slate-50 p-4 text-xs"><p className="flex items-center gap-2 font-semibold text-slate-600"><Monitor className="h-4 w-4 text-blue-500" />Truy cập hệ thống</p><p className="mt-2 flex items-center gap-2 text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{session ? "Đang đăng nhập" : "Đang tải phiên đăng nhập"}</p><p className="mt-2 leading-5 text-slate-400">{title}</p></div>
+      <Link href="/" className="flex items-center gap-2 px-2 text-xs font-semibold text-slate-500 hover:text-blue-600"><ArrowLeft className="h-4 w-4" />Trang chủ tuyển dụng</Link>
+    </div>
   </>;
 
   return <WorkspaceContext.Provider value={true}><div className="workspace min-h-screen bg-[var(--color-background-start)]">
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col border-r border-[var(--color-border)] bg-white lg:flex">{sidebar}</aside>
-    {mobileOpen && <div className="fixed inset-0 z-[60] lg:hidden"><button aria-label="Đóng menu" onClick={() => setMobileOpen(false)} tabIndex={-1} className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" /><aside ref={drawer} role="dialog" aria-modal="true" aria-label="Menu điều hướng" className="relative flex h-full w-[min(88vw,288px)] flex-col bg-white shadow-xl"><button aria-label="Đóng menu" onClick={() => setMobileOpen(false)} className="absolute right-2 top-6 rounded-lg bg-white p-2 text-slate-500"><X className="h-5 w-5" /></button>{sidebar}</aside></div>}
-    <div className="min-w-0 lg:pl-72"><header className="sticky top-0 z-30 flex h-20 items-center justify-between gap-3 border-b border-[var(--color-border)] bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8"><div className="flex min-w-0 items-center gap-3"><button ref={openButton} aria-label="Mở menu" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} className="rounded-xl border border-[var(--color-border)] p-2.5 text-slate-600 lg:hidden"><Menu className="h-5 w-5" /></button><div className="min-w-0"><p className="hidden items-center gap-1 text-xs text-slate-500 sm:flex">{title}<ChevronRight className="h-3 w-3" />Không gian làm việc</p><p className="truncate text-sm font-semibold text-slate-900">{active?.label ?? title}</p></div></div><Link href="/profile" className="flex shrink-0 items-center gap-2.5 rounded-xl p-1.5 hover:bg-blue-50"><span className="grid h-10 w-10 place-items-center overflow-hidden rounded-xl bg-blue-50 text-sm font-bold text-blue-700"><UserRound className="h-5 w-5" /></span><span className="hidden max-w-48 sm:block"><span className="block truncate text-sm font-bold text-slate-900">{session?.full_name ?? title}</span><span className="block text-xs text-slate-500">Hồ sơ cá nhân</span></span></Link></header><main className="mx-auto w-full max-w-[1440px] p-4 sm:p-6 xl:p-8">{children}</main></div>
+    <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-white/95 backdrop-blur">
+      <div className="mx-auto flex h-20 max-w-[1600px] items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6 lg:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <button ref={openButton} aria-label="Mở menu" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} className="shrink-0 rounded-xl p-2 text-slate-600 hover:bg-blue-50 lg:hidden"><Menu className="h-5 w-5" /></button>
+          <Link href={items[0]?.href ?? "/"} className="flex min-w-0 items-center gap-3">
+            <span className="hidden h-11 w-11 shrink-0 place-items-center rounded-full bg-blue-500 text-white shadow-sm sm:grid"><RoleIcon className="h-6 w-6" /></span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="truncate text-sm font-bold text-slate-900 sm:text-lg"><span className="sm:hidden">Tuyển dụng</span><span className="hidden sm:inline">Tuyển Dụng Nội Bộ</span></span><span className="hidden rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-600 lg:inline">{title === "Quản trị hệ thống" ? "System Admin" : title}</span></div>
+              <p className="mt-0.5 hidden text-xs text-slate-500 md:block">Hệ thống Quản trị & Điều phối Tuyển dụng · {description}</p>
+            </div>
+          </Link>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-4">
+          <div className="relative">
+            <button type="button" aria-label="Thông báo" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(!notificationsOpen)} className="grid h-9 w-9 place-items-center rounded-full text-slate-500 hover:bg-blue-50 hover:text-blue-600"><Bell className="h-5 w-5" /></button>
+            {notificationsOpen && <div role="region" aria-label="Thông báo tuyển dụng" className="absolute right-0 top-12 w-60 rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-lg"><div className="flex items-center justify-between"><p className="text-sm font-bold text-slate-900">Thông báo</p><button aria-label="Đóng thông báo" onClick={() => setNotificationsOpen(false)} className="rounded p-1 text-slate-500"><X className="h-4 w-4" /></button></div><p className="mt-2 text-xs leading-5 text-slate-500">Xem cập nhật tuyển dụng và công việc tại trang tổng quan của bạn.</p><Link onClick={() => setNotificationsOpen(false)} href={getDashboardPath(roleKey)} className="mt-3 block text-xs font-semibold text-blue-600">Mở trang tổng quan →</Link></div>}
+          </div>
+          <details className="relative">
+            <summary aria-label="Menu tài khoản" className="flex cursor-pointer list-none items-center gap-2 rounded-xl p-1 hover:bg-blue-50">
+              <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-blue-500 text-xs font-bold text-white sm:h-10 sm:w-10">{session?.avatar_url ? <Image src={session.avatar_url} alt="Ảnh đại diện tài khoản" fill unoptimized className="rounded-full object-cover" /> : session?.full_name?.split(" ").filter(Boolean).slice(-2).map((word) => word[0]).join("").toUpperCase() || <UserRound className="h-5 w-5" />}<span className="absolute -bottom-0.5 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" /></span>
+              <span className="hidden max-w-48 sm:block"><span className="block truncate text-sm font-bold text-slate-900">{session?.full_name ?? title}</span><span className="block truncate text-xs text-slate-500">{session?.email ?? title}</span></span><ChevronDown className="hidden h-4 w-4 text-slate-400 sm:block" />
+            </summary>
+            <div className="absolute right-0 top-14 w-52 rounded-2xl border border-[var(--color-border)] bg-white p-2 shadow-lg">
+              <p className="px-3 py-2 text-xs font-semibold text-slate-400">{title}</p>
+              <Link href="/profile" onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-slate-600 hover:bg-blue-50"><UserRound className="h-4 w-4" />Hồ sơ cá nhân</Link>
+              <Link href="/change-password" onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-slate-600 hover:bg-blue-50"><KeyRound className="h-4 w-4" />Đổi mật khẩu</Link>
+            </div>
+          </details>
+          <button onClick={logout} aria-label="Đăng xuất" className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-2.5 text-sm font-medium text-slate-600 hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:px-3"><LogOut className="h-4 w-4" /><span className="hidden md:inline">Đăng xuất</span></button>
+        </div>
+      </div>
+    </header>
+    {mobileOpen && <div className="fixed inset-0 z-[60] lg:hidden"><button aria-label="Đóng menu" onClick={() => setMobileOpen(false)} tabIndex={-1} className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" /><aside ref={drawer} role="dialog" aria-modal="true" aria-label="Menu điều hướng" className="relative flex h-full w-[min(88vw,288px)] flex-col bg-white shadow-xl"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><p className="text-sm font-bold text-slate-900">{title}</p><button aria-label="Đóng menu" onClick={() => setMobileOpen(false)} className="rounded-lg p-2 text-slate-500"><X className="h-5 w-5" /></button></div>{sidebar}</aside></div>}
+    <div className="mx-auto grid max-w-[1600px] items-start gap-6 p-4 sm:p-6 lg:grid-cols-[264px_minmax(0,1fr)] lg:px-8">
+      <aside className="sticky top-[104px] hidden max-h-[calc(100dvh-128px)] flex-col overflow-hidden rounded-3xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] lg:flex">{sidebar}</aside>
+      <main className="min-w-0 pb-8">{children}</main>
+    </div>
   </div></WorkspaceContext.Provider>;
 }
