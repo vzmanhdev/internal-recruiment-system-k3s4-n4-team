@@ -130,7 +130,7 @@ export function HeadcountWorkspace() {
   }
 
   return <HrShell><div className="space-y-6">
-    <div><p className="flex items-center gap-2 text-sm font-bold text-blue-600"><Wallet className="h-4 w-4" />Trưởng phòng Nhân sự</p><h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Headcount & xuất bản tuyển dụng</h1><p className="mt-2 text-sm text-slate-500">Kiểm soát ngân sách → Duyệt tờ trình → Phân công tuyển dụng → Soạn và xuất bản tin.</p></div>
+    <div className="workspace-hero"><p className="flex items-center gap-2 text-sm font-bold text-blue-600"><Wallet className="h-4 w-4" />Trưởng phòng Nhân sự</p><h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Headcount & xuất bản tuyển dụng</h1><p className="mt-2 text-sm text-slate-500">Kiểm soát ngân sách → Duyệt tờ trình → Phân công tuyển dụng → Soạn và xuất bản tin.</p></div>
     {error && <Alert variant="error">{error}</Alert>}{notice && <Alert variant="success">{notice}</Alert>}
     <div className="grid gap-4 sm:grid-cols-3">{[
       {label:"Headcount đã phê duyệt",value:budgets.reduce((sum,b)=>sum+b.reserved_headcount,0),icon:Users},

@@ -53,7 +53,7 @@ export function EmployeeDashboard() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-7">
-      <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5 sm:p-7">
+      <section className="workspace-hero p-5 sm:p-7">
         <p className="text-sm font-semibold text-blue-600">Cổng nhân sự nội bộ</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Xin chào, {session.full_name}</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-500">Quản lý thông tin cá nhân, giới thiệu nhân tài và theo dõi kết quả ngay tại một nơi.</p>

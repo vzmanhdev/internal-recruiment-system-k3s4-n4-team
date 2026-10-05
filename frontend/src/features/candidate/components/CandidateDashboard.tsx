@@ -72,7 +72,7 @@ export function CandidateDashboard() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-7">
-      <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5 sm:p-7">
+      <section className="workspace-hero p-5 sm:p-7">
         <p className="text-sm font-semibold text-blue-600">Cổng thông tin ứng viên</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Xin chào, {session.full_name}</h1>
         <p className="mt-2 text-sm text-slate-500">Theo dõi toàn bộ hành trình ứng tuyển, lịch phỏng vấn và thư mời của bạn.</p>

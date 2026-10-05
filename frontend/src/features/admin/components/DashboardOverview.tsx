@@ -97,25 +97,29 @@ export function DashboardOverview() {
 
   return (
     <div className="mx-auto max-w-[1480px] space-y-6 xl:space-y-8">
-      <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+      <section className="relative overflow-hidden rounded-3xl border border-blue-200/70 bg-gradient-to-r from-blue-700 via-blue-600 to-sky-500 p-6 text-white shadow-xl shadow-blue-200/60 sm:p-8">
+        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border-[42px] border-white/10" />
+        <div className="absolute bottom-0 right-1/4 h-24 w-24 rounded-full bg-cyan-300/15 blur-2xl" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-600">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-100">
             <Sparkles className="h-4 w-4" />
             Trung tâm quản trị hệ thống
           </div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
+          <h1 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
             Xin chào, {session?.full_name || "Quản trị viên"}
           </h1>
-          <p className="mt-1.5 capitalize text-sm text-slate-500">{today}</p>
+          <p className="mt-1.5 capitalize text-sm text-blue-100">{today} · Tổng quan vận hành theo thời gian thực</p>
         </div>
-        <Button href="/admin/users/new" leftIcon={<UserPlus className="h-4 w-4" />}>
+        <Button href="/admin/users/new" variant="secondary" className="border-white bg-white text-blue-700 shadow-lg hover:bg-blue-50" leftIcon={<UserPlus className="h-4 w-4" />}>
           Tạo tài khoản
         </Button>
+        </div>
       </section>
 
       {/* Database Metrics Grid */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="p-5 sm:p-6">
+        <Card className="border-t-4 border-t-blue-500 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-slate-500">Tổng tài khoản DB</p>
@@ -134,7 +138,7 @@ export function DashboardOverview() {
           </div>
         </Card>
 
-        <Card className="p-5 sm:p-6">
+        <Card className="border-t-4 border-t-emerald-500 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-slate-500">Đang hoạt động</p>
@@ -151,7 +155,7 @@ export function DashboardOverview() {
           </div>
         </Card>
 
-        <Card className="p-5 sm:p-6">
+        <Card className="border-t-4 border-t-amber-500 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-slate-500">Chờ kích hoạt</p>
@@ -168,7 +172,7 @@ export function DashboardOverview() {
           </div>
         </Card>
 
-        <Card className="p-5 sm:p-6">
+        <Card className="border-t-4 border-t-rose-500 p-5 sm:p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold text-slate-500">Tài khoản bị khóa</p>
