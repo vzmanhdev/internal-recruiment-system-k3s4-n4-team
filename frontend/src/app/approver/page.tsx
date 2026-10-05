@@ -142,9 +142,9 @@ export const CURRENT_APPROVER = {
   id: "USR-APPROVER-01",
   email: "nguoiduyet@company.com",
   name: "Trần Đức Nam",
-  role: "Trưởng phòng Nhân sự & Đãi ngộ",
+  role: "Người phê duyệt",
   subRole: "Thành viên Hội đồng Phê duyệt Nhân tài Cấp cao",
-  department: "Phòng Nhân Sự & Văn Hóa Doanh Nghiệp",
+  department: "Hội đồng Phê duyệt Tuyển dụng",
   phone: "0908 999 888",
   avatarUrl: "",
   bio: "Chịu trách nhiệm thẩm định và phê duyệt các yêu cầu tuyển dụng cũng như gói đãi ngộ nhân sự theo ngân sách định biên.",
@@ -217,7 +217,7 @@ const INITIAL_REQUISITIONS: RequisitionItem[] = [
         stepNumber: 3,
         stepName: "Phê duyệt Trưởng phòng Nhân sự",
         approverName: "Trần Đức Nam",
-        approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Bạn)",
+        approverRole: "Người phê duyệt (Bạn)",
         department: "Phòng Nhân Sự & Văn Hóa",
         status: "PENDING",
         timestamp: "Đang chờ bạn xử lý...",
@@ -299,7 +299,7 @@ const INITIAL_REQUISITIONS: RequisitionItem[] = [
         stepNumber: 3,
         stepName: "Phê duyệt Trưởng phòng Nhân sự",
         approverName: "Trần Đức Nam",
-        approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Bạn - Cấp cuối)",
+        approverRole: "Người phê duyệt (Bạn - Cấp cuối)",
         department: "Phòng Nhân Sự & Văn Hóa",
         status: "PENDING",
         timestamp: "Đang chờ bạn xử lý...",
@@ -358,7 +358,7 @@ const INITIAL_REQUISITIONS: RequisitionItem[] = [
         stepNumber: 2,
         stepName: "Phê duyệt Trưởng phòng Nhân sự",
         approverName: "Trần Đức Nam",
-        approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Bạn)",
+        approverRole: "Người phê duyệt (Bạn)",
         department: "Phòng Nhân Sự & Văn Hóa",
         status: "PENDING",
         timestamp: "Đang chờ bạn xử lý...",
@@ -511,7 +511,7 @@ const INITIAL_OFFERS: OfferItem[] = [
         stepNumber: 3,
         stepName: "Phê duyệt Trưởng phòng Nhân sự",
         approverName: "Trần Đức Nam",
-        approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Bạn)",
+        approverRole: "Người phê duyệt (Bạn)",
         department: "Phòng Nhân Sự & Văn Hóa",
         status: "PENDING",
         timestamp: "Đang chờ bạn xử lý...",
@@ -596,7 +596,7 @@ const INITIAL_OFFERS: OfferItem[] = [
         stepNumber: 3,
         stepName: "Phê duyệt Trưởng phòng Nhân sự",
         approverName: "Trần Đức Nam",
-        approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Bạn - Cấp cuối)",
+        approverRole: "Người phê duyệt (Bạn - Cấp cuối)",
         department: "Phòng Nhân Sự & Văn Hóa",
         status: "PENDING",
         timestamp: "Đang chờ bạn xử lý...",
@@ -700,7 +700,7 @@ const INITIAL_HISTORY: HistoryRecord[] = [
           stepNumber: 2,
           stepName: "Phê duyệt Trưởng phòng Nhân sự",
           approverName: "Trần Đức Nam",
-          approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Bạn)",
+          approverRole: "Người phê duyệt (Bạn)",
           status: "APPROVED",
           timestamp: "02/10/2026 - 16:20",
           comment: "Đồng ý phê duyệt tuyển gấp. Đề nghị TA tập trung nguồn lực sàng lọc CV chất lượng cao.",
@@ -768,7 +768,7 @@ const INITIAL_HISTORY: HistoryRecord[] = [
           stepNumber: 2,
           stepName: "Phê duyệt Trưởng phòng Nhân sự",
           approverName: "Trần Đức Nam",
-          approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Bạn)",
+          approverRole: "Người phê duyệt (Bạn)",
           status: "REJECTED",
           timestamp: "01/10/2026 - 14:10",
           comment: "Đề nghị HR đàm phán lại mức thử việc 85% và bổ sung chứng chỉ ngoại ngữ của ứng viên vào hồ sơ.",
@@ -778,7 +778,7 @@ const INITIAL_HISTORY: HistoryRecord[] = [
           stepNumber: 3,
           stepName: "Yêu cầu Bổ sung & Trả hồ sơ về Người tạo",
           approverName: "Trần Đức Nam",
-          approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Người duyệt)",
+          approverRole: "Người phê duyệt (Người duyệt)",
           department: "Phòng Nhân Sự & Văn Hóa Doanh Nghiệp",
           status: "REJECTED",
           timestamp: "01/10/2026 - 14:10",
@@ -843,7 +843,7 @@ const INITIAL_HISTORY: HistoryRecord[] = [
           stepNumber: 2,
           stepName: "Phê duyệt Trưởng phòng Nhân sự",
           approverName: "Trần Đức Nam",
-          approverRole: "Trưởng phòng Nhân sự & Đãi ngộ (Bạn)",
+          approverRole: "Người phê duyệt (Bạn)",
           status: "REJECTED",
           timestamp: "28/09/2026 - 11:30",
           comment: "Định biên bộ máy hành chính hiện đã tối ưu. Chưa cần thiết bổ sung nhân sự ở thời điểm này theo nghị quyết HĐQT.",
@@ -873,6 +873,7 @@ export default function ApproverDashboardPage() {
   const [approverProfile, setApproverProfile] = useState(() => {
     const base = {
       ...CURRENT_APPROVER,
+      role: "Người phê duyệt",
       avatarUrl: "",
       bio: "Chịu trách nhiệm thẩm định và phê duyệt các yêu cầu tuyển dụng cũng như gói đãi ngộ nhân sự theo ngân sách định biên.",
     };
@@ -886,6 +887,7 @@ export default function ApproverDashboardPage() {
               ...base,
               email: parsed.email,
               name: parsed.full_name || CURRENT_APPROVER.name,
+              role: "Người phê duyệt",
               avatarUrl: parsed.avatarUrl || "",
             };
           }
@@ -1366,9 +1368,6 @@ export default function ApproverDashboardPage() {
                   <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-50 text-[#4285F4] border border-blue-200 shadow-xs">
                     Người phê duyệt
                   </span>
-                  <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-0.5 text-[11px] font-semibold rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                    Trưởng phòng Nhân sự
-                  </span>
                 </div>
                 <p className="text-xs text-slate-500 font-medium">
                   Luồng Phê Duyệt Nghiêm Ngặt (Strict Workflow) • Hạn mức Lương & Ngân sách
@@ -1440,7 +1439,7 @@ export default function ApproverDashboardPage() {
                     />
                   </div>
                   <span className="text-xs text-slate-500 block leading-tight">
-                    {approverProfile.role}
+                    {approverProfile.role || "Người phê duyệt"}
                   </span>
                 </div>
               </button>
