@@ -1,10 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Search } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
+import { Search, ChevronDown, MapPin, Building2, Briefcase } from "lucide-react";
 
 export function SearchFilterBar() {
   const [keyword, setKeyword] = useState("");
@@ -14,84 +11,93 @@ export function SearchFilterBar() {
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Search action trigger
+    // Cuộn mượt xuống danh sách việc làm để xem kết quả
+    const jobsSection = document.getElementById("jobs");
+    if (jobsSection) {
+      jobsSection.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
   return (
     <form
       onSubmit={handleSearchSubmit}
-      className="bg-white p-4 sm:p-6 rounded-2xl shadow-[var(--shadow-card)] border border-[var(--color-border)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-center"
+      className="bg-white p-3 sm:p-4 lg:p-3.5 rounded-2xl shadow-xl border border-gray-100 flex flex-col lg:flex-row items-stretch lg:items-center gap-3 lg:gap-0 lg:divide-x divide-gray-100"
     >
-      {/* Keyword Input */}
-      <div className="lg:col-span-4">
-        <Input
+      {/* 1. Input text: "Tìm vị trí, kỹ năng, phòng ban..." (kèm icon search) */}
+      <div className="flex-1 flex items-center px-4 py-2">
+        <Search className="w-5 h-5 text-slate-400 shrink-0 mr-3" />
+        <input
+          type="text"
           placeholder="Tìm vị trí, kỹ năng, phòng ban..."
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          leftIcon={<Search className="w-5 h-5 text-slate-400" />}
-          className="h-12 border-slate-200"
+          className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 font-medium focus:outline-none"
         />
       </div>
 
-      {/* Department Select */}
-      <div className="lg:col-span-3">
-        <Select
+      {/* 2. Dropdown Select: "Tất cả phòng ban" */}
+      <div className="lg:w-56 flex items-center px-4 py-2 relative">
+        <Building2 className="w-4 h-4 text-slate-400 shrink-0 mr-2.5 hidden sm:block" />
+        <select
           value={department}
           onChange={(e) => setDepartment(e.target.value)}
-          className="h-12 border-slate-200"
-          options={[
-            { value: "", label: "Tất cả phòng ban" },
-            { value: "it", label: "Khối Công nghệ Thông tin" },
-            { value: "product", label: "Phát triển Sản phẩm" },
-            { value: "hr", label: "Quản trị Nhân sự" },
-            { value: "finance", label: "Tài chính - Kế toán" },
-            { value: "marketing", label: "Truyền thông & Marketing" },
-          ]}
-        />
+          aria-label="Phòng ban"
+          className="w-full bg-transparent text-sm text-slate-700 font-medium focus:outline-none appearance-none pr-6 cursor-pointer"
+        >
+          <option value="">Tất cả phòng ban</option>
+          <option value="it">Khối Công nghệ & Phần mềm</option>
+          <option value="product">Khối Quản trị Sản phẩm</option>
+          <option value="hr">Phòng Nhân sự & Văn hóa</option>
+          <option value="finance">Tài chính - Kế toán</option>
+          <option value="marketing">Truyền thông & Marketing</option>
+        </select>
+        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 pointer-events-none" />
       </div>
 
-      {/* Location Select */}
-      <div className="lg:col-span-2">
-        <Select
+      {/* 3. Dropdown Select: "Tất cả địa điểm" */}
+      <div className="lg:w-48 flex items-center px-4 py-2 relative">
+        <MapPin className="w-4 h-4 text-slate-400 shrink-0 mr-2.5 hidden sm:block" />
+        <select
           value={location}
           onChange={(e) => setLocation(e.target.value)}
-          className="h-12 border-slate-200"
-          options={[
-            { value: "", label: "Tất cả địa điểm" },
-            { value: "hn", label: "Hà Nội" },
-            { value: "hcm", label: "TP. Hồ Chí Minh" },
-            { value: "dn", label: "Đà Nẵng" },
-            { value: "remote", label: "Làm việc từ xa" },
-          ]}
-        />
+          aria-label="Địa điểm làm việc"
+          className="w-full bg-transparent text-sm text-slate-700 font-medium focus:outline-none appearance-none pr-6 cursor-pointer"
+        >
+          <option value="">Tất cả địa điểm</option>
+          <option value="hn">Hà Nội</option>
+          <option value="hcm">TP. Hồ Chí Minh</option>
+          <option value="dn">Đà Nẵng</option>
+          <option value="remote">Làm việc từ xa</option>
+        </select>
+        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 pointer-events-none" />
       </div>
 
-      {/* Work Type Select */}
-      <div className="lg:col-span-2">
-        <Select
+      {/* 4. Dropdown Select: "Hình thức làm việc" */}
+      <div className="lg:w-48 flex items-center px-4 py-2 relative">
+        <Briefcase className="w-4 h-4 text-slate-400 shrink-0 mr-2.5 hidden sm:block" />
+        <select
           value={workType}
           onChange={(e) => setWorkType(e.target.value)}
-          className="h-12 border-slate-200"
-          options={[
-            { value: "", label: "Hình thức làm việc" },
-            { value: "fulltime", label: "Toàn thời gian" },
-            { value: "parttime", label: "Bán thời gian" },
-            { value: "hybrid", label: "Hybrid" },
-          ]}
-        />
+          aria-label="Hình thức làm việc"
+          className="w-full bg-transparent text-sm text-slate-700 font-medium focus:outline-none appearance-none pr-6 cursor-pointer"
+        >
+          <option value="">Hình thức làm việc</option>
+          <option value="fulltime">Toàn thời gian</option>
+          <option value="parttime">Bán thời gian</option>
+          <option value="hybrid">Hybrid (Linh hoạt)</option>
+        </select>
+        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 pointer-events-none" />
       </div>
 
-      {/* Submit Button */}
-      <div className="lg:col-span-1 flex items-center">
-        <Button
+      {/* 5. Nút Submit: Nút "Tìm" màu xanh dương nổi bật, bo tròn */}
+      <div className="p-1 sm:p-1.5 flex items-center shrink-0">
+        <button
           type="submit"
-          variant="primary"
-          size="md"
-          className="w-full h-12"
-          leftIcon={<Search className="w-4 h-4" />}
+          className="w-full lg:w-auto px-8 py-3.5 rounded-full bg-[#4285F4] hover:bg-blue-600 text-white font-bold text-sm shadow-md shadow-blue-500/25 hover:shadow-lg hover:shadow-blue-500/35 transition-all flex items-center justify-center gap-2 cursor-pointer"
         >
-          Tìm
-        </Button>
+          <Search className="w-4 h-4" />
+          <span>Tìm</span>
+        </button>
       </div>
     </form>
   );

@@ -74,6 +74,10 @@ export function LoginForm() {
         res.user?.role === "approver" ||
         cleanEmail.toLowerCase() === "nguoiduyet@company.com";
 
+      const isEmployee =
+        res.user?.role === "employee" ||
+        cleanEmail.toLowerCase() === "nhanvien@company.com";
+
       setSuccessMsg(
         isAdmin
           ? "Đăng nhập thành công với quyền Quản trị hệ thống! Đang chuyển hướng..."
@@ -81,6 +85,8 @@ export function LoginForm() {
           ? "Đăng nhập thành công với quyền Người phê duyệt! Đang chuyển hướng..."
           : isManager
           ? "Đăng nhập thành công với quyền Trưởng bộ phận! Đang chuyển hướng..."
+          : isEmployee
+          ? "Đăng nhập thành công (Nhân sự nội bộ)! Đang chuyển hướng..."
           : "Đăng nhập thành công! Đang chuyển hướng..."
       );
 
@@ -91,6 +97,8 @@ export function LoginForm() {
           router.push("/approver");
         } else if (isManager) {
           router.push("/manager");
+        } else if (isEmployee) {
+          router.push("/employee");
         } else {
           router.push("/");
         }
@@ -162,6 +170,29 @@ export function LoginForm() {
         setSuccessMsg("Đăng nhập thành công (Người phê duyệt)! Đang chuyển hướng đến trang Phê duyệt...");
         setTimeout(() => {
           router.push("/approver");
+        }, 1000);
+        return;
+      }
+
+      // 4. Tự động cấp quyền truy cập hợp lệ cho Nhân sự nội bộ: nhanvien@company.com / company123
+      if (
+        cleanEmail.toLowerCase() === "nhanvien@company.com" &&
+        (password === "company123" || password === "nhanvien123")
+      ) {
+        const mockEmployeeUser = {
+          id: 4,
+          email: "nhanvien@company.com",
+          full_name: "Nguyễn Văn An",
+          role: "employee",
+          is_active: true,
+        };
+        localStorage.setItem("access_token", "employee-system-session-token");
+        localStorage.setItem("user_info", JSON.stringify(mockEmployeeUser));
+        saveAuthSession({ displayName: "Nguyễn Văn An" });
+
+        setSuccessMsg("Đăng nhập thành công (Nhân sự nội bộ)! Đang chuyển hướng đến cổng thông tin...");
+        setTimeout(() => {
+          router.push("/employee");
         }, 1000);
         return;
       }
