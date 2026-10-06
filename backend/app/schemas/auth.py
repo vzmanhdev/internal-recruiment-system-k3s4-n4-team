@@ -80,7 +80,7 @@ class ChangePasswordRequest(BaseModel):
         return value
 
 class ProfileUpdateRequest(BaseModel):
-    full_name: str = Field(..., min_length=2, max_length=100)
+    full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
     avatar_url: Optional[str] = Field(None, max_length=4_000_000)
 
@@ -99,6 +99,7 @@ class UserResponse(BaseModel):
     employee_code: Optional[str] = None
     role: str
     roles: List[str] = Field(default_factory=list)
+    redirect_url: Optional[str] = None
     is_active: bool
     account_status: str = "active"
     lock_reason: Optional[str] = None
@@ -108,6 +109,7 @@ class UserResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    redirect_url: str = "/"
     user: UserResponse
 
 class RegistrationResponse(BaseModel):

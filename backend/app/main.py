@@ -17,6 +17,7 @@ from app.api.v1.interviews import router as interviews_router
 from app.api.v1.offer_onboarding import router as offers_router
 from app.api.v1.referral_eval import router as referrals_router
 from app.api.v1.analytics import router as analytics_router
+from app.api.v1.email_automation import router as email_automation_router
 
 # Create database tables automatically
 Base.metadata.create_all(bind=engine)
@@ -96,3 +97,4 @@ app.include_router(interviews_router, prefix="/api/v1/interviews", tags=["Interv
 app.include_router(offers_router, prefix="/api/v1/offers", tags=["Job Offers & Onboarding"])
 app.include_router(referrals_router, prefix="/api/v1/referrals", tags=["Internal Referrals"])
 app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["Analytics & KPIs"])
+app.include_router(email_automation_router, prefix="/api/v1", tags=["Email Automation"])

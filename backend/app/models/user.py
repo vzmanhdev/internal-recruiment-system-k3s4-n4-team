@@ -18,6 +18,22 @@ class User(Base):
     employee_code = Column(String(50), unique=True, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    def get_redirect_url(self) -> str:
+        normalized = (self.role or "").lower().strip()
+        if "admin" in normalized:
+            return "/admin"
+        elif "hr_manager" in normalized or "hr" in normalized:
+            return "/hr"
+        elif "recruiter" in normalized:
+            return "/recruiter"
+        elif "hiring_manager" in normalized or "manager" in normalized or "department_manager" in normalized:
+            return "/manager"
+        elif "interviewer" in normalized:
+            return "/interviewer"
+        elif "approver" in normalized:
+            return "/approver"
+        return "/jobs"
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -27,9 +43,11 @@ class User(Base):
             "employee_code": self.employee_code,
             "role": self.role,
             "roles": [role for role in self.role.split(",") if role],
+            "redirect_url": self.get_redirect_url(),
             "is_active": self.is_active,
             "account_status": self.account_status,
             "lock_reason": self.lock_reason,
             "avatar_url": self.avatar_url,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
+

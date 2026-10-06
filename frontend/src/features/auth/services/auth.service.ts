@@ -6,7 +6,10 @@ export interface UserItem {
   email: string;
   full_name: string;
   phone?: string;
+  employee_code?: string;
+  avatar_url?: string;
   role: string;
+  redirect_url?: string;
   is_active: boolean;
   account_status?: string;
   lock_reason?: string;
@@ -16,6 +19,7 @@ export interface UserItem {
 export interface AuthResponse {
   access_token: string;
   token_type: string;
+  redirect_url?: string;
   user: UserItem;
 }
 
@@ -116,6 +120,22 @@ export const authService = {
     });
   },
 
+  async updateProfile(payload: { full_name?: string; phone?: string; avatar_url?: string }): Promise<UserItem> {
+    const res = await apiRequest<UserItem>("/auth/me", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    if (res) {
+      const currentUser = this.getUserInfo() || ({} as any);
+      const updatedUser = { ...currentUser, ...res };
+      localStorage.setItem("user_info", JSON.stringify(updatedUser));
+      if (res.avatar_url) {
+        localStorage.setItem("user_avatar_url", res.avatar_url);
+      }
+    }
+    return res;
+  },
+
   async getAllUsers(): Promise<UserItem[]> {
     return await apiRequest<UserItem[]>("/auth/users", {
       method: "GET",
@@ -144,6 +164,27 @@ export const authService = {
     return await apiRequest<UserItem>(`/auth/users/${userId}/unlock`, {
       method: "POST",
     });
+  },
+
+  getToken(): string | null {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("access_token");
+    }
+    return null;
+  },
+
+  getUserInfo(): UserItem | null {
+    if (typeof window !== "undefined") {
+      const raw = localStorage.getItem("user_info");
+      if (raw) {
+        try {
+          return JSON.parse(raw);
+        } catch (e) {
+          return null;
+        }
+      }
+    }
+    return null;
   },
 
   logout() {

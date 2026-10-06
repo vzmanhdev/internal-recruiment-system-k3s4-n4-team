@@ -1,0 +1,14 @@
+interface:
+  display_name: UML Code Tracer
+  short_description: Trace code into sequence, class and activity UML
+  default_prompt: Use $uml-code-tracer to create verified diagrams from the requirements
+    and code in this project.
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

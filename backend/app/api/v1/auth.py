@@ -70,6 +70,22 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         "user": new_user.to_dict()
     }
 
+def get_role_redirect_url(role: str) -> str:
+    normalized = (role or "").lower().strip()
+    if "admin" in normalized:
+        return "/admin"
+    elif "hr_manager" in normalized or "hr" in normalized:
+        return "/hr"
+    elif "recruiter" in normalized:
+        return "/recruiter"
+    elif "hiring_manager" in normalized or "manager" in normalized or "department_manager" in normalized:
+        return "/manager"
+    elif "interviewer" in normalized:
+        return "/interviewer"
+    elif "approver" in normalized:
+        return "/approver"
+    return "/jobs"
+
 @router.post(
     "/login",
     response_model=Token,
@@ -78,7 +94,7 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
     }
 )
 def login(user_in: UserLogin, db: Session = Depends(get_db)):
-    # Find user by email
+    # Find user by email from Database
     user = db.query(User).filter(User.email == user_in.email).first()
     if not user:
         return JSONResponse(
@@ -118,13 +134,18 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
             }
         )
 
-    # Generate JWT token
+    # Generate JWT token with Subject (User ID)
     access_token = create_access_token(subject=user.id)
+    
+    # DB-driven single source of truth for user role & workspace redirect
+    user_dict = user.to_dict()
+    redirect_path = user.get_redirect_url()
     
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user.to_dict()
+        "redirect_url": redirect_path,
+        "user": user_dict
     }
 
 @router.post(
@@ -249,17 +270,17 @@ def require_roles(authorization: Optional[str], db: Session, allowed_roles: set[
 
 @router.get("/users", response_model=list[UserResponse])
 def list_all_users(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    require_admin(authorization, db)
+    require_roles(authorization, db, allowed_roles={"admin", "hr_manager", "hr"})
     return [user.to_dict() for user in db.query(User).order_by(User.created_at.desc()).all()]
 
 @router.get("/pending-users", response_model=list[UserResponse])
 def list_pending_users(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    require_admin(authorization, db)
+    require_roles(authorization, db, allowed_roles={"admin", "hr_manager", "hr"})
     return [user.to_dict() for user in db.query(User).filter(User.account_status == "pending").order_by(User.created_at.desc()).all()]
 
 @router.post("/users/{user_id}/approve", response_model=UserResponse)
 def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    require_admin(authorization, db)
+    require_roles(authorization, db, allowed_roles={"admin", "hr_manager", "hr"})
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
@@ -272,7 +293,7 @@ def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: 
 
 @router.post("/users/{user_id}/lock", response_model=UserResponse)
 def lock_user(user_id: int, reason: Optional[str] = None, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    require_admin(authorization, db)
+    require_roles(authorization, db, allowed_roles={"admin", "hr_manager", "hr"})
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
@@ -285,7 +306,7 @@ def lock_user(user_id: int, reason: Optional[str] = None, authorization: Optiona
 
 @router.post("/users/{user_id}/unlock", response_model=UserResponse)
 def unlock_user(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    require_admin(authorization, db)
+    require_roles(authorization, db, allowed_roles={"admin", "hr_manager", "hr"})
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
@@ -335,8 +356,14 @@ def update_me(payload: ProfileUpdateRequest, authorization: Optional[str] = Head
     user = db.query(User).filter(User.id == int(user_id)).first() if user_id else None
     if not user:
         raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    user.full_name = payload.full_name.strip()
-    user.phone = payload.phone.replace(" ", "") if payload.phone else None
-    user.avatar_url = payload.avatar_url
-    db.commit(); db.refresh(user)
+    
+    if payload.full_name is not None and payload.full_name.strip():
+        user.full_name = payload.full_name.strip()
+    if payload.phone is not None:
+        user.phone = payload.phone.replace(" ", "") if payload.phone else None
+    if payload.avatar_url is not None:
+        user.avatar_url = payload.avatar_url
+
+    db.commit()
+    db.refresh(user)
     return user.to_dict()

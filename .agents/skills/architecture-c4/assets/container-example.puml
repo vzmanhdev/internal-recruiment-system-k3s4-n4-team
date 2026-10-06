@@ -1,0 +1,14 @@
+@startuml
+' Fictional architecture example; local PlantUML standard library.
+!include <C4/C4_Container>
+title Example system — proposed syntax sample
+Person(member, "Member", "Example actor")
+System_Boundary(example, "Example system") {
+  Container(web, "Web application", "Example web framework", "Displays forms")
+  Container(api, "API application", "Example API framework", "Handles booking requests")
+  ContainerDb(db, "Database", "Example relational database", "Stores bookings")
+}
+Rel(member, web, "Uses")
+Rel(web, api, "Submits requests", "HTTPS/JSON")
+Rel(api, db, "Reads and writes")
+@enduml

@@ -86,3 +86,17 @@ def reorder_categories(payload: ReorderCategories, authorization: Optional[str] 
         if item_id in by_id: by_id[item_id].sort_order = index
     db.commit()
     return [item.to_dict() for item in db.query(SharedCategory).order_by(SharedCategory.category_type, SharedCategory.sort_order).all()]
+
+# Headcount Budgets APIs (S3-04)
+@router.get("/headcounts")
+def list_headcount_budgets(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    from app.models.hr import HeadcountBudget
+    return [item.to_dict() for item in db.query(HeadcountBudget).order_by(HeadcountBudget.year.desc()).all()]
+
+# Approval Flows APIs (S3-01)
+@router.get("/approval-flows")
+def list_approval_flows(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    from app.models.hr import ApprovalFlow
+    return [item.to_dict() for item in db.query(ApprovalFlow).order_by(ApprovalFlow.id.asc()).all()]

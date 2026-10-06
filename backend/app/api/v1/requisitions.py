@@ -185,3 +185,61 @@ def approve_requisition(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Lỗi hệ thống khi cập nhật tờ trình: {str(e)}")
+
+# Phân công Recruiter (S3-06)
+class RecruiterAssignRequest(BaseModel):
+    recruiter_id: int
+    assignment_type: str = "primary" # primary (chính), secondary (hỗ trợ)
+
+@router.post("/{req_id}/assign-recruiters")
+def assign_recruiter(
+    req_id: int,
+    payload: RecruiterAssignRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    user = get_current_user(authorization, db)
+    req = db.query(JobRequisition).filter(JobRequisition.id == req_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình")
+    
+    from app.models.hr import RecruiterAssignment
+    assignment = RecruiterAssignment(
+        requisition_id=req.id,
+        recruiter_id=payload.recruiter_id,
+        assignment_type=payload.assignment_type
+    )
+    db.add(assignment)
+    db.commit()
+    return {"success": True, "message": f"Đã phân công Recruiter ID {payload.recruiter_id} ({payload.assignment_type}) cho tờ trình {req.code}."}
+
+# Ghi đè Headcount khi vượt chỉ tiêu (S3-04 Override)
+class HeadcountOverrideRequest(BaseModel):
+    reason: str
+
+@router.post("/{req_id}/headcount-override")
+def override_headcount(
+    req_id: int,
+    payload: HeadcountOverrideRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    user = get_current_user(authorization, db)
+    user_roles = set(user.role.split(","))
+    if not user_roles.intersection({"hr_manager", "admin"}):
+        raise HTTPException(status_code=403, detail="Chỉ HR Manager hoặc Admin mới có quyền xác nhận ghi đè Headcount.")
+
+    req = db.query(JobRequisition).filter(JobRequisition.id == req_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình")
+
+    log = RequisitionApprovalLog(
+        requisition_id=req.id,
+        approver_id=user.id,
+        step_name="Xác nhận Ghi Đè Headcount",
+        action="headcount_override",
+        comment=f"HR Manager đã phê duyệt ghi đè chỉ tiêu Headcount. Lý do: {payload.reason}"
+    )
+    db.add(log)
+    db.commit()
+    return {"success": True, "message": "Đã xác nhận ghi đè chỉ tiêu Headcount thành công."}

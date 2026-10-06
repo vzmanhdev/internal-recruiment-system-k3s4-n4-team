@@ -1,0 +1,17 @@
+@startuml
+' Fictional direct-handler example; replace with traced project participants.
+actor "Member" as Member
+participant "Web form" as UI
+participant "API handler" as API
+database "Database" as DB
+Member -> UI : Submit booking
+UI -> API : POST /example/bookings
+alt authorized
+  API -> DB : Insert booking
+  DB --> API : Booking ID
+  API --> UI : 201 Created
+else forbidden
+  API --> UI : 403 Forbidden
+end
+UI --> Member : Show result
+@enduml
