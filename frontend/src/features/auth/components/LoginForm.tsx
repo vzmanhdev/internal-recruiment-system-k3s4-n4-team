@@ -65,6 +65,10 @@ export function LoginForm() {
         cleanEmail.toLowerCase() === "admin@company.com" ||
         cleanEmail.toLowerCase() === "admin@gmail.com";
 
+      const isHrManager =
+        res.user?.role === "hr_manager" ||
+        cleanEmail.toLowerCase() === "truongphong@company.com";
+
       const isManager =
         res.user?.role === "department_manager" ||
         res.user?.role === "hiring_manager" ||
@@ -78,13 +82,21 @@ export function LoginForm() {
         res.user?.role === "employee" ||
         cleanEmail.toLowerCase() === "nhanvien@company.com";
 
+      const isRecruiter =
+        res.user?.role === "recruiter" ||
+        cleanEmail.toLowerCase() === "tuyendung@company.com";
+
       setSuccessMsg(
         isAdmin
           ? "Đăng nhập thành công với quyền Quản trị hệ thống! Đang chuyển hướng..."
+          : isHrManager
+          ? "Đăng nhập thành công với quyền Trưởng phòng Nhân sự! Đang chuyển hướng..."
           : isApprover
           ? "Đăng nhập thành công với quyền Người phê duyệt! Đang chuyển hướng..."
           : isManager
           ? "Đăng nhập thành công với quyền Trưởng bộ phận! Đang chuyển hướng..."
+          : isRecruiter
+          ? "Đăng nhập thành công với quyền Nhân viên tuyển dụng! Đang chuyển hướng..."
           : isEmployee
           ? "Đăng nhập thành công (Nhân sự nội bộ)! Đang chuyển hướng..."
           : "Đăng nhập thành công! Đang chuyển hướng..."
@@ -93,10 +105,14 @@ export function LoginForm() {
       setTimeout(() => {
         if (isAdmin) {
           router.push("/admin");
+        } else if (isHrManager) {
+          router.push("/hr-manager");
         } else if (isApprover) {
           router.push("/approver");
         } else if (isManager) {
           router.push("/manager");
+        } else if (isRecruiter) {
+          router.push("/recruiter");
         } else if (isEmployee) {
           router.push("/employee");
         } else {
@@ -193,6 +209,52 @@ export function LoginForm() {
         setSuccessMsg("Đăng nhập thành công (Nhân sự nội bộ)! Đang chuyển hướng đến cổng thông tin...");
         setTimeout(() => {
           router.push("/employee");
+        }, 1000);
+        return;
+      }
+
+      // 5. Tự động cấp quyền truy cập hợp lệ cho Trưởng phòng Nhân sự: truongphong@company.com / company123
+      if (
+        cleanEmail.toLowerCase() === "truongphong@company.com" &&
+        (password === "company123" || password === "truongphong123")
+      ) {
+        const mockHrUser = {
+          id: 5,
+          email: "truongphong@company.com",
+          full_name: "Trưởng Phòng Nhân Sự",
+          role: "hr_manager",
+          is_active: true,
+        };
+        localStorage.setItem("access_token", "hr-manager-system-session-token");
+        localStorage.setItem("user_info", JSON.stringify(mockHrUser));
+        saveAuthSession({ displayName: "Trưởng Phòng Nhân Sự" });
+
+        setSuccessMsg("Đăng nhập thành công (Trưởng phòng Nhân sự)! Đang chuyển hướng đến trang Quản lý...");
+        setTimeout(() => {
+          router.push("/hr-manager");
+        }, 1000);
+        return;
+      }
+
+      // 6. Tự động cấp quyền truy cập hợp lệ cho Nhân viên tuyển dụng: tuyendung@company.com / company123
+      if (
+        cleanEmail.toLowerCase() === "tuyendung@company.com" &&
+        (password === "company123" || password === "tuyendung123")
+      ) {
+        const mockRecruiterUser = {
+          id: 6,
+          email: "tuyendung@company.com",
+          full_name: "Nguyễn Tuyển Dụng",
+          role: "recruiter",
+          is_active: true,
+        };
+        localStorage.setItem("access_token", "recruiter-system-session-token");
+        localStorage.setItem("user_info", JSON.stringify(mockRecruiterUser));
+        saveAuthSession({ displayName: "Nguyễn Tuyển Dụng" });
+
+        setSuccessMsg("Đăng nhập thành công (Nhân viên tuyển dụng)! Đang chuyển hướng đến Bảng làm việc...");
+        setTimeout(() => {
+          router.push("/recruiter");
         }, 1000);
         return;
       }

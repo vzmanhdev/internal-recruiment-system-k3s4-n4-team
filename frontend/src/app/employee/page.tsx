@@ -802,48 +802,54 @@ export default function EmployeePortalDashboard() {
               </span>
             </div>
 
-            {/* Các mục Menu (áp dụng state Active nền xanh #4285F4) */}
-            <nav className="space-y-1.5">
+            {/* Các mục Menu */}
+            <nav className="flex flex-col space-y-2">
               {/* Mục 1: Bảng tin tuyển dụng (Mặc định chọn) */}
               <button
                 type="button"
                 onClick={() => setActiveMenu("jobs")}
-                className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl cursor-pointer ${
                   activeMenu === "jobs"
-                    ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/25 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-600 hover:bg-gray-100 transition-colors"
                 }`}
               >
-                <Briefcase className="w-5 h-5 shrink-0" />
-                <span>Bảng tin tuyển dụng</span>
+                <Briefcase className="w-5 h-5 shrink-0 flex-none" />
+                <span className="text-sm font-medium text-left leading-snug">
+                  Bảng tin tuyển dụng
+                </span>
               </button>
 
               {/* Mục 2: Việc làm đã ứng tuyển */}
               <button
                 type="button"
                 onClick={() => setActiveMenu("applications")}
-                className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl cursor-pointer ${
                   activeMenu === "applications"
-                    ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/25 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-600 hover:bg-gray-100 transition-colors"
                 }`}
               >
-                <FileText className="w-5 h-5 shrink-0" />
-                <span>Việc làm đã ứng tuyển</span>
+                <FileText className="w-5 h-5 shrink-0 flex-none" />
+                <span className="text-sm font-medium text-left leading-snug">
+                  Việc làm đã ứng tuyển
+                </span>
               </button>
 
               {/* Mục 3: Giới thiệu ứng viên (Referral) */}
               <button
                 type="button"
                 onClick={() => setActiveMenu("referrals")}
-                className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl cursor-pointer ${
                   activeMenu === "referrals"
-                    ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/25 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-600 hover:bg-gray-100 transition-colors"
                 }`}
               >
-                <UserPlus className="w-5 h-5 shrink-0" />
-                <span>Giới thiệu ứng viên (Referral)</span>
+                <UserPlus className="w-5 h-5 shrink-0 flex-none" />
+                <span className="text-sm font-medium text-left leading-snug">
+                  Giới thiệu ứng viên (Referral)
+                </span>
               </button>
 
               {/* Mục 4: Hồ sơ cá nhân */}
@@ -853,14 +859,16 @@ export default function EmployeePortalDashboard() {
                   setProfileModalTab("profile");
                   setIsProfileModalOpen(true);
                 }}
-                className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl cursor-pointer ${
                   activeMenu === "profile"
-                    ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/25 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-blue-500 text-white"
+                    : "text-gray-600 hover:bg-gray-100 transition-colors"
                 }`}
               >
-                <UserIcon className="w-5 h-5 shrink-0" />
-                <span>Hồ sơ cá nhân</span>
+                <UserIcon className="w-5 h-5 shrink-0 flex-none" />
+                <span className="text-sm font-medium text-left leading-snug">
+                  Hồ sơ cá nhân
+                </span>
               </button>
             </nav>
 
