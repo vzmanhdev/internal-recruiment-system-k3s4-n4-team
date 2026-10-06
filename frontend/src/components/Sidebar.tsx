@@ -1,56 +1,100 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
+import Link from "next/link";
 import {
   LayoutDashboard,
-  ChevronDown,
-  ChevronUp,
-  Network,
-  Settings2,
-  Wallet,
-  GitBranch,
+  Briefcase,
   UserCheck,
-  Server,
-  FileText,
+  Network,
   DollarSign,
-  Users,
+  Award,
+  Globe,
+  Server,
 } from "lucide-react";
 
-export type HRMenuTab =
-  | "overview" // Tổng quan (Dashboard báo cáo)
-  | "dept_tree" // Sơ đồ cây phòng ban
-  | "salary_bands" // Chức danh & Dải lương
-  | "org_chart" // Sơ đồ tổ chức
-  | "category_config" // Cấu hình danh mục
-  | "headcount" // Ngân sách Headcount
-  | "workflow" // Luồng phê duyệt
-  | "assignment"; // Phân công công việc
+// =========================================================================
+// 1. DATA TYPES: CHỈ GIỮ LẠI ĐÚNG 7 MỤC CHUẨN, XÓA TOÀN BỘ CÁC MỤC CŨ
+// =========================================================================
 
-interface SidebarProps {
-  activeTab: HRMenuTab;
-  onTabChange: (tab: HRMenuTab) => void;
+export type HRMenuTab =
+  | "overview" // 1. Tổng quan (Dashboard KPI)
+  | "requisitions" // 2. Yêu cầu tuyển dụng (Quản lý Requisition)
+  | "execution" // 3. Thực thi & Tiếp nhận nhân sự (Phiếu đánh giá & Checklist Onboard)
+  | "dept_tree" // 4. Sơ đồ cây phòng ban nhiều cấp (Quản lý phòng ban)
+  | "salary_bands" // 5. Danh mục dải lương chuẩn theo chức danh (Quản lý mức lương)
+  | "competency" // 6. Thiết lập Khung năng lực & Đánh giá (Quản lý tiêu chí & Ngân hàng câu hỏi)
+  | "settings"; // 7. Cấu hình hiển thị & Giao tiếp (Landing page & Mẫu Email)
+
+export interface MenuItemConfig {
+  id: HRMenuTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  href: string;
+}
+
+// Danh sách đúng 7 mục menu chuẩn mực theo yêu cầu
+export const HR_SIDEBAR_MENU_ITEMS: MenuItemConfig[] = [
+  {
+    id: "overview",
+    label: "Tổng quan (Dashboard KPI)",
+    icon: LayoutDashboard,
+    href: "/hr-manager",
+  },
+  {
+    id: "requisitions",
+    label: "Yêu cầu tuyển dụng (Quản lý Requisition)",
+    icon: Briefcase,
+    href: "/hr-manager/requisitions",
+  },
+  {
+    id: "execution",
+    label: "Thực thi & Tiếp nhận nhân sự (Phiếu đánh giá & Checklist Onboard)",
+    icon: UserCheck,
+    href: "/hr-manager/execution",
+  },
+  {
+    id: "dept_tree",
+    label: "Sơ đồ cây phòng ban nhiều cấp (Quản lý phòng ban)",
+    icon: Network,
+    href: "/hr-manager/master-data",
+  },
+  {
+    id: "salary_bands",
+    label: "Danh mục dải lương chuẩn theo chức danh (Quản lý mức lương)",
+    icon: DollarSign,
+    href: "/hr-manager/master-data",
+  },
+  {
+    id: "competency",
+    label: "Thiết lập Khung năng lực & Đánh giá (Quản lý tiêu chí & Ngân hàng câu hỏi)",
+    icon: Award,
+    href: "/hr-manager/competency",
+  },
+  {
+    id: "settings",
+    label: "Cấu hình hiển thị & Giao tiếp (Landing page & Mẫu Email)",
+    icon: Globe,
+    href: "/hr-manager/settings",
+  },
+];
+
+export interface SidebarProps {
+  activeTab?: HRMenuTab;
+  onTabChange?: (tab: HRMenuTab) => void;
   className?: string;
 }
 
-export function Sidebar({ activeTab, onTabChange, className = "" }: SidebarProps) {
-  // State đóng/mở Accordion cho mục Tổng quan (Dashboard)
-  const [isOverviewOpen, setIsOverviewOpen] = useState<boolean>(true);
-
-  // Kiểm tra xem một trong các tab con của Tổng quan có đang active hay không
-  const isOverviewChildActive =
-    activeTab === "overview" ||
-    activeTab === "dept_tree" ||
-    activeTab === "salary_bands";
-
+export function Sidebar({ activeTab = "overview", onTabChange, className = "" }: SidebarProps) {
   return (
     <aside
-      className={`sticky top-6 h-[calc(100vh-48px)] overflow-y-auto bg-white rounded-3xl shadow-sm [&::-webkit-scrollbar]:hidden w-72 shrink-0 p-4 flex flex-col justify-between border border-gray-100 ${className}`}
+      className={`sticky top-6 h-[calc(100vh-48px)] overflow-y-auto bg-white rounded-3xl shadow-sm flex flex-col p-4 [&::-webkit-scrollbar]:hidden w-80 shrink-0 border border-gray-100 justify-between ${className}`}
     >
       <div className="space-y-4">
         {/* Tiêu đề Menu */}
         <div className="px-4 py-2 flex items-center justify-between border-b border-gray-100 pb-3">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            MENU NHÂN SỰ
+            MENU TRƯỞNG PHÒNG NHÂN SỰ
           </span>
           <span className="flex h-2 w-2 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -58,196 +102,64 @@ export function Sidebar({ activeTab, onTabChange, className = "" }: SidebarProps
           </span>
         </div>
 
-        {/* Danh sách Menu */}
-        <nav className="space-y-1.5">
-          {/* ================================================================= */}
-          {/* MỤC 1: TỔNG QUAN (DASHBOARD) - ACCORDION MULTI-LEVEL */}
-          {/* ================================================================= */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setIsOverviewOpen((prev) => !prev)}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
-                isOverviewChildActive
-                  ? "bg-blue-500 text-white font-semibold shadow-md shadow-blue-500/25"
-                  : "text-slate-700 hover:bg-gray-100"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <LayoutDashboard
+        {/* DANH SÁCH MENU: flex flex-col gap-2 ĐỂ KHOẢNG CÁCH ĐỀU NHAU */}
+        <div className="flex flex-col gap-2">
+          {HR_SIDEBAR_MENU_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+
+            // Nếu truyền callback onTabChange: điều khiển state activeTab để tải component tức thì
+            if (onTabChange) {
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onTabChange(item.id)}
+                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-colors cursor-pointer text-left ${
+                    isActive
+                      ? "bg-blue-500 text-white font-semibold shadow-md shadow-blue-500/25"
+                      : "text-slate-700 hover:bg-gray-100 font-medium"
+                  }`}
+                >
+                  {/* Icon chuẩn: w-5 h-5 shrink-0 đảm bảo luôn thẳng hàng tắp */}
+                  <Icon
+                    className={`w-5 h-5 shrink-0 ${
+                      isActive ? "text-white" : "text-slate-500"
+                    }`}
+                  />
+                  {/* Text nhãn tiêu đề */}
+                  <span className="text-left text-xs sm:text-sm leading-snug">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            }
+
+            // Nếu không truyền callback onTabChange: sử dụng thẻ Link điều hướng
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-colors cursor-pointer text-left ${
+                  isActive
+                    ? "bg-blue-500 text-white font-semibold shadow-md shadow-blue-500/25"
+                    : "text-slate-700 hover:bg-gray-100 font-medium"
+                }`}
+              >
+                {/* Icon chuẩn: w-5 h-5 shrink-0 đảm bảo luôn thẳng hàng tắp */}
+                <Icon
                   className={`w-5 h-5 shrink-0 ${
-                    isOverviewChildActive ? "text-white" : "text-slate-500"
+                    isActive ? "text-white" : "text-slate-500"
                   }`}
                 />
-                <span className="text-left font-medium">Tổng quan (Dashboard)</span>
-              </div>
-              <span className="ml-2 shrink-0">
-                {isOverviewOpen ? (
-                  <ChevronUp className="w-4 h-4 transition-transform duration-200" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 transition-transform duration-200" />
-                )}
-              </span>
-            </button>
-
-            {/* CÁC MỤC CON KHI MỞ ACCORDION */}
-            {isOverviewOpen && (
-              <div className="mt-1 space-y-1 pl-4 border-l-2 border-slate-100 ml-4 py-1 animate-fade-in">
-                {/* Mục con 1: "Tổng quan" (Dashboard báo cáo) */}
-                <button
-                  type="button"
-                  onClick={() => onTabChange("overview")}
-                  className={`w-full flex items-center gap-2.5 pl-6 pr-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors text-left cursor-pointer ${
-                    activeTab === "overview"
-                      ? "bg-blue-50 text-blue-600 font-bold"
-                      : "bg-transparent text-slate-500 hover:text-blue-600 hover:bg-blue-50/50"
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Tổng quan</span>
-                </button>
-
-                {/* Mục con 2: "Sơ đồ cây phòng ban" */}
-                <button
-                  type="button"
-                  onClick={() => onTabChange("dept_tree")}
-                  className={`w-full flex items-center gap-2.5 pl-6 pr-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors text-left cursor-pointer ${
-                    activeTab === "dept_tree"
-                      ? "bg-blue-50 text-blue-600 font-bold"
-                      : "bg-transparent text-slate-500 hover:text-blue-600 hover:bg-blue-50/50"
-                  }`}
-                >
-                  <Network className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Sơ đồ cây phòng ban</span>
-                </button>
-
-                {/* Mục con 3: "Chức danh & Dải lương" */}
-                <button
-                  type="button"
-                  onClick={() => onTabChange("salary_bands")}
-                  className={`w-full flex items-center gap-2.5 pl-6 pr-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors text-left cursor-pointer ${
-                    activeTab === "salary_bands"
-                      ? "bg-blue-50 text-blue-600 font-bold"
-                      : "bg-transparent text-slate-500 hover:text-blue-600 hover:bg-blue-50/50"
-                  }`}
-                >
-                  <DollarSign className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Chức danh & Dải lương</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* ================================================================= */}
-          {/* MỤC 2: SƠ ĐỒ TỔ CHỨC */}
-          {/* ================================================================= */}
-          <button
-            type="button"
-            onClick={() => onTabChange("org_chart")}
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
-              activeTab === "org_chart"
-                ? "bg-blue-500 text-white font-semibold shadow-md shadow-blue-500/25"
-                : "text-slate-700 hover:bg-gray-100"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Users
-                className={`w-5 h-5 shrink-0 ${
-                  activeTab === "org_chart" ? "text-white" : "text-slate-500"
-                }`}
-              />
-              <span className="text-left font-medium">Sơ đồ tổ chức</span>
-            </div>
-          </button>
-
-          {/* ================================================================= */}
-          {/* MỤC 3: CẤU HÌNH DANH MỤC */}
-          {/* ================================================================= */}
-          <button
-            type="button"
-            onClick={() => onTabChange("category_config")}
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
-              activeTab === "category_config"
-                ? "bg-blue-500 text-white font-semibold shadow-md shadow-blue-500/25"
-                : "text-slate-700 hover:bg-gray-100"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Settings2
-                className={`w-5 h-5 shrink-0 ${
-                  activeTab === "category_config" ? "text-white" : "text-slate-500"
-                }`}
-              />
-              <span className="text-left font-medium">Cấu hình danh mục</span>
-            </div>
-          </button>
-
-          {/* ================================================================= */}
-          {/* MỤC 4: NGÂN SÁCH HEADCOUNT */}
-          {/* ================================================================= */}
-          <button
-            type="button"
-            onClick={() => onTabChange("headcount")}
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
-              activeTab === "headcount"
-                ? "bg-blue-500 text-white font-semibold shadow-md shadow-blue-500/25"
-                : "text-slate-700 hover:bg-gray-100"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Wallet
-                className={`w-5 h-5 shrink-0 ${
-                  activeTab === "headcount" ? "text-white" : "text-slate-500"
-                }`}
-              />
-              <span className="text-left font-medium">Ngân sách Headcount</span>
-            </div>
-          </button>
-
-          {/* ================================================================= */}
-          {/* MỤC 5: LUỒNG PHÊ DUYỆT */}
-          {/* ================================================================= */}
-          <button
-            type="button"
-            onClick={() => onTabChange("workflow")}
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
-              activeTab === "workflow"
-                ? "bg-blue-500 text-white font-semibold shadow-md shadow-blue-500/25"
-                : "text-slate-700 hover:bg-gray-100"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <GitBranch
-                className={`w-5 h-5 shrink-0 ${
-                  activeTab === "workflow" ? "text-white" : "text-slate-500"
-                }`}
-              />
-              <span className="text-left font-medium">Luồng phê duyệt</span>
-            </div>
-          </button>
-
-          {/* ================================================================= */}
-          {/* MỤC 6: PHÂN CÔNG CÔNG VIỆC */}
-          {/* ================================================================= */}
-          <button
-            type="button"
-            onClick={() => onTabChange("assignment")}
-            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-medium text-sm transition-all duration-200 cursor-pointer ${
-              activeTab === "assignment"
-                ? "bg-blue-500 text-white font-semibold shadow-md shadow-blue-500/25"
-                : "text-slate-700 hover:bg-gray-100"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <UserCheck
-                className={`w-5 h-5 shrink-0 ${
-                  activeTab === "assignment" ? "text-white" : "text-slate-500"
-                }`}
-              />
-              <span className="text-left font-medium">Phân công công việc</span>
-            </div>
-          </button>
-        </nav>
+                {/* Text nhãn tiêu đề */}
+                <span className="text-left text-xs sm:text-sm leading-snug">
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </div>
 
       {/* THẺ TRẠNG THÁI HỆ THỐNG / CHỈ SỐ NHANH DƯỚI CÙNG SIDEBAR */}
@@ -262,7 +174,7 @@ export function Sidebar({ activeTab, onTabChange, className = "" }: SidebarProps
             <span>Hoạt động ổn định (99.98%)</span>
           </div>
           <p className="text-[11px] text-slate-400 mt-1.5">
-            Phiên bản hệ thống: v2.4.0-prod
+            Phiên bản hệ thống: v2.5.0-enterprise
           </p>
         </div>
       </div>

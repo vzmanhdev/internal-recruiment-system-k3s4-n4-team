@@ -2,8 +2,9 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { Sidebar } from "@/components/Sidebar";
 import { MasterDataManagementView } from "@/components/MasterDataManagementView";
-import { Folder, DollarSign, ShieldCheck, ArrowLeft, Building2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 export default function MasterDataPage() {
   const [activeTab, setActiveTab] = useState<"tree_view" | "salary_bands">("tree_view");
@@ -47,68 +48,14 @@ export default function MasterDataPage() {
       </header>
 
       {/* 2. BODY CONTENT: SIDEBAR + MAIN WORKSPACE */}
-      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
-        {/* SIDEBAR BÊN TRÁI */}
-        <aside className="w-full lg:w-72 shrink-0">
-          <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-4 lg:sticky lg:top-28 space-y-4">
-            <div className="px-4 py-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Menu Quản Trị
-              </span>
-            </div>
-
-            <nav className="flex flex-col space-y-1.5">
-              <Link
-                href="/hr-manager"
-                className="flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
-              >
-                <Building2 className="w-5 h-5 text-slate-400" />
-                <span>Tổng quan (Dashboard)</span>
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("tree_view")}
-                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-sm transition-all cursor-pointer ${
-                  activeTab === "tree_view"
-                    ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/25 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <Folder className="w-5 h-5 shrink-0" />
-                <span>Sơ đồ cây phòng ban</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("salary_bands")}
-                className={`flex items-center gap-3 px-4 py-3 rounded-2xl font-medium text-sm transition-all cursor-pointer ${
-                  activeTab === "salary_bands"
-                    ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/25 font-semibold"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                <DollarSign className="w-5 h-5 shrink-0" />
-                <span>Chức danh & Dải lương</span>
-              </button>
-            </nav>
-
-            {/* Quy chuẩn an toàn thông tin S2-05 */}
-            <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-100 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#4285F4]">
-                <ShieldCheck className="w-4 h-4" />
-                <span>Bảo Mật S2-05</span>
-              </div>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Dải lương tối thiểu và tối đa được bảo vệ nghiêm ngặt. Chỉ tài khoản với vai trò <strong>HR Manager</strong> mới được phân quyền xem và chỉnh sửa.
-              </p>
-            </div>
-          </div>
-        </aside>
-
-        {/* WORKSPACE CHÍNH: TÍCH HỢP MASTER DATA MANAGEMENT VIEW */}
-        <main className="flex-1 min-w-0">
-          <MasterDataManagementView activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex items-start gap-6">
+        <Sidebar activeTab={activeTab === "tree_view" ? "dept_tree" : "salary_bands"} />
+        <main className="flex-1 space-y-6 min-w-0">
+          <MasterDataManagementView
+            initialTab={activeTab}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+          />
         </main>
       </div>
     </div>

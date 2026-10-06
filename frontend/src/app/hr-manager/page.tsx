@@ -13,14 +13,14 @@ import {
   LogOut,
   Network,
   DollarSign,
-  Users as LucideUsers,
-  Settings2,
-  Wallet,
-  GitBranch,
   UserCheck,
 } from "lucide-react";
 import { Sidebar, HRMenuTab } from "@/components/Sidebar";
 import { MasterDataManagementView } from "@/components/MasterDataManagementView";
+import { CompetencyManagementView } from "@/components/CompetencyManagementView";
+import { RequisitionManagementView } from "@/components/RequisitionManagementView";
+import { HRExecution } from "@/components/HRExecution";
+import { HRSettingsManagementView } from "@/components/HRSettingsManagementView";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -224,13 +224,6 @@ function calculateDaysLeft(targetDateStr: string): number {
 // DATA MODELS & INTERFACES
 // =========================================================================
 
-type SidebarMenu =
-  | "dashboard"
-  | "org_chart"
-  | "category"
-  | "headcount"
-  | "workflow"
-  | "assignment";
 
 interface OverdueRequisition {
   id: string;
@@ -267,6 +260,7 @@ export default function HrManagerDashboardPage() {
   }, []);
 
   const [activeTab, setActiveTab] = useState<HRMenuTab>("overview");
+
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1131,6 +1125,20 @@ export default function HrManagerDashboardPage() {
         </div>
       )}
 
+          {/* TAB 1B: YÊU CẦU TUYỂN DỤNG & KIỂM SOÁT HEADCOUNT */}
+          {activeTab === "requisitions" && (
+            <div className="animate-fade-in">
+              <RequisitionManagementView />
+            </div>
+          )}
+
+          {/* TAB 1C: THỰC THI TUYỂN DỤNG & TIẾP NHẬN (ONBOARDING) */}
+          {activeTab === "execution" && (
+            <div className="animate-fade-in">
+              <HRExecution />
+            </div>
+          )}
+
           {/* TAB 2: SƠ ĐỒ CÂY PHÒNG BAN (TÍCH HỢP QUẢN LÝ CẤU TRÚC TỔ CHỨC & KHUNG LƯƠNG) */}
           {activeTab === "dept_tree" && (
             <div className="animate-fade-in">
@@ -1145,128 +1153,17 @@ export default function HrManagerDashboardPage() {
             </div>
           )}
 
-          {/* TAB 4: SƠ ĐỒ TỔ CHỨC */}
-          {activeTab === "org_chart" && (
-            <div className="bg-white rounded-3xl shadow-sm p-8 sm:p-12 border border-gray-100 animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shadow-xs">
-                  <LucideUsers className="w-7 h-7" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                    Đây là màn hình Sơ đồ tổ chức
-                  </h1>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Mô hình hóa toàn bộ cấu trúc nhân sự, phân cấp lãnh đạo và các vị trí chủ chốt.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Màn hình sơ đồ tổ chức tương tác (Interactive Org Chart) giúp lãnh đạo nhân sự có cái nhìn tổng quan về các tuyến báo cáo và phân bổ nhân sự toàn công ty.
-                </p>
-              </div>
+          {/* TAB 3B: KHUNG NĂNG LỰC & ĐÁNH GIÁ (S2-06 & S2-07) */}
+          {activeTab === "competency" && (
+            <div className="animate-fade-in">
+              <CompetencyManagementView />
             </div>
           )}
 
-          {/* TAB 5: CẤU HÌNH DANH MỤC */}
-          {activeTab === "category_config" && (
-            <div className="bg-white rounded-3xl shadow-sm p-8 sm:p-12 border border-gray-100 animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold shadow-xs">
-                  <Settings2 className="w-7 h-7" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                    Đây là màn hình Cấu hình danh mục
-                  </h1>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Quản lý danh mục kỹ năng, địa điểm làm việc, hình thức làm việc và hợp đồng lao động.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Màn hình quản trị các dữ liệu danh mục dùng chung (Master Data Categories) phục vụ cho quy trình tuyển dụng và đánh giá chuẩn mực.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 6: NGÂN SÁCH HEADCOUNT */}
-          {activeTab === "headcount" && (
-            <div className="bg-white rounded-3xl shadow-sm p-8 sm:p-12 border border-gray-100 animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold shadow-xs">
-                  <Wallet className="w-7 h-7" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                    Đây là màn hình Ngân sách Headcount
-                  </h1>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Theo dõi hạn mức định biên nhân sự theo từng khối phòng ban và tiến độ giải ngân quỹ lương.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Màn hình giám sát ngân sách tuyển dụng và hạn mức định biên nhân sự (Headcount Quota & Budget Management).
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 7: LUỒNG PHÊ DUYỆT */}
-          {activeTab === "workflow" && (
-            <div className="bg-white rounded-3xl shadow-sm p-8 sm:p-12 border border-gray-100 animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold shadow-xs">
-                  <GitBranch className="w-7 h-7" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                    Đây là màn hình Luồng phê duyệt
-                  </h1>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Thiết lập ma trận phân quyền và các cấp duyệt yêu cầu tuyển dụng (Job Requisition) & Offer.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Màn hình cấu hình luồng phê duyệt đa cấp theo cấp bậc và ngân sách (Approval Workflow Engine).
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 8: PHÂN CÔNG CÔNG VIỆC */}
-          {activeTab === "assignment" && (
-            <div className="bg-white rounded-3xl shadow-sm p-8 sm:p-12 border border-gray-100 animate-fade-in space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center font-bold shadow-xs">
-                  <UserCheck className="w-7 h-7" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                    Đây là màn hình Phân công công việc
-                  </h1>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Điều phối Job Requisition cho Recruiter và theo dõi khối lượng công việc (Workload Balancing).
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Màn hình phân bổ chỉ tiêu tuyển dụng và giám sát năng suất chuyên viên tuyển dụng trong nhóm HR.
-                </p>
-              </div>
+          {/* TAB 7: CẤU HÌNH HIỂN THỊ & GIAO TIẾP (LANDING PAGE & MẪU EMAIL) */}
+          {activeTab === "settings" && (
+            <div className="animate-fade-in">
+              <HRSettingsManagementView />
             </div>
           )}
         </main>
