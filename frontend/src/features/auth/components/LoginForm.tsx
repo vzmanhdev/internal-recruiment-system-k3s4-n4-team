@@ -24,6 +24,12 @@ export function LoginForm() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
 
+  const setLoginSuccessFlag = () => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("justLoggedIn", "true");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -57,8 +63,9 @@ export function LoginForm() {
         password: password,
       });
 
-      // Lưu phiên hiển thị cho Header
+      // Lưu phiên hiển thị cho Header và đặt cờ thông báo đăng nhập thành công
       saveAuthSession({ displayName: res.user?.full_name || "Admin System" });
+      setLoginSuccessFlag();
 
       const isAdmin =
         res.user?.role === "admin" ||
@@ -136,6 +143,7 @@ export function LoginForm() {
         localStorage.setItem("access_token", "admin-system-session-token");
         localStorage.setItem("user_info", JSON.stringify(mockAdminUser));
         saveAuthSession({ displayName: "Admin System" });
+        setLoginSuccessFlag();
 
         setSuccessMsg("Đăng nhập thành công (Admin System)! Đang chuyển hướng đến trang Quản trị...");
         setTimeout(() => {
@@ -159,6 +167,7 @@ export function LoginForm() {
         localStorage.setItem("access_token", "manager-system-session-token");
         localStorage.setItem("user_info", JSON.stringify(mockManagerUser));
         saveAuthSession({ displayName: "Lê Trưởng Nhóm" });
+        setLoginSuccessFlag();
 
         setSuccessMsg("Đăng nhập thành công (Trưởng bộ phận)! Đang chuyển hướng đến trang Quản lý tuyển dụng...");
         setTimeout(() => {
@@ -182,6 +191,7 @@ export function LoginForm() {
         localStorage.setItem("access_token", "approver-system-session-token");
         localStorage.setItem("user_info", JSON.stringify(mockApproverUser));
         saveAuthSession({ displayName: "Trần Đức Nam" });
+        setLoginSuccessFlag();
 
         setSuccessMsg("Đăng nhập thành công (Người phê duyệt)! Đang chuyển hướng đến trang Phê duyệt...");
         setTimeout(() => {
@@ -205,6 +215,7 @@ export function LoginForm() {
         localStorage.setItem("access_token", "employee-system-session-token");
         localStorage.setItem("user_info", JSON.stringify(mockEmployeeUser));
         saveAuthSession({ displayName: "Nguyễn Văn An" });
+        setLoginSuccessFlag();
 
         setSuccessMsg("Đăng nhập thành công (Nhân sự nội bộ)! Đang chuyển hướng đến cổng thông tin...");
         setTimeout(() => {
@@ -228,6 +239,7 @@ export function LoginForm() {
         localStorage.setItem("access_token", "hr-manager-system-session-token");
         localStorage.setItem("user_info", JSON.stringify(mockHrUser));
         saveAuthSession({ displayName: "Trưởng Phòng Nhân Sự" });
+        setLoginSuccessFlag();
 
         setSuccessMsg("Đăng nhập thành công (Trưởng phòng Nhân sự)! Đang chuyển hướng đến trang Quản lý...");
         setTimeout(() => {
@@ -251,6 +263,7 @@ export function LoginForm() {
         localStorage.setItem("access_token", "recruiter-system-session-token");
         localStorage.setItem("user_info", JSON.stringify(mockRecruiterUser));
         saveAuthSession({ displayName: "Nguyễn Tuyển Dụng" });
+        setLoginSuccessFlag();
 
         setSuccessMsg("Đăng nhập thành công (Nhân viên tuyển dụng)! Đang chuyển hướng đến Bảng làm việc...");
         setTimeout(() => {
