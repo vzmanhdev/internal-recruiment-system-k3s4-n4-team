@@ -150,3 +150,33 @@ input:disabled, select:disabled, textarea:disabled {
     scroll-behavior: auto !important;
   }
 }
+
+/* Ensure crisp white text on blue/green backgrounds across the entire system */
+.text-white,
+[class*="text-white"],
+[class*="text-white"] * {
+  color: #FFFFFF !important;
+}
+
+/* Ensure headings and child elements inside blue, green, and dark gradient containers stay pure white */
+[class*="bg-blue-600"] :where(h1, h2, h3, h4, h5, h6, span, p, a, button, label, div),
+[class*="bg-blue-700"] :where(h1, h2, h3, h4, h5, h6, span, p, a, button, label, div),
+[class*="bg-emerald-600"] :where(h1, h2, h3, h4, h5, h6, span, p, a, button, label, div),
+[class*="bg-emerald-700"] :where(h1, h2, h3, h4, h5, h6, span, p, a, button, label, div),
+[class*="from-blue-700"] :where(h1, h2, h3, h4, h5, h6, span, p, a, button, label, div),
+[class*="from-blue-600"] :where(h1, h2, h3, h4, h5, h6, span, p, a, button, label, div) {
+  color: #FFFFFF;
+}
+
+/* Explicit button and link text for solid blue/green states */
+button[class*="bg-blue-600"],
+button[class*="bg-blue-700"],
+button[class*="bg-emerald-600"],
+button[class*="bg-emerald-700"],
+a[class*="bg-blue-600"],
+a[class*="bg-blue-700"],
+a[class*="bg-emerald-600"],
+a[class*="bg-emerald-700"] {
+  color: #FFFFFF !important;
+}
+

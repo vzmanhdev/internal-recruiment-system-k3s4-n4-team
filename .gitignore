@@ -1,34 +1,87 @@
-# Node / Next.js
+# ==========================================
+# Dependencies & Package Managers
+# ==========================================
 node_modules/
+.pnp
+.pnp.js
+
+# ==========================================
+# Build Outputs & Bundles
+# ==========================================
 .next/
 out/
 build/
 dist/
-*.log
 *.tsbuildinfo
 
-# Python / FastAPI
+# ==========================================
+# Python & FastAPI Environments / Cache
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
 .venv/
 venv/
 ENV/
+env/
 .pytest_cache/
 .coverage
+htmlcov/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
 
-# Environment variables
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-# Database
+# ==========================================
+# Database & SQLite Files
+# ==========================================
+*.db
+*.db-journal
 *.sqlite
 *.sqlite3
+recruitment_fallback.db
+backend/recruitment_fallback.db
 
-# Temporary & Scratch scripts in root
+# ==========================================
+# Log Files & Debugging Output
+# ==========================================
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.out
+test-screenshots/
+screenshots/
+
+# ==========================================
+# Text Files, Notes & Text Extractions
+# (Giữ lại duy nhất requirements.txt cho Python)
+# ==========================================
+*.txt
+!requirements.txt
+!**/requirements.txt
+
+doc_extracted.txt
+extracted_full_doc.txt
+note.txt
+note*.txt
+notes.txt
+
+# ==========================================
+# Temporary Scratch Scripts, Reports & Dumps
+# ==========================================
+completion_report.md
 analyze_excel_and_code.py
 check_headers.py
 code_files_list.txt
@@ -37,7 +90,6 @@ cross_analysis_result.txt
 cross_reference.py
 deep_check_completion.py
 detailed_excel_analysis.py
-doc_extracted.txt
 excel_dump.json
 excel_items_dump.txt
 full_excel_breakdown.txt
@@ -45,9 +97,18 @@ generate_full_report.py
 match_code_and_tasks.py
 tmp_output.txt
 tmp_parse_xlsx.py
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
 
-# IDE / OS
+# ==========================================
+# IDE & Operating System Files
+# ==========================================
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+*.sublime-project
+*.sublime-workspace

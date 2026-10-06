@@ -78,6 +78,17 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
             }
         )
 
+    # Check if account is locked
+    if user.account_status == "locked":
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={
+                "detail": f"Tài khoản đã bị khóa. {user.lock_reason or 'Vui lòng liên hệ Quản trị viên để được hỗ trợ.'}",
+                "error_code": "ACCOUNT_LOCKED",
+                "lock_reason": user.lock_reason or ""
+            }
+        )
+
     # Verify password
     if not verify_password(user_in.password, user.hashed_password):
         return JSONResponse(
@@ -90,18 +101,12 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
             }
         )
 
-    if not user.is_active:
-        if user.account_status == "locked":
-            message = "Tài khoản đã bị khóa. Vui lòng liên hệ Quản trị viên."
-        else:
-            message = "Tài khoản đang chờ Quản trị viên phê duyệt. Vui lòng thử lại sau khi yêu cầu được chấp nhận."
+    if not user.is_active or user.account_status == "pending":
         return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_403_FORBIDDEN,
             content={
-                "detail": message,
-                "field_errors": {
-                    "email": "Tài khoản đã bị khóa." if user.account_status == "locked" else "Tài khoản đang chờ phê duyệt."
-                }
+                "detail": "Tài khoản đang chờ Quản trị viên phê duyệt. Vui lòng thử lại sau khi yêu cầu được chấp nhận.",
+                "error_code": "ACCOUNT_PENDING"
             }
         )
 
@@ -211,7 +216,7 @@ def list_pending_users(authorization: Optional[str] = Header(None), db: Session 
 
 @router.post("/users/{user_id}/approve", response_model=UserResponse)
 def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    require_admin(authorization, db)
+    admin = require_admin(authorization, db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy yêu cầu đăng ký")
@@ -220,6 +225,22 @@ def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: 
     user.lock_reason = None
     db.commit()
     db.refresh(user)
+
+    from app.models.audit import AuditLog
+    try:
+        log = AuditLog(
+            actor_name=admin.full_name,
+            actor_email=admin.email,
+            action="Phê duyệt tài khoản",
+            target=f"{user.full_name} ({user.email})",
+            details="Phê duyệt kích hoạt tài khoản đăng ký mới",
+            ip_address="127.0.0.1",
+        )
+        db.add(log)
+        db.commit()
+    except Exception as e:
+        print(f"[AUDIT LOG ERROR] Failed to record audit log: {e}")
+
     return user.to_dict()
 
 @router.get(

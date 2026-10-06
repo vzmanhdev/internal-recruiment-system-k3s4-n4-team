@@ -90,7 +90,10 @@ export function LoginForm() {
       }, 1200);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
-        if (err.message.toLowerCase().includes("chờ") && err.message.toLowerCase().includes("phê duyệt")) {
+        const lowerMsg = err.message.toLowerCase();
+        if (err.status === 403 || lowerMsg.includes("khóa") || lowerMsg.includes("locked")) {
+          setErrorMsg(err.message || "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Quản trị viên để được hỗ trợ mở khóa.");
+        } else if (lowerMsg.includes("chờ") && lowerMsg.includes("phê duyệt")) {
           setErrorMsg("Tài khoản đang chờ Quản trị viên phê duyệt. Sau khi được chấp nhận, bạn có thể đăng nhập bình thường.");
         } else if (err.status === 400 || err.status === 401) {
           const lock = recordFailedLogin(email);

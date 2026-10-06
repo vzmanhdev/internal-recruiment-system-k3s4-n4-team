@@ -106,24 +106,35 @@ def run_tests():
     print("Status code:", res.status_code)
     data = res.json()
     print("Response JSON:", json.dumps(data, ensure_ascii=False, indent=2))
-    assert res.status_code == 400
+    assert res.status_code == 403
+    assert data.get("error_code") == "ACCOUNT_PENDING"
     assert "chờ" in data["detail"]
+
+    # 8b. Login with locked account returns 403 with ACCOUNT_LOCKED and lock reason
+    res_locked = client.post("/api/v1/auth/login", json={"email": "skibidi@company.com", "password": "company123"})
+    print("\n[TEST 7b] Login Locked Account:")
+    print("Status code:", res_locked.status_code)
+    data_locked = res_locked.json()
+    print("Response JSON:", json.dumps(data_locked, ensure_ascii=False, indent=2))
+    assert res_locked.status_code == 403
+    assert data_locked.get("error_code") == "ACCOUNT_LOCKED"
+    assert "khóa" in data_locked["detail"]
 
     # 9. Create an Admin, approve the pending user, then login normally
     db = SessionLocal()
     admin = db.query(User).filter(User.email == "admin@company.com").first()
     if not admin:
-        admin = User(email="admin@company.com", hashed_password=hash_password("Admin12345"), full_name="System Admin", role="admin", is_active=True, account_status="active")
+        admin = User(email="admin@company.com", hashed_password=hash_password("company123"), full_name="System Admin", role="admin", is_active=True, account_status="active")
         db.add(admin)
     else:
-        admin.hashed_password = hash_password("Admin12345")
+        admin.hashed_password = hash_password("company123")
         admin.role = "admin"
         admin.is_active = True
         admin.account_status = "active"
     db.commit()
     db.close()
 
-    admin_login = client.post("/api/v1/auth/login", json={"email": "admin@company.com", "password": "Admin12345"})
+    admin_login = client.post("/api/v1/auth/login", json={"email": "admin@company.com", "password": "company123"})
     admin_token = admin_login.json()["access_token"]
     pending = client.get("/api/v1/auth/pending-users", headers={"Authorization": f"Bearer {admin_token}"})
     pending_user = next(item for item in pending.json() if item["email"] == "tranthib@company.com")
@@ -159,6 +170,14 @@ def run_tests():
     assert reused.status_code == 400
     login_with_new_password = client.post("/api/v1/auth/login", json={"email": "tranthib@company.com", "password": "NewSecure123"})
     assert login_with_new_password.status_code == 200
+
+    # Restore tranthib password back to company123 for test suite isolation
+    db_cleanup = SessionLocal()
+    user_tranthib = db_cleanup.query(User).filter(User.email == "tranthib@company.com").first()
+    if user_tranthib:
+        user_tranthib.hashed_password = hash_password("company123")
+        db_cleanup.commit()
+    db_cleanup.close()
 
     # 12. Admin account management: create, search, roles, lock and unlock
     headers = {"Authorization": f"Bearer {admin_token}"}

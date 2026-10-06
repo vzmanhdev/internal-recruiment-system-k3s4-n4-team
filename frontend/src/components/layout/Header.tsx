@@ -16,6 +16,7 @@ export function Header() {
   const navLinks = [
     { label: "Trang chủ", href: "/" },
     ...(session ? [{ label: "Dashboard", href: "/dashboard" }] : []),
+    ...(roles.includes("admin") || roles.includes("hr_manager") || roles.includes("manager") ? [{ label: "Tuyển dụng (HR)", href: "/recruiter/dashboard" }] : []),
     ...(roles.includes("admin") ? [{ label: "Quản trị", href: "/admin/dashboard" }] : []),
     { label: "Cơ hội nghề nghiệp", href: "/#jobs" },
     { label: "Lộ trình phát triển", href: "/#development" },

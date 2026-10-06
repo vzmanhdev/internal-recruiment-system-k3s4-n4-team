@@ -23,7 +23,10 @@ def get_engine_and_session():
         return engine, sessionmaker(autocommit=False, autoflush=False, bind=engine)
     except Exception as e:
         logger.warning(f"Failed to connect to PostgreSQL ({e}). Falling back to SQLite for local development...")
-        fallback_url = "sqlite:///./recruitment_fallback.db"
+        import os
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        fallback_db_path = os.path.join(backend_dir, "recruitment_fallback.db")
+        fallback_url = f"sqlite:///{fallback_db_path}"
         fallback_engine = create_engine(
             fallback_url,
             connect_args={"check_same_thread": False},

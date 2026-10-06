@@ -7,8 +7,11 @@ from sqlalchemy import inspect, text
 
 from app.db.session import engine, Base
 from app.models.user import User  # Register model
+from app.models.recruitment import JobRequisition, JobPosting, Application, InterviewSchedule, ReferralRecord  # Register recruitment models
+from app.models.audit import AuditLog  # Register audit log model
 from app.api.v1.auth import router as auth_router
 from app.api.v1.admin import router as admin_router
+from app.api.v1.recruiter import router as recruiter_router
 
 # Create database tables automatically
 Base.metadata.create_all(bind=engine)
@@ -21,6 +24,12 @@ with engine.begin() as connection:
         connection.execute(text("UPDATE users SET account_status = 'pending' WHERE is_active = false"))
     if "lock_reason" not in user_columns:
         connection.execute(text("ALTER TABLE users ADD COLUMN lock_reason VARCHAR(500)"))
+    if "job_postings" in inspect(engine).get_table_names():
+        job_columns = {column["name"] for column in inspect(engine).get_columns("job_postings")}
+        if "approval_status" not in job_columns:
+            connection.execute(text("ALTER TABLE job_postings ADD COLUMN approval_status VARCHAR(30) NOT NULL DEFAULT 'approved'"))
+        if "requisition_id" not in job_columns:
+            connection.execute(text("ALTER TABLE job_postings ADD COLUMN requisition_id INTEGER REFERENCES job_requisitions(id)"))
 
 app = FastAPI(
     title="Internal Recruitment System API",
@@ -75,3 +84,9 @@ def health_check() -> Dict[str, str]:
 
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["Account administration"])
+app.include_router(recruiter_router, prefix="/api/v1/recruiter", tags=["Recruiter Operations"])
+
+# Public Jobs Endpoints (no authentication required)
+from app.api.v1.recruiter import list_public_jobs, get_public_job_detail
+app.add_api_route("/api/v1/jobs", list_public_jobs, methods=["GET"], tags=["Public Jobs"])
+app.add_api_route("/api/v1/jobs/{job_id}", get_public_job_detail, methods=["GET"], tags=["Public Jobs"])
