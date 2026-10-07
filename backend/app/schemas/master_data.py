@@ -15,6 +15,17 @@ class DepartmentBase(BaseModel):
 class DepartmentCreate(DepartmentBase):
     pass
 
+class DepartmentUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    managerName: Optional[str] = None
+    managerTitle: Optional[str] = None
+    headcountCurrent: Optional[int] = None
+    headcountBudget: Optional[int] = None
+    active_jobs: Optional[int] = None
+    status: Optional[str] = None
+    parentId: Optional[str] = None
+
 class DepartmentResponse(DepartmentBase):
     id: str
 
@@ -32,6 +43,15 @@ class SalaryBandBase(BaseModel):
 
 class SalaryBandCreate(SalaryBandBase):
     pass
+
+class SalaryBandUpdate(BaseModel):
+    code: Optional[str] = None
+    title: Optional[str] = None
+    level: Optional[str] = None
+    minSalary: Optional[int] = None
+    maxSalary: Optional[int] = None
+    department: Optional[str] = None
+    status: Optional[str] = None
 
 class SalaryBandResponse(SalaryBandBase):
     id: str

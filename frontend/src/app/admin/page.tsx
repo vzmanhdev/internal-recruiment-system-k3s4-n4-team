@@ -37,6 +37,7 @@ import {
 import { UserProfileModal } from "@/components/UserProfileModal";
 import { AvatarCropModal } from "@/components/AvatarCropModal";
 import { CroppedAvatarResult } from "@/lib/cropImage";
+import { apiRequest } from "@/lib/api-client";
 
 // Types
 export interface UserAccount {
@@ -539,57 +540,51 @@ export default function AdminDashboardPage() {
     setIsLoadingData(true);
     try {
       // 1. Fetch Users
-      const resUsers = await fetch("http://localhost:8000/api/v1/auth/users");
-      if (resUsers.ok) {
-        const rawUsers = await resUsers.json();
-        const mappedUsers: UserAccount[] = rawUsers.map((u: any) => ({
-          id: String(u.id),
-          name: u.full_name || u.email,
-          email: u.email,
-          avatarColor: "bg-[#4285F4]",
-          roles: mapBackendRoleToUI(u.role),
-          department: u.position_title || u.department_id || "Phòng Nhân Sự & Văn Hóa",
-          status: u.is_active ? "Active" : "Locked",
-          lastLogin: u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : "Hôm nay",
-          createdAt: u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : "Hôm nay",
-        }));
-        setUsers(mappedUsers);
-      }
+      const rawUsers = await apiRequest<any[]>("/auth/users");
+      const mappedUsers: UserAccount[] = rawUsers.map((u: any) => ({
+        id: String(u.id),
+        name: u.full_name || u.email,
+        email: u.email,
+        avatarColor: "bg-[#4285F4]",
+        roles: mapBackendRoleToUI(u.role),
+        department: u.position_title || u.department_id || "Phòng Nhân Sự & Văn Hóa",
+        status: u.is_active ? "Active" : "Locked",
+        lastLogin: u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : "Hôm nay",
+        createdAt: u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : "Hôm nay",
+      }));
+      setUsers(mappedUsers);
 
       // 2. Fetch Audit Logs
-      const resLogs = await fetch("http://localhost:8000/api/v1/auth/audit-logs");
-      if (resLogs.ok) {
-        const rawLogs = await resLogs.json();
-        const mappedLogs = rawLogs.map((l: any) => {
-          let icon = FileText;
-          let color = "text-[#4285F4] bg-blue-50";
-          if (l.action.includes("Mở khóa")) {
-            icon = Unlock;
-            color = "text-emerald-600 bg-emerald-50";
-          } else if (l.action.includes("Khóa")) {
-            icon = Lock;
-            color = "text-rose-600 bg-rose-50";
-          } else if (l.action.includes("Tạo") || l.action.includes("Nhập")) {
-            icon = UserPlus;
-            color = "text-blue-600 bg-blue-50";
-          } else if (l.action.includes("Cập nhật") || l.action.includes("quyền")) {
-            icon = ShieldCheck;
-            color = "text-purple-600 bg-purple-50";
-          }
-          return {
-            id: `log-${l.id}`,
-            user: l.user_name || l.user_email || "Admin System",
-            action: `${l.action}: ${l.details || ""}`,
-            time: l.created_at || "Vừa xong",
-            ip: l.ip_address || "127.0.0.1",
-            icon,
-            color,
-          };
-        });
-        setAuditLogs(mappedLogs);
-      }
-    } catch {
-      // Keep state gracefully
+      const rawLogs = await apiRequest<any[]>("/auth/audit-logs");
+      const mappedLogs = rawLogs.map((l: any) => {
+        let icon = FileText;
+        let color = "text-[#4285F4] bg-blue-50";
+        if (l.action && l.action.includes("Mở khóa")) {
+          icon = Unlock;
+          color = "text-emerald-600 bg-emerald-50";
+        } else if (l.action && l.action.includes("Khóa")) {
+          icon = Lock;
+          color = "text-rose-600 bg-rose-50";
+        } else if (l.action && (l.action.includes("Tạo") || l.action.includes("Nhập"))) {
+          icon = UserPlus;
+          color = "text-blue-600 bg-blue-50";
+        } else if (l.action && (l.action.includes("Cập nhật") || l.action.includes("quyền"))) {
+          icon = ShieldCheck;
+          color = "text-purple-600 bg-purple-50";
+        }
+        return {
+          id: `log-${l.id}`,
+          user: l.user_name || l.user_email || "Admin System",
+          action: `${l.action}: ${l.details || ""}`,
+          time: l.created_at || "Vừa xong",
+          ip: l.ip_address || "127.0.0.1",
+          icon,
+          color,
+        };
+      });
+      setAuditLogs(mappedLogs);
+    } catch (err) {
+      console.error("Lỗi tải danh sách người dùng / nhật ký:", err);
     } finally {
       setIsLoadingData(false);
     }
@@ -887,15 +882,14 @@ export default function AdminDashboardPage() {
 
     try {
       // Call Backend REST API to lock account in DB
-      await fetch(`http://localhost:8000/api/v1/auth/users/${lockTargetUser.id}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
+      await apiRequest(`/auth/admin/users/${lockTargetUser.id}/status`, {
+        method: "PATCH",
         body: JSON.stringify({ is_active: false, reason: reasonText }),
       });
       showToast(`Đã khóa thành công tài khoản ${lockTargetUser.name}`);
       fetchUsersAndLogs();
-    } catch {
-      showToast(`Không thể khóa tài khoản ${lockTargetUser.name}`);
+    } catch (err: any) {
+      showToast(err.message || `Không thể khóa tài khoản ${lockTargetUser.name}`);
     } finally {
       setIsLockModalOpen(false);
       setLockTargetUser(null);
@@ -906,15 +900,14 @@ export default function AdminDashboardPage() {
   const handleUnlockUser = async (user: UserAccount) => {
     try {
       // Call Backend REST API to unlock account in DB
-      await fetch(`http://localhost:8000/api/v1/auth/users/${user.id}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
+      await apiRequest(`/auth/admin/users/${user.id}/status`, {
+        method: "PATCH",
         body: JSON.stringify({ is_active: true }),
       });
       showToast(`Đã mở khóa tài khoản ${user.name}`);
       fetchUsersAndLogs();
-    } catch {
-      showToast(`Không thể mở khóa tài khoản ${user.name}`);
+    } catch (err: any) {
+      showToast(err.message || `Không thể mở khóa tài khoản ${user.name}`);
     }
   };
 
@@ -955,20 +948,15 @@ export default function AdminDashboardPage() {
 
     try {
       const backendRole = mapUIRoleToBackend(updatedRoles);
-      const res = await fetch(`http://localhost:8000/api/v1/auth/users/${selectedUser.id}/role`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
+      await apiRequest(`/auth/admin/users/${selectedUser.id}/role`, {
+        method: "PATCH",
         body: JSON.stringify({ role: backendRole }),
       });
 
-      if (res.ok) {
-        showToast(`Đã cập nhật thông tin và vai trò tài khoản ${formData.name} vào Database!`);
-        fetchUsersAndLogs();
-      } else {
-        showToast("Lỗi khi cập nhật vai trò người dùng");
-      }
-    } catch {
-      showToast("Lỗi kết nối cơ sở dữ liệu");
+      showToast(`Đã cập nhật thông tin và vai trò tài khoản ${formData.name} vào Database!`);
+      fetchUsersAndLogs();
+    } catch (err: any) {
+      showToast(err.message || "Lỗi khi cập nhật vai trò người dùng");
     } finally {
       setIsEditUserOpen(false);
     }
@@ -1007,11 +995,10 @@ export default function AdminDashboardPage() {
 
     try {
       const backendRole = mapUIRoleToBackend(formData.roles);
-      const res = await fetch("http://localhost:8000/api/v1/auth/create-user", {
+      await apiRequest("/auth/admin/users", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: formData.name,
+          full_name: formData.name,
           email: formData.email,
           phone: "0912345678",
           role: backendRole,
@@ -1021,23 +1008,18 @@ export default function AdminDashboardPage() {
         }),
       });
 
-      if (res.ok) {
-        showToast(`Đã tạo thành công tài khoản cho ${formData.name} vào Database!`);
-        setIsAddUserOpen(false);
-        setFormData({
-          name: "",
-          email: "",
-          roles: ["Recruiter"],
-          department: "Khối Thu Hút Nhân Tài (TA)",
-          password: "company123",
-        });
-        fetchUsersAndLogs();
-      } else {
-        const errData = await res.json();
-        alert(errData.detail || "Không thể tạo tài khoản");
-      }
-    } catch {
-      alert("Lỗi kết nối máy chủ");
+      showToast(`Đã tạo thành công tài khoản cho ${formData.name} vào Database!`);
+      setIsAddUserOpen(false);
+      setFormData({
+        name: "",
+        email: "",
+        roles: ["Recruiter"],
+        department: "Khối Thu Hút Nhân Tài (TA)",
+        password: "company123",
+      });
+      fetchUsersAndLogs();
+    } catch (err: any) {
+      alert(err.message || "Không thể tạo tài khoản");
     }
   };
 
@@ -1260,23 +1242,15 @@ export default function AdminDashboardPage() {
       }));
 
       // Try calling backend API bulk import
-      const res = await fetch("http://localhost:8000/api/v1/auth/import-users", {
+      const data: any = await apiRequest("/auth/admin/users/bulk-import", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ users: payloadUsers }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setImportStep(3);
-        showToast(data.message || `Đã nhập thành công ${validRows.length} tài khoản vào Database!`);
-        fetchUsersAndLogs();
-      } else {
-        setImportStep(3);
-        showToast(`Đã nhập thành công ${validRows.length} tài khoản nhân sự!`);
-        fetchUsersAndLogs();
-      }
-    } catch {
+      setImportStep(3);
+      showToast(data?.message || `Đã nhập thành công ${validRows.length} tài khoản vào Database!`);
+      fetchUsersAndLogs();
+    } catch (err: any) {
       // Local fallback
       const newUsersList: UserAccount[] = validRows.map((r, idx) => ({
         id: `USR-IMP-${Date.now()}-${idx}`,

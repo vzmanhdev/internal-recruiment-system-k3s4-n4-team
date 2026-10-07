@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mẫu Email OTP Khôi Phục Mật Khẩu</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+            background-color: #f1f5f9; 
+            margin: 0; 
+            padding: 40px 20px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        .email-wrapper {
+            width: 100%;
+            max-width: 580px;
+        }
+        .email-card { 
+            background: #ffffff; 
+            padding: 36px; 
+            border-radius: 20px; 
+            border: 1px solid #e2e8f0; 
+            box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08); 
+        }
+        .header { 
+            text-align: center; 
+            padding-bottom: 24px; 
+            border-bottom: 1px solid #f1f5f9; 
+        }
+        .logo-title { 
+            font-size: 22px; 
+            font-weight: 800; 
+            color: #0f172a; 
+            margin-top: 10px; 
+            letter-spacing: -0.5px;
+        }
+        .badge { 
+            display: inline-block; 
+            background-color: #eff6ff; 
+            color: #2563eb; 
+            padding: 6px 14px; 
+            border-radius: 9999px; 
+            font-size: 12px; 
+            font-weight: 700; 
+            border: 1px solid #dbeafe; 
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .content { 
+            padding: 28px 0 20px 0; 
+            text-align: left; 
+            color: #334155; 
+            font-size: 15px; 
+            line-height: 1.6; 
+        }
+        .otp-box { 
+            background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%); 
+            border: 2px dashed #3b82f6; 
+            border-radius: 14px; 
+            padding: 24px; 
+            text-align: center; 
+            margin: 28px 0; 
+        }
+        .otp-code { 
+            font-size: 38px; 
+            font-weight: 900; 
+            letter-spacing: 8px; 
+            color: #1d4ed8; 
+            margin: 0; 
+            font-family: 'Courier New', Courier, monospace; 
+        }
+        .expire-note { 
+            font-size: 13px; 
+            color: #475569; 
+            margin-top: 10px; 
+            font-weight: 500;
+        }
+        .safety-note {
+            background-color: #fffbeb;
+            border: 1px solid #fef3c7;
+            border-radius: 10px;
+            padding: 14px 16px;
+            font-size: 13px;
+            color: #92400e;
+            line-height: 1.5;
+            margin-top: 20px;
+        }
+        .footer { 
+            border-top: 1px solid #f1f5f9; 
+            padding-top: 24px; 
+            text-align: center; 
+            font-size: 12px; 
+            color: #94a3b8; 
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="email-card">
+            <div class="header">
+                <span class="badge">Tuyển Dụng Nội Bộ Enterprise</span>
+                <div class="logo-title">Yêu Cầu Đặt Lại Mật Khẩu</div>
+            </div>
+            <div class="content">
+                <p style="margin-top:0;">Xin chào <strong>Nguyễn Văn An</strong>,</p>
+                <p>Hệ thống vừa nhận được yêu cầu khôi phục mật khẩu cho tài khoản <strong>an.nguyen@company.com</strong>.</p>
+                <p>Vui lòng sử dụng mã xác thực OTP 6 chữ số dưới đây để tiến hành đặt lại mật khẩu mới:</p>
+                
+                <div class="otp-box">
+                    <div class="otp-code">849 201</div>
+                    <div class="expire-note">Mã xác thực có hiệu lực trong <strong>5 phút</strong></div>
+                </div>
+
+                <div class="safety-note">
+                    ⚠️ <strong>Lưu ý an toàn:</strong> Không chia sẻ mã OTP này với bất kỳ ai, kể cả nhân viên hỗ trợ hệ thống. 
+                    Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email và tài khoản của bạn vẫn được bảo mật an toàn.
+                </div>
+            </div>
+            <div class="footer">
+                &copy; 2026 Tuyển Dụng Nội Bộ Enterprise. Mọi quyền được bảo lưu.<br>
+                Đây là email tự động từ hệ thống, vui lòng không phản hồi lại email này.
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -22,6 +22,7 @@ from app.schemas.auth import (
     ErrorResponse, BulkImportRequest, ProfileUpdateRequest, ChangePasswordRequest,
     PasswordResetVerify, PasswordResetConfirm
 )
+from app.core.dependencies import get_current_user, require_roles
 
 router = APIRouter()
 
@@ -38,7 +39,7 @@ def request_password_reset(req: ForgotPasswordRequest, db: Session = Depends(get
     user = db.query(User).filter(User.email == clean_email).first()
     
     generic_success_msg = {
-        "message": "Nếu email tồn tại trong hệ thống, mã xác thực đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư đến."
+        "message": "mã xác thực đã được gửi đến email của bạn. Vui lòng kiểm tra hộp thư đến."
     }
 
     if not user:
@@ -569,7 +570,7 @@ def forgot_password(req: ForgotPasswordRequest, db: Session = Depends(get_db)):
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "detail": "Nếu email tồn tại trong hệ thống, liên kết khôi phục đã được gửi. Vui lòng kiểm tra hộp thư.",
+                "detail": "liên kết khôi phục đã được gửi. Vui lòng kiểm tra hộp thư.",
                 "field_errors": {
                     "email": "Email không tồn tại trong hệ thống."
                 }
@@ -657,13 +658,160 @@ def update_profile(
 
     return user.to_dict()
 
+# --- ADMIN DATABASE USER MANAGEMENT & AUDIT LOG ENDPOINTS ---
 
-@router.post(
-    "/import-users",
-    response_model=dict,
-    status_code=status.HTTP_201_CREATED
-)
-def import_users(payload: BulkImportRequest, db: Session = Depends(get_db)):
+@router.get("/users")
+def get_all_users(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    """Lấy danh sách tất cả tài khoản thực tế từ Database (Yêu cầu vai trò Admin)."""
+    users = db.query(User).order_by(User.id.desc()).all()
+    return [u.to_dict() for u in users]
+
+@router.post("/create-user", status_code=status.HTTP_201_CREATED)
+def create_user_by_admin(
+    payload: dict,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    """Admin tạo tài khoản người dùng mới trực tiếp vào Database."""
+    email = payload.get("email", "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email không được để trống")
+    
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email này đã tồn tại trên hệ thống")
+
+    raw_password = payload.get("password") or "company123"
+    new_user = User(
+        email=email,
+        full_name=payload.get("name") or payload.get("full_name") or "Người dùng mới",
+        hashed_password=hash_password(raw_password),
+        phone=payload.get("phone") or "0912345678",
+        role=payload.get("role") or "employee",
+        department_id=payload.get("department_id") or "dept-1",
+        position_title=payload.get("position_title") or payload.get("role") or "Nhân viên",
+        is_active=True
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    from app.models.audit_log import AuditLog
+    log_entry = AuditLog(
+        user_id=admin.id,
+        user_email=admin.email,
+        user_name=admin.full_name,
+        action="Tạo tài khoản mới",
+        details=f"Admin {admin.email} đã tạo tài khoản cho {new_user.full_name} ({new_user.email}) với vai trò {new_user.role}."
+    )
+    db.add(log_entry)
+    db.commit()
+
+    return new_user.to_dict()
+
+@router.put("/users/{user_id}/status")
+def toggle_user_status(
+    user_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    """Khóa hoặc Mở khóa tài khoản người dùng trong Database (Chỉ dành cho Admin)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
+
+    new_status = payload.get("is_active")
+    if new_status is None:
+        new_status = not user.is_active
+
+    user.is_active = new_status
+    db.commit()
+
+    status_str = "Mở khóa" if user.is_active else "Khóa"
+    
+    from app.models.audit_log import AuditLog
+    log_entry = AuditLog(
+        user_id=admin.id,
+        user_email=admin.email,
+        user_name=admin.full_name,
+        action="Thay đổi trạng thái tài khoản",
+        details=f"Admin {admin.email} đã {status_str} tài khoản {user.full_name} ({user.email})."
+    )
+    db.add(log_entry)
+    db.commit()
+
+    return {"message": f"Đã {status_str} tài khoản thành công", "user": user.to_dict()}
+
+@router.put("/users/{user_id}/role")
+def update_user_role(
+    user_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    """Cập nhật vai trò/phân quyền của người dùng trong Database (Chỉ dành cho Admin)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
+
+    new_role = payload.get("role")
+    if not new_role:
+        raise HTTPException(status_code=400, detail="Thiếu thông tin vai trò mới")
+
+    old_role = user.role
+    user.role = new_role
+    db.commit()
+
+    from app.models.audit_log import AuditLog
+    log_entry = AuditLog(
+        user_id=admin.id,
+        user_email=admin.email,
+        user_name=admin.full_name,
+        action="Cập nhật phân quyền / vai trò",
+        details=f"Admin {admin.email} đã cập nhật vai trò của {user.email} từ '{old_role}' thành '{new_role}'."
+    )
+    db.add(log_entry)
+    db.commit()
+
+    return {"message": f"Cập nhật vai trò thành công sang {new_role}", "user": user.to_dict()}
+
+@router.post("/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
+    """Khôi phục mật khẩu tài khoản về company123 trong Database (Chỉ dành cho Admin)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
+
+    user.hashed_password = hash_password("company123")
+    db.commit()
+
+    from app.models.audit_log import AuditLog
+    log_entry = AuditLog(
+        user_id=admin.id,
+        user_email=admin.email,
+        user_name=admin.full_name,
+        action="Khôi phục mật khẩu",
+        details=f"Admin {admin.email} đã khôi phục mật khẩu tài khoản {user.email} về mặc định (company123)."
+    )
+    db.add(log_entry)
+    db.commit()
+
+    return {"message": f"Mật khẩu của {user.email} đã được khôi phục về company123"}
+
+@router.post("/import-users", response_model=dict, status_code=status.HTTP_201_CREATED)
+def import_users(
+    payload: BulkImportRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin"))
+):
     imported_users = []
     skipped_emails = []
 
@@ -692,14 +840,14 @@ def import_users(payload: BulkImportRequest, db: Session = Depends(get_db)):
     for u in imported_users:
         db.refresh(u)
 
-    # Log audit event for bulk import
     if len(imported_users) > 0:
         from app.models.audit_log import AuditLog
         log_entry = AuditLog(
-            user_email="admin@company.com",
-            user_name="Admin System",
+            user_id=admin.id,
+            user_email=admin.email,
+            user_name=admin.full_name,
             action="Nhập danh sách từ Excel/CSV",
-            details=f"Đã nhập thành công {len(imported_users)} tài khoản nhân sự mới vào hệ thống."
+            details=f"Admin {admin.email} đã nhập thành công {len(imported_users)} tài khoản nhân sự mới vào hệ thống."
         )
         db.add(log_entry)
         db.commit()
@@ -712,138 +860,15 @@ def import_users(payload: BulkImportRequest, db: Session = Depends(get_db)):
         "imported_users": [u.to_dict() for u in imported_users]
     }
 
-# --- ADMIN DATABASE USER MANAGEMENT & AUDIT LOG ENDPOINTS ---
-
-@router.get("/users")
-def get_all_users(db: Session = Depends(get_db)):
-    """Lấy danh sách tất cả tài khoản thực tế từ Database."""
-    users = db.query(User).order_by(User.id.desc()).all()
-    return [u.to_dict() for u in users]
-
-@router.post("/create-user", status_code=status.HTTP_201_CREATED)
-def create_user_by_admin(payload: dict, db: Session = Depends(get_db)):
-    """Admin tạo tài khoản người dùng mới trực tiếp vào Database."""
-    email = payload.get("email", "").strip().lower()
-    if not email:
-        raise HTTPException(status_code=400, detail="Email không được để trống")
-    
-    existing = db.query(User).filter(User.email == email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Email này đã tồn tại trên hệ thống")
-
-    raw_password = payload.get("password") or "company123"
-    new_user = User(
-        email=email,
-        full_name=payload.get("name") or payload.get("full_name") or "Người dùng mới",
-        hashed_password=hash_password(raw_password),
-        phone=payload.get("phone") or "0912345678",
-        role=payload.get("role") or "employee",
-        department_id=payload.get("department_id") or "dept-1",
-        position_title=payload.get("position_title") or payload.get("role") or "Nhân viên",
-        is_active=True
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    # Ghi nhật ký thao tác
-    from app.models.audit_log import AuditLog
-    log_entry = AuditLog(
-        user_email="admin@company.com",
-        user_name="Admin System",
-        action="Tạo tài khoản mới",
-        details=f"Tạo thành công tài khoản cho {new_user.full_name} ({new_user.email}) với vai trò {new_user.role}."
-    )
-    db.add(log_entry)
-    db.commit()
-
-    return new_user.to_dict()
-
-@router.put("/users/{user_id}/status")
-def toggle_user_status(user_id: int, payload: dict, db: Session = Depends(get_db)):
-    """Khóa hoặc Mở khóa tài khoản người dùng trong Database."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
-
-    new_status = payload.get("is_active")
-    if new_status is None:
-        new_status = not user.is_active
-
-    user.is_active = new_status
-    db.commit()
-
-    status_str = "Mở khóa" if user.is_active else "Khóa"
-    
-    # Ghi nhật ký thao tác
-    from app.models.audit_log import AuditLog
-    log_entry = AuditLog(
-        user_email="admin@company.com",
-        user_name="Admin System",
-        action="Thay đổi trạng thái tài khoản",
-        details=f"Đã {status_str} tài khoản {user.full_name} ({user.email})."
-    )
-    db.add(log_entry)
-    db.commit()
-
-    return {"message": f"Đã {status_str} tài khoản thành công", "user": user.to_dict()}
-
-@router.put("/users/{user_id}/role")
-def update_user_role(user_id: int, payload: dict, db: Session = Depends(get_db)):
-    """Cập nhật vai trò/phân quyền của người dùng trong Database."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
-
-    new_role = payload.get("role")
-    if not new_role:
-        raise HTTPException(status_code=400, detail="Thiếu thông tin vai trò mới")
-
-    old_role = user.role
-    user.role = new_role
-    db.commit()
-
-    # Ghi nhật ký thao tác
-    from app.models.audit_log import AuditLog
-    log_entry = AuditLog(
-        user_email="admin@company.com",
-        user_name="Admin System",
-        action="Cập nhật phân quyền / vai trò",
-        details=f"Cập nhật vai trò của {user.email} từ '{old_role}' thành '{new_role}'."
-    )
-    db.add(log_entry)
-    db.commit()
-
-    return {"message": "Cập nhật vai trò thành công", "user": user.to_dict()}
-
-@router.post("/users/{user_id}/reset-password")
-def reset_user_password(user_id: int, db: Session = Depends(get_db)):
-    """Khôi phục mật khẩu tài khoản về company123 trong Database."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
-
-    user.hashed_password = hash_password("company123")
-    db.commit()
-
-    # Ghi nhật ký thao tác
-    from app.models.audit_log import AuditLog
-    log_entry = AuditLog(
-        user_email="admin@company.com",
-        user_name="Admin System",
-        action="Khôi phục mật khẩu",
-        details=f"Đã khôi phục mật khẩu tài khoản {user.email} về mặc định (company123)."
-    )
-    db.add(log_entry)
-    db.commit()
-
-    return {"message": f"Mật khẩu của {user.email} đã được khôi phục về company123"}
-
 @router.get("/audit-logs")
-def get_audit_logs(db: Session = Depends(get_db)):
+def get_audit_logs(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles("admin", "hr_manager"))
+):
     """Lấy danh sách nhật ký hệ thống thực tế từ Database."""
     from app.models.audit_log import AuditLog
     logs = db.query(AuditLog).order_by(AuditLog.id.desc()).all()
     return [l.to_dict() for l in logs]
+
 
 

@@ -4,6 +4,8 @@ from typing import List
 
 from app.db.session import get_db
 from app.models.job import JobPosting
+from app.models.user import User
+from app.core.dependencies import get_current_user, require_roles
 from app.schemas.job import JobCreate, JobResponse
 
 router = APIRouter()
@@ -21,7 +23,11 @@ def get_job(job_id: str, db: Session = Depends(get_db)):
     return job.to_dict()
 
 @router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
-def create_job(job_in: JobCreate, db: Session = Depends(get_db)):
+def create_job(
+    job_in: JobCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager", "recruiter"))
+):
     job_id = f"job-{int(db.query(JobPosting).count()) + 1}"
     new_job = JobPosting(
         id=job_id,

@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.session import get_db
+from app.models.user import User
+from app.core.dependencies import get_current_user, require_roles
 
 router = APIRouter()
 
@@ -20,7 +22,10 @@ def get_landing_config(db: Session = Depends(get_db)):
 
 # 2. EMAIL TEMPLATES API
 @router.get("/email-templates")
-def get_email_templates(db: Session = Depends(get_db)):
+def get_email_templates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager"))
+):
     return [
         {
             "id": "tpl-1",

@@ -5,6 +5,8 @@ from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.models.offer import Offer, OnboardingTask
+from app.models.user import User
+from app.core.dependencies import get_current_user, require_roles
 
 router = APIRouter()
 
@@ -24,12 +26,19 @@ class OnboardingTaskCreate(BaseModel):
     assignedTo: Optional[str] = "HR Specialist"
 
 @router.get("", response_model=List[dict])
-def get_offers(db: Session = Depends(get_db)):
+def get_offers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager", "recruiter", "approver"))
+):
     offers = db.query(Offer).all()
     return [o.to_dict() for o in offers]
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_offer(offer_in: OfferCreate, db: Session = Depends(get_db)):
+def create_offer(
+    offer_in: OfferCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager", "recruiter"))
+):
     off_id = f"off-{int(db.query(Offer).count()) + 1}"
     new_offer = Offer(
         id=off_id,
@@ -46,12 +55,19 @@ def create_offer(offer_in: OfferCreate, db: Session = Depends(get_db)):
     return new_offer.to_dict()
 
 @router.get("/onboarding", response_model=List[dict])
-def get_onboarding_tasks(db: Session = Depends(get_db)):
+def get_onboarding_tasks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager", "recruiter", "approver"))
+):
     tasks = db.query(OnboardingTask).all()
     return [t.to_dict() for t in tasks]
 
 @router.post("/onboarding", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_onboarding_task(task_in: OnboardingTaskCreate, db: Session = Depends(get_db)):
+def create_onboarding_task(
+    task_in: OnboardingTaskCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager"))
+):
     task_id = f"ob-{int(db.query(OnboardingTask).count()) + 1}"
     new_task = OnboardingTask(
         id=task_id,
@@ -65,3 +81,4 @@ def create_onboarding_task(task_in: OnboardingTaskCreate, db: Session = Depends(
     db.commit()
     db.refresh(new_task)
     return new_task.to_dict()
+

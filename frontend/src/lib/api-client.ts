@@ -40,10 +40,16 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
 
       try {
         const errorData = await response.json();
-        if (errorData.detail) {
+        // Support standardized JSON contract: {"success": false, "error": {"code": "...", "message": "..."}}
+        if (errorData?.error?.message) {
+          errorDetail = errorData.error.message;
+        } else if (errorData?.detail) {
           errorDetail = typeof errorData.detail === "string" ? errorData.detail : JSON.stringify(errorData.detail);
         }
-        if (errorData.field_errors) {
+
+        if (errorData?.error?.details && typeof errorData.error.details === "object") {
+          fieldErrors = errorData.error.details;
+        } else if (errorData?.field_errors) {
           fieldErrors = errorData.field_errors;
         }
       } catch (e) {

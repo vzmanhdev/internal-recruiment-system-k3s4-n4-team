@@ -5,6 +5,8 @@ from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.models.interview import InterviewSchedule, EvaluationScorecard
+from app.models.user import User
+from app.core.dependencies import get_current_user, require_roles
 
 router = APIRouter()
 
@@ -25,12 +27,19 @@ class ScorecardCreate(BaseModel):
     comments: Optional[str] = None
 
 @router.get("", response_model=List[dict])
-def get_interviews(db: Session = Depends(get_db)):
+def get_interviews(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     interviews = db.query(InterviewSchedule).all()
     return [i.to_dict() for i in interviews]
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_interview(int_in: InterviewCreate, db: Session = Depends(get_db)):
+def create_interview(
+    int_in: InterviewCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager", "recruiter"))
+):
     int_id = f"int-{int(db.query(InterviewSchedule).count()) + 1}"
     new_int = InterviewSchedule(
         id=int_id,
@@ -48,12 +57,20 @@ def create_interview(int_in: InterviewCreate, db: Session = Depends(get_db)):
     return new_int.to_dict()
 
 @router.get("/scorecards/{application_id}", response_model=List[dict])
-def get_scorecards(application_id: str, db: Session = Depends(get_db)):
+def get_scorecards(
+    application_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     scorecards = db.query(EvaluationScorecard).filter(EvaluationScorecard.application_id == application_id).all()
     return [s.to_dict() for s in scorecards]
 
 @router.post("/scorecards", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_scorecard(sc_in: ScorecardCreate, db: Session = Depends(get_db)):
+def create_scorecard(
+    sc_in: ScorecardCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     sc_id = f"sc-{int(db.query(EvaluationScorecard).count()) + 1}"
     new_sc = EvaluationScorecard(
         id=sc_id,
@@ -67,3 +84,4 @@ def create_scorecard(sc_in: ScorecardCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_sc)
     return new_sc.to_dict()
+

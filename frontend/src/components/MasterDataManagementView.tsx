@@ -14,7 +14,9 @@ import {
   Users,
   CheckCircle2,
   X,
+  Loader2,
 } from "lucide-react";
+import { masterDataService } from "@/features/master-data/services/masterDataService";
 
 // =========================================================================
 // DATA STRUCTURES
@@ -30,6 +32,7 @@ export interface DepartmentNode {
   headcountBudget: number;
   active_jobs: number; // Số yêu cầu tuyển dụng đang mở
   status: "active" | "inactive";
+  parentId?: string | null;
   children?: DepartmentNode[];
 }
 
@@ -44,212 +47,26 @@ export interface JobTitleSalaryBand {
   status: "active" | "inactive";
 }
 
-// Initial Department Tree Data
-const INITIAL_DEPARTMENTS: DepartmentNode[] = [
-  {
-    id: "dept-1",
-    code: "BGD",
-    name: "Ban Giám Đốc & Khối Điều Hành",
-    managerName: "Trần Viết Long",
-    managerTitle: "Tổng Giám Đốc (CEO)",
-    headcountCurrent: 5,
-    headcountBudget: 5,
-    active_jobs: 0,
-    status: "active",
-    children: [
-      {
-        id: "dept-2",
-        code: "TECH",
-        name: "Khối Công Nghệ & Sản Phẩm (Technology)",
-        managerName: "Đỗ Văn Lâm",
-        managerTitle: "Giám Đốc Công Nghệ (CTO)",
-        headcountCurrent: 28,
-        headcountBudget: 35,
-        active_jobs: 4, // Có tin mở -> Khóa Xóa, thay bằng Ngừng áp dụng
-        status: "active",
-        children: [
-          {
-            id: "dept-2-1",
-            code: "DEV",
-            name: "Trung Tâm Phát Triển Phần Mềm (Software Center)",
-            managerName: "Lê Trưởng Nhóm",
-            managerTitle: "Trưởng Bộ Phận Dev",
-            headcountCurrent: 18,
-            headcountBudget: 22,
-            active_jobs: 3, // Có tin mở -> Khóa Xóa
-            status: "active",
-          },
-          {
-            id: "dept-2-2",
-            code: "INFRA",
-            name: "Phòng Hạ Tầng & Bảo Mật Đám Mây (Cloud & DevOps)",
-            managerName: "Hoàng Minh Tuấn",
-            managerTitle: "Lead DevOps Architect",
-            headcountCurrent: 6,
-            headcountBudget: 8,
-            active_jobs: 1, // Có tin mở -> Khóa Xóa
-            status: "active",
-          },
-          {
-            id: "dept-2-3",
-            code: "DESIGN",
-            name: "Phòng Thiết Kế Trải Nghiệm Người Dùng (UI/UX)",
-            managerName: "Vũ Hải Đăng",
-            managerTitle: "Design Lead",
-            headcountCurrent: 4,
-            headcountBudget: 5,
-            active_jobs: 0, // 0 tin mở -> Cho phép Xóa
-            status: "active",
-          },
-        ],
-      },
-      {
-        id: "dept-3",
-        code: "MKT",
-        name: "Khối Tiếp Thị & Tăng Trưởng Số (Marketing & Growth)",
-        managerName: "Nguyễn Hương Giang",
-        managerTitle: "Giám Đốc Tiếp Thị (CMO)",
-        headcountCurrent: 14,
-        headcountBudget: 16,
-        active_jobs: 2,
-        status: "active",
-        children: [
-          {
-            id: "dept-3-1",
-            code: "DIGITAL",
-            name: "Phòng Digital Marketing & Ads Performance",
-            managerName: "Phạm Quỳnh Nga",
-            managerTitle: "Marketing Manager",
-            headcountCurrent: 9,
-            headcountBudget: 10,
-            active_jobs: 2,
-            status: "active",
-          },
-          {
-            id: "dept-3-2",
-            code: "PARTNER",
-            name: "Ban Phát Triển Đối Tác & Tài Trợ",
-            managerName: "Trần Quốc Bảo",
-            managerTitle: "Partnership Lead",
-            headcountCurrent: 5,
-            headcountBudget: 6,
-            active_jobs: 0, // Không có tin mở -> Cho phép Xóa
-            status: "active",
-          },
-        ],
-      },
-      {
-        id: "dept-4",
-        code: "HR",
-        name: "Ban Quản Trị & Phát Triển Nguồn Nhân Lực",
-        managerName: "Trưởng Phòng Nhân Sự",
-        managerTitle: "Chủ Nhiệm Ban Nhân Sự (CHRO)",
-        headcountCurrent: 8,
-        headcountBudget: 9,
-        active_jobs: 1,
-        status: "active",
-        children: [
-          {
-            id: "dept-4-1",
-            code: "TA",
-            name: "Phòng Tuyển Dụng & Thu Hút Nhân Tài (Talent Acquisition)",
-            managerName: "Trần Thị Mai",
-            managerTitle: "Senior TA Lead",
-            headcountCurrent: 5,
-            headcountBudget: 6,
-            active_jobs: 1,
-            status: "active",
-          },
-          {
-            id: "dept-4-2",
-            code: "L&D",
-            name: "Ban Đào Tạo & Phát Triển Năng Lực Tổ Chức",
-            managerName: "Nguyễn Hải Yến",
-            managerTitle: "L&D Manager",
-            headcountCurrent: 3,
-            headcountBudget: 3,
-            active_jobs: 0, // Không có tin mở -> Cho phép Xóa
-            status: "active",
-          },
-        ],
-      },
-    ],
-  },
-];
+// Tree Builder Utility
+function buildDepartmentTree(flatList: DepartmentNode[]): DepartmentNode[] {
+  const map = new Map<string, DepartmentNode>();
+  const roots: DepartmentNode[] = [];
 
-// Initial Salary Bands Data
-const INITIAL_SALARY_BANDS: JobTitleSalaryBand[] = [
-  {
-    id: "band-1",
-    code: "DEV-JR",
-    title: "Kỹ Sư Phần Mềm Junior (Frontend / Backend)",
-    level: "Junior",
-    minSalary: 12000000,
-    maxSalary: 18000000,
-    department: "Trung Tâm Phát Triển Phần Mềm",
-    status: "active",
-  },
-  {
-    id: "band-2",
-    code: "DEV-MID",
-    title: "Chuyên Viên Phát Triển Phần Mềm Middle",
-    level: "Middle",
-    minSalary: 20000000,
-    maxSalary: 32000000,
-    department: "Trung Tâm Phát Triển Phần Mềm",
-    status: "active",
-  },
-  {
-    id: "band-3",
-    code: "DEV-SR",
-    title: "Kỹ Sư Phần Mềm Cao Cấp (Senior Engineer)",
-    level: "Senior",
-    minSalary: 35000000,
-    maxSalary: 52000000,
-    department: "Trung Tâm Phát Triển Phần Mềm",
-    status: "active",
-  },
-  {
-    id: "band-4",
-    code: "TECH-LEAD",
-    title: "Trưởng Nhóm Kỹ Thuật (Tech Lead / Architect)",
-    level: "Lead",
-    minSalary: 48000000,
-    maxSalary: 68000000,
-    department: "Khối Công Nghệ & Sản Phẩm",
-    status: "active",
-  },
-  {
-    id: "band-5",
-    code: "ENG-MGR",
-    title: "Trưởng Phòng Kỹ Thuật (Engineering Manager)",
-    level: "Manager",
-    minSalary: 60000000,
-    maxSalary: 85000000,
-    department: "Khối Công Nghệ & Sản Phẩm",
-    status: "active",
-  },
-  {
-    id: "band-6",
-    code: "MKT-SR",
-    title: "Chuyên Viên Tiếp Thị Số Cao Cấp (Senior Marketer)",
-    level: "Senior",
-    minSalary: 25000000,
-    maxSalary: 35000000,
-    department: "Khối Tiếp Thị & Tăng Trưởng Số",
-    status: "active",
-  },
-  {
-    id: "band-7",
-    code: "TA-LEAD",
-    title: "Chuyên Viên Tuyển Dụng Cao Cấp (Senior Recruiter)",
-    level: "Senior",
-    minSalary: 22000000,
-    maxSalary: 32000000,
-    department: "Ban Quản Trị Nguồn Nhân Lực",
-    status: "active",
-  },
-];
+  flatList.forEach((item) => {
+    map.set(item.id, { ...item, children: [] });
+  });
+
+  flatList.forEach((item) => {
+    const node = map.get(item.id)!;
+    if (item.parentId && map.has(item.parentId)) {
+      map.get(item.parentId)!.children!.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  return roots.length > 0 ? roots : flatList;
+}
 
 interface MasterDataManagementViewProps {
   initialTab?: "tree_view" | "salary_bands";
@@ -274,7 +91,6 @@ export function MasterDataManagementView({
     onTabChange?.(tab);
   };
 
-  // Cập nhật khi controlledActiveTab hoặc initialTab thay đổi từ Sidebar
   useEffect(() => {
     if (controlledActiveTab) {
       setInternalActiveTab(controlledActiveTab);
@@ -283,8 +99,9 @@ export function MasterDataManagementView({
     }
   }, [controlledActiveTab, initialTab]);
 
-  // Departments State
-  const [departments, setDepartments] = useState<DepartmentNode[]>(INITIAL_DEPARTMENTS);
+  // Loading & Data State
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [rawDepartments, setRawDepartments] = useState<DepartmentNode[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
     "dept-1": true,
     "dept-2": true,
@@ -292,14 +109,41 @@ export function MasterDataManagementView({
     "dept-4": true,
   });
 
-  // Salary Bands State
-  const [salaryBands, setSalaryBands] = useState<JobTitleSalaryBand[]>(INITIAL_SALARY_BANDS);
+  const [salaryBands, setSalaryBands] = useState<JobTitleSalaryBand[]>([]);
   const [searchSalary, setSearchSalary] = useState("");
   const [filterLevel, setFilterLevel] = useState<string>("all");
+
+  // Fetch Data from DB via masterDataService
+  const loadMasterData = async () => {
+    setIsLoading(true);
+    try {
+      const [deptsData, bandsData] = await Promise.all([
+        masterDataService.getDepartments(),
+        masterDataService.getSalaryBands(),
+      ]);
+      setRawDepartments(deptsData);
+      setSalaryBands(bandsData);
+    } catch (err: any) {
+      console.error("Failed to load master data:", err);
+      showToast(err.message || "Không thể tải dữ liệu từ máy chủ.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMasterData();
+  }, []);
+
+  // Compute Department Tree
+  const departmentsTree = useMemo(() => {
+    return buildDepartmentTree(rawDepartments);
+  }, [rawDepartments]);
 
   // Modal State cho Thêm/Sửa Chức danh
   const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
   const [editingBand, setEditingBand] = useState<JobTitleSalaryBand | null>(null);
+  const [salaryModalError, setSalaryModalError] = useState<string | null>(null);
   const [salaryFormData, setSalaryFormData] = useState({
     code: "",
     title: "",
@@ -312,6 +156,7 @@ export function MasterDataManagementView({
   // Modal Thêm Phòng Ban
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
   const [deptParentNode, setDeptParentNode] = useState<DepartmentNode | null>(null);
+  const [deptModalError, setDeptModalError] = useState<string | null>(null);
   const [deptFormData, setDeptFormData] = useState({
     code: "",
     name: "",
@@ -343,7 +188,7 @@ export function MasterDataManagementView({
         if (n.children) traverse(n.children);
       });
     };
-    traverse(departments);
+    traverse(departmentsTree);
     setExpandedNodes(allIds);
     showToast("Đã mở rộng toàn bộ cây cơ cấu phòng ban.");
   };
@@ -354,42 +199,35 @@ export function MasterDataManagementView({
   };
 
   // Logic Xóa Phòng Ban
-  const handleDeleteDepartment = (nodeId: string, nodeName: string) => {
-    const removeRecursive = (list: DepartmentNode[]): DepartmentNode[] => {
-      return list
-        .filter((n) => n.id !== nodeId)
-        .map((n) => ({
-          ...n,
-          children: n.children ? removeRecursive(n.children) : undefined,
-        }));
-    };
-
-    setDepartments((prev) => removeRecursive(prev));
-    showToast(`Đã xóa thành công phòng ban "${nodeName}".`);
+  const handleDeleteDepartment = async (nodeId: string, nodeName: string) => {
+    try {
+      await masterDataService.deleteDepartment(nodeId);
+      setRawDepartments((prev) => prev.filter((d) => d.id !== nodeId));
+      showToast(`Đã xóa thành công phòng ban "${nodeName}".`);
+    } catch (err: any) {
+      showToast(err.message || "Xóa phòng ban thất bại.");
+    }
   };
 
   // Logic Ngừng Áp Dụng Phòng Ban
-  const handleToggleDeactivateDepartment = (nodeId: string, nodeName: string) => {
-    const toggleStatusRecursive = (list: DepartmentNode[]): DepartmentNode[] => {
-      return list.map((n) => {
-        if (n.id === nodeId) {
-          const newStatus = n.status === "active" ? "inactive" : "active";
-          return { ...n, status: newStatus };
-        }
-        if (n.children) {
-          return { ...n, children: toggleStatusRecursive(n.children) };
-        }
-        return n;
-      });
-    };
+  const handleToggleDeactivateDepartment = async (nodeId: string, nodeName: string) => {
+    const target = rawDepartments.find((d) => d.id === nodeId);
+    if (!target) return;
+    const newStatus = target.status === "active" ? "inactive" : "active";
 
-    setDepartments((prev) => toggleStatusRecursive(prev));
-    showToast(`Đã thay đổi trạng thái áp dụng cho phòng ban "${nodeName}".`);
+    try {
+      const updated = await masterDataService.updateDepartment(nodeId, { status: newStatus });
+      setRawDepartments((prev) => prev.map((d) => (d.id === nodeId ? updated : d)));
+      showToast(`Đã thay đổi trạng thái áp dụng cho phòng ban "${nodeName}".`);
+    } catch (err: any) {
+      showToast(err.message || "Cập nhật trạng thái phòng ban thất bại.");
+    }
   };
 
   // Handler Thêm Phòng Ban
   const handleOpenAddDeptModal = (parentNode?: DepartmentNode) => {
     setDeptParentNode(parentNode || null);
+    setDeptModalError(null);
     setDeptFormData({
       code: "",
       name: "",
@@ -400,53 +238,40 @@ export function MasterDataManagementView({
     setIsDeptModalOpen(true);
   };
 
-  const handleSaveDepartment = (e: React.FormEvent) => {
+  const handleSaveDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
+    setDeptModalError(null);
     if (!deptFormData.name.trim() || !deptFormData.code.trim()) {
-      alert("Vui lòng nhập đầy đủ mã và tên phòng ban!");
+      setDeptModalError("Vui lòng nhập đầy đủ mã và tên phòng ban!");
       return;
     }
 
-    const newNode: DepartmentNode = {
-      id: `dept-${Date.now()}`,
-      code: deptFormData.code.trim().toUpperCase(),
-      name: deptFormData.name.trim(),
-      managerName: deptFormData.managerName.trim() || "Chưa bổ nhiệm",
-      managerTitle: deptFormData.managerTitle.trim() || "Trưởng Đơn Vị",
-      headcountCurrent: 0,
-      headcountBudget: Number(deptFormData.headcountBudget) || 5,
-      active_jobs: 0,
-      status: "active",
-    };
+    try {
+      const created = await masterDataService.createDepartment({
+        code: deptFormData.code.trim().toUpperCase(),
+        name: deptFormData.name.trim(),
+        managerName: deptFormData.managerName.trim() || "Chưa bổ nhiệm",
+        managerTitle: deptFormData.managerTitle.trim() || "Trưởng Đơn Vị",
+        headcountBudget: Number(deptFormData.headcountBudget) || 5,
+        parentId: deptParentNode ? deptParentNode.id : null,
+      });
 
-    if (deptParentNode) {
-      const appendChildRecursive = (list: DepartmentNode[]): DepartmentNode[] => {
-        return list.map((n) => {
-          if (n.id === deptParentNode.id) {
-            return {
-              ...n,
-              children: n.children ? [...n.children, newNode] : [newNode],
-            };
-          }
-          if (n.children) {
-            return { ...n, children: appendChildRecursive(n.children) };
-          }
-          return n;
-        });
-      };
-      setDepartments((prev) => appendChildRecursive(prev));
-      setExpandedNodes((prev) => ({ ...prev, [deptParentNode.id]: true }));
-      showToast(`Đã thêm đơn vị con "${newNode.name}" vào phòng ban "${deptParentNode.name}"!`);
-    } else {
-      setDepartments((prev) => [...prev, newNode]);
-      showToast(`Đã thêm phòng ban mới "${newNode.name}"!`);
+      setRawDepartments((prev) => [...prev, created]);
+      if (deptParentNode) {
+        setExpandedNodes((prev) => ({ ...prev, [deptParentNode.id]: true }));
+        showToast(`Đã thêm đơn vị con "${created.name}" vào phòng ban "${deptParentNode.name}"!`);
+      } else {
+        showToast(`Đã thêm phòng ban mới "${created.name}" vào CSDL!`);
+      }
+      setIsDeptModalOpen(false);
+    } catch (err: any) {
+      setDeptModalError(err.message || "Không thể thêm mới phòng ban.");
     }
-
-    setIsDeptModalOpen(false);
   };
 
   // Handler Mở Modal Thêm/Sửa Dải Lương
   const handleOpenSalaryModal = (band?: JobTitleSalaryBand) => {
+    setSalaryModalError(null);
     if (band) {
       setEditingBand(band);
       setSalaryFormData({
@@ -471,53 +296,60 @@ export function MasterDataManagementView({
     setIsSalaryModalOpen(true);
   };
 
-  const handleSaveSalaryBand = (e: React.FormEvent) => {
+  const handleSaveSalaryBand = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSalaryModalError(null);
     const min = Number(salaryFormData.minSalary);
     const max = Number(salaryFormData.maxSalary);
 
     if (max < min) {
-      alert("Lương tối đa (Max) phải lớn hơn hoặc bằng lương tối thiểu (Min)!");
+      setSalaryModalError("Lương tối đa (Max) phải lớn hơn hoặc bằng lương tối thiểu (Min)!");
       return;
     }
-    if (!salaryFormData.title.trim()) {
-      alert("Vui lòng nhập tên chức danh!");
+    if (!salaryFormData.title.trim() || !salaryFormData.code.trim()) {
+      setSalaryModalError("Vui lòng nhập đầy đủ mã và tên chức danh!");
       return;
     }
 
-    if (editingBand) {
-      setSalaryBands((prev) =>
-        prev.map((b) =>
-          b.id === editingBand.id
-            ? {
-                ...b,
-                code: salaryFormData.code.toUpperCase(),
-                title: salaryFormData.title.trim(),
-                level: salaryFormData.level,
-                department: salaryFormData.department,
-                minSalary: min,
-                maxSalary: max,
-              }
-            : b
-        )
-      );
-      showToast(`Đã cập nhật dải lương cho chức danh "${salaryFormData.title}"!`);
-    } else {
-      const newBand: JobTitleSalaryBand = {
-        id: `band-${Date.now()}`,
-        code: salaryFormData.code.toUpperCase() || `JOB-${Date.now().toString().slice(-4)}`,
-        title: salaryFormData.title.trim(),
-        level: salaryFormData.level,
-        department: salaryFormData.department,
-        minSalary: min,
-        maxSalary: max,
-        status: "active",
-      };
-      setSalaryBands((prev) => [newBand, ...prev]);
-      showToast(`Đã thêm mới chức danh "${newBand.title}" vào danh mục dải lương!`);
+    try {
+      if (editingBand) {
+        const updated = await masterDataService.updateSalaryBand(editingBand.id, {
+          code: salaryFormData.code.toUpperCase(),
+          title: salaryFormData.title.trim(),
+          level: salaryFormData.level,
+          department: salaryFormData.department,
+          minSalary: min,
+          maxSalary: max,
+        });
+        setSalaryBands((prev) => prev.map((b) => (b.id === editingBand.id ? updated : b)));
+        showToast(`Đã cập nhật dải lương CSDL cho chức danh "${salaryFormData.title}"!`);
+      } else {
+        const created = await masterDataService.createSalaryBand({
+          code: salaryFormData.code.toUpperCase(),
+          title: salaryFormData.title.trim(),
+          level: salaryFormData.level,
+          department: salaryFormData.department,
+          minSalary: min,
+          maxSalary: max,
+        });
+        setSalaryBands((prev) => [created, ...prev]);
+        showToast(`Đã lưu chức danh mới "${created.title}" vào CSDL thành công!`);
+      }
+      setIsSalaryModalOpen(false);
+    } catch (err: any) {
+      setSalaryModalError(err.message || "Lỗi lưu chức danh dải lương vào CSDL.");
     }
+  };
 
-    setIsSalaryModalOpen(false);
+  const handleDeleteSalaryBand = async (band: JobTitleSalaryBand) => {
+    if (!confirm(`Bạn có chắc muốn xóa chức danh "${band.title}" khỏi CSDL?`)) return;
+    try {
+      await masterDataService.deleteSalaryBand(band.id);
+      setSalaryBands((prev) => prev.filter((b) => b.id !== band.id));
+      showToast(`Đã xóa chức danh "${band.title}" khỏi CSDL!`);
+    } catch (err: any) {
+      showToast(err.message || "Không thể xóa chức danh.");
+    }
   };
 
   // Filter Salary Bands
@@ -550,9 +382,8 @@ export function MasterDataManagementView({
           }`}
           style={{ marginLeft: `${level * 24}px` }}
         >
-          {/* CỘT TRÁI: ICON MŨI TÊN, TÊN PHÒNG BAN (IN ĐẬM), MÃ (BADGE), PIC */}
+          {/* CỘT TRÁI */}
           <div className="flex items-start md:items-center gap-3 min-w-0">
-            {/* Icon mũi tên (Chevron) mở rộng / thu gọn */}
             {hasChildren ? (
               <button
                 type="button"
@@ -578,12 +409,10 @@ export function MasterDataManagementView({
 
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Tên phòng ban in đậm */}
                 <span className="text-sm font-bold text-slate-900 truncate">
                   {node.name}
                 </span>
 
-                {/* Mã phòng ban (badge nhỏ, ví dụ BGD, TECH) */}
                 <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-100 text-slate-600 uppercase border border-slate-200/60">
                   {node.code}
                 </span>
@@ -595,7 +424,6 @@ export function MasterDataManagementView({
                 )}
               </div>
 
-              {/* Tên người phụ trách */}
               <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
                 <span>Người phụ trách:</span>
                 <strong className="text-slate-800 font-semibold flex items-center gap-1.5">
@@ -607,9 +435,8 @@ export function MasterDataManagementView({
             </div>
           </div>
 
-          {/* CỘT PHẢI: SỐ NHÂN SỰ (HIỆN TẠI/TỔNG), VỊ TRÍ ĐANG MỞ, NÚT HÀNH ĐỘNG */}
+          {/* CỘT PHẢI */}
           <div className="flex items-center gap-3 mt-3 md:mt-0 pt-2 md:pt-0 border-t md:border-t-0 border-gray-100 shrink-0">
-            {/* Hiển thị số nhân sự hiện tại/tổng và số vị trí đang mở */}
             <div className="text-right hidden sm:block">
               <div className="text-xs font-bold text-slate-700">
                 {node.headcountCurrent} / {node.headcountBudget} nhân sự
@@ -625,9 +452,7 @@ export function MasterDataManagementView({
               </div>
             </div>
 
-            {/* Nút hành động từng dòng: "+ Đơn vị con" và nút "Xóa" */}
             <div className="flex items-center gap-1.5">
-              {/* Nút "+ Đơn vị con" */}
               <button
                 type="button"
                 onClick={() => handleOpenAddDeptModal(node)}
@@ -637,12 +462,8 @@ export function MasterDataManagementView({
                 + Đơn vị con
               </button>
 
-              {/* LOGIC XÓA:
-                  - active_jobs > 0: Khóa Xóa (Disabled nền xám) và thay thế/kèm bằng "Ngừng áp dụng" (viền cam, chữ cam)
-                  - active_jobs == 0: Nút Xóa (viền đỏ, chữ đỏ) */}
               {node.active_jobs > 0 ? (
                 <div className="flex items-center gap-1.5">
-                  {/* Nút Xóa bị vô hiệu hóa (Khóa Xóa nền xám) */}
                   <button
                     type="button"
                     disabled
@@ -653,18 +474,16 @@ export function MasterDataManagementView({
                     <span>Khóa Xóa</span>
                   </button>
 
-                  {/* Nút "Ngừng áp dụng" (viền cam, chữ cam) */}
                   <button
                     type="button"
                     onClick={() => handleToggleDeactivateDepartment(node.id, node.name)}
                     className="px-3 py-1.5 rounded-full text-xs font-bold border border-amber-300 text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer shadow-xs"
-                    title="Chuyển sang trạng thái ngừng áp dụng cho tuyển dụng mới"
+                    title="Chuyển sang trạng thái ngừng áp dụng"
                   >
                     {isDeactivated ? "Kích hoạt lại" : "Ngừng áp dụng"}
                   </button>
                 </div>
               ) : (
-                /* Nút Xóa (viền đỏ, chữ đỏ) khi 0 vị trí mở */
                 <button
                   type="button"
                   onClick={() => {
@@ -673,7 +492,7 @@ export function MasterDataManagementView({
                     }
                   }}
                   className="px-3 py-1.5 rounded-full text-xs font-bold border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-                  title="Xóa phòng ban (Đạt điều kiện: 0 vị trí mở)"
+                  title="Xóa phòng ban khỏi CSDL"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-500" />
                   <span>Xóa</span>
@@ -683,7 +502,6 @@ export function MasterDataManagementView({
           </div>
         </div>
 
-        {/* Render con đệ quy nếu mở rộng */}
         {hasChildren && isExpanded && (
           <div className="border-l-2 border-slate-200/60 ml-4 pl-2 space-y-1">
             {node.children!.map((child) => renderDepartmentNode(child, level + 1))}
@@ -709,30 +527,22 @@ export function MasterDataManagementView({
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 1. HEADER CỦA KHU VỰC NỘI DUNG & THANH TABS CHUYỂN ĐỔI (DẠNG PILL) */}
-      {/* ========================================================================= */}
+      {/* HEADER */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div>
-          {/* Dòng chữ nhỏ bên trên tiêu đề */}
           <div className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
-            DANH MỤC NỀN TẢNG (MASTER DATA)
+            DANH MỤC NỀN TẢNG (MASTER DATA PERSISTED)
           </div>
-          {/* Tiêu đề lớn */}
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
             Quản lý Cấu trúc Tổ chức & Khung Lương
           </h1>
-          {/* Mô tả ngắn */}
           <p className="text-sm text-slate-500 mt-1">
-            Thiết lập cấu trúc cây phòng ban đa cấp và khung dải lương chuẩn cho toàn hệ thống
+            Kết nối CSDL thực tế • Thay đổi dải lương và chức danh tự động lưu trữ vĩnh viễn
           </p>
         </div>
 
-        {/* ======================================================================= */}
-        {/* 2. THANH TABS CHUYỂN ĐỔI (NỀN TRẮNG, BO TRÒN DẠNG PILL) */}
-        {/* ======================================================================= */}
+        {/* TABS */}
         <div className="flex items-center gap-1.5 p-1.5 bg-white rounded-full border border-gray-200 shadow-xs self-start sm:self-auto">
-          {/* Tab 1: Sơ đồ phòng ban (Tree) */}
           <button
             type="button"
             onClick={() => handleTabChange("tree_view")}
@@ -745,7 +555,6 @@ export function MasterDataManagementView({
             1. Sơ đồ phòng ban (Tree)
           </button>
 
-          {/* Tab 2: Chức danh & Dải lương */}
           <button
             type="button"
             onClick={() => handleTabChange("salary_bands")}
@@ -760,213 +569,207 @@ export function MasterDataManagementView({
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 3. KHU VỰC HIỂN THỊ SƠ ĐỒ PHÒNG BAN (KHI CHỌN TAB 1) */}
-      {/* ========================================================================= */}
-      {activeTab === "tree_view" && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-6 animate-fade-in">
-          {/* Toolbar với Tiêu đề phụ & Nhóm nút hành động ngang hàng */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
-            <div>
-              <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">
-                Cây Cơ Cấu Phòng Ban Nhiều Cấp (Hierarchical Tree)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Mỗi phòng ban có người phụ trách • Phòng ban đang có vị trí mở tuyển sẽ khóa nút xóa
-              </p>
-            </div>
-
-            {/* Nhóm nút hành động: "Mở rộng tất cả", "Thu gọn", "+ Thêm Phòng Ban" */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={expandAll}
-                className="px-3.5 py-2 rounded-full border border-gray-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-xs"
-              >
-                Mở rộng tất cả
-              </button>
-              <button
-                type="button"
-                onClick={collapseAll}
-                className="px-3.5 py-2 rounded-full border border-gray-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-xs"
-              >
-                Thu gọn
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenAddDeptModal()}
-                className="px-4 py-2 rounded-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Thêm Phòng Ban</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Tree View Container */}
-          <div className="space-y-1">
-            {departments.map((dept) => renderDepartmentNode(dept, 0))}
-          </div>
-
-          {/* Chú thích nghiệp vụ */}
-          <div className="mt-6 p-4 rounded-2xl bg-slate-50 border border-gray-200/80 text-xs text-slate-600 flex items-start gap-3">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 mt-1 shrink-0"></span>
-            <div>
-              <strong className="text-slate-800">Quy tắc an toàn dữ liệu:</strong> Phòng ban đang gắn với yêu cầu tuyển dụng còn mở (<code className="text-blue-600 font-bold">active_jobs &gt; 0</code>) sẽ tự động bị khóa nút Xóa (Disabled) nhằm bảo toàn tính toàn vẹn dữ liệu. Quản trị viên sử dụng tính năng <strong>"Ngừng áp dụng"</strong> để tạm dừng tiếp nhận ứng viên mới.
-            </div>
-          </div>
+      {isLoading ? (
+        <div className="bg-white rounded-3xl p-12 border border-gray-100 text-center flex flex-col items-center justify-center space-y-3">
+          <Loader2 className="w-8 h-8 text-[#4285F4] animate-spin" />
+          <p className="text-sm text-slate-500 font-medium">Đang đồng bộ dữ liệu từ CSDL backend...</p>
         </div>
-      )}
+      ) : (
+        <>
+          {/* TAB 1: SƠ ĐỒ PHÒNG BAN */}
+          {activeTab === "tree_view" && (
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-6 animate-fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">
+                    Cây Cơ Cấu Phòng Ban Nhiều Cấp (Hierarchical Tree)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Mỗi phòng ban lưu trực tiếp CSDL • Khóa xóa khi có vị trí tuyển mở
+                  </p>
+                </div>
 
-      {/* ========================================================================= */}
-      {/* 4. KHU VỰC HIỂN THỊ CHỨC DANH & DẢI LƯƠNG (KHI CHỌN TAB 2) */}
-      {/* ========================================================================= */}
-      {activeTab === "salary_bands" && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-6 animate-fade-in">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
-            <div>
-              <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">
-                Danh Mục Khung Dải Lương Chuẩn Theo Chức Danh
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Thiết lập mức Min - Max cho từng Level, kiểm soát chi phí tuyển dụng
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => handleOpenSalaryModal()}
-              className="px-4 py-2 rounded-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Thêm Chức Danh</span>
-            </button>
-          </div>
-
-          {/* Search & Filter Toolbar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3 flex-1">
-              <div className="relative min-w-[260px] flex-1">
-                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Tìm theo chức danh, mã, phòng ban..."
-                  value={searchSalary}
-                  onChange={(e) => setSearchSalary(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30"
-                />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={expandAll}
+                    className="px-3.5 py-2 rounded-full border border-gray-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-xs"
+                  >
+                    Mở rộng tất cả
+                  </button>
+                  <button
+                    type="button"
+                    onClick={collapseAll}
+                    className="px-3.5 py-2 rounded-full border border-gray-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-xs"
+                  >
+                    Thu gọn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddDeptModal()}
+                    className="px-4 py-2 rounded-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Thêm Phòng Ban</span>
+                  </button>
+                </div>
               </div>
 
-              <select
-                value={filterLevel}
-                onChange={(e) => setFilterLevel(e.target.value)}
-                className="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30"
-              >
-                <option value="all">Tất cả cấp bậc</option>
-                <option value="Junior">Junior</option>
-                <option value="Middle">Middle</option>
-                <option value="Senior">Senior</option>
-                <option value="Lead">Lead</option>
-                <option value="Manager">Manager</option>
-                <option value="Director">Director</option>
-              </select>
+              <div className="space-y-1">
+                {departmentsTree.map((dept) => renderDepartmentNode(dept, 0))}
+              </div>
+
+              <div className="mt-6 p-4 rounded-2xl bg-slate-50 border border-gray-200/80 text-xs text-slate-600 flex items-start gap-3">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 mt-1 shrink-0"></span>
+                <div>
+                  <strong className="text-slate-800">Quy tắc an toàn CSDL:</strong> Phòng ban có yêu cầu tuyển dụng còn mở (<code className="text-blue-600 font-bold">active_jobs &gt; 0</code>) bị khóa nút Xóa nhằm đảm bảo toàn vẹn dữ liệu. Quản trị viên dùng <strong>"Ngừng áp dụng"</strong> để tạm dừng tiếp nhận.
+                </div>
+              </div>
             </div>
+          )}
 
-            {searchSalary && (
-              <button
-                onClick={() => setSearchSalary("")}
-                className="text-xs text-[#4285F4] hover:underline font-semibold self-end sm:self-auto"
-              >
-                Xóa tìm kiếm
-              </button>
-            )}
-          </div>
+          {/* TAB 2: CHỨC DANH & DẢI LƯƠNG */}
+          {activeTab === "salary_bands" && (
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-6 animate-fade-in">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+                <div>
+                  <h3 className="text-lg font-extrabold text-slate-900 tracking-tight">
+                    Danh Mục Khung Dải Lương Chuẩn Theo Chức Danh
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Thiết lập mức Min - Max cho từng Level, đồng bộ CSDL vĩnh viễn
+                  </p>
+                </div>
 
-          {/* Salary Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                  <th className="py-3.5 px-4">Mã & Chức danh</th>
-                  <th className="py-3.5 px-4 text-center">Cấp bậc</th>
-                  <th className="py-3.5 px-4">Phòng ban</th>
-                  <th className="py-3.5 px-4 text-right">Lương tối thiểu (Min)</th>
-                  <th className="py-3.5 px-4 text-right">Lương tối đa (Max)</th>
-                  <th className="py-3.5 px-4 text-center">Biên độ lương</th>
-                  <th className="py-3.5 px-4 text-center">Hành động</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredSalaryBands.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400">
-                      Không tìm thấy chức danh phù hợp.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSalaryBands.map((band) => {
-                    const diff = band.maxSalary - band.minSalary;
-                    return (
-                      <tr key={band.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-4 font-semibold text-slate-900">
-                          <div>{band.title}</div>
-                          <span className="text-[10px] text-slate-400 font-mono font-normal">
-                            {band.code}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-[#4285F4] border border-blue-100">
-                            {band.level}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-600">{band.department}</td>
-                        <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
-                          {band.minSalary.toLocaleString("vi-VN")} đ
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600">
-                          {band.maxSalary.toLocaleString("vi-VN")} đ
-                        </td>
-                        <td className="py-3.5 px-4 text-center text-xs text-slate-500">
-                          +{(diff / 1000000).toFixed(0)} Triệu
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenSalaryModal(band)}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                              title="Chỉnh sửa dải lương"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (confirm(`Bạn có chắc muốn xóa chức danh "${band.title}"?`)) {
-                                  setSalaryBands((prev) => prev.filter((b) => b.id !== band.id));
-                                  showToast(`Đã xóa chức danh "${band.title}"!`);
-                                }
-                              }}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                              title="Xóa chức danh"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                <button
+                  type="button"
+                  onClick={() => handleOpenSalaryModal()}
+                  className="px-4 py-2 rounded-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Thêm Chức Danh</span>
+                </button>
+              </div>
+
+              {/* Search & Filter Toolbar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-3 flex-1">
+                  <div className="relative min-w-[260px] flex-1">
+                    <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Tìm theo chức danh, mã, phòng ban..."
+                      value={searchSalary}
+                      onChange={(e) => setSearchSalary(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30"
+                    />
+                  </div>
+
+                  <select
+                    value={filterLevel}
+                    onChange={(e) => setFilterLevel(e.target.value)}
+                    className="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30"
+                  >
+                    <option value="all">Tất cả cấp bậc</option>
+                    <option value="Junior">Junior</option>
+                    <option value="Middle">Middle</option>
+                    <option value="Senior">Senior</option>
+                    <option value="Lead">Lead</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Director">Director</option>
+                  </select>
+                </div>
+
+                {searchSalary && (
+                  <button
+                    onClick={() => setSearchSalary("")}
+                    className="text-xs text-[#4285F4] hover:underline font-semibold self-end sm:self-auto"
+                  >
+                    Xóa tìm kiếm
+                  </button>
+                )}
+              </div>
+
+              {/* Salary Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs sm:text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                      <th className="py-3.5 px-4">Mã & Chức danh</th>
+                      <th className="py-3.5 px-4 text-center">Cấp bậc</th>
+                      <th className="py-3.5 px-4">Phòng ban</th>
+                      <th className="py-3.5 px-4 text-right">Lương tối thiểu (Min)</th>
+                      <th className="py-3.5 px-4 text-right">Lương tối đa (Max)</th>
+                      <th className="py-3.5 px-4 text-center">Biên độ lương</th>
+                      <th className="py-3.5 px-4 text-center">Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredSalaryBands.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
+                          Không tìm thấy chức danh phù hợp trong CSDL.
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                    ) : (
+                      filteredSalaryBands.map((band) => {
+                        const diff = band.maxSalary - band.minSalary;
+                        return (
+                          <tr key={band.id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-3.5 px-4 font-semibold text-slate-900">
+                              <div>{band.title}</div>
+                              <span className="text-[10px] text-slate-400 font-mono font-normal">
+                                {band.code}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-[#4285F4] border border-blue-100">
+                                {band.level}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-600">{band.department}</td>
+                            <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                              {band.minSalary.toLocaleString("vi-VN")} đ
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-mono font-bold text-emerald-600">
+                              {band.maxSalary.toLocaleString("vi-VN")} đ
+                            </td>
+                            <td className="py-3.5 px-4 text-center text-xs text-slate-500">
+                              +{(diff / 1000000).toFixed(0)} Triệu
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenSalaryModal(band)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                                  title="Chỉnh sửa dải lương CSDL"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSalaryBand(band)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Xóa chức danh khỏi CSDL"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL THÊM PHÒNG BAN / ĐƠN VỊ CON */}
-      {/* ========================================================================= */}
+      {/* MODAL THÊM PHÒNG BAN */}
       {isDeptModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-gray-100 animate-scale-up space-y-5">
@@ -984,16 +787,23 @@ export function MasterDataManagementView({
               </button>
             </div>
 
+            {deptModalError && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                <span>{deptModalError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSaveDepartment} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Mã phòng ban *
+                    Mã phòng ban (duy nhất) *
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="VD: TECH, DEV..."
+                    placeholder="VD: TECH-AI, DEV-WEB..."
                     value={deptFormData.code}
                     onChange={(e) => setDeptFormData({ ...deptFormData, code: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#4285F4]/30 uppercase"
@@ -1072,7 +882,7 @@ export function MasterDataManagementView({
                   type="submit"
                   className="px-5 py-2.5 rounded-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-500/25 cursor-pointer"
                 >
-                  Lưu Phòng Ban
+                  Lưu Phòng Ban Vào CSDL
                 </button>
               </div>
             </form>
@@ -1080,15 +890,13 @@ export function MasterDataManagementView({
         </div>
       )}
 
-      {/* ========================================================================= */}
       {/* MODAL THÊM / CHỈNH SỬA CHỨC DANH & DẢI LƯƠNG */}
-      {/* ========================================================================= */}
       {isSalaryModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-gray-100 animate-scale-up space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
               <h3 className="font-extrabold text-lg text-slate-900">
-                {editingBand ? "Chỉnh Sửa Dải Lương Chức Danh" : "Thêm Chức Danh & Khung Lương Mới"}
+                {editingBand ? "Chỉnh Sửa Dải Lương Chức Danh CSDL" : "Thêm Chức Danh & Khung Lương CSDL"}
               </h3>
               <button
                 onClick={() => setIsSalaryModalOpen(false)}
@@ -1098,11 +906,18 @@ export function MasterDataManagementView({
               </button>
             </div>
 
+            {salaryModalError && (
+              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                <span>{salaryModalError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSaveSalaryBand} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Mã chức danh *
+                    Mã chức danh (duy nhất) *
                   </label>
                   <input
                     type="text"
@@ -1213,7 +1028,7 @@ export function MasterDataManagementView({
                   type="submit"
                   className="px-5 py-2.5 rounded-full bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-bold shadow-md shadow-blue-500/25 cursor-pointer"
                 >
-                  Lưu Khung Lương
+                  Lưu Khung Lương Vào CSDL
                 </button>
               </div>
             </form>

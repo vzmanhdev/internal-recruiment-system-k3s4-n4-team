@@ -252,7 +252,13 @@ export function RequisitionManagementView() {
   // Fetch requisitions from Backend API
   const fetchRequisitions = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/requisitions");
+      const token = typeof window !== "undefined" ? (localStorage.getItem("access_token") || localStorage.getItem("token")) : null;
+      const res = await fetch("http://localhost:8000/api/v1/requisitions", {
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
@@ -402,9 +408,13 @@ export function RequisitionManagementView() {
     };
 
     try {
+      const token = typeof window !== "undefined" ? (localStorage.getItem("access_token") || localStorage.getItem("token")) : null;
       const res = await fetch("http://localhost:8000/api/v1/requisitions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           code: newReq.code,
           title: newReq.title,

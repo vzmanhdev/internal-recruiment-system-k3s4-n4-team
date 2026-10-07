@@ -3,12 +3,17 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from app.db.session import get_db
+from app.models.user import User
+from app.core.dependencies import get_current_user
 
 router = APIRouter()
 
 # 1. INTERVIEW EVALUATION FORMS & AUDIT TRAIL SNAPSHOTS API
 @router.get("/evaluations")
-def get_evaluation_forms(db: Session = Depends(get_db)):
+def get_evaluation_forms(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     return {
         "snapshots": [
             {
@@ -52,7 +57,10 @@ def get_evaluation_forms(db: Session = Depends(get_db)):
 
 # 2. CHECKLIST TIẾP NHẬN NHÂN SỰ (ONBOARDING CHECKLIST) API
 @router.get("/onboarding")
-def get_onboarding_checklists(db: Session = Depends(get_db)):
+def get_onboarding_checklists(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     return {
         "checklist": [
             {

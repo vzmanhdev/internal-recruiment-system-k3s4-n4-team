@@ -5,11 +5,16 @@ from app.db.session import get_db
 from app.models.job import JobPosting
 from app.models.candidate import Candidate
 from app.models.requisition import Requisition
+from app.models.user import User
+from app.core.dependencies import get_current_user
 
 router = APIRouter()
 
 @router.get("/kpis")
-def get_kpis(db: Session = Depends(get_db)):
+def get_kpis(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     open_jobs_count = db.query(JobPosting).filter(JobPosting.status == "open").count()
     new_cvs_count = db.query(Candidate).count()
     

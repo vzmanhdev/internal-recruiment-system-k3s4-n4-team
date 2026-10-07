@@ -103,6 +103,8 @@ def ensure_columns():
                 conn.execute(text("ALTER TABLE users ADD COLUMN employee_code VARCHAR(50)"))
             conn.commit()
 
+from app.models.competency import CompetencyFramework, CompetencyCriteria, InterviewQuestion
+
 def init_db():
     """
     Khởi tạo dữ liệu người dùng mặc định & Master Data khi khởi động hệ thống.
@@ -163,7 +165,145 @@ def init_db():
             db.add_all(salary_bands_seed)
             db.commit()
 
-        # 4. Seed JobPostings if empty
+        # 4. Seed CompetencyFrameworks if empty
+        if db.query(CompetencyFramework).count() == 0:
+            cf1 = CompetencyFramework(
+                id="cf-1",
+                code="CF-SWE-2026",
+                name="Khung Năng Lực Kỹ Sư Phần Mềm (Software Engineer)",
+                department="Khối Công Nghệ & Sản Phẩm (Technology)",
+                status="active",
+                updated_at="06/10/2026"
+            )
+            cf1.set_applied_job_titles([
+                "Senior Backend Engineer",
+                "Lead Developer",
+                "Fullstack Developer",
+                "Frontend Developer"
+            ])
+            db.add(cf1)
+            db.commit()
+
+            criteria1 = [
+                CompetencyCriteria(id="c-101", framework_id="cf-1", code="TC-01", name="Kiến trúc hệ thống & Thiết kế CSDL", description="Khả năng thiết kế database tối ưu, phân tích microservices, xử lý locking và concurrency cao.", weight=30),
+                CompetencyCriteria(id="c-102", framework_id="cf-1", code="TC-02", name="Kỹ năng lập trình chuyên sâu & Clean Code", description="Viết code rõ ràng, tuân thủ nguyên lý SOLID, thiết kế unit test và code coverage đạt chuẩn dự án.", weight=25),
+                CompetencyCriteria(id="c-103", framework_id="cf-1", code="TC-03", name="Tư duy giải quyết vấn đề (Problem Solving)", description="Khả năng phân tích root cause, debug production, tối ưu hóa hiệu năng và profiling hệ thống.", weight=20),
+                CompetencyCriteria(id="c-104", framework_id="cf-1", code="TC-04", name="Khả năng làm việc nhóm & Mentor", description="Review code văn minh, hỗ trợ junior developer, giao tiếp kỹ thuật rõ ràng với các bên liên quan.", weight=15),
+                CompetencyCriteria(id="c-105", framework_id="cf-1", code="TC-05", name="Hiểu biết bảo mật & Cloud / DevOps", description="Nắm vững OWASP Top 10, cấu hình CI/CD pipelines, Docker containerization và triển khai đám mây.", weight=10),
+            ]
+            db.add_all(criteria1)
+
+            cf2 = CompetencyFramework(
+                id="cf-2",
+                code="CF-TA-2026",
+                name="Khung Năng Lực Chuyên Viên Tuyển Dụng (Talent Acquisition)",
+                department="Phòng Tuyển Dụng & Đào Tạo",
+                status="active",
+                updated_at="04/10/2026"
+            )
+            cf2.set_applied_job_titles([
+                "Chuyên viên Tuyển dụng (Recruiter)",
+                "Trưởng nhóm Tuyển dụng"
+            ])
+            db.add(cf2)
+            db.commit()
+
+            criteria2 = [
+                CompetencyCriteria(id="c-201", framework_id="cf-2", code="TC-HR-01", name="Kỹ năng Sourcing & Tiếp cận ứng viên", description="Chủ động tìm kiếm qua LinkedIn, GitHub, xây dựng talent pool ứng viên thụ động chất lượng cao.", weight=25),
+                CompetencyCriteria(id="c-202", framework_id="cf-2", code="TC-HR-02", name="Phỏng vấn hành vi (Behavioral Interview - STAR)", description="Khai thác sâu kinh nghiệm thực tế qua mô hình STAR, đánh giá chuẩn xác độ phù hợp văn hóa.", weight=30),
+                CompetencyCriteria(id="c-203", framework_id="cf-2", code="TC-HR-03", name="Thương lượng Offer & Chăm sóc ứng viên", description="Khéo léo phân tích Total Rewards, chốt offer hiệu quả, giữ tỉ lệ chuyển đổi offer acceptance > 85%.", weight=20),
+                CompetencyCriteria(id="c-204", framework_id="cf-2", code="TC-HR-04", name="Phân tích dữ liệu tuyển dụng & Báo cáo SLA", description="Theo dõi Time-to-Hire, Cost-per-Hire, quản lý pipeline trên ATS và tối ưu hiệu suất quy trình.", weight=15),
+                CompetencyCriteria(id="c-205", framework_id="cf-2", code="TC-HR-05", name="Xây dựng thương hiệu nhà tuyển dụng (Employer Branding)", description="Tạo nội dung tuyển dụng hấp dẫn, lan tỏa văn hóa doanh nghiệp trên mạng xã hội chuyên nghiệp.", weight=10),
+            ]
+            db.add_all(criteria2)
+            db.commit()
+
+        # 5. Seed InterviewQuestions if empty
+        if db.query(InterviewQuestion).count() == 0:
+            questions_seed = [
+                InterviewQuestion(
+                    id="q-1",
+                    code="Q-BE-01",
+                    content="Hãy giải thích cách bạn xử lý bài toán race condition trong cơ sở dữ liệu khi có nhiều giao dịch đồng thời đặt cùng một vị trí tuyển dụng?",
+                    criteria_id="c-101",
+                    criteria_name="Kiến trúc hệ thống & Thiết kế CSDL",
+                    job_title="Senior Backend Engineer",
+                    difficulty="hard",
+                    suggested_answer="Ứng viên cần giải thích được: (1) Khái niệm Race condition và nguy cơ dữ liệu không đồng nhất; (2) Sự khác biệt giữa Optimistic Locking (dùng version/timestamp) và Pessimistic Locking (SELECT ... FOR UPDATE); (3) Mức độ Transaction Isolation; (4) Giải pháp phân tán (Distributed Lock với Redis/Redlock).",
+                    is_referenced=True,
+                    status="active",
+                    times_used=6
+                ),
+                InterviewQuestion(
+                    id="q-2",
+                    code="Q-BE-02",
+                    content="Bạn áp dụng nguyên lý Dependency Inversion (chữ D trong SOLID) như thế nào trong kiến trúc phân tầng (Clean Architecture / Onion)?",
+                    criteria_id="c-102",
+                    criteria_name="Kỹ năng lập trình chuyên sâu & Clean Code",
+                    job_title="Senior Backend Engineer",
+                    difficulty="medium",
+                    suggested_answer="Module cấp cao không nên phụ thuộc vào module cấp thấp, cả hai nên phụ thuộc vào Abstraction/Interface. Nêu ví dụ cách tách Domain Service khỏi Database Repository cụ thể, giúp dễ viết Unit Test với Mock.",
+                    is_referenced=True,
+                    status="active",
+                    times_used=4
+                ),
+                InterviewQuestion(
+                    id="q-3",
+                    code="Q-BE-03",
+                    content="Kể lại một sự cố sập server hoặc nghẽn database (High CPU / Slow query) nghiêm trọng nhất bạn từng xử lý. Bạn đã debug và khắc phục từng bước thế nào?",
+                    criteria_id="c-103",
+                    criteria_name="Tư duy giải quyết vấn đề (Problem Solving)",
+                    job_title="Senior Backend Engineer",
+                    difficulty="hard",
+                    suggested_answer="Đánh giá theo cấu trúc STAR: (1) Bối cảnh sự cố; (2) Nhiệm vụ; (3) Hành động: kiểm tra metrics APM, phân tích slow query log, EXPLAIN query, phân tích connection pool; (4) Kết quả: phục hồi thời gian bao lâu, giải pháp phòng ngừa dài hạn (indexing, caching).",
+                    is_referenced=True,
+                    status="active",
+                    times_used=8
+                ),
+                InterviewQuestion(
+                    id="q-4",
+                    code="Q-BE-04",
+                    content="Sự khác biệt căn bản giữa Authentication và Authorization là gì? Bạn bảo vệ API chống tấn công SQL Injection và CSRF như thế nào?",
+                    criteria_id="c-105",
+                    criteria_name="Hiểu biết bảo mật & Cloud / DevOps",
+                    job_title="Senior Backend Engineer",
+                    difficulty="easy",
+                    suggested_answer="Authentication là xác thực danh tính ('Bạn là ai?'), Authorization là phân quyền ('Bạn được làm gì?'). SQL Injection phòng chống bằng Parameterized Queries/ORM; CSRF phòng chống bằng SameSite Cookie và Anti-CSRF Token.",
+                    is_referenced=False,
+                    status="active",
+                    times_used=0
+                ),
+                InterviewQuestion(
+                    id="q-5",
+                    code="Q-HR-01",
+                    content="Làm thế nào để bạn nhận biết một ứng viên đang trả lời phỏng vấn theo kịch bản chuẩn bị sẵn (học vẹt) thay vì trải nghiệm thực tế của họ?",
+                    criteria_id="c-202",
+                    criteria_name="Phỏng vấn hành vi (Behavioral Interview - STAR)",
+                    job_title="Chuyên viên Tuyển dụng (Recruiter)",
+                    difficulty="medium",
+                    suggested_answer="Áp dụng kỹ thuật đào sâu (Drill-down): Hỏi về các số liệu cụ thể, cảm xúc tại thời điểm khó khăn, nguyên nhân tại sao chọn giải pháp đó thay vì giải pháp khác, và bài học cá nhân rút ra.",
+                    is_referenced=True,
+                    status="active",
+                    times_used=3
+                ),
+                InterviewQuestion(
+                    id="q-6",
+                    code="Q-HR-02",
+                    content="Khi một ứng viên xuất sắc từ chối Offer vì nhận được mức lương cao hơn 20% từ đối thủ, bạn sẽ làm gì để thuyết phục hoặc xử lý tình huống này?",
+                    criteria_id="c-203",
+                    criteria_name="Thương lượng Offer & Chăm sóc ứng viên",
+                    job_title="Chuyên viên Tuyển dụng (Recruiter)",
+                    difficulty="hard",
+                    suggested_answer="Phân tích gói Total Rewards: cơ hội thăng tiến, văn hóa, lộ trình đào tạo, chế độ làm việc linh hoạt. Không công kích đối thủ. Nếu không thương lượng được, duy trì mối quan hệ tốt đẹp trong Talent Pool cho các cơ hội tương lai.",
+                    is_referenced=False,
+                    status="active",
+                    times_used=0
+                ),
+            ]
+            db.add_all(questions_seed)
+            db.commit()
+
+        # 6. Seed JobPostings if empty
         if db.query(JobPosting).count() == 0:
             j1 = JobPosting(id="data-analyst", title="Data Analyst", department="Khối Công nghệ", location="Hà Nội", employment_type="Toàn thời gian", openings="1–2 người", status="open", description="Phân tích dữ liệu, cung cấp báo cáo và insight phục vụ quyết định kinh doanh.", deadline="30/11/2026")
             j1.set_skills(["SQL", "Power BI", "Excel", "Phân tích dữ liệu"])
@@ -178,13 +318,16 @@ def init_db():
             db.add_all([j1, j2])
             db.commit()
 
-        # 5. Seed Requisitions if empty
+        # 7. Seed Requisitions if empty
         if db.query(Requisition).count() == 0:
             reqs_seed = [
                 Requisition(id="req-ov-1", code="REQ-2026-088", title="Senior AI / Deep Learning Researcher", department="Viện Nghiên cứu Trí tuệ Nhân tạo", level="Senior", target_count=1, recruiter_name="Trần Thị Mai", target_date="2026-10-02", open_days=35, priority="Urgent"),
                 Requisition(id="req-ov-2", code="REQ-2026-092", title="Senior Backend Engineer (Golang / Cloud)", department="Khối Công nghệ & Sản phẩm", level="Senior", target_count=2, recruiter_name="Nguyễn Hoàng Long", target_date="2026-10-05", open_days=28, priority="High"),
             ]
-        # 6. Seed AuditLogs if empty
+            db.add_all(reqs_seed)
+            db.commit()
+
+        # 8. Seed AuditLogs if empty
         from app.models.audit_log import AuditLog
         if db.query(AuditLog).count() == 0:
             initial_logs = [
@@ -199,3 +342,4 @@ def init_db():
         print(f"Lỗi khi khởi tạo database: {e}")
     finally:
         db.close()
+

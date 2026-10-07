@@ -1,110 +1,250 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from pydantic import BaseModel
+import time
 
 from app.db.session import get_db
 from app.models.master_data import Department, SalaryBand
 from app.models.audit_log import AuditLog
+from app.models.user import User
+from app.core.dependencies import get_current_user, require_roles
+from app.schemas.master_data import (
+    DepartmentCreate,
+    DepartmentUpdate,
+    DepartmentResponse,
+    SalaryBandCreate,
+    SalaryBandUpdate,
+    SalaryBandResponse
+)
 
 router = APIRouter()
 
-# 1. DEPARTMENTS HIERARCHY API
+# =========================================================================
+# 1. DEPARTMENTS HIERARCHY & CRUD API
+# =========================================================================
 @router.get("/departments")
-def get_department_tree(db: Session = Depends(get_db)):
+def get_departments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lấy danh sách tất cả phòng ban từ CSDL thực tế.
+    """
     depts = db.query(Department).all()
-    if not depts:
-        return [
-            {
-                "id": "dept-1",
-                "code": "BGD",
-                "name": "Ban Giám Đốc & Khối Điều Hành",
-                "leader": "Trần Việt Long (Tổng Giám Đốc)",
-                "approvedHeadcount": 5,
-                "currentHeadcount": 5,
-                "remainingHeadcount": 0,
-                "children": [
-                    {
-                        "id": "dept-tech",
-                        "code": "TECH",
-                        "name": "Khối Công Nghệ & Sản Phẩm",
-                        "leader": "Đỗ Văn Lâm (CTO)",
-                        "approvedHeadcount": 35,
-                        "currentHeadcount": 28,
-                        "remainingHeadcount": 7,
-                        "children": [
-                            {
-                                "id": "dept-dev",
-                                "code": "DEV",
-                                "name": "Trung Tâm Phát Triển Phần Mềm (Software Center)",
-                                "leader": "Lê Trường Nhân",
-                                "approvedHeadcount": 22,
-                                "currentHeadcount": 18,
-                                "remainingHeadcount": 4,
-                            },
-                            {
-                                "id": "dept-cloud",
-                                "code": "INFRA",
-                                "name": "Phòng Hạ Tầng & Bảo Mật Đám Mây",
-                                "leader": "Hoàng Minh Tuấn",
-                                "approvedHeadcount": 8,
-                                "currentHeadcount": 6,
-                                "remainingHeadcount": 2,
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
     return [d.to_dict() for d in depts]
 
-# 2. SALARY BANDS CATALOGUE API
-@router.get("/salary-bands")
-def get_salary_bands(db: Session = Depends(get_db)):
-    return [
-        {
-            "id": "sb-1",
-            "title": "Kỹ Sư Phần Mềm Junior (Frontend / Backend)",
-            "code": "DEV-JR",
-            "level": "Junior",
-            "department": "Trung Tâm Phát Triển Phần Mềm",
-            "minSalary": 12000000,
-            "maxSalary": 18000000,
-            "spread": "+6 Triệu",
-        },
-        {
-            "id": "sb-2",
-            "title": "Chuyên Viên Phát Triển Phần Mềm Middle",
-            "code": "DEV-MID",
-            "level": "Middle",
-            "department": "Trung Tâm Phát Triển Phần Mềm",
-            "minSalary": 20000000,
-            "maxSalary": 32000000,
-            "spread": "+12 Triệu",
-        },
-        {
-            "id": "sb-3",
-            "title": "Kỹ Sư Phần Mềm Cao Cấp (Senior Engineer)",
-            "code": "DEV-SR",
-            "level": "Senior",
-            "department": "Trung Tâm Phát Triển Phần Mềm",
-            "minSalary": 35000000,
-            "maxSalary": 52000000,
-            "spread": "+17 Triệu",
-        },
-        {
-            "id": "sb-4",
-            "title": "Trưởng Nhóm Kỹ Thuật (Tech Lead / Architect)",
-            "code": "TECH-LEAD",
-            "level": "Lead",
-            "department": "Khối Công Nghệ & Sản Phẩm",
-            "minSalary": 48000000,
-            "maxSalary": 68000000,
-            "spread": "+20 Triệu",
-        }
-    ]
+@router.post("/departments", status_code=status.HTTP_201_CREATED)
+def create_department(
+    dept_in: DepartmentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager"))
+):
+    """
+    Thêm mới phòng ban / đơn vị con vào CSDL.
+    """
+    code_upper = dept_in.code.upper().strip()
+    existing = db.query(Department).filter(Department.code == code_upper).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Mã phòng ban '{code_upper}' đã tồn tại trong hệ thống (Đơn vị: {existing.name}). Vui lòng nhập mã khác."
+        )
 
+    dept_id = f"dept-{int(time.time() * 1000)}"
+    dept = Department(
+        id=dept_id,
+        code=code_upper,
+        name=dept_in.name.strip(),
+        manager_name=dept_in.managerName.strip() if dept_in.managerName else "Chưa bổ nhiệm",
+        manager_title=dept_in.managerTitle.strip() if dept_in.managerTitle else "Trưởng Đơn Vị",
+        headcount_current=dept_in.headcountCurrent or 0,
+        headcount_budget=dept_in.headcountBudget or 5,
+        active_jobs=dept_in.active_jobs or 0,
+        status=dept_in.status or "active",
+        parent_id=dept_in.parentId
+    )
+    db.add(dept)
+    db.commit()
+    db.refresh(dept)
+    return dept.to_dict()
+
+@router.put("/departments/{dept_id}")
+def update_department(
+    dept_id: str,
+    dept_in: DepartmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager"))
+):
+    """
+    Cập nhật thông tin / trạng thái phòng ban trong CSDL.
+    """
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban.")
+    
+    data = dept_in.model_dump(exclude_unset=True)
+    if "code" in data and data["code"]:
+        new_code = data["code"].upper().strip()
+        if new_code != dept.code:
+            existing = db.query(Department).filter(Department.code == new_code).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Mã phòng ban '{new_code}' đã tồn tại trong hệ thống."
+                )
+            dept.code = new_code
+
+    if "managerName" in data and data["managerName"] is not None:
+        dept.manager_name = data["managerName"]
+    if "managerTitle" in data and data["managerTitle"] is not None:
+        dept.manager_title = data["managerTitle"]
+    if "headcountCurrent" in data and data["headcountCurrent"] is not None:
+        dept.headcount_current = data["headcountCurrent"]
+    if "headcountBudget" in data and data["headcountBudget"] is not None:
+        dept.headcount_budget = data["headcountBudget"]
+    if "parentId" in data:
+        dept.parent_id = data["parentId"]
+    if "name" in data and data["name"] is not None:
+        dept.name = data["name"]
+    if "status" in data and data["status"] is not None:
+        dept.status = data["status"]
+
+    db.commit()
+    db.refresh(dept)
+    return dept.to_dict()
+
+@router.delete("/departments/{dept_id}")
+def delete_department(
+    dept_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager"))
+):
+    """
+    Xóa phòng ban khỏi CSDL.
+    """
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban.")
+    
+    if dept.active_jobs > 0:
+        raise HTTPException(status_code=400, detail="Không thể xóa phòng ban đang có vị trí tuyển dụng mở.")
+
+    db.delete(dept)
+    db.commit()
+    return {"message": "Xóa phòng ban thành công", "id": dept_id}
+
+
+# =========================================================================
+# 2. SALARY BANDS CATALOGUE & CRUD API
+# =========================================================================
+@router.get("/salary-bands")
+def get_salary_bands(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lấy danh sách tất cả chức danh & dải lương từ CSDL thực tế.
+    """
+    bands = db.query(SalaryBand).all()
+    return [b.to_dict() for b in bands]
+
+@router.post("/salary-bands", status_code=status.HTTP_201_CREATED)
+def create_salary_band(
+    band_in: SalaryBandCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager"))
+):
+    """
+    Thêm mới chức danh & khung dải lương vào CSDL thực tế.
+    """
+    code_upper = band_in.code.upper().strip()
+    existing = db.query(SalaryBand).filter(SalaryBand.code == code_upper).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Mã chức danh '{code_upper}' đã tồn tại trong hệ thống (Chức danh: {existing.title}). Vui lòng nhập mã khác."
+        )
+
+    band_id = f"band-{int(time.time() * 1000)}"
+    band = SalaryBand(
+        id=band_id,
+        code=code_upper,
+        title=band_in.title.strip(),
+        level=band_in.level,
+        min_salary=band_in.minSalary,
+        max_salary=band_in.maxSalary,
+        department=band_in.department.strip(),
+        status=band_in.status or "active"
+    )
+    db.add(band)
+    db.commit()
+    db.refresh(band)
+    return band.to_dict()
+
+@router.put("/salary-bands/{band_id}")
+def update_salary_band(
+    band_id: str,
+    band_in: SalaryBandUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager"))
+):
+    """
+    Chỉnh sửa dải lương chức danh trong CSDL thực tế.
+    """
+    band = db.query(SalaryBand).filter(SalaryBand.id == band_id).first()
+    if not band:
+        raise HTTPException(status_code=404, detail="Không tìm thấy chức danh dải lương.")
+
+    data = band_in.model_dump(exclude_unset=True)
+    if "code" in data and data["code"]:
+        new_code = data["code"].upper().strip()
+        if new_code != band.code:
+            existing = db.query(SalaryBand).filter(SalaryBand.code == new_code).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Mã chức danh '{new_code}' đã tồn tại trong hệ thống."
+                )
+            band.code = new_code
+
+    if "title" in data and data["title"] is not None:
+        band.title = data["title"]
+    if "level" in data and data["level"] is not None:
+        band.level = data["level"]
+    if "minSalary" in data and data["minSalary"] is not None:
+        band.min_salary = data["minSalary"]
+    if "maxSalary" in data and data["maxSalary"] is not None:
+        band.max_salary = data["maxSalary"]
+    if "department" in data and data["department"] is not None:
+        band.department = data["department"]
+    if "status" in data and data["status"] is not None:
+        band.status = data["status"]
+
+    db.commit()
+    db.refresh(band)
+    return band.to_dict()
+
+@router.delete("/salary-bands/{band_id}")
+def delete_salary_band(
+    band_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager"))
+):
+    """
+    Xóa chức danh & dải lương khỏi CSDL.
+    """
+    band = db.query(SalaryBand).filter(SalaryBand.id == band_id).first()
+    if not band:
+        raise HTTPException(status_code=404, detail="Không tìm thấy chức danh dải lương.")
+
+    db.delete(band)
+    db.commit()
+    return {"message": "Xóa chức danh dải lương thành công", "id": band_id}
+
+
+# =========================================================================
 # 3. COMPETENCY FRAMEWORK API
+# =========================================================================
 @router.get("/competencies")
 def get_competency_framework(db: Session = Depends(get_db)):
     return {

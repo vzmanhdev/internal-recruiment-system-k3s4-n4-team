@@ -5,6 +5,8 @@ from pydantic import BaseModel
 
 from app.db.session import get_db
 from app.models.candidate import Candidate, Application
+from app.models.user import User
+from app.core.dependencies import get_current_user, require_roles
 
 router = APIRouter()
 
@@ -26,12 +28,19 @@ class ApplicationCreate(BaseModel):
     notes: Optional[str] = None
 
 @router.get("", response_model=List[dict])
-def get_candidates(db: Session = Depends(get_db)):
+def get_candidates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager", "recruiter", "department_manager", "approver"))
+):
     candidates = db.query(Candidate).all()
     return [c.to_dict() for c in candidates]
 
 @router.post("", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_candidate(cand_in: CandidateCreate, db: Session = Depends(get_db)):
+def create_candidate(
+    cand_in: CandidateCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     existing = db.query(Candidate).filter(Candidate.email == cand_in.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email ứng viên đã tồn tại")
@@ -53,12 +62,19 @@ def create_candidate(cand_in: CandidateCreate, db: Session = Depends(get_db)):
     return new_cand.to_dict()
 
 @router.get("/applications", response_model=List[dict])
-def get_applications(db: Session = Depends(get_db)):
+def get_applications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager", "recruiter", "department_manager", "approver"))
+):
     apps = db.query(Application).all()
     return [a.to_dict() for a in apps]
 
 @router.post("/applications", response_model=dict, status_code=status.HTTP_201_CREATED)
-def create_application(app_in: ApplicationCreate, db: Session = Depends(get_db)):
+def create_application(
+    app_in: ApplicationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     app_id = f"app-{int(db.query(Application).count()) + 1}"
     new_app = Application(
         id=app_id,
@@ -74,10 +90,16 @@ def create_application(app_in: ApplicationCreate, db: Session = Depends(get_db))
     return new_app.to_dict()
 
 @router.patch("/applications/{app_id}/stage")
-def update_application_stage(app_id: str, stage: str, db: Session = Depends(get_db)):
+def update_application_stage(
+    app_id: str,
+    stage: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "hr_manager", "recruiter", "department_manager"))
+):
     app_obj = db.query(Application).filter(Application.id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
     app_obj.stage = stage
     db.commit()
     return app_obj.to_dict()
+
