@@ -11,7 +11,7 @@ export default function RequisitionsPage() {
     <div className="min-h-screen bg-[#fafbfc] text-slate-800 flex flex-col font-sans selection:bg-blue-100 selection:text-blue-700">
       {/* 1. HEADER CHUẨN HR MANAGER */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div className="max-w-[1760px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/hr-manager" className="flex items-center gap-3 group">
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#4285F4] to-blue-600 flex items-center justify-center text-white font-extrabold text-xl shadow-lg shadow-blue-500/25 group-hover:scale-105 transition-transform">
@@ -46,7 +46,7 @@ export default function RequisitionsPage() {
       </header>
 
       {/* 2. BODY CONTENT: SIDEBAR + MAIN WORKSPACE */}
-      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex items-start gap-6">
+      <div className="flex-1 max-w-[1760px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex items-start gap-6">
         <Sidebar activeTab="requisitions" />
         <main className="flex-1 space-y-6 min-w-0">
           <RequisitionManagementView />

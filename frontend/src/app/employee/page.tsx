@@ -587,7 +587,8 @@ export default function EmployeePortalDashboard() {
       {/* ========================================================================= */}
       {/* 1. TOP HEADER (ĐỒNG BỘ 100% VỚI BỐ CỤC TRANG ADMIN) */}
       {/* ========================================================================= */}
-      <header className="flex items-center justify-between bg-white px-6 py-4 border-b border-gray-100 sticky top-0 z-50">
+      <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
+        <div className="max-w-[1760px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
         {/* Góc trên bên trái: Logo & Vai trò (flex items-center gap-3) */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#4285F4] to-[#6ba5ff] flex items-center justify-center text-white shadow-md shadow-blue-500/20 shrink-0">
@@ -786,12 +787,13 @@ export default function EmployeePortalDashboard() {
             <span className="hidden sm:inline">Đăng xuất</span>
           </button>
         </div>
+        </div>
       </header>
 
       {/* ========================================================================= */}
       {/* 2. BODY LAYOUT: SIDEBAR DỌC BÊN TRÁI + NỘI DUNG CHÍNH BÊN PHẢI */}
       {/* ========================================================================= */}
-      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
+      <div className="flex-1 max-w-[1760px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
         {/* SIDEBAR MENU DỌC (BÊN TRÁI) */}
         <aside className="w-full lg:w-72 shrink-0">
           <div className="bg-white rounded-[24px] border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-4 lg:sticky lg:top-28">

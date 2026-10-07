@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { AvatarCropModal } from "@/components/AvatarCropModal";
 import { CroppedAvatarResult } from "@/lib/cropImage";
+import { authService } from "@/features/auth/services/auth.service";
 
 export interface UserProfileData {
   employeeCode?: string;
@@ -154,21 +155,28 @@ export function UserProfileModal({
   };
 
   // Áp dụng ảnh sau khi cắt và tạo thumbnail
-  const handleCropSave = (result: CroppedAvatarResult) => {
-    setProfile((prev) => {
-      const updated = {
-        ...prev,
-        avatarUrl: result.avatarUrl,
-        thumbnailUrl: result.thumbnailUrl,
-      };
-      if (onAvatarChange) {
-        onAvatarChange(result);
-      }
-      if (onSaveProfile) {
-        onSaveProfile(updated);
-      }
-      return updated;
-    });
+  const handleCropSave = async (result: CroppedAvatarResult) => {
+    const updated = {
+      ...profile,
+      avatarUrl: result.avatarUrl,
+      thumbnailUrl: result.thumbnailUrl,
+    };
+    setProfile(updated);
+
+    try {
+      await authService.updateProfile({
+        avatar_base64: result.avatarUrl,
+      });
+    } catch (err) {
+      console.error("Lỗi khi lưu avatar vào database:", err);
+    }
+
+    if (onAvatarChange) {
+      onAvatarChange(result);
+    }
+    if (onSaveProfile) {
+      onSaveProfile(updated);
+    }
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -181,8 +189,18 @@ export function UserProfileModal({
   };
 
   // Submit Profile Form
-  const handleProfileSubmit = (e: React.FormEvent) => {
+  const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      await authService.updateProfile({
+        full_name: profile.name,
+        phone: profile.phone,
+        bio: profile.bio,
+      });
+    } catch (err) {
+      console.error("Lỗi khi lưu profile vào database:", err);
+    }
+
     if (onSaveProfile) {
       onSaveProfile(profile);
     }
@@ -237,6 +255,23 @@ export function UserProfileModal({
           currentPass: currentPassword,
           newPass: newPassword,
         });
+      } else {
+        const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+        const res = await fetch("http://localhost:8000/api/v1/auth/change-password", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            current_password: currentPassword,
+            new_password: newPassword,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "Không thể đổi mật khẩu.");
+        }
       }
       setPasswordMessage({
         type: "success",

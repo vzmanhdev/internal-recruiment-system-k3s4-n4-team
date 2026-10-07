@@ -18,7 +18,6 @@ import { ApiError } from "@/lib/api-client";
 export function RegisterForm() {
   const router = useRouter();
   const [formData, setFormData] = useState({
-    employeeCode: "",
     fullName: "",
     companyEmail: "",
     phone: "",
@@ -148,15 +147,8 @@ export function RegisterForm() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Row 1: Employee Code & Full Name */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input
-            label="Mã nhân viên"
-            placeholder="VD: NV001"
-            value={formData.employeeCode}
-            onChange={(e) => handleChange("employeeCode", e.target.value)}
-            leftIcon={<IdCard className="w-4 h-4 text-slate-400" />}
-          />
+        {/* Row 1: Full Name */}
+        <div>
           <Input
             label="Họ và tên *"
             placeholder="Nhập họ và tên"

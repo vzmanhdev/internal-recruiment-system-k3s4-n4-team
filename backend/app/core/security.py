@@ -34,3 +34,43 @@ def decode_access_token(token: str) -> Optional[str]:
         return payload.get("sub")
     except JWTError:
         return None
+
+def generate_secure_otp() -> str:
+    """Tạo mã OTP 6 chữ số bằng cryptographically secure random generator (secrets)."""
+    import secrets
+    return f"{secrets.randbelow(1000000):06d}"
+
+def hash_otp(otp_code: str) -> str:
+    """Tạo HMAC/SHA256 hash an toàn cho OTP kết hợp server SECRET_KEY (không lưu plaintext)."""
+    import hmac
+    import hashlib
+    key = settings.SECRET_KEY.encode('utf-8')
+    msg = otp_code.strip().encode('utf-8')
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()
+
+def verify_otp_hash(otp_code: str, otp_hash: str) -> bool:
+    """Xác thực mã OTP nhập vào với hash lưu trong CSDL."""
+    import hmac
+    expected_hash = hash_otp(otp_code)
+    return hmac.compare_digest(expected_hash, otp_hash)
+
+def create_password_reset_token(user_id: int, expire_minutes: int = 10) -> str:
+    """Tạo short-lived JWT authorization token cho bước đặt lại mật khẩu mới."""
+    expire = datetime.utcnow() + timedelta(minutes=expire_minutes)
+    to_encode = {
+        "exp": expire,
+        "sub": str(user_id),
+        "type": "password_reset"
+    }
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+def decode_password_reset_token(token: str) -> Optional[int]:
+    """Giải mã và xác thực token đặt lại mật khẩu."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("type") != "password_reset":
+            return None
+        sub = payload.get("sub")
+        return int(sub) if sub else None
+    except Exception:
+        return None

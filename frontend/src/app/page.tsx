@@ -24,7 +24,7 @@ export default function LandingPage() {
         <HeroSection />
 
         {/* 3. Thanh công cụ tìm kiếm (Search Bar) nằm ngay dưới khu vực Hero Banner */}
-        <Container id="search-bar" className="relative -mt-10 lg:-mt-14 z-20 mb-16 max-w-[1440px]">
+        <Container id="search-bar" className="relative -mt-10 lg:-mt-14 z-20 mb-16 max-w-[1760px]">
           <SearchFilterBar />
         </Container>
 

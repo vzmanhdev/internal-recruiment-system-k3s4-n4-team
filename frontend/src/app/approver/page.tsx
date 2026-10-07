@@ -1353,7 +1353,7 @@ export default function ApproverDashboardPage() {
 
       {/* 1. TOP HEADER */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div className="max-w-[1760px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           {/* Left: Branding & Role Title */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3.5">
@@ -1560,7 +1560,7 @@ export default function ApproverDashboardPage() {
       </header>
 
       {/* 2. BODY LAYOUT: SIDEBAR + MAIN CONTENT */}
-      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
+      <div className="flex-1 max-w-[1760px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
         {/* LEFT SIDEBAR */}
         <aside className="w-full lg:w-72 shrink-0">
           <div className="bg-white rounded-3xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-4 lg:sticky lg:top-28 space-y-4">

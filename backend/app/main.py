@@ -6,8 +6,22 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.session import engine, Base
 from app.db.init_db import init_db
-from app.models.user import User  # Register model
+from app.models.user import User
+from app.models.master_data import Department, SalaryBand
+from app.models.requisition import Requisition
+from app.models.job import JobPosting
+from app.models.candidate import Candidate, Application
+from app.models.interview import InterviewSchedule, EvaluationScorecard
+from app.models.offer import Offer, OnboardingTask
+
 from app.api.v1.auth import router as auth_router
+from app.api.v1.master_data import router as master_data_router
+from app.api.v1.requisitions import router as requisitions_router
+from app.api.v1.jobs import router as jobs_router
+from app.api.v1.analytics import router as analytics_router
+from app.api.v1.candidates import router as candidates_router
+from app.api.v1.interviews import router as interviews_router
+from app.api.v1.offers import router as offers_router
 
 # Create database tables automatically and seed initial data
 Base.metadata.create_all(bind=engine)
@@ -64,4 +78,18 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 def health_check() -> Dict[str, str]:
     return {"status": "ok", "message": "Backend connected & database ready"}
 
+from app.api.v1.execution import router as execution_router
+from app.api.v1.settings import router as settings_router
+
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(master_data_router, prefix="/api/v1/master-data", tags=["Master Data"])
+app.include_router(requisitions_router, prefix="/api/v1/requisitions", tags=["Requisitions"])
+app.include_router(jobs_router, prefix="/api/v1/jobs", tags=["Jobs"])
+app.include_router(analytics_router, prefix="/api/v1/analytics", tags=["Analytics"])
+app.include_router(candidates_router, prefix="/api/v1/candidates", tags=["Candidates & Applications"])
+app.include_router(interviews_router, prefix="/api/v1/interviews", tags=["Interviews & Scorecards"])
+app.include_router(offers_router, prefix="/api/v1/offers", tags=["Offers & Onboarding"])
+app.include_router(execution_router, prefix="/api/v1/execution", tags=["Execution & Evaluations"])
+app.include_router(settings_router, prefix="/api/v1/settings", tags=["Settings & Templates"])
+
+

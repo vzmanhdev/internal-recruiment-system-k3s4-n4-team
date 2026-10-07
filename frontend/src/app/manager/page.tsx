@@ -1053,6 +1053,59 @@ export default function HiringManagerDashboardPage() {
   const [selectedRawAvatar, setSelectedRawAvatar] = useState<string | null>(null);
   const [isAvatarCropOpen, setIsAvatarCropOpen] = useState(false);
 
+  // Load real data from backend APIs
+  useEffect(() => {
+    const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+    if (!token) return;
+
+    // Fetch user profile
+    fetch("http://localhost:8000/api/v1/auth/me", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.full_name) {
+          setManagerProfile((prev) => ({
+            ...prev,
+            name: data.full_name,
+            email: data.email || prev.email,
+            phone: data.phone || prev.phone,
+            bio: data.bio || prev.bio,
+            department: data.department_name || prev.department,
+          }));
+        }
+      })
+      .catch((err) => console.error("Error loading user me:", err));
+
+    // Fetch Requisitions
+    fetch("http://localhost:8000/api/v1/requisitions", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped: JobRequisition[] = data.map((r: any) => ({
+            id: r.code || r.id,
+            title: r.title,
+            department: r.department,
+            level: r.level || "Senior",
+            targetCount: r.target_count || 1,
+            receivedCount: r.received_count || 0,
+            interviewingCount: r.interviewing_count || 0,
+            hiredCount: r.hired_count || 0,
+            status: r.status === "Approved" || r.status === "Active" ? "Active" : r.status === "Pending" ? "Pending" : r.status === "Draft" ? "Draft" : "Closed",
+            salaryRange: r.salary_range || "Thỏa thuận",
+            createdAt: r.created_at || "2026-10-01",
+            deadline: r.target_date || "2026-12-31",
+            description: r.description,
+            requirements: r.requirements,
+          }));
+          setRequisitions(mapped);
+        }
+      })
+      .catch((err) => console.error("Error loading requisitions:", err));
+  }, []);
+
   // Modals State
   const [isCreateReqOpen, setIsCreateReqOpen] = useState(false);
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
@@ -2140,7 +2193,7 @@ III. QUYỀN LỢI ĐÃI NGỘ:
       {/* TOP HEADER */}
       {/* ========================================================================= */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div className="max-w-[1760px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           {/* Left: Branding & Role Badge */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
@@ -2324,7 +2377,7 @@ III. QUYỀN LỢI ĐÃI NGỘ:
       {/* ========================================================================= */}
       {/* 2. BODY LAYOUT: SIDEBAR + MAIN CONTENT (FLEXBOX) */}
       {/* ========================================================================= */}
-      <div className="flex gap-4 w-full max-w-full px-4 sm:px-6 py-8 flex-1">
+      <div className="flex gap-6 w-full max-w-[1760px] mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1">
         {/* LEFT SIDEBAR (Thanh menu dọc bên trái) */}
         <aside className="w-[260px] shrink-0 bg-white rounded-3xl border border-gray-100 p-4 shadow-[0_8px_30px_rgb(0,0,0,0.03)] h-fit sticky top-24">
           <h3 className="text-xs font-bold text-gray-400 tracking-wider mb-4 uppercase">
@@ -5298,8 +5351,20 @@ III. QUYỀN LỢI ĐÃI NGỘ:
           showToast("Đã lưu thông tin hồ sơ thành công!");
         }}
         onChangePassword={async ({ currentPass, newPass }) => {
-          await new Promise((resolve) => setTimeout(resolve, 600));
-          showToast("Đổi mật khẩu thành công! Mật khẩu mới đã được lưu.");
+          const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+          const res = await fetch("http://localhost:8000/api/v1/auth/change-password", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ current_password: currentPass, new_password: newPass }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.detail || "Có lỗi xảy ra khi đổi mật khẩu.");
+          }
+          showToast("Đổi mật khẩu thành công!");
         }}
       />
 

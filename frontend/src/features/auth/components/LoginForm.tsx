@@ -67,218 +67,41 @@ export function LoginForm() {
       saveAuthSession({ displayName: res.user?.full_name || "Admin System" });
       setLoginSuccessFlag();
 
-      const isAdmin =
-        res.user?.role === "admin" ||
-        cleanEmail.toLowerCase() === "admin@company.com" ||
-        cleanEmail.toLowerCase() === "admin@gmail.com";
-
-      const isHrManager =
-        res.user?.role === "hr_manager" ||
-        cleanEmail.toLowerCase() === "truongphong@company.com";
-
-      const isManager =
-        res.user?.role === "department_manager" ||
-        res.user?.role === "hiring_manager" ||
-        cleanEmail.toLowerCase() === "truongbophan@company.com";
-
-      const isApprover =
-        res.user?.role === "approver" ||
-        cleanEmail.toLowerCase() === "nguoiduyet@company.com";
-
-      const isEmployee =
-        res.user?.role === "employee" ||
-        cleanEmail.toLowerCase() === "nhanvien@company.com";
-
-      const isRecruiter =
-        res.user?.role === "recruiter" ||
-        cleanEmail.toLowerCase() === "tuyendung@company.com";
-
-      setSuccessMsg(
-        isAdmin
-          ? "Đăng nhập thành công với quyền Quản trị hệ thống! Đang chuyển hướng..."
-          : isHrManager
-          ? "Đăng nhập thành công với quyền Trưởng phòng Nhân sự! Đang chuyển hướng..."
-          : isApprover
-          ? "Đăng nhập thành công với quyền Người phê duyệt! Đang chuyển hướng..."
-          : isManager
-          ? "Đăng nhập thành công với quyền Trưởng bộ phận! Đang chuyển hướng..."
-          : isRecruiter
-          ? "Đăng nhập thành công với quyền Nhân viên tuyển dụng! Đang chuyển hướng..."
-          : isEmployee
-          ? "Đăng nhập thành công (Nhân sự nội bộ)! Đang chuyển hướng..."
-          : "Đăng nhập thành công! Đang chuyển hướng..."
+      const userRole = res.user?.role || "employee";
+      const redirectTarget = (res.user as any)?.redirect_route || (
+        userRole === "admin" ? "/admin" :
+        userRole === "hr_manager" ? "/hr-manager" :
+        userRole === "approver" ? "/approver" :
+        userRole === "department_manager" || userRole === "hiring_manager" ? "/manager" :
+        userRole === "recruiter" ? "/recruiter" :
+        userRole === "employee" ? "/employee" : "/"
       );
 
+      const roleLabels: Record<string, string> = {
+        admin: "Quản trị hệ thống",
+        hr_manager: "Trưởng phòng Nhân sự",
+        approver: "Người phê duyệt",
+        department_manager: "Trưởng bộ phận",
+        hiring_manager: "Trưởng bộ phận",
+        recruiter: "Nhân viên tuyển dụng",
+        employee: "Nhân sự nội bộ",
+        candidate: "Ứng viên"
+      };
+
+      const roleLabel = roleLabels[userRole] || "Người dùng";
+      setSuccessMsg(`Đăng nhập thành công với quyền ${roleLabel}! Đang chuyển hướng...`);
+
       setTimeout(() => {
-        if (isAdmin) {
-          router.push("/admin");
-        } else if (isHrManager) {
-          router.push("/hr-manager");
-        } else if (isApprover) {
-          router.push("/approver");
-        } else if (isManager) {
-          router.push("/manager");
-        } else if (isRecruiter) {
-          router.push("/recruiter");
-        } else if (isEmployee) {
-          router.push("/employee");
-        } else {
-          router.push("/");
-        }
+        router.push(redirectTarget);
       }, 1000);
     } catch (err: any) {
-      // Phương án dự phòng nếu máy chủ Backend gặp sự cố mạng:
-      // 1. Tự động cấp quyền truy cập hợp lệ cho tài khoản admin@company.com / company123
-      const isTestAdminEmail =
-        cleanEmail.toLowerCase() === "admin@company.com" ||
-        cleanEmail.toLowerCase() === "admin@gmail.com";
-      if (isTestAdminEmail && password === "company123") {
-        const mockAdminUser = {
-          id: 1,
-          email: cleanEmail.toLowerCase(),
-          full_name: "Admin System",
-          role: "admin",
-          is_active: true,
-        };
-        localStorage.setItem("access_token", "admin-system-session-token");
-        localStorage.setItem("user_info", JSON.stringify(mockAdminUser));
-        saveAuthSession({ displayName: "Admin System" });
-        setLoginSuccessFlag();
-
-        setSuccessMsg("Đăng nhập thành công (Admin System)! Đang chuyển hướng đến trang Quản trị...");
-        setTimeout(() => {
-          router.push("/admin");
-        }, 1000);
-        return;
-      }
-
-      // 2. Tự động cấp quyền truy cập hợp lệ cho Trưởng bộ phận: truongbophan@company.com / company123
-      if (
-        cleanEmail.toLowerCase() === "truongbophan@company.com" &&
-        (password === "company123" || password === "truongbophan123")
-      ) {
-        const mockManagerUser = {
-          id: 2,
-          email: "truongbophan@company.com",
-          full_name: "Lê Trưởng Nhóm",
-          role: "department_manager",
-          is_active: true,
-        };
-        localStorage.setItem("access_token", "manager-system-session-token");
-        localStorage.setItem("user_info", JSON.stringify(mockManagerUser));
-        saveAuthSession({ displayName: "Lê Trưởng Nhóm" });
-        setLoginSuccessFlag();
-
-        setSuccessMsg("Đăng nhập thành công (Trưởng bộ phận)! Đang chuyển hướng đến trang Quản lý tuyển dụng...");
-        setTimeout(() => {
-          router.push("/manager");
-        }, 1000);
-        return;
-      }
-
-      // 3. Tự động cấp quyền truy cập hợp lệ cho Người phê duyệt: nguoiduyet@company.com / company123
-      if (
-        cleanEmail.toLowerCase() === "nguoiduyet@company.com" &&
-        (password === "company123" || password === "nguoiduyet123")
-      ) {
-        const mockApproverUser = {
-          id: 3,
-          email: "nguoiduyet@company.com",
-          full_name: "Trần Đức Nam",
-          role: "approver",
-          is_active: true,
-        };
-        localStorage.setItem("access_token", "approver-system-session-token");
-        localStorage.setItem("user_info", JSON.stringify(mockApproverUser));
-        saveAuthSession({ displayName: "Trần Đức Nam" });
-        setLoginSuccessFlag();
-
-        setSuccessMsg("Đăng nhập thành công (Người phê duyệt)! Đang chuyển hướng đến trang Phê duyệt...");
-        setTimeout(() => {
-          router.push("/approver");
-        }, 1000);
-        return;
-      }
-
-      // 4. Tự động cấp quyền truy cập hợp lệ cho Nhân sự nội bộ: nhanvien@company.com / company123
-      if (
-        cleanEmail.toLowerCase() === "nhanvien@company.com" &&
-        (password === "company123" || password === "nhanvien123")
-      ) {
-        const mockEmployeeUser = {
-          id: 4,
-          email: "nhanvien@company.com",
-          full_name: "Nguyễn Văn An",
-          role: "employee",
-          is_active: true,
-        };
-        localStorage.setItem("access_token", "employee-system-session-token");
-        localStorage.setItem("user_info", JSON.stringify(mockEmployeeUser));
-        saveAuthSession({ displayName: "Nguyễn Văn An" });
-        setLoginSuccessFlag();
-
-        setSuccessMsg("Đăng nhập thành công (Nhân sự nội bộ)! Đang chuyển hướng đến cổng thông tin...");
-        setTimeout(() => {
-          router.push("/employee");
-        }, 1000);
-        return;
-      }
-
-      // 5. Tự động cấp quyền truy cập hợp lệ cho Trưởng phòng Nhân sự: truongphong@company.com / company123
-      if (
-        cleanEmail.toLowerCase() === "truongphong@company.com" &&
-        (password === "company123" || password === "truongphong123")
-      ) {
-        const mockHrUser = {
-          id: 5,
-          email: "truongphong@company.com",
-          full_name: "Trưởng Phòng Nhân Sự",
-          role: "hr_manager",
-          is_active: true,
-        };
-        localStorage.setItem("access_token", "hr-manager-system-session-token");
-        localStorage.setItem("user_info", JSON.stringify(mockHrUser));
-        saveAuthSession({ displayName: "Trưởng Phòng Nhân Sự" });
-        setLoginSuccessFlag();
-
-        setSuccessMsg("Đăng nhập thành công (Trưởng phòng Nhân sự)! Đang chuyển hướng đến trang Quản lý...");
-        setTimeout(() => {
-          router.push("/hr-manager");
-        }, 1000);
-        return;
-      }
-
-      // 6. Tự động cấp quyền truy cập hợp lệ cho Nhân viên tuyển dụng: tuyendung@company.com / company123
-      if (
-        cleanEmail.toLowerCase() === "tuyendung@company.com" &&
-        (password === "company123" || password === "tuyendung123")
-      ) {
-        const mockRecruiterUser = {
-          id: 6,
-          email: "tuyendung@company.com",
-          full_name: "Nguyễn Tuyển Dụng",
-          role: "recruiter",
-          is_active: true,
-        };
-        localStorage.setItem("access_token", "recruiter-system-session-token");
-        localStorage.setItem("user_info", JSON.stringify(mockRecruiterUser));
-        saveAuthSession({ displayName: "Nguyễn Tuyển Dụng" });
-        setLoginSuccessFlag();
-
-        setSuccessMsg("Đăng nhập thành công (Nhân viên tuyển dụng)! Đang chuyển hướng đến Bảng làm việc...");
-        setTimeout(() => {
-          router.push("/recruiter");
-        }, 1000);
-        return;
-      }
-
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
         if (err.fieldErrors) {
           setFieldErrors(err.fieldErrors);
         }
       } else {
-        setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại dịch vụ Backend.");
+        setErrorMsg("Không thể kết nối đến máy chủ hoặc mật khẩu không chính xác. Vui lòng thử lại.");
       }
     } finally {
       setIsLoading(false);

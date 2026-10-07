@@ -52,15 +52,68 @@ export const authService = {
   },
 
   async forgotPassword(email: string): Promise<{ message: string }> {
-    return await apiRequest<{ message: string }>("/auth/forgot-password", {
+    return await apiRequest<{ message: string }>("/auth/password-reset/request", {
       method: "POST",
       body: JSON.stringify({ email }),
     });
   },
 
+  async requestPasswordReset(email: string): Promise<{ message: string }> {
+    return await apiRequest<{ message: string }>("/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async verifyPasswordResetOtp(email: string, otp: string): Promise<{ message: string; reset_token: string }> {
+    return await apiRequest<{ message: string; reset_token: string }>("/auth/password-reset/verify", {
+      method: "POST",
+      body: JSON.stringify({ email, otp }),
+    });
+  },
+
+  async confirmPasswordReset(payload: { reset_token: string; new_password: string; confirm_password?: string }): Promise<{ message: string }> {
+    return await apiRequest<{ message: string }>("/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getCurrentUser() {
-    return await apiRequest("/auth/me", {
+    const res = await apiRequest("/auth/me", {
       method: "GET",
+    });
+    if (res && typeof window !== "undefined") {
+      localStorage.setItem("user_info", JSON.stringify(res));
+    }
+    return res;
+  },
+
+  async updateProfile(payload: {
+    full_name?: string;
+    phone?: string;
+    position_title?: string;
+    bio?: string;
+    avatar_base64?: string;
+  }) {
+    const res = await apiRequest("/auth/me", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    if (res && typeof window !== "undefined") {
+      localStorage.setItem("user_info", JSON.stringify(res));
+    }
+    return res;
+  },
+
+  async changePassword(payload: {
+    current_password: string;
+    new_password: string;
+    confirm_password?: string;
+  }) {
+    return await apiRequest("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   },
 

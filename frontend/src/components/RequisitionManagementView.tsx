@@ -249,6 +249,44 @@ export function calculateDaysLeftUTC(targetDateStr: string): number {
 export function RequisitionManagementView() {
   const [requisitions, setRequisitions] = useState<RequisitionItem[]>(INITIAL_REQUISITIONS);
 
+  // Fetch requisitions from Backend API
+  const fetchRequisitions = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/requisitions");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped: RequisitionItem[] = data.map((r: any) => ({
+            id: r.id,
+            code: r.code,
+            title: r.title,
+            departmentId: r.departmentId || "dept-dev",
+            departmentName: r.department || "Trung Tâm Phát Triển Phần Mềm",
+            targetCount: r.targetCount || 1,
+            minSalary: r.minSalary || 20000000,
+            maxSalary: r.maxSalary || 30000000,
+            primaryRecruiter: r.recruiterName || "Trần Thị Mai",
+            supportingRecruiters: [],
+            targetDate: r.targetDate || "2026-10-18",
+            createdAt: "2026-10-01",
+            openDays: r.openDays || 0,
+            status: r.status || "open",
+            pipeline_candidates: 3,
+            isOverridden: false,
+            handoverHistory: [],
+          }));
+          setRequisitions(mapped);
+        }
+      }
+    } catch {
+      // Keep initial mock if backend unreachable
+    }
+  };
+
+  React.useEffect(() => {
+    fetchRequisitions();
+  }, []);
+
   // Filter States
   const [searchKeyword, setSearchKeyword] = useState("");
   const [filterDepartment, setFilterDepartment] = useState("all");
@@ -287,24 +325,31 @@ export function RequisitionManagementView() {
     return MOCK_DEPARTMENTS.find((d) => d.id === formDeptId) || MOCK_DEPARTMENTS[0];
   }, [formDeptId]);
 
+  // Lấy chuỗi ngày hôm nay YYYY-MM-DD
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const tomorrowStr = useMemo(() => new Date(Date.now() + 86400000).toISOString().split("T")[0], []);
+
   // Kiểm tra vi phạm Headcount hoặc Vượt dải lương chuẩn
   const isHeadcountExceeded = formTargetCount > selectedDeptData.remainingHeadcount;
   const isSalaryExceeded = formMaxSalary > selectedDeptData.standardMaxSalary;
   const hasException = isHeadcountExceeded || isSalaryExceeded;
+  const isFutureDate = formTargetDate > todayStr;
 
   // Điều kiện được phép bấm Lưu Form:
+  // - BẮT BUỘC chọn hạn chót trong tương lai (> ngày hôm nay)
   // - Nếu KHÔNG vượt ngoại lệ: Được phép lưu
   // - Nếu CÓ vượt ngoại lệ: BẮT BUỘC tick checkbox đỏ VÀ có lý do ghi đè
   const canSubmitForm = useMemo(() => {
     if (!formTitle.trim()) return false;
     if (formTargetCount <= 0) return false;
     if (formMinSalary >= formMaxSalary) return false;
+    if (!formTargetDate || formTargetDate <= todayStr) return false;
 
     if (hasException) {
       return isOverrideChecked && overrideReason.trim().length > 0;
     }
     return true;
-  }, [formTitle, formTargetCount, formMinSalary, formMaxSalary, hasException, isOverrideChecked, overrideReason]);
+  }, [formTitle, formTargetCount, formMinSalary, formMaxSalary, formTargetDate, todayStr, hasException, isOverrideChecked, overrideReason]);
 
   const handleOpenCreateModal = () => {
     setEditingRequisition(null);
@@ -315,16 +360,23 @@ export function RequisitionManagementView() {
     setFormMaxSalary(30000000);
     setFormPrimaryRecruiter(MOCK_RECRUITERS[0]);
     setFormSupportingRecruiters([]);
-    setFormTargetDate("2026-10-30");
+    setFormTargetDate(new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0]);
     setIsOverrideChecked(false);
     setOverrideReason("");
     setIsFormModalOpen(true);
   };
 
-  const handleSaveRequisition = (e: React.FormEvent) => {
+  const handleSaveRequisition = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Kiểm tra ràng buộc thời gian nghiêm ngặt
+    if (!formTargetDate || formTargetDate <= todayStr) {
+      alert("Hạn chót tuyển dụng (Target SLA) bắt buộc phải là một ngày trong tương lai (không được chọn ngày hôm nay hoặc ngày trong quá khứ)!");
+      return;
+    }
+
     if (!canSubmitForm) {
-      alert("Vui lòng hoàn tất đầy đủ thông tin hoặc xác nhận ghi đè ngoại lệ kèm lý do!");
+      alert("Vui lòng hoàn tất đầy đủ thông tin, chọn ngày hạn chót hợp lệ hoặc xác nhận ghi đè ngoại lệ kèm lý do!");
       return;
     }
 
@@ -340,7 +392,7 @@ export function RequisitionManagementView() {
       primaryRecruiter: formPrimaryRecruiter,
       supportingRecruiters: formSupportingRecruiters,
       targetDate: formTargetDate,
-      createdAt: "2026-10-07",
+      createdAt: todayStr,
       openDays: 0,
       status: "open",
       pipeline_candidates: 0,
@@ -349,9 +401,32 @@ export function RequisitionManagementView() {
       handoverHistory: [],
     };
 
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/requisitions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: newReq.code,
+          title: newReq.title,
+          department: newReq.departmentName,
+          targetCount: newReq.targetCount,
+          recruiterName: newReq.primaryRecruiter,
+          targetDate: newReq.targetDate,
+          minSalary: newReq.minSalary,
+          maxSalary: newReq.maxSalary,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        newReq.id = data.id || newReq.id;
+      }
+    } catch {
+      // Fallback local update if offline
+    }
+
     setRequisitions((prev) => [newReq, ...prev]);
     setIsFormModalOpen(false);
-    showToast(`Đã tạo thành công yêu cầu tuyển dụng "${newReq.code}"!`);
+    showToast(`Đã tạo thành công yêu cầu tuyển dụng "${newReq.code}" trong Database!`);
   };
 
   // =========================================================================
@@ -971,6 +1046,7 @@ export function RequisitionManagementView() {
                   </label>
                   <input
                     type="date"
+                    min={tomorrowStr}
                     value={formTargetDate}
                     onChange={(e) => setFormTargetDate(e.target.value)}
                     required

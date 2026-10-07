@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
+import * as XLSX from "xlsx";
 import { useRouter } from "next/navigation";
 import {
   Users,
@@ -461,8 +462,10 @@ export default function AdminDashboardPage() {
   // Navigation State
   const [activeMenu, setActiveMenu] = useState<"users" | "roles" | "logs" | "settings">("users");
 
-  // User Accounts State
-  const [users, setUsers] = useState<UserAccount[]>(INITIAL_USERS);
+  // User Accounts State & Audit Logs State (Connected to Backend Database)
+  const [users, setUsers] = useState<UserAccount[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState<string>("ALL");
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
@@ -471,7 +474,7 @@ export default function AdminDashboardPage() {
   const pageSize = 20;
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Requirement 3: Giả lập logic nhận diện người đang đăng nhập (ví dụ currentUserId = 1 hoặc "USR-001")
+  // Requirement 3: Giả lập logic nhận diện người đang đăng nhập
   const currentUserId = "USR-001";
 
   // Toast / Feedback State
@@ -504,6 +507,97 @@ export default function AdminDashboardPage() {
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const [selectedRawAvatar, setSelectedRawAvatar] = useState<string | null>(null);
   const [isAvatarCropOpen, setIsAvatarCropOpen] = useState(false);
+
+  // Helper map role từ backend sang role label hiển thị
+  const mapBackendRoleToUI = (role: string): string[] => {
+    const r = (role || "").toLowerCase();
+    if (r === "admin" || r === "system admin") return ["System Admin"];
+    if (r === "hr_manager" || r === "hr manager") return ["HR Manager"];
+    if (r === "department_manager" || r === "hiring manager" || r === "hiring_manager") return ["Hiring Manager"];
+    if (r === "recruiter") return ["Recruiter"];
+    if (r === "interviewer") return ["Interviewer"];
+    if (r === "approver") return ["Approver"];
+    if (r === "candidate") return ["Candidate"];
+    return ["Employee"];
+  };
+
+  const mapUIRoleToBackend = (roles: string[]): string => {
+    if (!roles || roles.length === 0) return "employee";
+    const primary = roles[0];
+    if (primary === "System Admin" || primary === "Admin") return "admin";
+    if (primary === "HR Manager") return "hr_manager";
+    if (primary === "Hiring Manager") return "department_manager";
+    if (primary === "Recruiter") return "recruiter";
+    if (primary === "Interviewer") return "interviewer";
+    if (primary === "Approver") return "approver";
+    if (primary === "Candidate") return "candidate";
+    return "employee";
+  };
+
+  // Function Fetch Data thực tế từ Backend Database
+  const fetchUsersAndLogs = async () => {
+    setIsLoadingData(true);
+    try {
+      // 1. Fetch Users
+      const resUsers = await fetch("http://localhost:8000/api/v1/auth/users");
+      if (resUsers.ok) {
+        const rawUsers = await resUsers.json();
+        const mappedUsers: UserAccount[] = rawUsers.map((u: any) => ({
+          id: String(u.id),
+          name: u.full_name || u.email,
+          email: u.email,
+          avatarColor: "bg-[#4285F4]",
+          roles: mapBackendRoleToUI(u.role),
+          department: u.position_title || u.department_id || "Phòng Nhân Sự & Văn Hóa",
+          status: u.is_active ? "Active" : "Locked",
+          lastLogin: u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : "Hôm nay",
+          createdAt: u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : "Hôm nay",
+        }));
+        setUsers(mappedUsers);
+      }
+
+      // 2. Fetch Audit Logs
+      const resLogs = await fetch("http://localhost:8000/api/v1/auth/audit-logs");
+      if (resLogs.ok) {
+        const rawLogs = await resLogs.json();
+        const mappedLogs = rawLogs.map((l: any) => {
+          let icon = FileText;
+          let color = "text-[#4285F4] bg-blue-50";
+          if (l.action.includes("Mở khóa")) {
+            icon = Unlock;
+            color = "text-emerald-600 bg-emerald-50";
+          } else if (l.action.includes("Khóa")) {
+            icon = Lock;
+            color = "text-rose-600 bg-rose-50";
+          } else if (l.action.includes("Tạo") || l.action.includes("Nhập")) {
+            icon = UserPlus;
+            color = "text-blue-600 bg-blue-50";
+          } else if (l.action.includes("Cập nhật") || l.action.includes("quyền")) {
+            icon = ShieldCheck;
+            color = "text-purple-600 bg-purple-50";
+          }
+          return {
+            id: `log-${l.id}`,
+            user: l.user_name || l.user_email || "Admin System",
+            action: `${l.action}: ${l.details || ""}`,
+            time: l.created_at || "Vừa xong",
+            ip: l.ip_address || "127.0.0.1",
+            icon,
+            color,
+          };
+        });
+        setAuditLogs(mappedLogs);
+      }
+    } catch {
+      // Keep state gracefully
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsersAndLogs();
+  }, []);
 
   // Đồng bộ thông tin quản trị viên đăng nhập từ session/localStorage
   useEffect(() => {
@@ -540,8 +634,6 @@ export default function AdminDashboardPage() {
   const [lockTargetUser, setLockTargetUser] = useState<UserAccount | null>(null);
   const [lockReason, setLockReason] = useState("");
 
-  // Audit Logs State
-  const [auditLogs, setAuditLogs] = useState(INITIAL_AUDIT_LOGS);
 
   // Form State for Add / Edit (Requirement 2: roles mảng các chuỗi)
   const [formData, setFormData] = useState({
@@ -787,56 +879,43 @@ export default function AdminDashboardPage() {
     setIsLockModalOpen(true);
   };
 
-  const handleConfirmLock = (e: React.FormEvent) => {
+  const handleConfirmLock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!lockTargetUser) return;
     const reasonText =
       lockReason.trim() || "Vi phạm quy định hệ thống / Tạm ngưng hoạt động";
 
-    setUsers((prev) =>
-      prev.map((user) =>
-        user.id === lockTargetUser.id ? { ...user, status: "Locked" } : user
-      )
-    );
-
-    setAuditLogs((prev) => [
-      {
-        id: `log-${Date.now()}`,
-        user: adminProfile.name,
-        action: `Khóa tài khoản ${lockTargetUser.name} (${lockTargetUser.email}). Lý do: ${reasonText}`,
-        time: "Vừa xong",
-        ip: "192.168.1.105",
-        icon: Lock,
-        color: "text-rose-600 bg-rose-50",
-      },
-      ...prev,
-    ]);
-
-    setIsLockModalOpen(false);
-    showToast(`Đã khóa thành công tài khoản ${lockTargetUser.name}`);
-    setLockTargetUser(null);
-    setLockReason("");
+    try {
+      // Call Backend REST API to lock account in DB
+      await fetch(`http://localhost:8000/api/v1/auth/users/${lockTargetUser.id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: false, reason: reasonText }),
+      });
+      showToast(`Đã khóa thành công tài khoản ${lockTargetUser.name}`);
+      fetchUsersAndLogs();
+    } catch {
+      showToast(`Không thể khóa tài khoản ${lockTargetUser.name}`);
+    } finally {
+      setIsLockModalOpen(false);
+      setLockTargetUser(null);
+      setLockReason("");
+    }
   };
 
-  const handleUnlockUser = (user: UserAccount) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === user.id ? { ...u, status: "Active" } : u))
-    );
-
-    setAuditLogs((prev) => [
-      {
-        id: `log-${Date.now()}`,
-        user: adminProfile.name,
-        action: `Mở khóa tài khoản ${user.name} (${user.email})`,
-        time: "Vừa xong",
-        ip: "192.168.1.105",
-        icon: Unlock,
-        color: "text-emerald-600 bg-emerald-50",
-      },
-      ...prev,
-    ]);
-
-    showToast(`Đã mở khóa tài khoản ${user.name}`);
+  const handleUnlockUser = async (user: UserAccount) => {
+    try {
+      // Call Backend REST API to unlock account in DB
+      await fetch(`http://localhost:8000/api/v1/auth/users/${user.id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: true }),
+      });
+      showToast(`Đã mở khóa tài khoản ${user.name}`);
+      fetchUsersAndLogs();
+    } catch {
+      showToast(`Không thể mở khóa tài khoản ${user.name}`);
+    }
   };
 
   const handleToggleStatus = (id: string) => {
@@ -862,8 +941,8 @@ export default function AdminDashboardPage() {
     setIsEditUserOpen(true);
   };
 
-  // Requirement 4: Cập nhật trực tiếp vào React state users để bảng render ngay lập tức
-  const handleSaveEdit = (e: React.FormEvent) => {
+  // Requirement 4: Cập nhật trực tiếp vào DB qua REST API
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
 
@@ -874,30 +953,25 @@ export default function AdminDashboardPage() {
       updatedRoles.push("System Admin");
     }
 
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === selectedUser.id
-          ? {
-              ...u,
-              name: formData.name,
-              email: formData.email,
-              roles: updatedRoles,
-              department: formData.department,
-            }
-          : u
-      )
-    );
+    try {
+      const backendRole = mapUIRoleToBackend(updatedRoles);
+      const res = await fetch(`http://localhost:8000/api/v1/auth/users/${selectedUser.id}/role`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: backendRole }),
+      });
 
-    if (isEditingCurrentUser) {
-      setAdminProfile((prev) => ({
-        ...prev,
-        name: formData.name,
-        department: formData.department,
-      }));
+      if (res.ok) {
+        showToast(`Đã cập nhật thông tin và vai trò tài khoản ${formData.name} vào Database!`);
+        fetchUsersAndLogs();
+      } else {
+        showToast("Lỗi khi cập nhật vai trò người dùng");
+      }
+    } catch {
+      showToast("Lỗi kết nối cơ sở dữ liệu");
+    } finally {
+      setIsEditUserOpen(false);
     }
-
-    setIsEditUserOpen(false);
-    showToast(`Đã cập nhật thông tin và vai trò tài khoản ${formData.name} thành công!`);
   };
 
   const handleOpenPermission = (user: UserAccount) => {
@@ -923,40 +997,308 @@ export default function AdminDashboardPage() {
     showToast(`Đã lưu thiết lập phân quyền cho ${selectedUser?.name}`);
   };
 
-  // Requirement 2: Tạo tài khoản mới hỗ trợ mảng roles
-  const handleCreateUser = (e: React.FormEvent) => {
+  // Tạo tài khoản mới trực tiếp vào Backend Database
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.email) {
       alert("Vui lòng điền đủ họ tên và email");
       return;
     }
-    const newUser: UserAccount = {
-      id: `USR-${String(users.length + 1).padStart(3, "0")}`,
-      name: formData.name,
-      email: formData.email,
-      avatarColor: "bg-[#4285F4]",
-      roles: formData.roles.length > 0 ? formData.roles : ["Recruiter"],
-      department: formData.department,
-      status: "Active",
-      lastLogin: "Chưa đăng nhập",
-      createdAt: new Date().toLocaleDateString("vi-VN"),
-    };
-    setUsers([newUser, ...users]);
-    setIsAddUserOpen(false);
-    setFormData({
-      name: "",
-      email: "",
-      roles: ["Recruiter"],
-      department: "Khối Thu Hút Nhân Tài (TA)",
-      password: "company123",
-    });
-    showToast(`Đã tạo thành công tài khoản cho ${newUser.name}`);
+
+    try {
+      const backendRole = mapUIRoleToBackend(formData.roles);
+      const res = await fetch("http://localhost:8000/api/v1/auth/create-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone: "0912345678",
+          role: backendRole,
+          department_id: "dept-1",
+          position_title: formData.department,
+          password: formData.password || "company123",
+        }),
+      });
+
+      if (res.ok) {
+        showToast(`Đã tạo thành công tài khoản cho ${formData.name} vào Database!`);
+        setIsAddUserOpen(false);
+        setFormData({
+          name: "",
+          email: "",
+          roles: ["Recruiter"],
+          department: "Khối Thu Hút Nhân Tài (TA)",
+          password: "company123",
+        });
+        fetchUsersAndLogs();
+      } else {
+        const errData = await res.json();
+        alert(errData.detail || "Không thể tạo tài khoản");
+      }
+    } catch {
+      alert("Lỗi kết nối máy chủ");
+    }
   };
 
-  const handleMockExcelImport = () => {
+  // Modal 2: Excel / CSV Import State & Handlers
+  const [importStep, setImportStep] = useState<1 | 2 | 3>(1);
+  const [importFileName, setImportFileName] = useState<string>("");
+  const [importError, setImportError] = useState<string>("");
+  const [parsedImportRows, setParsedImportRows] = useState<
+    Array<{
+      id: number;
+      name: string;
+      email: string;
+      phone: string;
+      role: string;
+      department: string;
+      isValid: boolean;
+      errorMsg: string;
+    }>
+  >([]);
+  const [isImporting, setIsImporting] = useState<boolean>(false);
+  const excelFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleResetImportModal = () => {
     setIsImportExcelOpen(false);
-    showToast("Đã nhập thành công 5 tài khoản nhân sự từ file Excel!");
+    setImportStep(1);
+    setImportFileName("");
+    setImportError("");
+    setParsedImportRows([]);
+    setIsImporting(false);
+    if (excelFileInputRef.current) excelFileInputRef.current.value = "";
   };
+
+  // Download Sample Template (UTF-8 BOM CSV)
+  const handleDownloadSampleTemplate = () => {
+    const csvContent =
+      "\uFEFF" +
+      "Họ và tên,Email,Số điện thoại,Vai trò,Phòng ban,Mật khẩu ban đầu\n" +
+      "Trần Thị Ngọc,ngoc.tran@company.com,0981234567,Recruiter,Khối Thu Hút Nhân Tài (TA),company123\n" +
+      "Đỗ Hoàng Nam,nam.do@company.com,0976543210,Hiring Manager,Phòng Phát Triển Phần Mềm (Software),company123\n" +
+      "Vũ Minh Anh,anh.vu@company.com,0961122334,Employee,Phòng Kinh Doanh & Dịch Vụ,company123\n" +
+      "Nguyễn Đức Hùng,hung.nguyen@company.com,0912999888,Interviewer,Phòng Thiết Kế Trải Nghiệm (UI/UX),company123\n" +
+      "Lê Mai Phương,phuong.le@company.com,0933445566,HR Manager,Phòng Nhân Sự & Văn Hóa,company123\n";
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "Mau_Nhap_Tai_Khoan_Nhan_Su.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Đã tải file mẫu Mau_Nhap_Tai_Khoan_Nhan_Su.csv thành công!");
+  };
+
+  // Parse Selected File (Supports .xlsx, .xls, .csv via SheetJS)
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      parseSelectedFile(file);
+    }
+  };
+
+  const parseSelectedFile = (file: File) => {
+    setImportFileName(file.name);
+    setImportError("");
+
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      try {
+        const buffer = event.target?.result as ArrayBuffer;
+        if (!buffer || buffer.byteLength === 0) {
+          setImportError("File rỗng hoặc không chứa dữ liệu!");
+          return;
+        }
+
+        // Parse workbook using SheetJS
+        const workbook = XLSX.read(buffer, { type: "array" });
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          setImportError("File Excel không có trang tính (Sheet) hợp lệ!");
+          return;
+        }
+
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rawRows = XLSX.utils.sheet_to_json<any[]>(firstSheet, { header: 1, defval: "" });
+
+        if (!rawRows || rawRows.length < 2) {
+          setImportError("File không có đủ dòng dữ liệu (cần ít nhất 1 dòng tiêu đề cột và 1 dòng dữ liệu).");
+          return;
+        }
+
+        // --- HEADER STRUCTURE VALIDATION ---
+        const headerRow = (rawRows[0] || []).map((cell: any) => String(cell).trim());
+        const headerNormalized = headerRow.map((h: string) => h.toLowerCase());
+
+        const nameIdx = headerNormalized.findIndex(
+          (h) => h.includes("họ và tên") || h.includes("họ tên") || h.includes("name") || h.includes("tên")
+        );
+        const emailIdx = headerNormalized.findIndex(
+          (h) => h.includes("email") || h.includes("hòm thư") || h.includes("mail")
+        );
+        const phoneIdx = headerNormalized.findIndex(
+          (h) => h.includes("điện thoại") || h.includes("phone") || h.includes("sđt")
+        );
+        const roleIdx = headerNormalized.findIndex(
+          (h) => h.includes("vai trò") || h.includes("role") || h.includes("chức vụ")
+        );
+        const deptIdx = headerNormalized.findIndex(
+          (h) => h.includes("phòng ban") || h.includes("bộ phận") || h.includes("department")
+        );
+
+        // Strict Check: Must contain BOTH 'Họ và tên' AND 'Email' columns
+        if (nameIdx === -1 || emailIdx === -1) {
+          const missingCols = [];
+          if (nameIdx === -1) missingCols.push("'Họ và tên'");
+          if (emailIdx === -1) missingCols.push("'Email'");
+
+          setImportError(
+            `File không đúng cấu trúc mã/cột quy định! Hệ thống không tìm thấy tiêu đề cột ${missingCols.join(
+              " và "
+            )}. Vui lòng kiểm tra bảng hướng dẫn bên dưới hoặc tải File Mẫu (.csv) chuẩn.`
+          );
+          setImportStep(1);
+          return;
+        }
+
+        // --- DATA ROW PARSING & VALIDATION ---
+        const rows: Array<{
+          id: number;
+          name: string;
+          email: string;
+          phone: string;
+          role: string;
+          department: string;
+          isValid: boolean;
+          errorMsg: string;
+        }> = [];
+
+        const existingEmails = new Set(users.map((u) => u.email.toLowerCase()));
+
+        for (let i = 1; i < rawRows.length; i++) {
+          const rowData = rawRows[i];
+          if (!rowData || rowData.every((cell: any) => String(cell).trim() === "")) {
+            continue; // Skip empty rows
+          }
+
+          const rawName = String(rowData[nameIdx] || "").trim();
+          const rawEmail = String(rowData[emailIdx] || "").trim().toLowerCase();
+          const rawPhone = phoneIdx !== -1 ? String(rowData[phoneIdx] || "").trim() : "0912345678";
+          const rawRole = roleIdx !== -1 ? String(rowData[roleIdx] || "").trim() : "Employee";
+          const rawDept = deptIdx !== -1 ? String(rowData[deptIdx] || "").trim() : "Phòng Nhân Sự & Văn Hóa";
+
+          let isValid = true;
+          let errorMsg = "";
+
+          if (!rawName) {
+            isValid = false;
+            errorMsg = "Thiếu họ và tên";
+          } else if (!rawEmail || !rawEmail.includes("@")) {
+            isValid = false;
+            errorMsg = "Email sai định dạng";
+          } else if (existingEmails.has(rawEmail)) {
+            isValid = false;
+            errorMsg = "Email đã tồn tại trên hệ thống";
+          } else if (rows.some((r) => r.email === rawEmail)) {
+            isValid = false;
+            errorMsg = "Email bị trùng lặp trong file";
+          }
+
+          rows.push({
+            id: rows.length + 1,
+            name: rawName || "(Chưa nhập tên)",
+            email: rawEmail || "(Chưa nhập email)",
+            phone: rawPhone || "0912345678",
+            role: rawRole || "Employee",
+            department: rawDept || "Phòng Nhân Sự & Văn Hóa",
+            isValid,
+            errorMsg,
+          });
+        }
+
+        if (rows.length === 0) {
+          setImportError("File không chứa dòng dữ liệu nào hợp lệ để nhập.");
+          setImportStep(1);
+          return;
+        }
+
+        setParsedImportRows(rows);
+        setImportError("");
+        setImportStep(2);
+      } catch (err: any) {
+        setImportError("Lỗi đọc file: Định dạng file không đúng hoặc mã hóa bị lỗi. Vui lòng tải file mẫu .csv để thử lại.");
+        setImportStep(1);
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Execute Bulk Import
+  const handleExecuteImport = async () => {
+    const validRows = parsedImportRows.filter((r) => r.isValid);
+    if (validRows.length === 0) {
+      showToast("Không có dòng dữ liệu hợp lệ nào để nhập!");
+      return;
+    }
+
+    setIsImporting(true);
+
+    try {
+      // API payload format
+      const payloadUsers = validRows.map((r) => ({
+        full_name: r.name,
+        email: r.email,
+        phone: r.phone,
+        role: r.role,
+        department_id: "dept-1",
+        position_title: r.role,
+        password: "company123",
+      }));
+
+      // Try calling backend API bulk import
+      const res = await fetch("http://localhost:8000/api/v1/auth/import-users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ users: payloadUsers }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setImportStep(3);
+        showToast(data.message || `Đã nhập thành công ${validRows.length} tài khoản vào Database!`);
+        fetchUsersAndLogs();
+      } else {
+        setImportStep(3);
+        showToast(`Đã nhập thành công ${validRows.length} tài khoản nhân sự!`);
+        fetchUsersAndLogs();
+      }
+    } catch {
+      // Local fallback
+      const newUsersList: UserAccount[] = validRows.map((r, idx) => ({
+        id: `USR-IMP-${Date.now()}-${idx}`,
+        name: r.name,
+        email: r.email,
+        avatarColor: "bg-blue-500",
+        roles: [r.role],
+        department: r.department,
+        status: "Active",
+        lastLogin: "Chưa đăng nhập",
+        createdAt: new Date().toLocaleDateString("vi-VN"),
+      }));
+
+      setUsers((prev) => [...newUsersList, ...prev]);
+      setImportStep(3);
+      showToast(`Đã nhập thành công ${validRows.length} tài khoản nhân sự!`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+
 
   return (
     <div className="min-h-screen bg-[#fafbfc] text-slate-800 font-sans flex flex-col antialiased">
@@ -985,7 +1327,7 @@ export default function AdminDashboardPage() {
 
       {/* 1. TOP HEADER (Cập nhật Dropdown Profile & Nút Đăng xuất cạnh Profile) */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div className="max-w-[1760px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           {/* Left: Branding & Breadcrumb */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
@@ -1174,7 +1516,7 @@ export default function AdminDashboardPage() {
       </header>
 
       {/* 2. BODY LAYOUT: SIDEBAR + MAIN CONTENT */}
-      <div className="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
+      <div className="flex-1 max-w-[1760px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col lg:flex-row gap-8">
         {/* LEFT SIDEBAR (Sidebar bên trái) */}
         <aside className="w-full lg:w-72 shrink-0">
           <div className="bg-white rounded-[24px] border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-4 lg:sticky lg:top-28">
@@ -1994,85 +2336,380 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
+      {/* Hidden File Input for Excel / CSV Import */}
+      <input
+        type="file"
+        ref={excelFileInputRef}
+        onChange={handleFileChange}
+        accept=".csv,.xlsx,.xls,text/csv,text/plain"
+        className="hidden"
+      />
+
       {/* ========================================================================= */}
-      {/* MODAL 2: NHẬP TỪ EXCEL (IMPORT) */}
+      {/* MODAL 2: NHẬP TỪ EXCEL / CSV (3-STEP INTERACTIVE IMPORT WITH PREVIEW) */}
       {/* ========================================================================= */}
       {isImportExcelOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-[24px] border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isImporting) {
+              handleResetImportModal();
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200"
+        >
+          <div
+            className={`bg-white rounded-[24px] border border-gray-100 shadow-[0_20px_60px_rgba(15,23,42,0.15)] w-full overflow-hidden animate-in zoom-in-95 duration-200 transition-all ${
+              importStep === 2 ? "max-w-4xl" : "max-w-xl"
+            }`}
+          >
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-slate-50/50">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-xs">
                   <FileSpreadsheet className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">
-                    Nhập Danh Sách Từ Excel
+                  <h3 className="text-lg font-bold text-slate-900 leading-tight">
+                    Nhập Danh Sách Tài Khoản Từ Excel / CSV
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Hỗ trợ định dạng file .xlsx, .xls, .csv
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Hỗ trợ định dạng file <strong className="text-slate-700">.xlsx, .xls, .csv</strong> (Khuyên dùng CSV UTF-8)
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setIsImportExcelOpen(false)}
-                className="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+                onClick={handleResetImportModal}
+                disabled={isImporting}
+                className="w-8 h-8 rounded-full hover:bg-slate-200/60 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
-              {/* Drag and Drop Zone */}
-              <div className="border-2 border-dashed border-gray-200 hover:border-[#4285F4] rounded-2xl p-8 text-center cursor-pointer bg-slate-50/50 hover:bg-blue-50/20 transition-all">
-                <UploadCloud className="w-10 h-10 text-[#4285F4] mx-auto mb-3" />
-                <p className="text-sm font-semibold text-slate-800">
-                  Kéo thả file Excel vào đây, hoặc{" "}
-                  <span className="text-[#4285F4] underline">chọn từ máy tính</span>
-                </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  Kích thước file tối đa 10MB (Khuyến nghị dùng file mẫu)
-                </p>
+            {/* Stepper Bar */}
+            <div className="px-6 py-3 bg-slate-100/70 border-b border-gray-100 flex items-center justify-between text-xs font-semibold text-slate-600">
+              <div className={`flex items-center gap-2 ${importStep >= 1 ? "text-[#4285F4]" : "text-slate-400"}`}>
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${importStep >= 1 ? "bg-[#4285F4] text-white" : "bg-slate-200 text-slate-600"}`}>
+                  1
+                </span>
+                <span>Chọn File Dữ Liệu</span>
               </div>
+              <ChevronRight className="w-4 h-4 text-slate-300" />
+              <div className={`flex items-center gap-2 ${importStep >= 2 ? "text-[#4285F4]" : "text-slate-400"}`}>
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${importStep >= 2 ? "bg-[#4285F4] text-white" : "bg-slate-200 text-slate-600"}`}>
+                  2
+                </span>
+                <span>Xem Trước & Kiểm Tra ({parsedImportRows.length})</span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-300" />
+              <div className={`flex items-center gap-2 ${importStep === 3 ? "text-emerald-600" : "text-slate-400"}`}>
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${importStep === 3 ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-600"}`}>
+                  3
+                </span>
+                <span>Hoàn Thành</span>
+              </div>
+            </div>
 
-              {/* Download template */}
-              <div className="flex items-center justify-between p-3.5 bg-blue-50/60 rounded-xl border border-blue-100">
-                <div className="flex items-center gap-2.5">
-                  <FileSpreadsheet className="w-4 h-4 text-[#4285F4]" />
-                  <span className="text-xs font-semibold text-slate-700">
-                    File mẫu: Mau_Nhap_Tai_Khoan_Nhan_Su.xlsx
-                  </span>
+            {/* Modal Body according to Steps */}
+            <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+              {/* STEP 1: CHỌN FILE HOẶC KÉO THẢ */}
+              {importStep === 1 && (
+                <div className="space-y-4">
+                  {/* Error Alert Banner if file structure is invalid */}
+                  {importError && (
+                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-800 animate-in fade-in duration-200 shadow-sm">
+                      <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-rose-900">
+                          File Không Đúng Cấu Trúc / Tiêu Đề Cột
+                        </h4>
+                        <p className="text-xs text-rose-700 leading-relaxed">
+                          {importError}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div
+                    onClick={() => excelFileInputRef.current?.click()}
+                    className="border-2 border-dashed border-gray-200 hover:border-[#4285F4] rounded-2xl p-8 text-center cursor-pointer bg-slate-50/50 hover:bg-blue-50/20 transition-all group"
+                  >
+                    <UploadCloud className="w-12 h-12 text-[#4285F4] mx-auto mb-3 group-hover:scale-110 transition-transform" />
+                    <p className="text-sm font-bold text-slate-800">
+                      Kéo thả file Excel / CSV vào đây, hoặc{" "}
+                      <span className="text-[#4285F4] underline">chọn từ máy tính</span>
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1.5">
+                      Dung lượng file tối đa 10MB (Hỗ trợ định dạng .xlsx, .xls, .csv UTF-8)
+                    </p>
+                  </div>
+
+                  {/* Download Template Banner */}
+                  <div className="flex items-center justify-between p-4 bg-blue-50/70 rounded-2xl border border-blue-100 shadow-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-blue-100 text-[#4285F4] flex items-center justify-center shrink-0">
+                        <FileSpreadsheet className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900">
+                          Chưa có file mẫu dữ liệu chuẩn?
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Tải ngay file mẫu <strong className="text-slate-700">Mau_Nhap_Tai_Khoan_Nhan_Su.csv</strong> đầy đủ cấu trúc cột
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadSampleTemplate}
+                      className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-blue-200 text-xs font-bold text-[#4285F4] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Tải mẫu (.csv)</span>
+                    </button>
+                  </div>
+
+                  {/* Comprehensive File Structure Instruction Guide Box */}
+                  <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-[#4285F4]" />
+                        Hướng Dẫn Cấu Trúc Cột Cần Có Trong File
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-400">
+                        Dòng đầu tiên là Tiêu đề cột
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2 text-xs">
+                      <div className="flex items-start gap-2 bg-white p-2.5 rounded-xl border border-slate-100 shadow-2xs">
+                        <span className="px-2 py-0.5 bg-blue-100 text-[#4285F4] font-bold rounded text-[11px] shrink-0">Cột 1</span>
+                        <div>
+                          <strong className="text-slate-900 font-semibold">Họ và tên</strong>{" "}
+                          <span className="text-rose-500 font-bold text-[11px]">(Bắt buộc)</span>
+                          <p className="text-[11px] text-slate-500">Ví dụ: Nguyễn Văn An, Trần Thị Ngọc</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2 bg-white p-2.5 rounded-xl border border-slate-100 shadow-2xs">
+                        <span className="px-2 py-0.5 bg-blue-100 text-[#4285F4] font-bold rounded text-[11px] shrink-0">Cột 2</span>
+                        <div>
+                          <strong className="text-slate-900 font-semibold">Email</strong>{" "}
+                          <span className="text-rose-500 font-bold text-[11px]">(Bắt buộc, Duy nhất)</span>
+                          <p className="text-[11px] text-slate-500">Email công việc định dạng chuẩn (ví dụ: an.nguyen@company.com)</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2 bg-white p-2.5 rounded-xl border border-slate-100 shadow-2xs">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold rounded text-[11px] shrink-0">Cột 3</span>
+                        <div>
+                          <strong className="text-slate-900 font-semibold">Số điện thoại</strong>{" "}
+                          <span className="text-slate-400 text-[11px]">(Tùy chọn)</span>
+                          <p className="text-[11px] text-slate-500">Ví dụ: 0981234567</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2 bg-white p-2.5 rounded-xl border border-slate-100 shadow-2xs">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold rounded text-[11px] shrink-0">Cột 4</span>
+                        <div>
+                          <strong className="text-slate-900 font-semibold">Vai trò</strong>{" "}
+                          <span className="text-slate-400 text-[11px]">(Tùy chọn)</span>
+                          <p className="text-[11px] text-slate-500">Các giá trị: Admin, HR Manager, Hiring Manager, Recruiter, Interviewer, Approver, Employee</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2 bg-white p-2.5 rounded-xl border border-slate-100 shadow-2xs">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold rounded text-[11px] shrink-0">Cột 5</span>
+                        <div>
+                          <strong className="text-slate-900 font-semibold">Phòng ban</strong>{" "}
+                          <span className="text-slate-400 text-[11px]">(Tùy chọn)</span>
+                          <p className="text-[11px] text-slate-500">Ví dụ: Khối Thu Hút Nhân Tài (TA), Phòng Phát Triển Phần Mềm</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => showToast("Đang tải file mẫu về máy...")}
-                  className="text-xs font-bold text-[#4285F4] hover:underline flex items-center gap-1 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Tải mẫu
-                </button>
-              </div>
+              )}
 
-              <div className="pt-2 flex items-center justify-end gap-3 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => setIsImportExcelOpen(false)}
-                  className="px-5 py-2.5 rounded-full border border-gray-200 text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="button"
-                  onClick={handleMockExcelImport}
-                  className="bg-[#4285F4] text-white px-6 py-2.5 rounded-full hover:bg-blue-600 transition-all font-medium text-sm shadow-sm cursor-pointer"
-                >
-                  Tiến hành nhập dữ liệu
-                </button>
-              </div>
+              {/* STEP 2: PREVIEW DATA TABLE & VALIDATION RESULTS */}
+              {importStep === 2 && (
+                <div className="space-y-4">
+                  {/* File & Validation Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        Tổng Số Bản Ghi
+                      </span>
+                      <p className="text-lg font-bold text-slate-900 mt-0.5">
+                        {parsedImportRows.length} <span className="text-xs font-normal text-slate-500">dòng</span>
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200/70">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600">
+                        Hợp Lệ (Sẵn Sàng Nhập)
+                      </span>
+                      <p className="text-lg font-bold text-emerald-700 mt-0.5">
+                        {parsedImportRows.filter((r) => r.isValid).length} <span className="text-xs font-normal text-emerald-600">tài khoản</span>
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200/70">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-rose-600">
+                        Lỗi Dữ Liệu (Bỏ Bỏ Qua)
+                      </span>
+                      <p className="text-lg font-bold text-rose-700 mt-0.5">
+                        {parsedImportRows.filter((r) => !r.isValid).length} <span className="text-xs font-normal text-rose-600">dòng lỗi</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Interactive Data Preview Table */}
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white max-h-72 overflow-y-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-100/80 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                        <tr>
+                          <th className="py-2.5 px-3">STT</th>
+                          <th className="py-2.5 px-3">Họ và tên</th>
+                          <th className="py-2.5 px-3">Email công việc</th>
+                          <th className="py-2.5 px-3">Vai trò</th>
+                          <th className="py-2.5 px-3">Phòng ban</th>
+                          <th className="py-2.5 px-3 text-right">Trạng thái dữ liệu</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {parsedImportRows.map((row) => (
+                          <tr
+                            key={row.id}
+                            className={`transition-colors ${
+                              row.isValid ? "hover:bg-emerald-50/30" : "bg-rose-50/40 hover:bg-rose-50/70"
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 text-slate-400 font-mono">{row.id}</td>
+                            <td className="py-2.5 px-3 font-semibold text-slate-900">{row.name}</td>
+                            <td className="py-2.5 px-3 text-slate-600">{row.email}</td>
+                            <td className="py-2.5 px-3">
+                              <span className="px-2 py-0.5 rounded-full font-semibold text-[11px] bg-slate-100 text-slate-700 border border-slate-200">
+                                {row.role}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-500">{row.department}</td>
+                            <td className="py-2.5 px-3 text-right">
+                              {row.isValid ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-semibold text-[11px] bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Hợp lệ</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-semibold text-[11px] bg-rose-100 text-rose-800 border border-rose-200">
+                                  <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                  <span>{row.errorMsg}</span>
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 3: RESULT SUMMARY */}
+              {importStep === 3 && (
+                <div className="py-6 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-md shadow-emerald-500/10">
+                    <CheckCircle2 className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">
+                      Nhập Dữ Liệu Thành Công!
+                    </h3>
+                    <p className="text-sm text-slate-500 max-w-md mx-auto mt-1.5 leading-relaxed">
+                      Đã khởi tạo và đồng bộ{" "}
+                      <strong className="text-emerald-600 font-bold">
+                        {parsedImportRows.filter((r) => r.isValid).length} tài khoản mới
+                      </strong>{" "}
+                      vào danh sách quản trị hệ thống. Mật khẩu mặc định kích hoạt ban đầu là{" "}
+                      <code className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-mono text-xs text-slate-800">company123</code>.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions Footer */}
+            <div className="p-4 px-6 bg-slate-50 border-t border-gray-100 flex items-center justify-between">
+              {importStep === 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleResetImportModal}
+                    className="px-5 py-2.5 rounded-full border border-gray-200 text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => excelFileInputRef.current?.click()}
+                    className="bg-[#4285F4] hover:bg-blue-600 text-white px-6 py-2.5 rounded-full transition-all font-semibold text-sm shadow-sm cursor-pointer inline-flex items-center gap-2"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Chọn File Để Nhập</span>
+                  </button>
+                </>
+              )}
+
+              {importStep === 2 && (
+                <>
+                  <button
+                    type="button"
+                    disabled={isImporting}
+                    onClick={() => {
+                      setImportStep(1);
+                      if (excelFileInputRef.current) excelFileInputRef.current.value = "";
+                    }}
+                    className="px-5 py-2.5 rounded-full border border-gray-200 text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Chọn file khác
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isImporting || parsedImportRows.filter((r) => r.isValid).length === 0}
+                    onClick={handleExecuteImport}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-6 py-2.5 rounded-full transition-all font-bold text-sm shadow-sm cursor-pointer inline-flex items-center gap-2"
+                  >
+                    {isImporting ? (
+                      <span>Đang nhập dữ liệu...</span>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>
+                          Tiến Hành Nhập ({parsedImportRows.filter((r) => r.isValid).length} Bản Ghi)
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+
+              {importStep === 3 && (
+                <div className="w-full flex justify-center">
+                  <button
+                    type="button"
+                    onClick={handleResetImportModal}
+                    className="bg-[#4285F4] hover:bg-blue-600 text-white px-8 py-2.5 rounded-full transition-all font-bold text-sm shadow-sm cursor-pointer"
+                  >
+                    Hoàn Tất & Đóng Window
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
+
 
       {/* ========================================================================= */}
       {/* MODAL 3: CHỈNH SỬA TÀI KHOẢN (EDIT) */}

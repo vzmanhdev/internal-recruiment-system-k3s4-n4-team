@@ -12,7 +12,6 @@ export default function RegisterPage() {
   const [formData, setFormData] = useState({
     fullName: "",
     companyEmail: "",
-    employeeCode: "",
     password: "",
     confirmPassword: "",
   });
@@ -47,11 +46,6 @@ export default function RegisterPage() {
 
     if (!formData.companyEmail.includes("@")) {
       setErrorMsg("Email công ty không hợp lệ (Ví dụ: name@congty.com).");
-      return;
-    }
-
-    if (!formData.employeeCode.trim()) {
-      setErrorMsg("Vui lòng nhập mã nhân viên.");
       return;
     }
 
@@ -217,29 +211,7 @@ export default function RegisterPage() {
               </p>
             </div>
 
-            {/* 3. Mã nhân viên */}
-            <div>
-              <label
-                htmlFor="employeeCode"
-                className="block text-sm font-semibold text-gray-700 mb-1.5"
-              >
-                Mã nhân viên <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  id="employeeCode"
-                  name="employeeCode"
-                  type="text"
-                  required
-                  value={formData.employeeCode}
-                  onChange={handleChange}
-                  placeholder="VD: NV01234"
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-gray-900 placeholder:text-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white uppercase"
-                />
-              </div>
-            </div>
-
-            {/* 4. Mật khẩu */}
+            {/* 3. Mật khẩu */}
             <div>
               <label
                 htmlFor="password"
