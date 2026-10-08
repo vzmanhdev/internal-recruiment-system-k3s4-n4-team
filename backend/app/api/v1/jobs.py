@@ -3,6 +3,9 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from pydantic import BaseModel, Field
 import re
+from datetime import datetime
+from app.services.headcount import validate_linked_job
+from app.models.requisition import JobRequisition
 
 from app.db.session import get_db
 from app.models.user import User
@@ -35,7 +38,7 @@ class JobPostingCreate(BaseModel):
     level: str = "Mid-Level"
     salary_range: str = "20 - 30 Triệu"
     experience_level: Optional[str] = "2-3 năm kinh nghiệm"
-    deadline: Optional[str] = None
+    deadline: Optional[datetime] = None
     description: str
     requirements: Optional[str] = None
     benefits: Optional[str] = None
@@ -147,9 +150,19 @@ def create_job(
             created_by_id=user.id
         )
         db.add(job)
+        if payload.requisition_id:
+            req = db.get(JobRequisition, payload.requisition_id)
+            if not req:
+                raise HTTPException(404, "Không tìm thấy yêu cầu tuyển dụng.")
+            job.quantity = req.quantity
+            job.max_salary = req.max_salary
+        validate_linked_job(db, job, publishing=job.status == "published")
         db.commit()
         db.refresh(job)
         return job.to_dict()
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Lỗi khi đăng tin tuyển dụng: {str(e)}")
@@ -184,10 +197,13 @@ def update_job(
         job.requirements = payload.requirements
         job.benefits = payload.benefits
         job.status = payload.status
-
+        validate_linked_job(db, job, publishing=job.status == "published")
         db.commit()
         db.refresh(job)
         return job.to_dict()
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Lỗi khi cập nhật tin tuyển dụng: {str(e)}")

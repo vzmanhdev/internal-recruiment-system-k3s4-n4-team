@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Mail, Phone, Lock, IdCard, User, ArrowRight, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -16,8 +15,8 @@ import { authService } from "../services/auth.service";
 import { ApiError } from "@/lib/api-client";
 
 export function RegisterForm() {
-  const router = useRouter();
   const [formData, setFormData] = useState({
+    accountType: "employee" as "employee" | "candidate",
     employeeCode: "",
     fullName: "",
     companyEmail: "",
@@ -88,19 +87,18 @@ export function RegisterForm() {
     setIsLoading(true);
 
     try {
-      await authService.register({
+      const result = await authService.register({
         full_name: formData.fullName,
         email: formData.companyEmail,
         password: formData.password,
         phone: formData.phone || undefined,
-        role: "employee",
+        role: formData.accountType,
       });
 
-      setSuccessMsg("Tạo tài khoản thành công! Đang chuyển hướng đến trang Đăng nhập...");
-      setTimeout(() => {
-        router.push("/login");
-      }, 1500);
-    } catch (err: any) {
+      setSuccessMsg(result.message || (formData.accountType === "candidate"
+        ? "Đăng ký thành công. Bạn có thể đăng nhập ngay."
+        : "Yêu cầu đăng ký đã được gửi. Bạn có thể đăng nhập sau khi Quản trị viên phê duyệt."));
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
         if (err.fieldErrors) {
@@ -148,15 +146,37 @@ export function RegisterForm() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold text-slate-700">Bạn đăng ký với vai trò *</legend>
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { value: "employee", label: "Nhân sự nội bộ", description: "Giới thiệu ứng viên và theo dõi thông báo" },
+              { value: "candidate", label: "Ứng viên", description: "Ứng tuyển và theo dõi hồ sơ" },
+            ] as const).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleChange("accountType", option.value)}
+                className={`rounded-xl border p-3 text-left transition-colors ${formData.accountType === option.value ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-slate-300"}`}
+              >
+                <span className="block text-sm font-bold text-slate-900">{option.label}</span>
+                <span className="mt-1 block text-[11px] leading-4 text-slate-500">{option.description}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
         {/* Row 1: Employee Code & Full Name */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input
-            label="Mã nhân viên"
-            placeholder="VD: NV001"
-            value={formData.employeeCode}
-            onChange={(e) => handleChange("employeeCode", e.target.value)}
-            leftIcon={<IdCard className="w-4 h-4 text-slate-400" />}
-          />
+        <div className={`grid grid-cols-1 ${formData.accountType === "employee" ? "sm:grid-cols-2" : ""} gap-4`}>
+          {formData.accountType === "employee" && (
+            <Input
+              label="Mã nhân viên"
+              placeholder="VD: NV001"
+              value={formData.employeeCode}
+              onChange={(e) => handleChange("employeeCode", e.target.value)}
+              leftIcon={<IdCard className="w-4 h-4 text-slate-400" />}
+            />
+          )}
           <Input
             label="Họ và tên *"
             placeholder="Nhập họ và tên"
@@ -171,7 +191,7 @@ export function RegisterForm() {
         {/* Row 2: Company Email & Phone */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
-            label="Email công ty *"
+            label={formData.accountType === "employee" ? "Email công ty *" : "Email *"}
             type="email"
             placeholder="name@company.com"
             value={formData.companyEmail}
@@ -193,19 +213,21 @@ export function RegisterForm() {
         </div>
 
         {/* Row 3: Department Select */}
-        <Select
-          label="Phòng ban hiện tại"
-          value={formData.department}
-          onChange={(e) => handleChange("department", e.target.value)}
-          options={[
-            { value: "", label: "Chọn phòng ban" },
-            { value: "it", label: "Khối Công nghệ Thông tin" },
-            { value: "product", label: "Phát triển Sản phẩm (Khối Sản phẩm)" },
-            { value: "hr", label: "Quản trị Nhân sự (Khối Nhân sự)" },
-            { value: "finance", label: "Tài chính - Kế toán" },
-            { value: "marketing", label: "Truyền thông & Marketing" },
-          ]}
-        />
+        {formData.accountType === "employee" && (
+          <Select
+            label="Phòng ban hiện tại"
+            value={formData.department}
+            onChange={(e) => handleChange("department", e.target.value)}
+            options={[
+              { value: "", label: "Chọn phòng ban" },
+              { value: "it", label: "Khối Công nghệ Thông tin" },
+              { value: "product", label: "Phát triển Sản phẩm (Khối Sản phẩm)" },
+              { value: "hr", label: "Quản trị Nhân sự (Khối Nhân sự)" },
+              { value: "finance", label: "Tài chính - Kế toán" },
+              { value: "marketing", label: "Truyền thông & Marketing" },
+            ]}
+          />
+        )}
 
         {/* Row 4: Passwords */}
         <PasswordInput

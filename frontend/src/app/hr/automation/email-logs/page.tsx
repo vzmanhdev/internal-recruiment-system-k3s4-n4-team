@@ -1,5 +1,7 @@
 "use client";
 
+import { existingApiFetch } from "@/lib/existing-api-fetch";
+
 import React, { useState, useEffect } from "react";
 import {
   Send,
@@ -56,7 +58,7 @@ export default function EmailLogsPage() {
 
       if (params.toString()) url += `?${params.toString()}`;
 
-      const res = await fetch(url);
+      const res = await existingApiFetch(url);
       if (res.ok) {
         const data = await res.json();
         setLogs(data);
@@ -74,7 +76,7 @@ export default function EmailLogsPage() {
 
   const handleRetry = async (log: EmailLog) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/email-automation/logs/${log.id}/retry`, {
+      const res = await existingApiFetch(`http://localhost:8000/api/v1/email-automation/logs/${log.id}/retry`, {
         method: "POST"
       });
       if (res.ok) {

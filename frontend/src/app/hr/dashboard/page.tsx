@@ -1,5 +1,7 @@
 'use client';
 
+import { existingApiFetch } from "@/lib/existing-api-fetch";
+
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { 
@@ -63,7 +65,7 @@ export default function HRDashboardPage() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:8000/api/v1/analytics/overview');
+      const res = await existingApiFetch('http://localhost:8000/api/v1/analytics/overview');
       if (res.ok) {
         const json = await res.json();
         setData(json);

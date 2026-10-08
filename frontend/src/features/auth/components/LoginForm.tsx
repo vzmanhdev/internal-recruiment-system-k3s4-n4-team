@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, ArrowRight } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
@@ -11,18 +11,39 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { authService } from "../services/auth.service";
-import { saveAuthSession } from "../lib/auth-session";
 import { ApiError } from "@/lib/api-client";
+import {
+  formatLockDuration,
+  getLoginLockState,
+  recordFailedLogin,
+  resetLoginAttempts,
+} from "../lib/login-security";
+import { getDashboardPath } from "../lib/session";
 
 export function LoginForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
+  const [email, setEmail] = useState(() => typeof window === "undefined" ? "" : localStorage.getItem("remembered_login_email") ?? "");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => typeof window !== "undefined" && Boolean(localStorage.getItem("remembered_login_email")));
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
+  const [lockRemainingSeconds, setLockRemainingSeconds] = useState(0);
+
+  const sessionNotice = searchParams.get("reason") === "session-expired"
+    ? "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục."
+    : "";
+
+  useEffect(() => {
+    if (lockRemainingSeconds <= 0) return;
+    const intervalId = window.setInterval(() => {
+      const lock = getLoginLockState(email);
+      setLockRemainingSeconds(lock.remainingSeconds);
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [email, lockRemainingSeconds]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,12 +51,18 @@ export function LoginForm() {
     setFieldErrors({});
     setSuccessMsg("");
 
-    const cleanEmail = email.trim();
+    const currentLock = getLoginLockState(email);
+    if (currentLock.isLocked) {
+      setLockRemainingSeconds(currentLock.remainingSeconds);
+      setErrorMsg(`Tạm khóa đăng nhập do nhập sai quá 5 lần. Vui lòng thử lại sau ${formatLockDuration(currentLock.remainingSeconds)}.`);
+      return;
+    }
+
     const errors: Record<string, string> = {};
 
-    if (!cleanEmail) {
+    if (!email.trim()) {
       errors["email"] = "Vui lòng nhập email công việc.";
-    } else if (!cleanEmail.includes("@")) {
+    } else if (!email.includes("@")) {
       errors["email"] = "Email không đúng định dạng (Ví dụ: name@company.com).";
     }
 
@@ -52,29 +79,32 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
-      const res = await authService.login({
-        email: cleanEmail,
+      const response = await authService.login({
+        email: email.trim(),
         password: password,
-      });
+      }, rememberMe);
 
-      // Lưu thông tin phiên đăng nhập
-      saveAuthSession({ displayName: res.user?.full_name || "User" });
-
-      // Đường dẫn chuyển hướng hoàn toàn do Backend xác định dựa trên Database Role
-      const targetUrl = res.redirect_url || res.user?.redirect_url || "/jobs";
-
-      setSuccessMsg(
-        `Đăng nhập thành công! Đang chuyển hướng dựa theo cấu hình vai trò từ hệ thống...`
-      );
-
+      resetLoginAttempts(email);
+      setSuccessMsg("Đăng nhập thành công! Đang chuyển hướng...");
       setTimeout(() => {
-        router.push(targetUrl);
-      }, 800);
-    } catch (err: any) {
+        router.replace(getDashboardPath(response.user.role));
+      }, 500);
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
-        setErrorMsg(err.message);
-        if (err.fieldErrors) {
-          setFieldErrors(err.fieldErrors);
+        if (err.message.toLowerCase().includes("chờ") && err.message.toLowerCase().includes("phê duyệt")) {
+          setErrorMsg("Tài khoản đang chờ Quản trị viên phê duyệt. Sau khi được chấp nhận, bạn có thể đăng nhập bình thường.");
+        } else if (err.message.toLowerCase().includes("khóa")) {
+          setErrorMsg(err.message);
+        } else if (err.status === 400 || err.status === 401) {
+          const lock = recordFailedLogin(email);
+          setLockRemainingSeconds(lock.remainingSeconds);
+          if (lock.isLocked) {
+            setErrorMsg(`Bạn đã nhập sai 5 lần. Giao diện đăng nhập bị khóa trong 15 phút (${formatLockDuration(lock.remainingSeconds)}).`);
+          } else {
+            setErrorMsg(`Email hoặc mật khẩu không chính xác. Bạn còn ${lock.remainingAttempts} lần thử.`);
+          }
+        } else {
+          setErrorMsg(err.message);
         }
       } else {
         setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại dịch vụ Backend.");
@@ -92,7 +122,7 @@ export function LoginForm() {
       </div>
 
       {/* Card Header: Title & Subtitle */}
-      <div className="text-center mb-6">
+      <div className="text-center mb-7">
         <h2 className="text-[28px] font-bold text-[#0F172A] tracking-tight leading-tight">
           Chào mừng trở lại
         </h2>
@@ -101,10 +131,10 @@ export function LoginForm() {
         </p>
       </div>
 
-      {errorMsg && (
+      {(errorMsg || sessionNotice) && (
         <div className="mb-5">
           <Alert variant="error" title="Đăng nhập không thành công">
-            {errorMsg}
+            {errorMsg || sessionNotice}
           </Alert>
         </div>
       )}
@@ -127,6 +157,8 @@ export function LoginForm() {
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
+            const lock = getLoginLockState(e.target.value);
+            setLockRemainingSeconds(lock.remainingSeconds);
             if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: "" }));
           }}
           leftIcon={<Mail className="w-[18px] h-[18px] text-slate-400" />}
@@ -172,10 +204,11 @@ export function LoginForm() {
             variant="primary"
             size="lg"
             isLoading={isLoading}
+            disabled={lockRemainingSeconds > 0}
             rightIcon={<ArrowRight className="w-[18px] h-[18px]" />}
             className="w-full h-[48px] bg-[#3B82F6] hover:bg-[#2563EB] active:bg-[#1D4ED8] text-[16px] font-semibold text-white rounded-[12px] shadow-md shadow-blue-500/10 disabled:opacity-60 flex-row whitespace-nowrap"
           >
-            Đăng nhập
+            {lockRemainingSeconds > 0 ? `Đã khóa ${formatLockDuration(lockRemainingSeconds)}` : "Đăng nhập"}
           </Button>
         </div>
 
@@ -195,10 +228,8 @@ export function LoginForm() {
         <div>
           <button
             type="button"
-            onClick={() => {
-              setIsLoading(true);
-              setTimeout(() => setIsLoading(false), 1000);
-            }}
+            disabled
+            title="Google SSO chưa được cấu hình"
             className="w-full h-[48px] border border-[#E2E8F0] rounded-[12px] bg-white hover:bg-[#F8FAFC] transition-all flex items-center justify-center gap-[10px] text-[15px] font-medium text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-blue-100"
           >
             <svg className="w-[18px] h-[18px] shrink-0" viewBox="0 0 24 24">
@@ -219,7 +250,7 @@ export function LoginForm() {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            <span>Đăng nhập với Google</span>
+            <span>Google SSO chưa được cấu hình</span>
           </button>
         </div>
       </form>

@@ -1,5 +1,7 @@
 'use client';
 
+import { existingApiFetch } from "@/lib/existing-api-fetch";
+
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
@@ -45,7 +47,7 @@ export default function HRRequisitionsPage() {
   const fetchRequisitions = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:8000/api/v1/requisitions');
+      const res = await existingApiFetch('http://localhost:8000/api/v1/requisitions');
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {

@@ -1,17 +1,52 @@
 from typing import Optional
-from fastapi import APIRouter, Header, Depends, HTTPException, status
+from fastapi import APIRouter, Header, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.v1.auth import require_roles
 from app.db.session import get_db
 from app.models.hr import Competency, Department, JobTitle, SharedCategory
-from app.schemas.hr import CategoryCreate, CompetencyCreate, DepartmentCreate, JobTitleCreate, ReorderCategories
+from app.models.system import SystemSetting
+from app.schemas.hr import CategoryCreate, CompanyContentUpdate, CompetencyCreate, DepartmentCreate, JobTitleCreate, ReorderCategories
+from app.services.audit import write_audit_log
 
 router = APIRouter()
 HR_ROLES = {"hr_manager", "admin"}
 
 def authorize(authorization: Optional[str], db: Session):
     return require_roles(authorization, db, HR_ROLES)
+
+def get_or_create_settings(db: Session) -> SystemSetting:
+    settings = db.query(SystemSetting).filter(SystemSetting.id == 1).first()
+    if not settings:
+        settings = SystemSetting(id=1)
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
+def content_dict(settings: SystemSetting):
+    return {"title": settings.landing_title, "body": settings.landing_body, "image": settings.landing_image}
+
+@router.get("/company-content/public")
+def get_public_company_content(db: Session = Depends(get_db)):
+    return content_dict(get_or_create_settings(db))
+
+@router.get("/company-content")
+def get_company_content(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    return content_dict(get_or_create_settings(db))
+
+@router.put("/company-content")
+def update_company_content(payload: CompanyContentUpdate, request: Request, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    current_user = authorize(authorization, db)
+    settings = get_or_create_settings(db)
+    settings.landing_title = payload.title.strip()
+    settings.landing_body = payload.body.strip()
+    settings.landing_image = payload.image
+    db.commit()
+    db.refresh(settings)
+    write_audit_log(db, action="Cập nhật nội dung tuyển dụng", module="Nội dung", request=request, user=current_user, details=settings.landing_title)
+    return content_dict(settings)
 
 @router.get("/departments")
 def list_departments(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):

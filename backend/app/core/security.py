@@ -7,6 +7,12 @@ from datetime import datetime, timedelta
 from typing import Optional, Any
 from jose import jwt, JWTError
 from app.core.config import settings
+import bcrypt
+import hashlib
+from datetime import datetime, timedelta
+from typing import Optional, Any
+from jose import jwt, JWTError
+from app.core.config import settings
 
 def hash_password(password: str) -> str:
     pwd_bytes = password.encode('utf-8')[:72]
@@ -41,9 +47,31 @@ def decode_access_token(token: str) -> Optional[str]:
     except JWTError:
         return None
 
-# =========================================================================
-# OTP & PASSWORD RESET CRYPTOGRAPHIC HELPERS
-# =========================================================================
+def create_password_reset_token(user_id: int, hashed_password: str) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES)
+    password_version = hashlib.sha256(hashed_password.encode("utf-8")).hexdigest()[:16]
+    payload = {"exp": expire, "sub": str(user_id), "purpose": "password_reset", "pwd": password_version}
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+def decode_password_reset_token(token: str, hashed_password: str) -> Optional[str]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        expected_version = hashlib.sha256(hashed_password.encode("utf-8")).hexdigest()[:16]
+        if payload.get("purpose") != "password_reset" or payload.get("pwd") != expected_version:
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
+
+def get_password_reset_subject(token: str) -> Optional[str]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("purpose") != "password_reset":
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
+
 
 def generate_secure_otp() -> str:
     """Generates a 6-digit cryptographically secure random numeric OTP string."""

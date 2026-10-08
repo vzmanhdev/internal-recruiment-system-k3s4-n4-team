@@ -9,11 +9,11 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 
 const variantStyles: Record<CardVariant, string> = {
   default:
-    "bg-[var(--color-surface)] border border-[var(--color-border)] shadow-[var(--shadow-card)]",
+    "bg-gradient-to-br from-white via-white to-blue-50/35 border border-white/90 ring-1 ring-[var(--color-border)]/80 shadow-[var(--shadow-card)]",
   interactive:
-    "bg-[var(--color-surface)] border border-[var(--color-border)] shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] hover:-translate-y-0.5 transition-all duration-200 cursor-pointer",
+    "bg-gradient-to-br from-white via-white to-blue-50/45 border border-white/90 ring-1 ring-[var(--color-border)]/80 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] hover:-translate-y-1 hover:ring-blue-300/80 transition-all duration-200 cursor-pointer",
   subtle:
-    "bg-[var(--color-background-start)] border border-slate-200/80 shadow-none",
+    "bg-gradient-to-br from-blue-50/90 to-slate-50 border border-blue-100/80 shadow-sm",
 };
 
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(
@@ -21,7 +21,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
     return (
       <div
         ref={ref}
-        className={cn("rounded-2xl p-6 transition-all duration-200", variantStyles[variant], className)}
+        className={cn("rounded-2xl p-5 transition-all duration-200", variantStyles[variant], className)}
         {...props}
       >
         {children}

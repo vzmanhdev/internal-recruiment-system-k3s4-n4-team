@@ -5,64 +5,41 @@ import { ArrowRight, Sparkles } from "lucide-react";
 import { Container } from "@/components/layout/Container";
 import { Button } from "@/components/ui/Button";
 import { JobCard } from "./JobCard";
-import { jobService, JobPostingItem } from "@/services/job.service";
 import type { JobOpportunity } from "../types/landing.types";
+import { fetchPublicJobs, JobPostingItem } from "@/features/jobs/services/job-posting.service";
+
+function mapPostingToOpportunity(job: JobPostingItem): JobOpportunity {
+  return {
+    id: String(job.id),
+    title: job.title,
+    department: job.department_name || "Tuyển dụng nội bộ",
+    location: job.work_location || "Trụ sở chính",
+    employmentType: job.employment_type === "full_time" ? "Toàn thời gian" : job.employment_type === "part_time" ? "Bán thời gian" : "Hợp đồng",
+    experience: "N/A",
+    postedDate: job.created_at ? `Đăng ngày ${new Date(job.created_at).toLocaleDateString("vi-VN")}` : "Mới đăng",
+    badges: [{ label: "ƯU TIÊN NỘI BỘ", variant: "primary" }],
+    skills: job.requirements ? job.requirements.split(",").map((s) => s.trim()).filter(Boolean) : ["Toàn thời gian"],
+  };
+}
 
 export function JobOpportunitiesSection() {
-  const [activeCategory, setActiveCategory] = useState("all");
   const [jobs, setJobs] = useState<JobOpportunity[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isMounted = true;
-    jobService
-      .getJobs()
-      .then((data) => {
-        if (isMounted) {
-          const mapped: JobOpportunity[] = data.map((j) => ({
-            id: j.slug || String(j.id),
-            title: j.title,
-            department: j.department_name || j.department || "Khối Công Nghệ",
-            location: j.location || "Hà Nội",
-            employmentType: j.type || "Toàn thời gian",
-            experience: j.experience_level || "1-3 năm",
-            postedDate: "Tuyển dụng mới",
-            badges: [
-              { label: "ƯU TIÊN NỘI BỘ", variant: "primary" },
-              { label: "HOT", variant: "danger" },
-            ],
-            skills: j.requirements ? j.requirements.split(",").map((s) => s.trim()) : ["Tuyển dụng nội bộ"],
-            isBookmarked: false,
-          }));
-          setJobs(mapped);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load landing jobs:", err);
-        if (isMounted) setLoading(false);
-      });
-    return () => {
-      isMounted = false;
-    };
+    async function load() {
+      setLoading(true);
+      try {
+        const res = await fetchPublicJobs({ page_size: 6 });
+        setJobs(res.items.map(mapPostingToOpportunity));
+      } catch (err) {
+        console.error("Failed to load landing page jobs:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, []);
-
-  const categories = [
-    { id: "all", label: `Tất cả vị trí (${jobs.length})` },
-    { id: "it", label: "Công nghệ thông tin" },
-    { id: "product", label: "Sản phẩm & Thiết kế" },
-    { id: "hr", label: "Nhân sự & L&D" },
-    { id: "finance", label: "Tài chính & Dữ liệu" },
-  ];
-
-  const filteredJobs = jobs.filter((job) => {
-    if (activeCategory === "all") return true;
-    if (activeCategory === "it") return job.department.toLowerCase().includes("công nghệ") || job.department.toLowerCase().includes("it");
-    if (activeCategory === "product") return job.department.toLowerCase().includes("sản phẩm");
-    if (activeCategory === "hr") return job.department.toLowerCase().includes("nhân sự");
-    if (activeCategory === "finance") return job.department.toLowerCase().includes("tài chính") || job.department.toLowerCase().includes("dữ liệu");
-    return true;
-  });
 
   return (
     <section id="jobs" className="py-20 bg-slate-50/50 border-y border-slate-200/60">
@@ -87,37 +64,22 @@ export function JobOpportunitiesSection() {
           </Button>
         </div>
 
-        {/* Category Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar">
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setActiveCategory(cat.id)}
-              className={`px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all duration-200 ${
-                activeCategory === cat.id
-                  ? "bg-[var(--color-primary)] text-white shadow-sm"
-                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Job Grid */}
+        {/* Job Grid: 3 cols desktop, 2 cols tablet, 1 col mobile */}
         {loading ? (
-          <div className="text-center py-12 text-slate-500 font-medium">Đang tải danh sách vị trí từ máy chủ...</div>
-        ) : filteredJobs.length ? (
+          <div className="py-12 text-center text-sm text-slate-500">Đang tải vị trí tuyển dụng từ hệ thống...</div>
+        ) : jobs.length === 0 ? (
+          <div className="py-12 text-center text-sm text-slate-500 italic bg-white rounded-2xl border border-slate-200">
+            Hiện chưa có vị trí tuyển dụng nào được đăng trên cơ sở dữ liệu.
+          </div>
+        ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredJobs.map((job) => (
+            {jobs.map((job) => (
               <JobCard key={job.id} job={job} />
             ))}
           </div>
-        ) : (
-          <div className="text-center py-12 text-slate-500 font-medium">Chưa có vị trí tuyển dụng trong danh mục này.</div>
         )}
       </Container>
     </section>
   );
 }
+

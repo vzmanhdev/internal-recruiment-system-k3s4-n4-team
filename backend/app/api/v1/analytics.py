@@ -1,115 +1,184 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional, List, Dict
+from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from datetime import datetime, timedelta
 
+from app.api.v1.auth import require_roles
 from app.db.session import get_db
-from app.models.requisition import JobRequisition
-from app.models.job import JobPosting
 from app.models.application import JobApplication
-from app.models.interview import InterviewSchedule
-from app.models.offer_onboarding import JobOffer
-from app.models.hr import HeadcountBudget, Department
+from app.models.hr import Department
+from app.models.job import JobPosting
+from app.models.referral_eval import InternalReferral
+from app.models.requisition import JobRequisition
+from app.models.user import User
+from app.schemas.analytics import (
+    AnalyticsOverview,
+    DepartmentStat,
+    FunnelStageCount,
+    ReferralAnalytics,
+    TopReferrer,
+)
 
 router = APIRouter()
 
-@router.get("/overview")
-def get_analytics_overview(db: Session = Depends(get_db)):
-    total_jobs = db.query(JobPosting).count()
-    active_jobs = db.query(JobPosting).filter(JobPosting.status == "published").count()
-    
-    total_applications = db.query(JobApplication).count()
-    new_applications = db.query(JobApplication).filter(JobApplication.status == "submitted").count()
-    screening_applications = db.query(JobApplication).filter(JobApplication.status == "screening").count()
-    interviewing_applications = db.query(JobApplication).filter(JobApplication.status == "interviewing").count()
-    offered_applications = db.query(JobApplication).filter(JobApplication.status == "offered").count()
-    hired_applications = db.query(JobApplication).filter(JobApplication.status == "hired").count()
-    rejected_applications = db.query(JobApplication).filter(JobApplication.status == "rejected").count()
+HR_ADMIN_ROLES = {"admin", "hr_manager"}
+
+STAGE_LABELS: Dict[str, str] = {
+    "applied": "Mới nộp (Applied)",
+    "screening": "Sơ tuyển (Screening)",
+    "interviewing": "Phỏng vấn (Interviewing)",
+    "offered": "Mời làm việc (Offered)",
+    "hired": "Đã tuyển dụng (Hired)",
+    "rejected": "Từ chối (Rejected)",
+}
+
+
+def get_hr_user(authorization: Optional[str], db: Session) -> User:
+    return require_roles(authorization, db, HR_ADMIN_ROLES)
+
+@router.get("/analytics/overview", response_model=AnalyticsOverview)
+def get_analytics_overview(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    get_hr_user(authorization, db)
 
     total_requisitions = db.query(JobRequisition).count()
-    approved_requisitions = db.query(JobRequisition).filter(JobRequisition.status == "approved").count()
-    pending_requisitions = db.query(JobRequisition).filter(JobRequisition.status.in_(["pending_manager", "pending_hr", "pending_approval"])).count()
+    total_jobs = db.query(JobPosting).count()
+    active_jobs = db.query(JobPosting).filter(JobPosting.status == "published").count()
+    total_applications = db.query(JobApplication).count()
+    hired_applications = db.query(JobApplication).filter(JobApplication.status == "hired").count()
 
-    total_interviews = db.query(InterviewSchedule).count()
-    completed_interviews = db.query(InterviewSchedule).filter(InterviewSchedule.status == "completed").count()
+    conversion_rate = round((hired_applications / total_applications * 100), 2) if total_applications > 0 else 0.0
 
-    # Headcount Summary
-    total_headcount_approved = db.query(func.sum(HeadcountBudget.budget_quantity)).scalar() or 0
-    total_headcount_occupied = db.query(func.sum(HeadcountBudget.used_quantity)).scalar() or 0
-    remaining_headcount = max(0, total_headcount_approved - total_headcount_occupied)
-
-    conversion_rate = round((hired_applications / total_applications * 100), 1) if total_applications > 0 else 0.0
+    total_referrals = db.query(InternalReferral).count()
+    bonus_sum = db.query(func.sum(InternalReferral.bonus_amount)).filter(InternalReferral.status == "bonus_paid").scalar() or 0.0
 
     return {
-        "kpis": {
-            "active_jobs": active_jobs or 8,
-            "total_applications": total_applications,
-            "active_requisitions": active_jobs or 8,
-            "pending_approvals": pending_requisitions or 3,
-            "new_candidates_this_week": new_applications or 24,
-            "interviews_this_week": interviewing_applications or 12,
-            "pending_offers": offered_applications or 5,
-            "hired_count": hired_applications or 18,
-            "remaining_headcount": remaining_headcount or 14,
-            "budget_usage_percent": 68.5,
-            "conversion_rate": conversion_rate or 15.2,
-        },
-        "application_pipeline": {
-            "submitted": new_applications or 24,
-            "screening": screening_applications or 18,
-            "interviewing": interviewing_applications or 12,
-            "offered": offered_applications or 5,
-            "hired": hired_applications or 18,
-            "rejected": rejected_applications or 9,
-        },
-        "overdue_requisitions": [
-            {
-                "id": "REQ-2026-004",
-                "title": "Chuyên viên Senior DevOps / Cloud Architect",
-                "department": "Khối Công Nghệ",
-                "target_date": "30/09/2026",
-                "delay_days": 5,
-                "recruiter": "Nguyễn Văn Hùng",
-                "status": "Quá SLA 5 ngày"
-            },
-            {
-                "id": "REQ-2026-008",
-                "title": "Trưởng nhóm Data Analyst & BI",
-                "department": "Khối Dữ Liệu & Phân Tích",
-                "target_date": "02/10/2026",
-                "delay_days": 3,
-                "recruiter": "Lê Thị Mai",
-                "status": "Quá SLA 3 ngày"
-            }
-        ],
-        "hr_action_items": [
-            {
-                "id": 1,
-                "type": "headcount_override",
-                "title": "Cần xác nhận Ghi đè Headcount REQ-2026-001 (Phòng CNTT)",
-                "priority": "Cao",
-                "time": "2 giờ trước"
-            },
-            {
-                "id": 2,
-                "type": "offer_approval",
-                "title": "Phê duyệt Offer cho ứng viên Đỗ Hoàng Long (Vượt band 12%)",
-                "priority": "Vượt dải lương",
-                "time": "Hôm nay, 10:30"
-            },
-            {
-                "id": 3,
-                "type": "job_review",
-                "title": "Thẩm định tin tuyển dụng Chuyên viên Digital Marketing",
-                "priority": "Trung bình",
-                "time": "Hôm nay, 08:15"
-            }
-        ],
-        "department_metrics": [
-            { "name": "Công Nghệ Thông Tin", "requisitions": 5, "candidates": 38, "hired": 8 },
-            { "name": "Khối Dữ Liệu", "requisitions": 3, "candidates": 22, "hired": 4 },
-            { "name": "Marketing & Growth", "requisitions": 2, "candidates": 15, "hired": 3 },
-            { "name": "Tài Chính & Kế Toán", "requisitions": 1, "candidates": 8, "hired": 2 },
-            { "name": "Nhân Sự & Vận Hành", "requisitions": 1, "candidates": 6, "hired": 1 }
-        ]
+        "total_requisitions": total_requisitions,
+        "total_jobs": total_jobs,
+        "active_jobs": active_jobs,
+        "total_applications": total_applications,
+        "hired_applications": hired_applications,
+        "conversion_rate_pct": conversion_rate,
+        "total_referrals": total_referrals,
+        "total_bonus_paid_vnd": float(bonus_sum),
     }
+
+@router.get("/analytics/funnel", response_model=List[FunnelStageCount])
+def get_funnel_analytics(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    get_hr_user(authorization, db)
+
+    total_applications = db.query(JobApplication).count()
+    stage_counts = (
+        db.query(JobApplication.status, func.count(JobApplication.id))
+        .group_by(JobApplication.status)
+        .all()
+    )
+
+    stage_map = {stage: count for stage, count in stage_counts}
+
+    result = []
+    for stage_key, label in STAGE_LABELS.items():
+        cnt = stage_map.get(stage_key, 0)
+        pct = round((cnt / total_applications * 100), 2) if total_applications > 0 else 0.0
+        result.append({
+            "stage": stage_key,
+            "stage_label": label,
+            "count": cnt,
+            "percentage": pct,
+        })
+
+    return result
+
+@router.get("/analytics/by-department", response_model=List[DepartmentStat])
+def get_department_analytics(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    get_hr_user(authorization, db)
+
+    departments = db.query(Department).all()
+    result = []
+
+    for dept in departments:
+        job_count = db.query(JobPosting).filter(JobPosting.department_id == dept.id).count()
+
+        app_count = (
+            db.query(JobApplication)
+            .join(JobPosting, JobApplication.job_id == JobPosting.id)
+            .filter(JobPosting.department_id == dept.id)
+            .count()
+        )
+
+        hired_count = (
+            db.query(JobApplication)
+            .join(JobPosting, JobApplication.job_id == JobPosting.id)
+            .filter(JobPosting.department_id == dept.id, JobApplication.status == "hired")
+            .count()
+        )
+
+        result.append({
+            "department_id": dept.id,
+            "department_name": dept.name,
+            "job_count": job_count,
+            "application_count": app_count,
+            "hired_count": hired_count,
+        })
+
+    return result
+
+
+@router.get("/analytics/referrals", response_model=ReferralAnalytics)
+def get_referral_analytics(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    get_hr_user(authorization, db)
+
+    total_referrals = db.query(InternalReferral).count()
+    pending_referrals = db.query(InternalReferral).filter(InternalReferral.status == "pending").count()
+    hired_referrals = db.query(InternalReferral).filter(InternalReferral.status.in_(["hired", "bonus_paid"])).count()
+    bonus_sum = db.query(func.sum(InternalReferral.bonus_amount)).filter(InternalReferral.status == "bonus_paid").scalar() or 0.0
+
+    # Top referrers
+    hired_case = case((InternalReferral.status.in_(["hired", "bonus_paid"]), 1), else_=0)
+    top_records = (
+        db.query(
+            User.id,
+            User.full_name,
+            User.email,
+            func.count(InternalReferral.id).label("total_refs"),
+            func.sum(hired_case).label("hired_refs"),
+            func.sum(InternalReferral.bonus_amount).label("bonus_sum")
+        )
+        .join(InternalReferral, User.id == InternalReferral.referrer_id)
+        .group_by(User.id, User.full_name, User.email)
+        .order_by(func.count(InternalReferral.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    top_referrers = [
+        {
+            "user_id": r.id,
+            "full_name": r.full_name,
+            "email": r.email,
+            "total_referrals": r.total_refs,
+            "hired_referrals": int(r.hired_refs or 0),
+            "total_bonus_vnd": float(r.bonus_sum or 0.0),
+        }
+        for r in top_records
+    ]
+
+    return {
+        "total_referrals": total_referrals,
+        "pending_referrals": pending_referrals,
+        "hired_referrals": hired_referrals,
+        "total_bonus_paid_vnd": float(bonus_sum),
+        "top_referrers": top_referrers,
+    }
+

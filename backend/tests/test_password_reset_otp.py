@@ -24,10 +24,10 @@ def override_get_db():
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
-
 @pytest.fixture(autouse=True)
 def setup_database():
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = override_get_db
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
@@ -44,6 +44,8 @@ def setup_database():
     db.commit()
     db.close()
     yield
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous_overrides)
     Base.metadata.drop_all(bind=engine)
     if os.path.exists(TEST_DB_FILE):
         try:

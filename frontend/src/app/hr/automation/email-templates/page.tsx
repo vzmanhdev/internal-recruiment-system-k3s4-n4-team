@@ -1,5 +1,7 @@
 "use client";
 
+import { existingApiFetch } from "@/lib/existing-api-fetch";
+
 import React, { useState, useEffect } from "react";
 import {
   Mail,
@@ -72,7 +74,7 @@ export default function EmailTemplatesPage() {
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/email-automation/templates");
+      const res = await existingApiFetch("http://localhost:8000/api/v1/email-automation/templates");
       if (res.ok) {
         const data = await res.json();
         setTemplates(data);
@@ -90,7 +92,7 @@ export default function EmailTemplatesPage() {
 
   const handleToggleAutoSend = async (tpl: EmailTemplate) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/email-automation/templates/${tpl.id}`, {
+      const res = await existingApiFetch(`http://localhost:8000/api/v1/email-automation/templates/${tpl.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_auto_send: !tpl.is_auto_send })
@@ -115,7 +117,7 @@ export default function EmailTemplatesPage() {
     try {
       if (editingTemplate.id) {
         // Update
-        const res = await fetch(`http://localhost:8000/api/v1/email-automation/templates/${editingTemplate.id}`, {
+        const res = await existingApiFetch(`http://localhost:8000/api/v1/email-automation/templates/${editingTemplate.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(editingTemplate)
@@ -129,7 +131,7 @@ export default function EmailTemplatesPage() {
       } else {
         // Create new
         const newCode = editingTemplate.code || `TPL_${Date.now()}`;
-        const res = await fetch("http://localhost:8000/api/v1/email-automation/templates", {
+        const res = await existingApiFetch("http://localhost:8000/api/v1/email-automation/templates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...editingTemplate, code: newCode })
@@ -148,7 +150,7 @@ export default function EmailTemplatesPage() {
 
   const handlePreview = async (tpl: EmailTemplate) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/email-automation/templates/${tpl.id}/preview`, {
+      const res = await existingApiFetch(`http://localhost:8000/api/v1/email-automation/templates/${tpl.id}/preview`, {
         method: "POST"
       });
       if (res.ok) {

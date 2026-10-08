@@ -38,3 +38,8 @@ class CategoryCreate(BaseModel):
 
 class ReorderCategories(BaseModel):
     ids: List[int] = Field(..., min_length=1)
+
+class CompanyContentUpdate(BaseModel):
+    title: str = Field(..., min_length=3, max_length=255)
+    body: str = Field(..., min_length=10, max_length=5000)
+    image: Optional[str] = Field(None, max_length=4000000)

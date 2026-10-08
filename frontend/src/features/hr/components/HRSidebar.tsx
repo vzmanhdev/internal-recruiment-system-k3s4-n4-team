@@ -31,6 +31,8 @@ const hrNavigationGroups: NavGroup[] = [
   {
     groupName: "TUYỂN DỤNG",
     items: [
+      { label: "Headcount & xuất bản", href: "/hr/headcount", icon: Target },
+      { label: "Luồng duyệt & bổ sung", href: "/hr/requests", icon: FileCheck },
       { label: "Yêu cầu tuyển dụng (REQ)", href: "/hr/requisitions", icon: FileCheck, badge: "SLA" },
       { label: "Trung tâm Phê duyệt", href: "/hr/approvals", icon: ShieldCheck, badge: "3 cấp" },
       { label: "Tin tuyển dụng", href: "/hr/job-postings", icon: Briefcase },

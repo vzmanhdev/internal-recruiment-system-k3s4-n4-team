@@ -2,8 +2,8 @@
 
 :root {
   /* Color Tokens - Primary */
-  --color-primary: #3B82F6;
-  --color-primary-hover: #2563EB;
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
   --color-primary-active: #1D4ED8;
   --color-primary-light: #EFF6FF;
 
@@ -20,17 +20,17 @@
   --color-danger-light: #FEF2F2;
 
   /* Background & Surface Tokens */
-  --color-background-start: #F0F6FF;
-  --color-background-end: #F8FAFC;
+  --color-background-start: #EEF5FF;
+  --color-background-end: #F8FBFF;
   --color-surface: #FFFFFF;
 
   /* Text Tokens */
-  --color-heading: #0F172A;
+  --color-heading: #0B2347;
   --color-body: #475569;
   --color-muted: #64748B;
 
   /* Border Token */
-  --color-border: #E2E8F0;
+  --color-border: #D5E3F4;
 
   /* Radius Tokens */
   --radius-sm: 8px;
@@ -41,11 +41,21 @@
 
   /* Shadow Tokens */
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-card: 0 10px 30px rgba(59, 130, 246, 0.05);
-  --shadow-card-hover: 0 14px 40px rgba(59, 130, 246, 0.08);
+  --shadow-card: 0 12px 34px rgba(37, 99, 235, 0.09), 0 2px 8px rgba(15, 23, 42, 0.04);
+  --shadow-card-hover: 0 20px 50px rgba(37, 99, 235, 0.14), 0 5px 16px rgba(15, 23, 42, 0.06);
 
   /* Typography Foundation */
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --font-sans: var(--font-inter), 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Keep public pages and workspace components on the same theme. */
+  --primary: var(--color-primary);
+  --primary-dark: var(--color-primary-hover);
+  --navy: var(--color-heading);
+  --text: var(--color-body);
+  --muted: var(--color-muted);
+  --soft: var(--color-background-start);
+  --soft-blue: var(--color-primary-light);
+  --border: var(--color-border);
 }
 
 .font-handwriting {
@@ -53,6 +63,7 @@
 }
 
 /* Global Reset & Base Typography */
+@layer base {
 html {
   scroll-behavior: smooth;
 }
@@ -60,7 +71,10 @@ html {
 body {
   font-family: var(--font-sans);
   color: var(--color-body);
-  background: linear-gradient(180deg, var(--color-background-start) 0%, var(--color-background-end) 100%);
+  background:
+    radial-gradient(circle at 8% 4%, rgba(96, 165, 250, 0.18), transparent 28rem),
+    radial-gradient(circle at 92% 12%, rgba(45, 212, 191, 0.09), transparent 24rem),
+    linear-gradient(180deg, var(--color-background-start) 0%, var(--color-background-end) 55%, #F3F7FC 100%);
   min-height: 100vh;
 }
 
@@ -114,6 +128,7 @@ input:disabled, select:disabled, textarea:disabled {
   background-color: #F8FAFC;
   color: #94A3B8;
   cursor: not-allowed;
+}
 }
 
 /* Responsive Container Foundation */

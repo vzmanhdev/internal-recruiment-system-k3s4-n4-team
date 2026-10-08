@@ -28,10 +28,10 @@ def override_get_db():
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
-
 @pytest.fixture(autouse=True)
 def setup_database():
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = override_get_db
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
@@ -51,6 +51,8 @@ def setup_database():
     db.commit()
     db.close()
     yield
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous_overrides)
     Base.metadata.drop_all(bind=engine)
     if os.path.exists(TEST_DB_FILE):
         try:
@@ -105,21 +107,31 @@ def test_full_e2e_recruitment_lifecycle():
         "job_description": "Xây dựng hệ thống microservices tuyển dụng.",
         "requirements": "Python, FastAPI, PostgreSQL"
     }
-    req_resp = client.post("/api/v1/requisitions", json=req_payload, headers=headers)
+    req_resp = client.post("/api/v1/legacy/requisitions", json=req_payload, headers=headers)
     assert req_resp.status_code == 201
     req_id = req_resp.json()["id"]
     assert req_resp.json()["status"] == "pending_manager"
 
     # Step 3a: Step 1 Approval (pending_manager -> pending_hr)
-    appr1_resp = client.post(f"/api/v1/requisitions/{req_id}/approve", json={"action": "approved", "comment": "Duyệt cấp 1"}, headers=headers)
+    appr1_resp = client.post(f"/api/v1/legacy/requisitions/{req_id}/approve", json={"action": "approved", "comment": "Duyệt cấp 1"}, headers=headers)
     assert appr1_resp.status_code == 200
     assert appr1_resp.json()["status"] == "pending_hr"
 
+    budget = client.put('/api/v1/headcount/budgets/1', headers=headers, json={'headcount_limit': 10, 'monthly_salary_limit': 500000000})
+    assert budget.status_code == 200, budget.text
     # Step 3b: Step 2 Approval (pending_hr -> approved)
-    appr2_resp = client.post(f"/api/v1/requisitions/{req_id}/approve", json={"action": "approved", "comment": "Duyệt cấp 2 HR"}, headers=headers)
+    appr2_resp = client.post(f"/api/v1/legacy/requisitions/{req_id}/approve", json={"action": "approved", "comment": "Duyệt cấp 2 HR"}, headers=headers)
     assert appr2_resp.status_code == 200
     assert appr2_resp.json()["status"] == "approved"
 
+    db = TestingSessionLocal()
+    recruiter = User(email='recruiter@test.com', full_name='Recruiter', hashed_password=hash_password('Recruit123'), role='recruiter', is_active=True, account_status='active')
+    db.add(recruiter)
+    db.commit()
+    recruiter_id = recruiter.id
+    db.close()
+    assigned = client.put(f'/api/v1/requisitions/{req_id}/assign', json={'recruiter_id': recruiter_id}, headers=headers)
+    assert assigned.status_code == 200, assigned.text
     # 4. Create Job Posting
     job_payload = {
         "title": "Kỹ Sư Backend Python Senior",
@@ -134,7 +146,7 @@ def test_full_e2e_recruitment_lifecycle():
         "requirements": "FastAPI, PostgreSQL, Docker",
         "status": "published"
     }
-    job_resp = client.post("/api/v1/jobs", json=job_payload, headers=headers)
+    job_resp = client.post("/api/v1/legacy/jobs", json=job_payload, headers=headers)
     assert job_resp.status_code == 201
     job_id = job_resp.json()["id"]
     assert job_resp.json()["slug"] is not None
@@ -152,17 +164,17 @@ def test_full_e2e_recruitment_lifecycle():
         "years_of_experience": 3,
         "cv_url": "https://storage.example.com/cv.pdf"
     }
-    app_resp = client.post("/api/v1/applications", json=app_payload, headers=cand_headers)
+    app_resp = client.post("/api/v1/legacy/applications", json=app_payload, headers=cand_headers)
     assert app_resp.status_code == 201
     app_id = app_resp.json()["id"]
     assert app_resp.json()["status"] == "submitted"
 
     # 6. Update Application Status to Screening & Interviewing
-    st1 = client.put(f"/api/v1/applications/{app_id}/status", json={"status": "screening", "hr_notes": "Hồ sơ phù hợp"}, headers=headers)
+    st1 = client.put(f"/api/v1/legacy/applications/{app_id}/status", json={"status": "screening", "hr_notes": "Hồ sơ phù hợp"}, headers=headers)
     assert st1.status_code == 200
     assert st1.json()["status"] == "screening"
 
-    st2 = client.put(f"/api/v1/applications/{app_id}/status", json={"status": "interviewing", "hr_notes": "Chuyển sang phỏng vấn"}, headers=headers)
+    st2 = client.put(f"/api/v1/legacy/applications/{app_id}/status", json={"status": "interviewing", "hr_notes": "Chuyển sang phỏng vấn"}, headers=headers)
     assert st2.status_code == 200
 
     # 7. Schedule Interview
@@ -176,12 +188,12 @@ def test_full_e2e_recruitment_lifecycle():
         "meeting_link": "https://meet.google.com/test-meet",
         "interviewer_ids": [1]
     }
-    int_resp = client.post("/api/v1/interviews", json=int_payload, headers=headers)
+    int_resp = client.post("/api/v1/legacy/interviews", json=int_payload, headers=headers)
     assert int_resp.status_code == 201, int_resp.text
     int_id = int_resp.json()["id"]
 
     # 8. Submit Interview Evaluation
-    eval_resp = client.put(f"/api/v1/interviews/{int_id}/feedback", json={
+    eval_resp = client.put(f"/api/v1/legacy/interviews/{int_id}/feedback", json={
         "status": "completed",
         "score": 9,
         "passed": True,
@@ -197,16 +209,16 @@ def test_full_e2e_recruitment_lifecycle():
         "offered_salary": 30000000,
         "start_date": "2026-11-01"
     }
-    off_resp = client.post("/api/v1/offers", json=offer_payload, headers=headers)
+    off_resp = client.post("/api/v1/legacy/offers", json=offer_payload, headers=headers)
     assert off_resp.status_code == 201
     off_id = off_resp.json()["id"]
 
-    off_accept = client.put(f"/api/v1/offers/{off_id}/status", json={"status": "accepted"}, headers=headers)
+    off_accept = client.put(f"/api/v1/legacy/offers/{off_id}/status", json={"status": "accepted"}, headers=headers)
     assert off_accept.status_code == 200
     assert off_accept.json()["status"] == "accepted"
 
     # 10. Analytics Dashboard Audit
-    analytics_resp = client.get("/api/v1/analytics/overview", headers=headers)
+    analytics_resp = client.get("/api/v1/legacy/analytics/overview", headers=headers)
     assert analytics_resp.status_code == 200
     data = analytics_resp.json()
     assert "kpis" in data
@@ -226,12 +238,12 @@ def test_rbac_security_enforcement():
         "department_id": 1,
         "quantity": 1
     }
-    req_resp = client.post("/api/v1/requisitions", json=req_payload, headers=admin_headers)
+    req_resp = client.post("/api/v1/legacy/requisitions", json=req_payload, headers=admin_headers)
     assert req_resp.status_code == 201
     req_id = req_resp.json()["id"]
 
     # 2. Unauthenticated Request (Missing Authorization Header)
-    resp = client.post("/api/v1/requisitions", json=req_payload)
+    resp = client.post("/api/v1/legacy/requisitions", json=req_payload)
     assert resp.status_code == 401
 
     # 3. Unauthorized Role Attempting Admin Actions
@@ -257,5 +269,5 @@ def test_rbac_security_enforcement():
     assert forbidden_resp.status_code == 403
 
     # Normal employee trying to approve requisition must get 403 Forbidden
-    req_appr_resp = client.post(f"/api/v1/requisitions/{req_id}/approve", json={"action": "approved"}, headers=emp_headers)
+    req_appr_resp = client.post(f"/api/v1/legacy/requisitions/{req_id}/approve", json={"action": "approved"}, headers=emp_headers)
     assert req_appr_resp.status_code == 403
