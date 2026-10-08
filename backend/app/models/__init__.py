@@ -7,3 +7,5 @@ from app.models.interview import InterviewSchedule, InterviewInterviewer
 from app.models.offer_onboarding import JobOffer, OnboardingChecklist
 from app.models.referral_eval import InternalReferral, CandidateEvaluation
 from app.models.email_automation import EmailTemplate, EmailLog
+from app.models.audit import AuditLog, Permission, RolePermission
+

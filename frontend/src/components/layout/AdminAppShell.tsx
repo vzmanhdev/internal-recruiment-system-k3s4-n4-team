@@ -6,28 +6,74 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
-  UserPlus,
   ShieldCheck,
-  Lock,
-  KeyRound,
-  FileSpreadsheet,
-  ScrollText,
-  Sliders,
-  Database,
+  Building2,
+  Briefcase,
+  Award,
+  HelpCircle,
+  ListFilter,
+  FileText,
+  GitMerge,
+  TrendingUp,
+  Megaphone,
+  UserCheck,
+  FolderGit2,
+  Calendar,
+  ClipboardCheck,
+  FileSignature,
+  UserPlus,
+  Globe,
+  Mail,
+  Send,
   Bell,
+  BarChart3,
+  Filter,
+  Clock,
+  PieChart,
+  ScrollText,
   LogOut,
   User as UserIcon,
   ChevronDown,
   Menu,
   X,
   ExternalLink,
-  Briefcase
 } from "lucide-react";
 import { authService } from "@/features/auth/services/auth.service";
+import { getAggregatedMenu, MenuGroup } from "@/lib/menu-aggregator";
+
+const ICON_MAP: Record<string, any> = {
+  LayoutDashboard,
+  Users,
+  ShieldCheck,
+  Building2,
+  Briefcase,
+  Award,
+  HelpCircle,
+  ListFilter,
+  FileText,
+  GitMerge,
+  TrendingUp,
+  Megaphone,
+  UserCheck,
+  FolderGit2,
+  Calendar,
+  ClipboardCheck,
+  FileSignature,
+  UserPlus,
+  Globe,
+  Mail,
+  Send,
+  Bell,
+  BarChart3,
+  Filter,
+  Clock,
+  PieChart,
+  ScrollText,
+};
 
 interface AdminAppShellProps {
   children: React.ReactNode;
-  activeTab?: "dashboard" | "users" | "import" | "roles" | "permissions" | "master-data" | "audit-logs" | "profile" | "notification-settings";
+  activeTab?: string;
 }
 
 export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
@@ -38,6 +84,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [userRoles, setUserRoles] = useState<string[]>(["admin"]);
 
   const [adminProfile, setAdminProfile] = useState({
     name: "System Admin",
@@ -57,17 +104,19 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
     return () => window.removeEventListener("avatar_updated", loadAvatar);
   }, []);
 
-  // Fetch admin profile info from auth endpoint or localStorage
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         const user = await authService.getCurrentUser();
         if (user) {
+          const roles = user.roles && user.roles.length > 0 ? user.roles : [user.role || "admin"];
+          setUserRoles(roles);
+
           setAdminProfile({
             name: user.full_name || "System Admin",
             email: user.email || "admin@company.com",
             avatarUrl: user.avatar_url || "",
-            role: "Quản trị viên Cấp cao (Admin)",
+            role: roles.includes("admin") ? "Quản trị viên Cấp cao (Admin)" : roles.join(", ").toUpperCase(),
             department: (user as any).department || "Ban Quản Trị Hệ Thống",
           });
           if (user.avatar_url && !localStorage.getItem("user_avatar_url")) {
@@ -75,13 +124,12 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
           }
         }
       } catch (err) {
-        // Fallback to local user
+        setUserRoles(["admin"]);
       }
     };
     fetchProfile();
   }, []);
 
-  // Handle click outside dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -100,92 +148,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
     router.push("/login");
   };
 
-  const navGroups = [
-    {
-      label: "TỔNG QUAN",
-      items: [
-        {
-          id: "dashboard",
-          label: "Dashboard Quản Trị",
-          href: "/admin/dashboard",
-          icon: LayoutDashboard,
-        },
-      ],
-    },
-    {
-      label: "QUẢN LÝ NGƯỜI DÙNG",
-      items: [
-        {
-          id: "users",
-          label: "Danh sách người dùng",
-          href: "/admin/users",
-          icon: Users,
-        },
-        {
-          id: "import",
-          label: "Import nhân sự Excel",
-          href: "/admin/users/import",
-          icon: FileSpreadsheet,
-        },
-      ],
-    },
-    {
-      label: "TRUY CẬP & PHÂN QUYỀN",
-      items: [
-        {
-          id: "roles",
-          label: "Vai trò (7 Roles)",
-          href: "/admin/roles",
-          icon: ShieldCheck,
-        },
-        {
-          id: "permissions",
-          label: "Ma trận phân quyền RBAC",
-          href: "/admin/permissions",
-          icon: Lock,
-        },
-      ],
-    },
-    {
-      label: "DỮ LIỆU HỆ THỐNG",
-      items: [
-        {
-          id: "master-data",
-          label: "Danh mục dùng chung",
-          href: "/admin/master-data",
-          icon: Sliders,
-        },
-      ],
-    },
-    {
-      label: "GIÁM SÁT",
-      items: [
-        {
-          id: "audit-logs",
-          label: "Nhật ký hệ thống (Audit)",
-          href: "/admin/audit-logs",
-          icon: ScrollText,
-        },
-      ],
-    },
-    {
-      label: "CÁ NHÂN",
-      items: [
-        {
-          id: "profile",
-          label: "Hồ sơ cá nhân",
-          href: "/admin/profile",
-          icon: UserIcon,
-        },
-        {
-          id: "notification-settings",
-          label: "Cấu hình thông báo",
-          href: "/admin/notification-settings",
-          icon: Bell,
-        },
-      ],
-    },
-  ];
+  const navGroups: MenuGroup[] = getAggregatedMenu(userRoles);
 
   const isCurrentTab = (itemHref: string, itemId: string) => {
     if (activeTab) return activeTab === itemId;
@@ -213,7 +176,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
               <div className="font-extrabold text-sm text-slate-900 tracking-tight leading-none flex items-center gap-2">
                 Hệ Thống Tuyển Dụng Nội Bộ
                 <span className="px-2 py-0.5 rounded-full bg-blue-50 text-[#4285F4] border border-blue-100 text-[10px] font-bold uppercase tracking-wider">
-                  Admin Console
+                  {userRoles.includes("admin") ? "Admin Console" : "Workspace"}
                 </span>
               </div>
               <div className="text-[11px] text-slate-400 font-medium mt-0.5">
@@ -225,7 +188,6 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
 
         {/* Right: Workspace Switcher & Profile Menu */}
         <div className="flex items-center gap-3">
-          {/* Quick Workspace Navigation */}
           <div className="hidden md:flex items-center gap-2 border-r border-gray-200 pr-4 mr-1">
             <Link
               href="/hr"
@@ -244,7 +206,6 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
             </Link>
           </div>
 
-          {/* Notifications button */}
           <Link
             href="/admin/notification-settings"
             className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative cursor-pointer"
@@ -270,8 +231,8 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
                 <div className="text-xs font-bold text-slate-900 leading-tight">
                   {adminProfile.name}
                 </div>
-                <div className="text-[10px] text-slate-400 font-semibold">
-                  System Admin
+                <div className="text-[10px] text-slate-400 font-semibold truncate max-w-[120px]">
+                  {adminProfile.role}
                 </div>
               </div>
               <ChevronDown className="w-4 h-4 text-slate-400" />
@@ -332,7 +293,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
       <div className="flex-1 max-w-full flex">
         {/* DESKTOP SIDEBAR (240px - White with subtle right border) */}
         <aside
-          className={`fixed lg:sticky top-16 z-30 h-[calc(100vh-4rem)] w-60 bg-white border-r border-gray-100 shrink-0 flex flex-col justify-between p-4 overflow-y-auto transition-transform duration-200 ${
+          className={`fixed lg:sticky top-16 z-30 h-[calc(100vh-4rem)] w-64 bg-white border-r border-gray-100 shrink-0 flex flex-col justify-between p-4 overflow-y-auto transition-transform duration-200 ${
             isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
           }`}
         >
@@ -340,10 +301,10 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
             {navGroups.map((group, groupIdx) => (
               <div key={groupIdx} className="space-y-1">
                 <div className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
-                  {group.label}
+                  {group.groupName}
                 </div>
                 {group.items.map((item) => {
-                  const Icon = item.icon;
+                  const Icon = ICON_MAP[item.iconName] || LayoutDashboard;
                   const active = isCurrentTab(item.href, item.id);
                   return (
                     <Link

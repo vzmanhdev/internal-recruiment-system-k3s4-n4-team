@@ -37,6 +37,15 @@ with engine.begin() as connection:
     competency_columns = {column["name"] for column in inspect(engine).get_columns("competencies")}
     if "weight" not in competency_columns:
         connection.execute(text("ALTER TABLE competencies ADD COLUMN weight FLOAT NOT NULL DEFAULT 0"))
+    
+    if inspect(engine).has_table("job_postings"):
+        job_columns = {column["name"] for column in inspect(engine).get_columns("job_postings")}
+        if "slug" not in job_columns:
+            connection.execute(text("ALTER TABLE job_postings ADD COLUMN slug VARCHAR(255) DEFAULT ''"))
+        if "views_count" not in job_columns:
+            connection.execute(text("ALTER TABLE job_postings ADD COLUMN views_count INTEGER NOT NULL DEFAULT 0"))
+        if "applications_count" not in job_columns:
+            connection.execute(text("ALTER TABLE job_postings ADD COLUMN applications_count INTEGER NOT NULL DEFAULT 0"))
 
 app = FastAPI(
     title="Internal Recruitment System API",
@@ -52,6 +61,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Global exception handler to capture unhandled server errors and preserve CORS headers
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": f"Hệ thống gặp sự cố nội bộ: {str(exc)}"}
+    )
 
 # Override Pydantic validation exception handler for precise field-level errors
 @app.exception_handler(RequestValidationError)

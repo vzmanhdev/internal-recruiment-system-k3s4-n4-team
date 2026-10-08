@@ -112,9 +112,9 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "detail": "Mật khẩu không chính xác. Vui lòng thử lại.",
+                "detail": "Tài Khoản hoặc Mật khẩu không chính xác. Vui lòng thử lại.",
                 "field_errors": {
-                    "password": "Mật khẩu không chính xác."
+                    "password": "Tài Khoản hoặc Mật khẩu không chính xác."
                 }
             }
         )
@@ -252,7 +252,8 @@ def require_admin(authorization: Optional[str], db: Session) -> User:
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
     admin = db.query(User).filter(User.id == int(user_id)).first()
-    if not admin or "admin" not in admin.role.split(",") or not admin.is_active:
+    roles = set([r.strip() for r in (admin.role or "").split(",") if r.strip()]) if admin else set()
+    if not admin or "admin" not in roles or not admin.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ Quản trị viên mới có quyền thực hiện thao tác này")
     return admin
 
@@ -263,8 +264,15 @@ def require_roles(authorization: Optional[str], db: Session, allowed_roles: set[
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
     user = db.query(User).filter(User.id == int(user_id)).first()
-    roles = set(user.role.split(",")) if user else set()
-    if not user or not user.is_active or not roles.intersection(allowed_roles):
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản không hoạt động hoặc không tồn tại")
+    
+    roles = set([r.strip() for r in (user.role or "").split(",") if r.strip()])
+    # Admin Full Override: Admin account has full access to ALL features & APIs
+    if "admin" in roles:
+        return user
+
+    if not roles.intersection(allowed_roles):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền thực hiện thao tác này")
     return user
 

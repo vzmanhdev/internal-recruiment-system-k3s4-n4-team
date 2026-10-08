@@ -89,22 +89,30 @@ export default function PermissionsMatrixPage() {
   const [hoveredRole, setHoveredRole] = useState<string | null>(null);
 
   const rolesList = [
-    { code: "Admin", label: "Admin", badge: "bg-purple-100 text-purple-700 border-purple-200" },
-    { code: "HR Manager", label: "HR Manager", badge: "bg-blue-100 text-blue-700 border-blue-200" },
-    { code: "Recruiter", label: "Recruiter", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-    { code: "Hiring Manager", label: "Hiring Manager", badge: "bg-amber-100 text-amber-700 border-amber-200" },
-    { code: "Interviewer", label: "Interviewer", badge: "bg-cyan-100 text-cyan-700 border-cyan-200" },
-    { code: "Approver", label: "Approver", badge: "bg-indigo-100 text-indigo-700 border-indigo-200" },
-    { code: "Candidate", label: "Candidate", badge: "bg-slate-100 text-slate-700 border-slate-200" },
+    { code: "admin", label: "Admin", badge: "bg-purple-100 text-purple-700 border-purple-200" },
+    { code: "hr_manager", label: "HR Manager", badge: "bg-blue-100 text-blue-700 border-blue-200" },
+    { code: "recruiter", label: "Recruiter", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+    { code: "hiring_manager", label: "Hiring Manager", badge: "bg-amber-100 text-amber-700 border-amber-200" },
+    { code: "interviewer", label: "Interviewer", badge: "bg-cyan-100 text-cyan-700 border-cyan-200" },
+    { code: "approver", label: "Approver", badge: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+    { code: "candidate", label: "Candidate", badge: "bg-slate-100 text-slate-700 border-slate-200" },
   ];
 
   const actionsList = [
-    { code: "read", label: "Read (Xem danh sách/chi tiết)" },
-    { code: "create", label: "Create (Tạo dữ liệu mới)" },
-    { code: "edit", label: "Edit (Chỉnh sửa dữ liệu)" },
-    { code: "delete", label: "Delete (Xóa tài nguyên)" },
-    { code: "approve", label: "Approve (Phê duyệt luồng)" },
-    { code: "export", label: "Export (Xuất báo cáo Excel)" },
+    { code: "user:view", label: "Xem người dùng (user:view)" },
+    { code: "user:create", label: "Tạo người dùng (user:create)" },
+    { code: "user:edit", label: "Sửa người dùng (user:edit)" },
+    { code: "user:lock", label: "Khóa/Mở khóa (user:lock)" },
+    { code: "user:reset_password", label: "Reset Mật khẩu (user:reset_password)" },
+    { code: "requisition:view", "label": "Xem Yêu cầu tuyển dụng (requisition:view)" },
+    { code: "requisition:create", "label": "Tạo Yêu cầu tuyển dụng (requisition:create)" },
+    { code: "requisition:approve", "label": "Phê duyệt Yêu cầu (requisition:approve)" },
+    { code: "candidate:view", "label": "Xem Hồ sơ Ứng viên (candidate:view)" },
+    { code: "candidate:evaluate", "label": "Đánh giá Ứng viên (candidate:evaluate)" },
+    { code: "offer:create", "label": "Tạo Thư mời (offer:create)" },
+    { code: "offer:approve", "label": "Duyệt Thư mời (offer:approve)" },
+    { code: "master_data:manage", "label": "Quản lý Danh mục (master_data:manage)" },
+    { code: "audit:view", "label": "Xem Nhật ký Audit Logs (audit:view)" },
   ];
 
   const fetchMatrix = async () => {
@@ -132,26 +140,52 @@ export default function PermissionsMatrixPage() {
     fetchMatrix();
   }, []);
 
-  const handleTogglePermission = (moduleId: string, roleName: string, actionCode: string) => {
+  const handleTogglePermission = async (moduleId: string, roleCode: string, actionCode: string) => {
+    const roleLower = roleCode.toLowerCase();
+    const currentRolePerms = (matrix.find(m => m.id === moduleId)?.permissions[roleLower]) || [];
+    const isCurrentlyGranted = currentRolePerms.includes(actionCode);
+    const nextGranted = !isCurrentlyGranted;
+
+    // Optimistic UI update
     setMatrix((prev) =>
       prev.map((m) => {
         if (m.id !== moduleId) return m;
-        const currentRolePerms = m.permissions[roleName] || [];
-        const exists = currentRolePerms.includes(actionCode);
-
-        const newRolePerms = exists
-          ? currentRolePerms.filter((p) => p !== actionCode)
-          : [...currentRolePerms, actionCode];
+        const rolePerms = m.permissions[roleLower] || [];
+        const updatedPerms = nextGranted
+          ? [...rolePerms, actionCode]
+          : rolePerms.filter((p) => p !== actionCode);
 
         return {
           ...m,
           permissions: {
             ...m.permissions,
-            [roleName]: newRolePerms,
+            [roleLower]: updatedPerms,
           },
         };
       })
     );
+
+    // Call API to persist in Database
+    try {
+      const token = authService.getToken();
+      await fetch("http://localhost:8000/api/v1/admin/permissions/matrix", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          role_code: roleLower,
+          permission_code: actionCode,
+          is_granted: nextGranted,
+        }),
+      });
+      setToast(`Đã lưu thay đổi quyền [${actionCode}] cho vai trò ${roleCode} vào Database.`);
+      setTimeout(() => setToast(null), 3000);
+    } catch (err) {
+      setToast("Lỗi lưu ma trận phân quyền vào Database.");
+      setTimeout(() => setToast(null), 3000);
+    }
   };
 
   const handleSaveMatrix = async () => {

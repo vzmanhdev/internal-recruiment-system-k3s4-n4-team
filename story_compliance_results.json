@@ -63,7 +63,7 @@
     "points": "5.0",
     "priority": "Must",
     "status": "FAIL",
-    "evidence": "Status 202: {\"message\":\"Nếu email này tồn tại trong hệ thống, mã xác thực sẽ được gửi đến email.\",\"reset_session_id\":\"1333fbcb-a588-429c-b16e-da5de314015e\",\"masked_email\":\"a***n@company.com\",\"expires_in_seconds\":600,\"resend_cooldown_seconds\":60}"
+    "evidence": "Status 202: {\"message\":\"Nếu email này tồn tại trong hệ thống, mã xác thực sẽ được gửi đến email.\",\"reset_session_id\":\"a2ce9676-8494-4088-bbc8-794aa38645c4\",\"masked_email\":\"a***n@company.com\",\"expires_in_seconds\":600,\"resend_cooldown_seconds\":60}"
   },
   {
     "sprint": "SPRINT 1",

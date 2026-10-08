@@ -8,13 +8,15 @@ from sqlalchemy.orm import Session
 from app.db.session import engine, SessionLocal, Base
 from app.core.security import hash_password
 from app.models.user import User
-from app.models.hr import Department
+from app.models.hr import Department, JobTitle, Competency, SharedCategory
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
 from app.models.job import JobPosting
 from app.models.application import JobApplication, ApplicationLog
 from app.models.interview import InterviewSchedule, InterviewInterviewer
 from app.models.offer_onboarding import JobOffer, OnboardingChecklist
 from app.models.referral_eval import InternalReferral
+from app.models.email_automation import EmailTemplate, EmailLog
+from app.models.audit import AuditLog, Permission, RolePermission
 
 def reset_and_seed_database():
     print("=========================================================================")
@@ -277,6 +279,84 @@ def reset_and_seed_database():
         db.add(int1)
         db.commit()
         print(" -> Seeded 1 Interview Schedule")
+
+        # 7. Default RBAC Permissions & Role Permissions
+        permissions_seed = [
+            ("user:view", "Xem danh sách người dùng", "user"),
+            ("user:create", "Tạo mới người dùng", "user"),
+            ("user:edit", "Chỉnh sửa người dùng", "user"),
+            ("user:lock", "Khóa / Mở khóa người dùng", "user"),
+            ("user:reset_password", "Đặt lại mật khẩu người dùng", "user"),
+            ("requisition:view", "Xem yêu cầu tuyển dụng", "requisition"),
+            ("requisition:create", "Tạo yêu cầu tuyển dụng", "requisition"),
+            ("requisition:approve", "Phê duyệt yêu cầu tuyển dụng", "requisition"),
+            ("candidate:view", "Xem danh sách ứng viên", "candidate"),
+            ("candidate:evaluate", "Đánh giá ứng viên", "candidate"),
+            ("offer:create", "Tạo thư mời nhận việc (Offer)", "offer"),
+            ("offer:approve", "Duyệt thư mời nhận việc", "offer"),
+            ("master_data:manage", "Quản lý danh mục dùng chung", "master_data"),
+            ("audit:view", "Xem nhật ký hệ thống Audit Logs", "system"),
+        ]
+        for code, name, module in permissions_seed:
+            perm = Permission(code=code, name=name, module=module)
+            db.add(perm)
+        db.commit()
+
+        # Role permissions map for Admin, HR Manager, Recruiter
+        for code, _, _ in permissions_seed:
+            db.add(RolePermission(role_code="admin", permission_code=code, is_granted=True))
+            if "requisition" in code or "candidate" in code or "offer" in code or "user:view" in code:
+                db.add(RolePermission(role_code="hr_manager", permission_code=code, is_granted=True))
+        db.commit()
+        print(" -> Seeded Default RBAC Permissions & Role Mappings")
+
+        # 8. Seed Initial Audit Log
+        audit_init = AuditLog(
+            actor_id=user_objs["admin"].id,
+            actor_email="admin@company.com",
+            action="SYSTEM_INIT_SEED",
+            target_entity="Database",
+            target_id="0",
+            ip_address="127.0.0.1",
+            payload_json='{"message": "Database initialized with 7 business roles and demo data"}'
+        )
+        db.add(audit_init)
+        db.commit()
+        print(" -> Seeded Initial System Audit Log")
+
+        # 9. Seed Email Template
+        tpl = EmailTemplate(
+            code="PASSWORD_RESET_OTP",
+            name="Mẫu Email Mã OTP Đặt Lại Mật Khẩu",
+            category="Hệ thống",
+            subject="[Mã OTP] Yêu cầu đặt lại mật khẩu hệ thống",
+            body_html="<p>Xin chào <b>{user_name}</b>,</p><p>Mã OTP của bạn là: <b>{otp_code}</b>. Hạn dùng 5 phút.</p>",
+            is_auto_send=True,
+            is_active=True
+        )
+        db.add(tpl)
+        db.commit()
+        print(" -> Seeded Email Template")
+
+        # 10. Master Data (JobTitles, Competencies, SharedCategories)
+        jt1 = JobTitle(name="Kỹ Sư Backend", department_id=dept_objs["IT"].id, level="Senior", min_salary=25000000, max_salary=35000000, description="Kỹ sư phát triển Backend")
+        jt2 = JobTitle(name="Chuyên Viên Tuyển Dụng", department_id=dept_objs["HR"].id, level="Mid-Level", min_salary=18000000, max_salary=25000000, description="Recruitment Specialist")
+        db.add(jt1)
+        db.add(jt2)
+
+        c1 = Competency(name="Kỹ năng Lập trình Python / FastAPI", category="Technical", description="Thành thạo REST API, ORM", required_level=4, weight=0.4)
+        c2 = Competency(name="Kỹ năng Giao tiếp & Đàm phán", category="Soft Skills", description="Khả năng làm việc nhóm & trao đổi ứng viên", required_level=3, weight=0.3)
+        db.add(c1)
+        db.add(c2)
+
+        sc1 = SharedCategory(category_type="candidate_source", name="Cổng tuyển dụng công ty (Career Site)", sort_order=1)
+        sc2 = SharedCategory(category_type="candidate_source", name="Mạng xã hội LinkedIn", sort_order=2)
+        sc3 = SharedCategory(category_type="candidate_source", name="Giới thiệu nội bộ (Referral)", sort_order=3)
+        db.add(sc1)
+        db.add(sc2)
+        db.add(sc3)
+        db.commit()
+        print(" -> Seeded Job Titles, Competencies & Master Data Categories")
 
         print("\n=========================================================================")
         print("[4/4] SEED COMPLETED SUCCESSFULLY! DEMO ACCOUNTS READY FOR TESTING:")

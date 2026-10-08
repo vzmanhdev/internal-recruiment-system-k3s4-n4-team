@@ -42,7 +42,7 @@ class User(Base):
             "phone": self.phone,
             "employee_code": self.employee_code,
             "role": self.role,
-            "roles": [role for role in self.role.split(",") if role],
+            "roles": [role.strip() for role in (self.role or "").split(",") if role.strip()],
             "redirect_url": self.get_redirect_url(),
             "is_active": self.is_active,
             "account_status": self.account_status,
