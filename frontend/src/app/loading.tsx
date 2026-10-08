@@ -1,0 +1,1 @@
+export default function Loading(){return <main className="state-card page-state" aria-live="polite"><div className="skeleton skeleton--title"/><div className="skeleton"/><div className="skeleton"/></main>}
