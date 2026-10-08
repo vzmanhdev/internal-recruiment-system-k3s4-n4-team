@@ -3,6 +3,7 @@ from app.main import app
 from app.db.session import get_db, Base, engine
 from app.models.user import User
 from app.core.security import hash_password, create_access_token
+from tests.recruitment_fixtures import approved_requisition
 
 client = TestClient(app)
 
@@ -44,10 +45,14 @@ def test_referral_eval_flow():
         assert create_dept.status_code == 201
         dept_id = create_dept.json()["id"]
 
+    with next(get_db()) as db:
+        approved_id = approved_requisition(db, dept_id, quantity=2, salary=60000000)
     job_res = client.post(
         "/api/v1/jobs",
         json={
             "title": "Principal DevOps Engineer",
+            "requisition_id": approved_id,
+            "requirements": "Có kinh nghiệm DevOps và hạ tầng Cloud",
             "department_id": dept_id,
             "quantity": 2,
             "min_salary": 35000000,

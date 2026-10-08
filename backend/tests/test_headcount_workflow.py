@@ -48,6 +48,66 @@ def budget(client, headers, count=2, salary=200):
     assert response.status_code == 200, response.text
 
 
+def test_supplement_resubmit_and_copy_reset(workflow):
+    client, headers, factory = workflow
+    req = request(factory, status="pending_dept")
+    url = f"/api/v1/requisitions/{req}"
+    assert client.post(url + "/request-change", headers=headers["employee"], json={"comment":"Cần bổ sung"}).status_code == 403
+    assert client.post(url + "/request-change", headers=headers["manager"], json={"comment":" "}).status_code == 422
+    changed = client.post(url + "/request-change", headers=headers["manager"], json={"comment":"Bổ sung mô tả công việc"})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["status"] == "changes_requested"
+    assert client.put(url, headers=headers["employee"], json={"job_description":"Mô tả đã bổ sung"}).status_code == 200
+    assert client.post(url + "/submit", headers=headers["employee"]).json()["status"] == "pending_dept"
+    copied = client.post(url + "/copy", headers=headers["employee"])
+    assert copied.status_code == 201, copied.text
+    data = copied.json()
+    assert data["id"] != req and data["status"] == "draft"
+    assert data["deadline"] is None and data["recruiter_id"] is None and data["support_recruiter_id"] is None
+    assert data["headcount_budget_id"] is None and data["reserved_monthly_salary"] is None
+    assert any(log["action"] == "copy" for log in data["approval_logs"])
+
+
+def test_explicit_budget_override_and_support_assignment(workflow):
+    client, headers, factory = workflow
+    req = request(factory, quantity=2)
+    url = f"/api/v1/requisitions/{req}"
+    override = {"override_budget":True, "comment":"Bổ sung nhân lực dự án khẩn cấp"}
+    assert client.post(url + "/approve", headers=headers["hr_manager"], json=override).status_code == 409
+    budget(client, headers, count=1, salary=100)
+    assert client.post(url + "/approve", headers=headers["hr_manager"]).status_code == 409
+    assert client.post(url + "/approve", headers=headers["hr_manager"], json={"override_budget":True}).status_code == 422
+    approved = client.post(url + "/approve", headers=headers["hr_manager"], json=override)
+    assert approved.status_code == 200, approved.text
+    assert any("Ghi đè" in log["comment"] for log in approved.json()["approval_logs"])
+    assert client.post(url + "/approve", headers=headers["hr_manager"], json=override).status_code == 400
+    with factory() as db:
+        assert db.query(HeadcountBudget).one().reserved_headcount == 2
+        db.add(User(id=6, full_name="Hỗ trợ", email="support@test.local", hashed_password="unused", role="recruiter", is_active=True, account_status="active"))
+        db.commit()
+    assert client.put(url + "/assign", headers=headers["hr_manager"], json={"recruiter_id":4,"support_recruiter_id":4}).status_code == 422
+    assigned = client.put(url + "/assign", headers=headers["hr_manager"], json={"recruiter_id":4,"support_recruiter_id":6})
+    assert assigned.status_code == 200, assigned.text
+    assert assigned.json()["support_recruiter_name"] == "Hỗ trợ"
+
+
+def test_overdue_filter_before_pagination(workflow):
+    from datetime import datetime, timedelta
+    client, headers, factory = workflow
+    late = request(factory, code="LATE", status="pending_dept")
+    closed = request(factory, code="CLOSED", status="closed")
+    upcoming = request(factory, code="UPCOMING", status="pending_dept")
+    with factory() as db:
+        for id in [late, closed]:
+            db.get(JobRequisition,id).deadline = datetime.utcnow() - timedelta(days=2)
+        db.get(JobRequisition,upcoming).deadline = datetime.utcnow() + timedelta(days=2)
+        db.commit()
+    response = client.get("/api/v1/requisitions?overdue=true&page_size=1", headers=headers["hr_manager"])
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["id"] == late
+
+
 def test_budget_blocks_missing_headcount_and_salary(workflow):
     client, headers, factory = workflow
     req = request(factory, quantity=2)

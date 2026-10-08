@@ -4,6 +4,7 @@ from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.user import User
+from tests.recruitment_fixtures import approved_requisition
 
 
 client = TestClient(app)
@@ -55,11 +56,17 @@ def test_settings_jobs_and_audit_flow():
     )
     assert department.status_code == 201
 
+    with SessionLocal() as db:
+        approved_id = approved_requisition(db, department.json()["id"], quantity=2, salary=20000000)
     created = client.post(
         "/api/v1/jobs",
         headers=headers,
         json={
             "title": "QA Engineer",
+            "requisition_id": approved_id,
+            "max_salary": 20000000,
+            "job_description": "Kiểm thử hệ thống tuyển dụng nội bộ",
+            "requirements": "Có kinh nghiệm kiểm thử ứng dụng web",
             "department_id": department.json()["id"],
             "quantity": 2,
             "work_location": "Hà Nội",

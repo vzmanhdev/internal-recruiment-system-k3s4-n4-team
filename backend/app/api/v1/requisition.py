@@ -43,6 +43,7 @@ def list_requisitions(
     search: str = "",
     status_filter: str = Query("all", alias="status"),
     department_id: Optional[int] = None,
+    overdue: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     authorization: Optional[str] = Header(None),
@@ -63,6 +64,10 @@ def list_requisitions(
 
     if department_id:
         query = query.filter(JobRequisition.department_id == department_id)
+    if overdue:
+        from datetime import time, timezone, timedelta
+        today = datetime.now(timezone(timedelta(hours=7))).date()
+        query = query.filter(JobRequisition.deadline < datetime.combine(today, time.min), JobRequisition.status.notin_(["closed", "rejected"]))
 
     # Trưởng bộ phận xem các tờ trình đang chờ duyệt vòng phòng ban và các
     # tờ trình do chính họ tạo. Nhân viên chỉ xem tờ trình của mình.
@@ -102,7 +107,7 @@ def create_requisition(
     current_user = get_current_user(authorization, db)
     
     initial_status = "pending_dept" if payload.submit_immediately else "draft"
-    code = generate_requisition_code(db)
+    code = f"REQ-{datetime.utcnow().year}-{uuid4().hex[:10].upper()}"
 
     requisition = JobRequisition(
         code=code,
@@ -179,8 +184,8 @@ def update_requisition(
     if requisition.created_by_id != current_user.id and not user_roles.intersection(HR_ADMIN_ROLES):
         raise HTTPException(status_code=403, detail="Bạn không có quyền chỉnh sửa tờ trình này")
 
-    if requisition.status not in ["draft", "rejected"]:
-        raise HTTPException(status_code=400, detail="Chỉ có thể sửa tờ trình khi ở trạng thái Nháp hoặc Bị từ chối")
+    if requisition.status not in ["draft", "rejected", "changes_requested"]:
+        raise HTTPException(status_code=400, detail="Chỉ sửa được bản nháp, tờ trình bị từ chối hoặc cần bổ sung")
 
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -223,7 +228,7 @@ def submit_requisition(
     if not requisition:
         raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình tuyển dụng")
 
-    if requisition.status not in ["draft", "rejected"]:
+    if requisition.status not in ["draft", "rejected", "changes_requested"]:
         raise HTTPException(status_code=400, detail="Tờ trình đã được gửi hoặc phê duyệt trước đó")
 
     user_roles = set(current_user.role.split(","))
@@ -271,10 +276,15 @@ def approve_requisition(
         # Step 2 Approval: HR Manager or Admin
         if not user_roles.intersection(HR_ADMIN_ROLES):
             raise HTTPException(status_code=403, detail="Chỉ HR Manager hoặc Admin mới có quyền duyệt vòng HR")
-        reserve_budget(db, requisition)
+        override = bool(payload and payload.override_budget)
+        if override and (not payload.comment or len(payload.comment.strip()) < 5):
+            raise HTTPException(422, "Nhập lý do ghi đè ngân sách có ít nhất 5 ký tự.")
+        reserve_budget(db, requisition, override=override)
         requisition.status = "approved"
         log_action = "approve_hr"
         log_comment = f"[HR Manager duyệt]: {comment}"
+        if override:
+            log_comment = f"[Ghi đè ngân sách có xác nhận]: {comment}"
     else:
         raise HTTPException(status_code=400, detail="Tờ trình không ở trạng thái chờ phê duyệt")
 
@@ -312,8 +322,14 @@ def assign_recruiter(requisition_id: int, payload: RequisitionAssignment, author
         raise HTTPException(409, "Chỉ phân công nhân viên tuyển dụng cho tờ trình đã được duyệt.")
     recruiter = db.get(User, payload.recruiter_id)
     validate_recruiter(recruiter)
+    if payload.support_recruiter_id == payload.recruiter_id:
+        raise HTTPException(422, "Recruiter chính và hỗ trợ phải khác nhau.")
+    support = db.get(User, payload.support_recruiter_id) if payload.support_recruiter_id else None
+    if payload.support_recruiter_id:
+        validate_recruiter(support)
     req.recruiter_id = recruiter.id
-    db.add(RequisitionApprovalLog(requisition_id=req.id, approver_id=user.id, action="assign_recruiter", comment=f"Phân công {recruiter.full_name} phụ trách tuyển dụng."))
+    req.support_recruiter_id = payload.support_recruiter_id
+    db.add(RequisitionApprovalLog(requisition_id=req.id, approver_id=user.id, action="assign_recruiter", comment=f"Recruiter chính: {recruiter.full_name}; hỗ trợ: {support.full_name if support else 'Không có'}."))
     db.commit()
     db.refresh(req)
     return req.to_dict()
@@ -375,7 +391,9 @@ def reject_requisition(
     if requisition.status == "pending_hr" and not user_roles.intersection(HR_ADMIN_ROLES):
         raise HTTPException(status_code=403, detail="Chỉ HR Manager hoặc Admin mới có quyền từ chối vòng HR")
 
-    comment = payload.comment.strip() if payload and payload.comment else "Từ chối phê duyệt"
+    comment = (payload.comment or "").strip()
+    if len(comment) < 5:
+        raise HTTPException(422, "Nhập lý do từ chối có ít nhất 5 ký tự.")
 
     requisition.status = "rejected"
     requisition.updated_at = datetime.utcnow()
@@ -391,3 +409,35 @@ def reject_requisition(
     db.refresh(requisition)
 
     return requisition.to_dict()
+
+
+@router.post("/{requisition_id}/request-change", response_model=RequisitionResponse)
+def request_change(requisition_id: int, payload: RequisitionApprovalAction, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    req = db.get(JobRequisition, requisition_id)
+    if not req:
+        raise HTTPException(404, "Không tìm thấy tờ trình.")
+    if req.status not in ["pending_dept", "pending_hr"]:
+        raise HTTPException(409, "Chỉ yêu cầu bổ sung tờ trình đang chờ duyệt.")
+    user = require_roles(authorization, db, DEPARTMENT_APPROVER_ROLES if req.status == "pending_dept" else HR_ADMIN_ROLES)
+    comment = (payload.comment or "").strip()
+    if len(comment) < 5:
+        raise HTTPException(422, "Nhập nội dung cần bổ sung có ít nhất 5 ký tự.")
+    stage = req.status
+    req.status = "changes_requested"
+    db.add(RequisitionApprovalLog(requisition_id=req.id, approver_id=user.id, action="request_change", comment=f"[{stage}] {comment}"))
+    db.commit()
+    db.refresh(req)
+    return req.to_dict()
+
+
+@router.post("/{requisition_id}/copy", response_model=RequisitionResponse, status_code=201)
+def copy_requisition(requisition_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    source = get_requisition(requisition_id, authorization, db)
+    fields = RequisitionCreate.model_fields
+    payload = {key: value for key, value in source.items() if key in fields and key != "deadline"}
+    payload.update(title=source["title"], submit_immediately=False)
+    result = create_requisition(RequisitionCreate(**payload), authorization, db)
+    user = get_current_user(authorization, db)
+    db.add(RequisitionApprovalLog(requisition_id=result["id"], approver_id=user.id, action="copy", comment=f"Sao chép từ {source['code']}; cần chọn lại hạn tuyển và gửi duyệt."))
+    db.commit()
+    return db.get(JobRequisition, result["id"]).to_dict()

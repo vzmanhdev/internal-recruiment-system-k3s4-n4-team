@@ -12,6 +12,7 @@ import { fetchPublicJobDetail } from "@/features/jobs/services/job-posting.servi
 import { submitApplication } from "@/features/applications/services/application.service";
 import type { Job } from "@/types/job";
 import { useAuthSession } from "@/features/auth/lib/auth-session";
+import { PublicJobContent } from "@/features/jobs/components/PublicJobContent";
 
 export default function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -19,6 +20,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [job, setJob] = useState<Job | null>(null);
   const [backendJobId, setBackendJobId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [benefits, setBenefits] = useState("");
 
   // Application Modal state
   const [showAppModal, setShowAppModal] = useState(false);
@@ -43,6 +45,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         try {
           const item = await fetchPublicJobDetail(Number(id));
           setBackendJobId(item.id);
+          setBenefits(item.benefits || "");
           const mapped: Job = {
             id: String(item.id),
             title: item.title,
@@ -92,8 +95,8 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
       setAppNotice("Chúc mừng! Hồ sơ ứng tuyển của bạn đã được gửi thành công đến Bộ phận Nhân sự.");
       setShowAppModal(false);
-    } catch (err: any) {
-      setAppError(err.message || "Không thể nộp hồ sơ ứng tuyển.");
+    } catch (err: unknown) {
+      setAppError(err instanceof Error ? err.message : "Không thể nộp hồ sơ ứng tuyển.");
     } finally {
       setSubmitting(false);
     }
@@ -129,70 +132,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       <main className="inner-page container space-y-6">
         {appNotice && <Alert variant="success">{appNotice}</Alert>}
 
-        <div className="detail-hero">
-          <div>
-            <span className="eyebrow">{job.department}</span>
-            <h1>{job.title}</h1>
-            <div className="job-meta">
-              <span>
-                <Icon name="location" />
-                {job.location}
-              </span>
-              <span>
-                <Icon name="briefcase" />
-                {job.employmentType}
-              </span>
-              <span>
-                <Icon name="people" />
-                {job.openings}
-              </span>
-              <span>
-                <Icon name="calendar" />
-                Hạn {job.deadline}
-              </span>
-            </div>
-          </div>
-          <Button onClick={() => setShowAppModal(true)}>
-            Ứng tuyển ngay <Icon name="arrow" />
-          </Button>
-        </div>
-
-        <div className="detail-grid">
-          <article>
-            <h2>Mô tả công việc</h2>
-            <p className="whitespace-pre-line">{job.description}</p>
-            {job.responsibilities.length > 0 && (
-              <>
-                <h2>Trách nhiệm & Nhiệm vụ</h2>
-                <ul>
-                  {job.responsibilities.map((val, idx) => (
-                    <li key={idx}>{val}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-            {job.requirements.length > 0 && (
-              <>
-                <h2>Yêu cầu ứng viên</h2>
-                <ul>
-                  {job.requirements.map((val, idx) => (
-                    <li key={idx}>{val}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </article>
-
-          <aside>
-            <h2>Kỹ năng & Yêu cầu chính</h2>
-            <div className="tags">
-              {job.skills.map((skill, idx) => (
-                <span key={idx}>{skill}</span>
-              ))}
-            </div>
-            <p className="mt-4 text-xs text-slate-500">Ứng viên nội bộ được ưu tiên phỏng vấn trực tiếp cùng Quản lý chuyên môn.</p>
-          </aside>
-        </div>
+        <PublicJobContent job={job} benefits={benefits} action={<Button onClick={() => setShowAppModal(true)}>Ứng tuyển ngay <Icon name="arrow" /></Button>}/>
 
         {/* Modal Submit Application */}
         {showAppModal && (

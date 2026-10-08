@@ -4,6 +4,7 @@ from app.main import app
 from app.db.session import get_db, Base, engine
 from app.models.user import User
 from app.core.security import hash_password, create_access_token
+from tests.recruitment_fixtures import approved_requisition
 
 client = TestClient(app)
 
@@ -61,10 +62,14 @@ def test_interview_flow():
         )
         dept_id = create_dept.json()["id"]
 
+    with next(get_db()) as db:
+        approved_id = approved_requisition(db, dept_id, salary=70000000)
     job_res = client.post(
         "/api/v1/jobs",
         json={
             "title": "Lead Software Architect",
+            "requisition_id": approved_id,
+            "requirements": "Có kinh nghiệm kiến trúc phần mềm",
             "department_id": dept_id,
             "quantity": 1,
             "min_salary": 40000000,

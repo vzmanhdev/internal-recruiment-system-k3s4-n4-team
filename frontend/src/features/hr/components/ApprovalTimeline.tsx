@@ -1,0 +1,11 @@
+import { CheckCircle2, Clock3, Circle } from "lucide-react";
+import type { RequisitionItem } from "../services/requisition.service";
+
+const actionLabels: Record<string,string> = {submit:"Gửi duyệt",approve_dept:"Trưởng bộ phận duyệt",approve_hr:"HR duyệt",reject:"Từ chối",request_change:"Yêu cầu bổ sung",assign_recruiter:"Phân công tuyển dụng",copy:"Sao chép yêu cầu",create_posting:"Tạo tin",create_draft:"Tạo bản nháp"};
+export function ApprovalTimeline({req}:{req:RequisitionItem}) {
+  const logs = [...req.approval_logs].sort((a,b)=>a.id-b.id);
+  const lastSubmit = logs.filter(log=>log.action==="submit").at(-1)?.id ?? 0;
+  const current = logs.filter(log=>log.id>=lastSubmit);
+  const stages = [{label:"Người đề xuất",action:"submit",waiting:["draft","changes_requested","rejected"].includes(req.status)}, {label:"Trưởng bộ phận",action:"approve_dept",waiting:req.status==="pending_dept"}, {label:"Trưởng phòng Nhân sự",action:"approve_hr",waiting:req.status==="pending_hr"}];
+  return <section className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4"><h3 className="font-bold text-slate-900">Chuỗi phê duyệt</h3><ol className="mt-3 grid gap-3 sm:grid-cols-3">{stages.map(stage=>{const log=current.find(log=>log.action===stage.action);const Icon=log?CheckCircle2:stage.waiting?Clock3:Circle;return <li key={stage.action} className="rounded-xl bg-white p-3 text-xs"><Icon className={`mb-2 h-5 w-5 ${log?"text-emerald-600":stage.waiting?"text-amber-600":"text-slate-300"}`}/><b className="block text-slate-800">{stage.label}</b><p className="mt-1 text-slate-500">{log?`${log.approver_name} · ${new Date(log.created_at+ (log.created_at.endsWith('Z')?'':'Z')).toLocaleString('vi-VN')}`:stage.waiting?"Đang chờ xử lý":"Chưa đến bước"}</p></li>})}</ol>{req.status==="changes_requested"&&<p className="mt-3 text-sm font-semibold text-amber-700">Đang chờ người đề xuất bổ sung và gửi lại.</p>}<details className="mt-4 text-xs"><summary className="cursor-pointer font-semibold text-blue-700">Lịch sử và ý kiến ({logs.length})</summary><ul className="mt-3 space-y-3">{logs.map(log=><li key={log.id} className="border-l-2 border-blue-200 pl-3"><b>{actionLabels[log.action]??log.action} · {log.approver_name}</b><p className="mt-1 whitespace-pre-line text-slate-600">{log.comment}</p></li>)}</ul></details></section>;
+}

@@ -19,11 +19,17 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { HrShell } from "./HrShell";
+import { ApprovalTimeline } from "./ApprovalTimeline";
+import { DecisionDialog } from "./DecisionDialog";
 import { ApiError } from "@/lib/api-client";
 import { fetchDepartments, fetchJobTitles, Department, JobTitle } from "../services/hr.service";
 import {
   fetchRequisitions,
   createRequisition,
+  updateRequisition,
+  requestRequisitionChange,
+  copyRequisition,
+  isRequisitionOverdue,
   submitRequisition,
   approveRequisition,
   rejectRequisition,
@@ -34,6 +40,7 @@ import {
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; icon: LucideIcon }> = {
   draft: { label: "Bản nháp", bg: "bg-slate-100", text: "text-slate-700", icon: Clock },
+  changes_requested: { label: "Cần bổ sung", bg: "bg-orange-50", text: "text-orange-700", icon: AlertCircle },
   pending_dept: { label: "Chờ Trưởng phòng duyệt", bg: "bg-amber-50", text: "text-amber-700", icon: Clock },
   pending_hr: { label: "Chờ HR Manager duyệt", bg: "bg-blue-50", text: "text-blue-700", icon: Clock },
   approved: { label: "Đã phê duyệt", bg: "bg-emerald-50", text: "text-emerald-700", icon: CheckCircle2 },
@@ -56,6 +63,8 @@ export function RequisitionManagement() {
 
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [decision, setDecision] = useState<"reject" | "change" | null>(null);
   const [selectedReq, setSelectedReq] = useState<RequisitionItem | null>(null);
   const [commentInput, setCommentInput] = useState("");
   const [actionError, setActionError] = useState("");
@@ -115,9 +124,14 @@ export function RequisitionManagement() {
     e.preventDefault();
     setActionError("");
     try {
-      await createRequisition(formData);
+      if (editingId) {
+        const { submit_immediately, ...values } = formData;
+        await updateRequisition(editingId, {...values, deadline:values.deadline || null});
+        if (submit_immediately) await submitRequisition(editingId);
+      } else await createRequisition({...formData, deadline:formData.deadline || undefined});
       setNotice(formData.submit_immediately ? "Đã gửi tờ trình tuyển dụng lên Trưởng phòng phê duyệt." : "Đã lưu bản nháp tờ trình.");
       setShowCreateModal(false);
+      setEditingId(null);
       loadData();
     } catch (err: unknown) {
       setActionError(err instanceof ApiError ? err.message : "Không thể tạo tờ trình tuyển dụng.");
@@ -147,22 +161,6 @@ export function RequisitionManagement() {
     }
   };
 
-  const handleReject = async (reqId: number) => {
-    if (!commentInput.trim()) {
-      setActionError("Vui lòng nhập lý do từ chối.");
-      return;
-    }
-    try {
-      await rejectRequisition(reqId, commentInput);
-      setNotice("Đã từ chối tờ trình tuyển dụng.");
-      setSelectedReq(null);
-      setCommentInput("");
-      loadData();
-    } catch (err: unknown) {
-      setActionError(err instanceof ApiError ? err.message : "Lỗi khi từ chối tờ trình.");
-    }
-  };
-
   const handleDelete = async (reqId: number) => {
     if (!confirm("Bạn có chắc chắn muốn xóa bản nháp tờ trình này?")) return;
     try {
@@ -184,7 +182,7 @@ export function RequisitionManagement() {
             <h1 className="text-2xl font-black tracking-tight text-slate-900">Quản lý Yêu cầu Tuyển dụng & Tờ trình</h1>
             <p className="mt-1 text-sm text-slate-500">Tạo mới, theo dõi tiến độ và phê duyệt tờ trình bổ sung nhân sự cho các phòng ban.</p>
           </div>
-          <Button onClick={() => setShowCreateModal(true)} className="flex items-center gap-2">
+          <Button onClick={() => { setEditingId(null); setFormData({title:"", department_id: departments[0]?.id ?? 0, quantity:1, reason:"new_headcount", job_description:"", requirements:"", benefits:"", deadline:"", submit_immediately:false}); setActionError(""); setShowCreateModal(true); }} className="flex items-center gap-2">
             <Plus className="h-4 w-4" /> Tạo Tờ trình mới
           </Button>
         </div>
@@ -198,6 +196,7 @@ export function RequisitionManagement() {
           {[
             { id: "all", label: "Tất cả" },
             { id: "draft", label: "Bản nháp" },
+            { id: "changes_requested", label: "Cần bổ sung" },
             { id: "pending_dept", label: "Chờ Trưởng phòng" },
             { id: "pending_hr", label: "Chờ HR Manager" },
             { id: "approved", label: "Đã phê duyệt" },
@@ -269,7 +268,7 @@ export function RequisitionManagement() {
                     const statusConf = STATUS_CONFIG[req.status] || STATUS_CONFIG.draft;
                     const StatusIcon = statusConf.icon;
                     return (
-                      <tr key={req.id} className="hover:bg-slate-50/80 transition-colors">
+                      <tr key={req.id} className={isRequisitionOverdue(req) ? "bg-rose-50 border-l-4 border-rose-400" : "hover:bg-slate-50/80 transition-colors"}>
                         <td className="px-5 py-4">
                           <span className="text-xs font-mono font-bold text-blue-600 block">{req.code}</span>
                           <span className="font-bold text-slate-900">{req.title}</span>
@@ -310,7 +309,7 @@ export function RequisitionManagement() {
         {showCreateModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 overflow-y-auto">
             <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 bg-white">
-              <h2 className="text-xl font-bold text-slate-900 mb-4">Tạo Tờ trình Yêu cầu Tuyển dụng</h2>
+              <h2 className="text-xl font-bold text-slate-900 mb-4">{editingId ? "Chỉnh sửa / Bổ sung yêu cầu" : "Tạo Tờ trình Yêu cầu Tuyển dụng"}</h2>
               {actionError && <Alert variant="error" className="mb-4">{actionError}</Alert>}
               <form onSubmit={handleCreateSubmit} className="space-y-4">
                 <Input
@@ -457,7 +456,7 @@ export function RequisitionManagement() {
                   <Button type="button" variant="secondary" onClick={() => setShowCreateModal(false)}>
                     Hủy bỏ
                   </Button>
-                  <Button type="submit">Xác nhận tạo tờ trình</Button>
+                  <Button type="submit">{editingId ? "Lưu thay đổi" : "Xác nhận tạo tờ trình"}</Button>
                 </div>
               </form>
             </Card>
@@ -512,30 +511,7 @@ export function RequisitionManagement() {
                 </div>
               )}
 
-              {/* Approval Timeline */}
-              <div className="border-t border-slate-100 pt-4">
-                <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-blue-600" /> Dòng thời gian Phê duyệt (Approval Logs)
-                </h3>
-                {selectedReq.approval_logs.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Chưa có lịch sử phê duyệt.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {selectedReq.approval_logs.map((log) => (
-                      <div key={log.id} className="flex items-start gap-3 text-xs border-l-2 border-blue-500 pl-3 py-1">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-900">{log.approver_name}</span>
-                            <span className="text-slate-400">• {new Date(log.created_at).toLocaleString("vi-VN")}</span>
-                          </div>
-                          <p className="text-slate-600 mt-0.5">{log.comment}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
+              <ApprovalTimeline req={selectedReq} />
               {/* Actions Section */}
               <div className="border-t border-slate-100 pt-4 space-y-3">
                 {selectedReq.status in { pending_dept: 1, pending_hr: 1 } && (
@@ -551,7 +527,12 @@ export function RequisitionManagement() {
                   </div>
                 )}
 
-                <div className="flex items-center justify-end gap-3">
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  <Button variant="secondary" size="sm" onClick={async () => { try { await copyRequisition(selectedReq.id); setNotice("Đã sao chép thành bản nháp mới."); setSelectedReq(null); await loadData(); } catch (err) { setActionError(err instanceof Error ? err.message : "Không thể sao chép."); } }}>Sao chép</Button>
+                  {["draft", "changes_requested", "rejected"].includes(selectedReq.status) && <>
+                    <Button size="sm" variant="secondary" onClick={() => { setEditingId(selectedReq.id); setFormData({...selectedReq, deadline:selectedReq.deadline?.slice(0,10) ?? "", submit_immediately:false}); setSelectedReq(null); setShowCreateModal(true); }}>Chỉnh sửa / Bổ sung</Button>
+                    {selectedReq.status !== "draft" && <Button size="sm" onClick={() => handleSubmitDraft(selectedReq.id)}>Gửi lại phê duyệt</Button>}
+                  </>}
                   {selectedReq.status === "draft" && (
                     <>
                       <Button variant="danger" size="sm" onClick={() => handleDelete(selectedReq.id)}>
@@ -565,9 +546,10 @@ export function RequisitionManagement() {
 
                   {(selectedReq.status === "pending_dept" || selectedReq.status === "pending_hr") && (
                     <>
-                      <Button variant="danger" size="sm" onClick={() => handleReject(selectedReq.id)}>
+                      <Button variant="danger" size="sm" onClick={() => setDecision("reject")}>
                         <XCircle className="h-4 w-4" /> Từ chối
                       </Button>
+                      <Button variant="secondary" size="sm" onClick={() => setDecision("change")}>Yêu cầu bổ sung</Button>
                       <Button size="sm" onClick={() => handleApprove(selectedReq.id)}>
                         <CheckCircle2 className="h-4 w-4" /> Phê duyệt tờ trình
                       </Button>
@@ -582,6 +564,7 @@ export function RequisitionManagement() {
             </Card>
           </div>
         )}
+        {decision && selectedReq && <DecisionDialog kind={decision} onClose={() => setDecision(null)} onConfirm={async (opinion) => { if (decision === "reject") await rejectRequisition(selectedReq.id, opinion); else await requestRequisitionChange(selectedReq.id, opinion); setDecision(null); setSelectedReq(null); setNotice("Đã cập nhật yêu cầu và lưu ý kiến."); await loadData(); }} />}
       </div>
     </HrShell>
   );

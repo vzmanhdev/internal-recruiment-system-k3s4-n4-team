@@ -26,6 +26,7 @@ class JobRequisition(Base):
     status = Column(String(50), default="draft", nullable=False)  # draft, pending_dept, pending_hr, approved, rejected, closed
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    support_recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     headcount_budget_id = Column(Integer, ForeignKey("headcount_budgets.id"), nullable=True)
     reserved_monthly_salary = Column(Numeric(18, 2), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -36,6 +37,7 @@ class JobRequisition(Base):
     job_title = relationship("JobTitle", foreign_keys=[job_title_id])
     creator = relationship("User", foreign_keys=[created_by_id])
     recruiter = relationship("User", foreign_keys=[recruiter_id])
+    support_recruiter = relationship("User", foreign_keys=[support_recruiter_id])
     approval_logs = relationship("RequisitionApprovalLog", back_populates="requisition", cascade="all, delete-orphan", order_by="RequisitionApprovalLog.created_at.desc()")
 
     def to_dict(self):
@@ -63,6 +65,8 @@ class JobRequisition(Base):
             "created_by_id": self.created_by_id,
             "recruiter_id": self.recruiter_id,
             "recruiter_name": self.recruiter.full_name if self.recruiter else None,
+            "support_recruiter_id": self.support_recruiter_id,
+            "support_recruiter_name": self.support_recruiter.full_name if self.support_recruiter else None,
             "headcount_budget_id": self.headcount_budget_id,
             "reserved_monthly_salary": float(self.reserved_monthly_salary) if self.reserved_monthly_salary is not None else None,
             "creator_name": self.creator.full_name if self.creator else None,

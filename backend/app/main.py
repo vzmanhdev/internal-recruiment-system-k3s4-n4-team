@@ -35,7 +35,7 @@ Base.metadata.create_all(bind=engine)
 
 with engine.begin() as connection:
     requisition_columns = {column["name"] for column in inspect(engine).get_columns("job_requisitions")}
-    for name, definition in {"recruiter_id": "INTEGER REFERENCES users(id)", "headcount_budget_id": "INTEGER REFERENCES headcount_budgets(id)", "reserved_monthly_salary": "NUMERIC(18, 2)"}.items():
+    for name, definition in {"recruiter_id": "INTEGER REFERENCES users(id)", "support_recruiter_id": "INTEGER REFERENCES users(id)", "headcount_budget_id": "INTEGER REFERENCES headcount_budgets(id)", "reserved_monthly_salary": "NUMERIC(18, 2)"}.items():
         if name not in requisition_columns:
             connection.execute(text(f"ALTER TABLE job_requisitions ADD COLUMN {name} {definition}"))
     user_columns = {column["name"] for column in inspect(engine).get_columns("users")}

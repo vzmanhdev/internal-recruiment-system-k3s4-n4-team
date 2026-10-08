@@ -39,9 +39,11 @@ class RequisitionUpdate(BaseModel):
 
 class RequisitionApprovalAction(BaseModel):
     comment: Optional[str] = Field(None, max_length=1000, description="Ghi chú hoặc lý do từ chối")
+    override_budget: bool = False
 
 class RequisitionAssignment(BaseModel):
     recruiter_id: int = Field(gt=0)
+    support_recruiter_id: Optional[int] = Field(None, gt=0)
 
 class RequisitionLogResponse(BaseModel):
     id: int
@@ -57,6 +59,8 @@ class RequisitionResponse(BaseModel):
     id: int
     recruiter_id: Optional[int] = None
     recruiter_name: Optional[str] = None
+    support_recruiter_id: Optional[int] = None
+    support_recruiter_name: Optional[str] = None
     headcount_budget_id: Optional[int] = None
     reserved_monthly_salary: Optional[float] = None
     code: str

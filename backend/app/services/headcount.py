@@ -21,25 +21,27 @@ def budget_check(db: Session, req: JobRequisition):
             reason = "Vượt hạn mức headcount: không đủ số người còn lại để phê duyệt."
         elif cost > budget.monthly_salary_limit - budget.reserved_monthly_salary:
             reason = "Vượt ngân sách quỹ lương tháng: không thể phê duyệt."
-    return {"blocked": bool(reason), "reason": reason, "requested_headcount": req.quantity,
+    return {"blocked": bool(reason), "overridable": bool(reason and budget and reason.startswith("Vượt")), "reason": reason, "requested_headcount": req.quantity,
             "requested_monthly_salary": float(cost), "reserved": bool(req.headcount_budget_id),
             "budget": budget.to_dict() if budget else None}
 
 
-def reserve_budget(db: Session, req: JobRequisition):
+def reserve_budget(db: Session, req: JobRequisition, override: bool = False):
     if req.headcount_budget_id:
         return
     check = budget_check(db, req)
-    if check["blocked"]:
+    if check["blocked"] and not (override and check["overridable"]):
         raise HTTPException(409, check["reason"])
     budget_id = check["budget"]["id"]
     cost = Decimal(str(req.max_salary)) * req.quantity
     # Conditional updates reserve both limits atomically, even for concurrent approvals.
-    result = db.execute(update(HeadcountBudget).where(
-        HeadcountBudget.id == budget_id,
+    conditions = [HeadcountBudget.id == budget_id]
+    if not override:
+        conditions.extend([
         HeadcountBudget.reserved_headcount + req.quantity <= HeadcountBudget.headcount_limit,
         HeadcountBudget.reserved_monthly_salary + cost <= HeadcountBudget.monthly_salary_limit,
-    ).values(reserved_headcount=HeadcountBudget.reserved_headcount + req.quantity,
+        ])
+    result = db.execute(update(HeadcountBudget).where(*conditions).values(reserved_headcount=HeadcountBudget.reserved_headcount + req.quantity,
              reserved_monthly_salary=HeadcountBudget.reserved_monthly_salary + cost),
         execution_options={"synchronize_session": False})
     if result.rowcount != 1:
