@@ -86,11 +86,38 @@ def test_application_flow():
     assert app_data["code"].startswith("APP-")
     app_id = app_data["id"]
 
+    # Duplicate application and bot submissions are rejected with a clear message.
+    duplicate = client.post("/api/v1/applications", json=app_payload)
+    assert duplicate.status_code == 409
+    assert app_data["code"] in duplicate.json()["detail"]
+    bot_payload = {**app_payload, "email": "bot@example.com", "website": "spam.example"}
+    assert client.post("/api/v1/applications", json=bot_payload).status_code == 400
+
+    # Candidates can track an application without signing in.
+    tracking = client.post("/api/v1/applications/track", json={"code": app_data["code"]})
+    assert tracking.status_code == 200
+    assert tracking.json()["status"] == "applied"
+
+    # CV upload accepts PDF/DOCX and rejects unsupported file types.
+    cv_upload = client.post("/api/v1/applications/upload-cv", files={"file": ("candidate.pdf", b"%PDF-1.4 test", "application/pdf")})
+    assert cv_upload.status_code == 201, cv_upload.text
+    assert cv_upload.json()["url"].endswith(".pdf")
+    bad_upload = client.post("/api/v1/applications/upload-cv", files={"file": ("candidate.txt", b"text", "text/plain")})
+    assert bad_upload.status_code == 415
+
     # 3. HR Views Applications List
     hr_list = client.get("/api/v1/applications/manage/all?status=applied", headers=headers_admin)
     assert hr_list.status_code == 200
     items = hr_list.json()["items"]
     assert any(a["id"] == app_id for a in items)
+
+    profile_update = client.put(
+        f"/api/v1/applications/{app_id}/profile",
+        headers=headers_admin,
+        json={"tags": ["Senior", "Tiềm năng"], "recruiter_notes": "Đã đối chiếu CV", "cv_extracted_data": {"skills": ["Python", "FastAPI"]}},
+    )
+    assert profile_update.status_code == 200, profile_update.text
+    assert profile_update.json()["tags"] == ["Senior", "Tiềm năng"]
 
     # 4. HR Stage Pipeline Transitions
     # Move to Screening

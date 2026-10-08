@@ -16,5 +16,5 @@ const items = [
 ];
 
 export function HrShell({ children }: { children: React.ReactNode }) {
-  return <WorkspaceShell title="Trưởng phòng Nhân sự" description="Quản lý tuyển dụng nội bộ" icon={Users} items={items} allowedRoles={["hr_manager", "admin"]}>{children}</WorkspaceShell>;
+  return <WorkspaceShell title="Trung tâm Tuyển dụng" description="Quản lý tuyển dụng nội bộ" icon={Users} items={items} allowedRoles={["hr_manager", "admin", "recruiter"]}>{children}</WorkspaceShell>;
 }

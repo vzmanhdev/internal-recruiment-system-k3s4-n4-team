@@ -16,6 +16,7 @@ venv/
 ENV/
 .pytest_cache/
 .coverage
+backend/uploads/
 
 # Environment variables
 .env

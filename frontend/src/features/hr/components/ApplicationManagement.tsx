@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Search,
   Filter,
@@ -351,6 +352,9 @@ export function ApplicationManagement() {
                           </span>
                         </td>
                         <td className="px-5 py-4 text-right">
+                          <Link href={`/hr/applications/${app.id}`} className="mr-2 inline-flex rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50">
+                            Hồ sơ hợp nhất
+                          </Link>
                           <button
                             onClick={() => setSelectedApp(app)}
                             className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-100 transition-colors"

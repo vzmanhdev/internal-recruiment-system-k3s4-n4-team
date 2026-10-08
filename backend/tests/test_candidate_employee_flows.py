@@ -72,7 +72,5 @@ def test_candidate_application_interview_offer_and_employee_registration():
     assert accepted.json()["status"] == "accepted"
 
     second_application = client.post("/api/v1/applications", headers=candidate_headers, json={"job_id": job.json()["id"], "full_name": "Ứng viên Kiểm thử", "email": candidate_email, "phone": "0901234567", "cv_url": "https://example.com/cv-v2.pdf"})
-    assert second_application.status_code == 201
-    withdrawn = client.post(f"/api/v1/applications/{second_application.json()['id']}/withdraw", headers=candidate_headers)
-    assert withdrawn.status_code == 200, withdrawn.text
-    assert withdrawn.json()["status"] == "withdrawn"
+    assert second_application.status_code == 409
+    assert "Mã tra cứu" in second_application.json()["detail"]

@@ -1,9 +1,11 @@
+from pathlib import Path
 from typing import Dict
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 from app.api.v1.admin import router as admin_router
@@ -66,6 +68,16 @@ with engine.begin() as connection:
     if "candidate_response_at" not in interview_columns:
         timestamp_type = "TIMESTAMP" if engine.dialect.name == "postgresql" else "DATETIME"
         connection.execute(text(f"ALTER TABLE interview_schedules ADD COLUMN candidate_response_at {timestamp_type}"))
+    application_columns = {column["name"] for column in inspect(engine).get_columns("job_applications")}
+    for name, definition in {
+        "cv_filename": "VARCHAR(255)",
+        "cv_content_type": "VARCHAR(120)",
+        "cv_extracted_data": "TEXT",
+        "tags": "TEXT",
+        "recruiter_notes": "TEXT",
+    }.items():
+        if name not in application_columns:
+            connection.execute(text(f"ALTER TABLE job_applications ADD COLUMN {name} {definition}"))
 
 if settings.APP_ENV != "production":
     db = SessionLocal()
@@ -115,6 +127,10 @@ app = FastAPI(
     version="1.0.0",
     description="FastAPI Backend connected with PostgreSQL Database",
 )
+
+UPLOAD_ROOT = Path(__file__).resolve().parents[1] / "uploads"
+UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,

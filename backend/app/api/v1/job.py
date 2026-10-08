@@ -47,7 +47,10 @@ def list_public_jobs(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    query = db.query(JobPosting).filter(JobPosting.status == "published")
+    query = db.query(JobPosting).filter(
+        JobPosting.status == "published",
+        or_(JobPosting.deadline.is_(None), JobPosting.deadline >= datetime.utcnow()),
+    )
 
     if search.strip():
         term = f"%{search.strip()}%"
@@ -85,7 +88,7 @@ def list_public_jobs(
 @router.get("/{job_id}", response_model=JobPostingResponse)
 def get_public_job_detail(job_id: int, db: Session = Depends(get_db)):
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
-    if not job or job.status != "published":
+    if not job or job.status != "published" or (job.deadline and job.deadline < datetime.utcnow()):
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng hoặc tin đã hết hạn")
 
     # Increment view count

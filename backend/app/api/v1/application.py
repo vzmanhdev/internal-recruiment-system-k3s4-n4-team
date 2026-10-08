@@ -1,7 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import json
+from pathlib import Path
+from uuid import uuid4
 from math import ceil
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -13,6 +16,8 @@ from app.models.job import JobPosting
 from app.models.user import User
 from app.schemas.application import (
     ApplicationCreate,
+    ApplicationTrackingRequest,
+    CandidateProfileUpdate,
     ApplicationResponse,
     ApplicationStageUpdate,
     PaginatedApplicationsResponse,
@@ -21,7 +26,15 @@ from app.services.audit import write_audit_log
 
 router = APIRouter()
 
-HR_ADMIN_ROLES = {"admin", "hr_manager"}
+HR_ADMIN_ROLES = {"admin", "hr_manager", "recruiter"}
+CV_MAX_BYTES = 10 * 1024 * 1024
+CV_TYPES = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+}
+CV_UPLOAD_DIR = Path(__file__).resolve().parents[3] / "uploads" / "cv"
+CV_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+_recent_submissions: dict[str, datetime] = {}
 
 def get_user_from_token(authorization: Optional[str], db: Session) -> Optional[User]:
     if not authorization or not authorization.startswith("Bearer "):
@@ -44,13 +57,38 @@ def generate_app_code(db: Session) -> str:
 @router.post("", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
 def submit_application(
     payload: ApplicationCreate,
+    request: Request,
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    # Verify job exists and is published
+    if payload.website:
+        raise HTTPException(status_code=400, detail="Không thể gửi hồ sơ. Vui lòng tải lại trang và thử lại.")
+    if payload.started_at:
+        started_at = payload.started_at
+        if started_at.tzinfo:
+            started_at = started_at.astimezone(timezone.utc).replace(tzinfo=None)
+        if datetime.utcnow() - started_at < timedelta(seconds=3):
+            raise HTTPException(status_code=429, detail="Bạn thao tác quá nhanh. Vui lòng kiểm tra lại thông tin trước khi gửi.")
+
+    # Verify job exists, is published and has not expired.
     job = db.query(JobPosting).filter(JobPosting.id == payload.job_id).first()
-    if not job or job.status != "published":
+    if not job or job.status != "published" or (job.deadline and job.deadline < datetime.utcnow()):
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng hoặc vị trí đã hết hạn nhận hồ sơ")
+
+    normalized_email = payload.email.lower().strip()
+    duplicate = db.query(JobApplication).filter(
+        JobApplication.job_id == payload.job_id,
+        JobApplication.email == normalized_email,
+        JobApplication.status.notin_(["withdrawn", "rejected"]),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"Bạn đã nộp hồ sơ cho vị trí này. Mã tra cứu: {duplicate.code}")
+
+    client_ip = request.client.host if request.client else "unknown"
+    spam_key = f"{client_ip}:{normalized_email}"
+    previous = _recent_submissions.get(spam_key)
+    if previous and datetime.utcnow() - previous < timedelta(seconds=30):
+        raise HTTPException(status_code=429, detail="Bạn vừa gửi một hồ sơ. Vui lòng đợi 30 giây trước khi thử lại.")
 
     current_user = get_user_from_token(authorization, db) if authorization else None
     candidate_id = current_user.id if current_user else None
@@ -62,9 +100,19 @@ def submit_application(
         job_id=payload.job_id,
         candidate_id=candidate_id,
         full_name=payload.full_name.strip(),
-        email=payload.email.lower().strip(),
+        email=normalized_email,
         phone=payload.phone.strip(),
         cv_url=payload.cv_url,
+        cv_filename=payload.cv_filename,
+        cv_content_type=payload.cv_content_type,
+        cv_extracted_data=json.dumps({
+            "full_name": payload.full_name.strip(),
+            "email": normalized_email,
+            "phone": payload.phone.strip(),
+            "skills": [],
+            "education": "",
+            "experience_summary": "",
+        }, ensure_ascii=False),
         cover_letter=payload.cover_letter,
         current_department=payload.current_department,
         referral_code=payload.referral_code,
@@ -74,6 +122,7 @@ def submit_application(
     db.add(app_record)
     db.commit()
     db.refresh(app_record)
+    _recent_submissions[spam_key] = datetime.utcnow()
 
     # Initial Log
     log = ApplicationLog(
@@ -88,6 +137,50 @@ def submit_application(
     db.refresh(app_record)
 
     return app_record.to_dict()
+
+@router.post("/upload-cv", status_code=status.HTTP_201_CREATED)
+async def upload_cv(file: UploadFile = File(...)):
+    suffix = Path(file.filename or "").suffix.lower()
+    expected_suffix = CV_TYPES.get(file.content_type or "")
+    if not expected_suffix or suffix != expected_suffix:
+        raise HTTPException(status_code=415, detail="CV chỉ chấp nhận tệp PDF hoặc DOCX.")
+    content = await file.read(CV_MAX_BYTES + 1)
+    if len(content) > CV_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Dung lượng CV tối đa là 10MB.")
+    if (suffix == ".pdf" and not content.startswith(b"%PDF")) or (suffix == ".docx" and not content.startswith(b"PK")):
+        raise HTTPException(status_code=415, detail="Nội dung tệp CV không đúng định dạng PDF hoặc DOCX.")
+    stored_name = f"{uuid4().hex}{suffix}"
+    destination = CV_UPLOAD_DIR / stored_name
+    destination.write_bytes(content)
+    original_name = Path(file.filename or "CV").name
+    return {
+        "url": f"/uploads/cv/{stored_name}",
+        "filename": original_name,
+        "content_type": file.content_type,
+        "size": len(content),
+        "extracted_data": {
+            "full_name": Path(original_name).stem.replace("_", " ").replace("-", " ").title(),
+            "skills": [],
+            "education": "",
+            "experience_summary": "",
+        },
+    }
+
+@router.post("/track")
+def track_application(payload: ApplicationTrackingRequest, db: Session = Depends(get_db)):
+    app_record = db.query(JobApplication).filter(JobApplication.code == payload.code.strip().upper()).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ với mã tra cứu này.")
+    data = app_record.to_dict()
+    return {
+        "code": data["code"],
+        "job_title": data["job_title"],
+        "department_name": data["department_name"],
+        "status": data["status"],
+        "created_at": data["created_at"],
+        "updated_at": data["updated_at"],
+        "history": [{"to_status": item["to_status"], "created_at": item["created_at"]} for item in data["logs"]],
+    }
 
 @router.get("/my", response_model=PaginatedApplicationsResponse)
 def get_my_applications(
@@ -190,6 +283,31 @@ def get_application_detail(
     if not (is_hr or is_owner):
         raise HTTPException(status_code=403, detail="Bạn không có quyền xem thông tin hồ sơ này")
 
+    return app_record.to_dict()
+
+@router.put("/{application_id}/profile", response_model=ApplicationResponse)
+def update_candidate_profile(
+    application_id: int,
+    payload: CandidateProfileUpdate,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    get_hr_user(authorization, db)
+    app_record = db.query(JobApplication).filter(JobApplication.id == application_id).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
+    updates = payload.model_dump(exclude_unset=True)
+    if "email" in updates:
+        updates["email"] = str(updates["email"]).lower().strip()
+    if "cv_extracted_data" in updates:
+        updates["cv_extracted_data"] = json.dumps(updates["cv_extracted_data"], ensure_ascii=False)
+    if "tags" in updates:
+        updates["tags"] = json.dumps(list(dict.fromkeys(updates["tags"])), ensure_ascii=False)
+    for key, value in updates.items():
+        setattr(app_record, key, value)
+    app_record.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(app_record)
     return app_record.to_dict()
 
 @router.post("/{application_id}/stage", response_model=ApplicationResponse)

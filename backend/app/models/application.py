@@ -24,6 +24,11 @@ class JobApplication(Base):
     email = Column(String(255), nullable=False, index=True)
     phone = Column(String(50), nullable=False)
     cv_url = Column(Text, nullable=False)
+    cv_filename = Column(String(255), nullable=True)
+    cv_content_type = Column(String(120), nullable=True)
+    cv_extracted_data = Column(Text, nullable=True)
+    tags = Column(Text, nullable=True)
+    recruiter_notes = Column(Text, nullable=True)
     cover_letter = Column(Text, nullable=True)
     current_department = Column(String(255), nullable=True)
     referral_code = Column(String(50), nullable=True)
@@ -40,7 +45,13 @@ class JobApplication(Base):
     logs = relationship('ApplicationLog', back_populates='application', cascade='all, delete-orphan', order_by='ApplicationLog.created_at.asc()')
 
     def to_dict(self):
-        return {'id': self.id, 'code': self.code, 'job_id': self.job_id, 'job_code': self.job.code if self.job else None, 'job_title': self.job.title if self.job else None, 'department_name': self.job.department.name if self.job and self.job.department else None, 'candidate_id': self.candidate_id, 'full_name': self.full_name, 'email': self.email, 'phone': self.phone, 'cv_url': self.cv_url, 'cover_letter': self.cover_letter, 'current_department': self.current_department, 'referral_code': self.referral_code, 'status': self.status, 'created_at': self.created_at.isoformat() if self.created_at else None, 'updated_at': self.updated_at.isoformat() if self.updated_at else None, 'logs': [log.to_dict() for log in self.logs] if self.logs else [], 'job_posting_id': self.job_posting_id, 'department': self.job_posting.department_name if self.job_posting else None, 'name': self.full_name, 'current_company': self.current_company, 'current_position': self.current_position, 'years_of_experience': self.years_of_experience, 'score': self.score, 'hr_notes': self.hr_notes, 'rejection_reason': self.rejection_reason, 'applied_date': self.created_at.strftime('%Y-%m-%d') if self.created_at else None}
+        import json
+        def load_json(value, fallback):
+            try:
+                return json.loads(value) if value else fallback
+            except (TypeError, ValueError):
+                return fallback
+        return {'id': self.id, 'code': self.code, 'job_id': self.job_id, 'job_code': self.job.code if self.job else None, 'job_title': self.job.title if self.job else None, 'department_name': self.job.department.name if self.job and self.job.department else None, 'candidate_id': self.candidate_id, 'full_name': self.full_name, 'email': self.email, 'phone': self.phone, 'cv_url': self.cv_url, 'cv_filename': self.cv_filename, 'cv_content_type': self.cv_content_type, 'cv_extracted_data': load_json(self.cv_extracted_data, {}), 'tags': load_json(self.tags, []), 'recruiter_notes': self.recruiter_notes, 'cover_letter': self.cover_letter, 'current_department': self.current_department, 'referral_code': self.referral_code, 'status': self.status, 'created_at': self.created_at.isoformat() if self.created_at else None, 'updated_at': self.updated_at.isoformat() if self.updated_at else None, 'logs': [log.to_dict() for log in self.logs] if self.logs else [], 'job_posting_id': self.job_posting_id, 'department': self.job_posting.department_name if self.job_posting else None, 'name': self.full_name, 'current_company': self.current_company, 'current_position': self.current_position, 'years_of_experience': self.years_of_experience, 'score': self.score, 'hr_notes': self.hr_notes, 'rejection_reason': self.rejection_reason, 'applied_date': self.created_at.strftime('%Y-%m-%d') if self.created_at else None}
 
 class ApplicationLog(Base):
     id = Column(Integer, primary_key=True, index=True)
