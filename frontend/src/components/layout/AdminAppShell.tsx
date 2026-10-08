@@ -24,6 +24,8 @@ import {
   Briefcase
 } from "lucide-react";
 import { authService } from "@/features/auth/services/auth.service";
+import clsx from "clsx";
+
 
 interface AdminAppShellProps {
   children: React.ReactNode;
@@ -193,9 +195,9 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F9FC] text-slate-800 flex flex-col font-sans antialiased">
-      {/* 1. TOP HEADER (64px) */}
-      <header className="h-16 bg-white border-b border-gray-100 sticky top-0 z-40 px-4 sm:px-6 lg:px-8 flex items-center justify-between shadow-[0_2px_15px_rgb(0,0,0,0.02)]">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans antialiased">
+      {/* 1. TOP HEADER (100% full width, completely detached from sidebar) */}
+      <header className="w-full h-16 bg-white border-b border-slate-100 sticky top-0 z-40 px-4 sm:px-6 lg:px-8 flex items-center justify-between shadow-xs">
         {/* Left: Brand & Mobile Toggle */}
         <div className="flex items-center gap-4">
           <button
@@ -206,13 +208,13 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
           </button>
 
           <Link href="/admin/dashboard" className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#4285F4] text-white font-extrabold flex items-center justify-center text-sm shadow-md shadow-blue-500/20">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-extrabold flex items-center justify-center text-sm shadow-md shadow-blue-500/20">
               ATS
             </div>
             <div>
               <div className="font-extrabold text-sm text-slate-900 tracking-tight leading-none flex items-center gap-2">
                 Hệ Thống Tuyển Dụng Nội Bộ
-                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-[#4285F4] border border-blue-100 text-[10px] font-bold uppercase tracking-wider">
+                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-bold uppercase tracking-wider">
                   Admin Console
                 </span>
               </div>
@@ -226,7 +228,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
         {/* Right: Workspace Switcher & Profile Menu */}
         <div className="flex items-center gap-3">
           {/* Quick Workspace Navigation */}
-          <div className="hidden md:flex items-center gap-2 border-r border-gray-200 pr-4 mr-1">
+          <div className="hidden md:flex items-center gap-2 border-r border-slate-100 pr-4 mr-1">
             <Link
               href="/hr"
               className="px-3 py-1.5 rounded-xl bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
@@ -237,7 +239,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
             <Link
               href="/jobs"
               target="_blank"
-              className="px-3 py-1.5 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 border border-gray-200 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <span>Cổng Việc Làm</span>
               <ExternalLink className="w-3 h-3" />
@@ -257,9 +259,9 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
           <div className="relative" ref={profileDropdownRef}>
             <button
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-              className="flex items-center gap-2.5 p-1.5 pl-2 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-gray-200 cursor-pointer"
+              className="flex items-center gap-2.5 p-1.5 pl-2 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-200 cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-full bg-blue-100 text-[#4285F4] font-bold flex items-center justify-center text-xs border border-blue-200 shadow-xs overflow-hidden">
+              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-xs border border-blue-200 shadow-xs overflow-hidden">
                 {avatarUrl ? (
                   <img src={avatarUrl} alt={adminProfile.name} className="w-full h-full object-cover" />
                 ) : (
@@ -278,8 +280,8 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
             </button>
 
             {isProfileDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
+              <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm overflow-hidden shrink-0">
                     {avatarUrl ? (
                       <img src={avatarUrl} alt={adminProfile.name} className="w-full h-full object-cover" />
@@ -290,7 +292,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
                   <div>
                     <div className="font-bold text-xs text-slate-900">{adminProfile.name}</div>
                     <div className="text-[11px] text-slate-400 truncate max-w-[150px]">{adminProfile.email}</div>
-                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 text-[#4285F4] text-[10px] font-bold border border-blue-100">
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100">
                       {adminProfile.role}
                     </span>
                   </div>
@@ -313,7 +315,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
                     <span>Cấu hình thông báo</span>
                   </Link>
                 </div>
-                <div className="border-t border-gray-100 pt-1">
+                <div className="border-t border-slate-100 pt-1">
                   <button
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2.5 px-4 py-2 text-rose-600 hover:bg-rose-50 text-xs font-bold cursor-pointer"
@@ -328,18 +330,26 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
         </div>
       </header>
 
-      {/* 2. BODY LAYOUT: SIDEBAR + MAIN CONTENT */}
-      <div className="flex-1 max-w-full flex">
-        {/* DESKTOP SIDEBAR (240px - White with subtle right border) */}
+      {/* 2. BODY LAYOUT: FLOATING SIDEBAR + MAIN CONTENT */}
+      <div className="flex-1 w-full flex">
+        {/* Mobile menu backdrop */}
+        {isMobileMenuOpen && (
+          <div
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-20 lg:hidden"
+          />
+        )}
+
+        {/* FLOATING SIDEBAR (Card nổi, bo tròn rounded-2xl, không dính sát mép ml-6 mt-6) */}
         <aside
-          className={`fixed lg:sticky top-16 z-30 h-[calc(100vh-4rem)] w-60 bg-white border-r border-gray-100 shrink-0 flex flex-col justify-between p-4 overflow-y-auto transition-transform duration-200 ${
-            isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          className={`fixed lg:sticky top-20 z-30 h-[calc(100vh-6.5rem)] w-64 bg-white rounded-2xl shadow-sm border border-slate-100 p-4 shrink-0 flex flex-col justify-between overflow-y-auto ml-4 sm:ml-6 mt-6 mb-6 transition-transform duration-200 ${
+            isMobileMenuOpen ? "translate-x-0" : "-translate-x-[120%] lg:translate-x-0"
           }`}
         >
-          <nav className="space-y-5">
+          <nav className="space-y-6">
             {navGroups.map((group, groupIdx) => (
-              <div key={groupIdx} className="space-y-1">
-                <div className="px-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
+              <div key={groupIdx} className="space-y-1.5">
+                <div className="px-3.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
                   {group.label}
                 </div>
                 {group.items.map((item) => {
@@ -350,14 +360,17 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
                       key={item.id}
                       href={item.href}
                       onClick={() => setIsMobileMenuOpen(false)}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 ${
+                      className={clsx(
+                        "flex items-center justify-between gap-3 px-4 py-3 font-medium transition-all duration-200 ease-in-out rounded-full text-xs cursor-pointer group",
                         active
-                          ? "bg-blue-50 text-[#4285F4] font-extrabold shadow-xs border-l-4 border-[#4285F4]"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium"
-                      }`}
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-semibold"
+                          : "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      )}
                     >
-                      <Icon className={`w-4 h-4 ${active ? "text-[#4285F4]" : "text-slate-400"}`} />
-                      <span>{item.label}</span>
+                      <div className="flex items-center gap-3">
+                        <Icon className={clsx("w-4 h-4 transition-transform duration-200 group-hover:scale-105 shrink-0", active ? "text-white" : "text-slate-400 group-hover:text-slate-600")} />
+                        <span>{item.label}</span>
+                      </div>
                     </Link>
                   );
                 })}
@@ -365,22 +378,27 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
             ))}
           </nav>
 
-          {/* System Health Widget Footer */}
-          <div className="pt-4 border-t border-gray-100">
-            <div className="bg-slate-50 rounded-xl p-3 border border-gray-100 text-xs">
-              <div className="flex items-center gap-2 font-bold text-slate-700 mb-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>System Operational</span>
+          {/* Thẻ Card nhỏ "Trạng thái máy chủ" ở dưới cùng Sidebar với màu nền xanh ngọc nhạt bg-teal-50 */}
+          <div className="pt-3 border-t border-slate-100">
+            <div className="bg-teal-50 rounded-2xl p-3.5 border border-teal-100/80 text-xs space-y-1 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-bold text-teal-900">
+                  <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse"></span>
+                  <span>Trạng thái máy chủ</span>
+                </div>
+                <span className="text-[10px] font-extrabold text-teal-700 bg-teal-100/80 px-2 py-0.5 rounded-full">
+                  Online
+                </span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Security & RBAC Enforcement Active
+              <p className="text-[11px] text-teal-700/80 font-medium leading-relaxed">
+                Hệ thống hoạt động bình thường
               </p>
             </div>
           </div>
         </aside>
 
-        {/* MAIN CONTENT AREA */}
-        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 space-y-6">
+        {/* MAIN CONTENT CONTAINER (mr-6 mt-6 tương xứng với Floating Sidebar) */}
+        <main className="flex-1 min-w-0 mx-4 sm:mx-6 lg:ml-6 lg:mr-6 mt-6 mb-6 space-y-6">
           {children}
         </main>
       </div>

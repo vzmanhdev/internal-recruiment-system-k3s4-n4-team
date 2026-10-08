@@ -21,7 +21,7 @@ export const HRHeader: React.FC<HRHeaderProps> = ({
   const [showNotifications, setShowNotifications] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-[0_2px_15px_rgb(0,0,0,0.02)]">
+    <header className="w-full sticky top-0 z-50 bg-white border-b border-slate-200 shadow-xs">
       <div className="w-full max-w-full px-6 sm:px-8 h-16 flex items-center justify-between">
         
         {/* Left Branding */}

@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Input, type InputProps } from "./Input";
+import { cn } from "@/lib/utils";
 
 export type PasswordInputProps = Omit<InputProps, "type" | "rightIcon">;
 
 export const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputProps>(
-  (props, ref) => {
+  ({ className, ...props }, ref) => {
     const [showPassword, setShowPassword] = useState(false);
 
     const toggleShowPassword = () => {
@@ -18,9 +19,13 @@ export const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputPro
         onClick={toggleShowPassword}
         tabIndex={-1}
         aria-label={showPassword ? "Ẩn mật khẩu" : "Hiển thị mật khẩu"}
-        className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-[var(--color-heading)] focus:outline-none transition-colors rounded-lg"
+        className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-slate-600 focus:outline-none transition-colors rounded-lg cursor-pointer"
       >
-        {showPassword ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
+        {showPassword ? (
+          <Eye className="w-[18px] h-[18px] cursor-pointer" />
+        ) : (
+          <EyeOff className="w-[18px] h-[18px] cursor-pointer" />
+        )}
       </button>
     );
 
@@ -29,6 +34,7 @@ export const PasswordInput = React.forwardRef<HTMLInputElement, PasswordInputPro
         ref={ref}
         type={showPassword ? "text" : "password"}
         rightIcon={toggleButton}
+        className={cn("[&::-ms-reveal]:hidden [&::-ms-clear]:hidden", className)}
         {...props}
       />
     );

@@ -8,6 +8,7 @@ import {
   FileText, Award, Layers, Target, Mail, Send, BarChart3, History, 
   ChevronRight, Sparkles, Building2, UserCheck, Sparkle, UserPlus
 } from 'lucide-react';
+import clsx from 'clsx';
 
 interface NavItem {
   label: string;
@@ -72,14 +73,14 @@ export const HRSidebar: React.FC = () => {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 shrink-0 bg-white border-r border-slate-200/80 min-h-[calc(100vh-4rem)] p-4 flex flex-col justify-between select-none">
+    <aside className="ml-6 mt-6 w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col h-[calc(100vh-100px)] overflow-y-auto p-4 justify-between select-none sticky top-20 z-40">
       <div className="space-y-6">
         {hrNavigationGroups.map((group, idx) => (
           <div key={idx} className="space-y-1.5">
             <div className="px-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
               {group.groupName}
             </div>
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               {group.items.map((item, itemIdx) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href || (item.href !== '/hr/dashboard' && pathname?.startsWith(item.href));
@@ -88,20 +89,33 @@ export const HRSidebar: React.FC = () => {
                   <Link
                     key={itemIdx}
                     href={item.href}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 group cursor-pointer ${
-                      isActive 
-                        ? 'bg-blue-50 text-blue-700 font-bold border border-blue-100/80 shadow-sm shadow-blue-500/5' 
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
+                    className={clsx(
+                      // 1. Cấu trúc chung (Base style): flex, gap-3, px-4 py-3, font-medium, transition mượt, rounded-full
+                      "flex items-center justify-between gap-3 px-4 py-3 font-medium transition-all duration-200 ease-in-out rounded-full text-xs cursor-pointer group",
+                      // 2. Trạng thái Đang chọn (Active) vs Chưa chọn (Inactive)
+                      isActive
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                        : "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <Icon className={`w-4 h-4 transition-colors ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    <div className="flex items-center gap-3">
+                      <Icon 
+                        className={clsx(
+                          "w-4 h-4 transition-colors shrink-0",
+                          isActive ? "text-white" : "text-slate-400 group-hover:text-slate-600"
+                        )} 
+                      />
                       <span>{item.label}</span>
                     </div>
                     {item.badge && (
-                      <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md ${
-                        isActive ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700'
-                      }`}>
+                      <span 
+                        className={clsx(
+                          "text-[9px] font-extrabold px-2 py-0.5 rounded-full transition-colors",
+                          isActive 
+                            ? "bg-white/20 text-white border border-white/20" 
+                            : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700"
+                        )}
+                      >
                         {item.badge}
                       </span>
                     )}
