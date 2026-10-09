@@ -21,16 +21,16 @@ export function Footer() {
             <h4 className="text-sm font-semibold text-white tracking-wider uppercase">Khám phá</h4>
             <ul className="space-y-2.5 text-sm">
               <li>
-                <Link href="#jobs" className="hover:text-white transition-colors">Vị trí đang tuyển</Link>
+                <Link href="/#jobs" className="hover:text-white transition-colors">Vị trí đang tuyển</Link>
               </li>
               <li>
-                <Link href="#development" className="hover:text-white transition-colors">Lộ trình phát triển</Link>
+                <Link href="/#career-path" className="hover:text-white transition-colors">Lộ trình phát triển</Link>
               </li>
               <li>
-                <Link href="#process" className="hover:text-white transition-colors">Quy trình ứng tuyển</Link>
+                <Link href="/#process" className="hover:text-white transition-colors">Quy trình ứng tuyển</Link>
               </li>
               <li>
-                <Link href="#referral" className="hover:text-white transition-colors">Chương trình giới thiệu</Link>
+                <Link href="/#news" className="hover:text-white transition-colors">Chương trình giới thiệu & Tin tức</Link>
               </li>
             </ul>
           </div>

@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={`${inter.variable} ${caveat.variable}`} data-scroll-behavior="smooth">
+    <html lang="vi" className={`${inter.variable} ${caveat.variable} scroll-smooth scroll-pt-24`} data-scroll-behavior="smooth">
       <body className="antialiased">{children}</body>
     </html>
   );

@@ -10,20 +10,21 @@ interface HRAppShellProps {
 
 export const HRAppShell: React.FC<HRAppShellProps> = ({ children }) => {
   return (
-    <div className="min-h-screen bg-[#fafbfc] text-slate-800 font-sans flex flex-col antialiased">
-      {/* Shared Global HR Header */}
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col antialiased">
+      {/* Shared Global Top Header (100% w-full, z-50, bg-white, border-b border-slate-200) */}
       <HRHeader />
 
-      {/* Main Body with Sidebar & Content */}
-      <div className="flex-1 w-full max-w-full flex">
-        {/* 5-Group White Sidebar */}
+      {/* Main Body with Floating Sidebar & Content */}
+      <div className="flex-1 w-full flex">
+        {/* Floating Sidebar (ml-6 mt-6 w-64 bg-white rounded-2xl shadow-sm border border-slate-100) */}
         <HRSidebar />
 
-        {/* Main Content Area */}
-        <main className="flex-1 p-6 sm:p-8 min-w-0 overflow-x-auto">
+        {/* Main Content Area (flex-1 m-6 overflow-y-auto) */}
+        <main className="flex-1 m-6 overflow-y-auto min-w-0">
           {children}
         </main>
       </div>
     </div>
   );
 };
+
