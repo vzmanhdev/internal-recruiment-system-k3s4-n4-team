@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.application import JobApplication
 from app.models.offer_onboarding import JobOffer, OnboardingChecklist
-from app.core.security import decode_access_token
+from app.api.deps import get_current_user_obj
 
 router = APIRouter()
 
@@ -29,19 +29,10 @@ class ChecklistItemUpdate(BaseModel):
     task_name: str
     is_completed: bool
 
-def get_current_user(authorization: Optional[str], db: Session) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    token = authorization.split(" ")[1]
-    user_id = decode_access_token(token)
-    user = db.query(User).filter(User.id == int(user_id)).first() if user_id else None
-    if not user:
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    return user
-
 @router.get("")
 def list_offers(
     status_filter: Optional[str] = None,
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
     query = db.query(JobOffer)
@@ -52,7 +43,11 @@ def list_offers(
     return [o.to_dict() for o in offers]
 
 @router.get("/{offer_id}")
-def get_offer(offer_id: int, db: Session = Depends(get_db)):
+def get_offer(
+    offer_id: int,
+    current_user: User = Depends(get_current_user_obj),
+    db: Session = Depends(get_db)
+):
     offer = db.query(JobOffer).filter(JobOffer.id == offer_id).first()
     if not offer:
         raise HTTPException(status_code=404, detail="Không tìm thấy thư mời nhận việc")
@@ -61,10 +56,9 @@ def get_offer(offer_id: int, db: Session = Depends(get_db)):
 @router.post("", status_code=201)
 def create_offer(
     payload: OfferCreate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
     app = db.query(JobApplication).filter(JobApplication.id == payload.application_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
@@ -81,7 +75,7 @@ def create_offer(
             work_location=payload.work_location,
             notes=payload.notes,
             status="sent",
-            created_by_id=user.id
+            created_by_id=current_user.id
         )
         db.add(offer)
         db.commit()
@@ -103,7 +97,7 @@ def create_offer(
                 is_completed=False
             )
             db.add(item)
-        
+
         # Update Application status to offered
         app.status = "offered"
         db.commit()
@@ -115,10 +109,9 @@ def create_offer(
 def update_offer_status(
     offer_id: int,
     payload: OfferStatusUpdate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
     offer = db.query(JobOffer).filter(JobOffer.id == offer_id).first()
     if not offer:
         raise HTTPException(status_code=404, detail="Không tìm thấy thư mời nhận việc")

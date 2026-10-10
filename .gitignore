@@ -1,52 +1,45 @@
-# Node / Next.js
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+*.env
+
+# Exceptions (Cho phép đẩy file mẫu .env.example)
+!.env.example
+!.env.*.example
+
+# Temporary & Test Folder (Tất cả file test/scratch/data tạm)
+tmp_test/
+.tmp_test/
+/tmp/
+
+# Dependencies
 node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Next.js Build Output
 .next/
 out/
 build/
 dist/
-*.log
-*.tsbuildinfo
 
-# Python / FastAPI
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-venv/
-ENV/
-.pytest_cache/
-.coverage
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Database
-*.sqlite
+# Database & SQLite files
+*.db
 *.sqlite3
 
-# Temporary & Scratch scripts in root
-analyze_excel_and_code.py
-check_headers.py
-code_files_list.txt
-codebase_files.txt
-cross_analysis_result.txt
-cross_reference.py
-deep_check_completion.py
-detailed_excel_analysis.py
-doc_extracted.txt
-excel_dump.json
-excel_items_dump.txt
-full_excel_breakdown.txt
-generate_full_report.py
-match_code_and_tasks.py
-tmp_output.txt
-tmp_parse_xlsx.py
+# Log & Dump files
+*.log
+*.dump
+*.json_dump
 
-# IDE / OS
+# OS & IDE Files
 .DS_Store
 Thumbs.db
 .vscode/

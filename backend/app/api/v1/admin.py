@@ -22,8 +22,36 @@ from app.schemas.admin import (
     VALID_ROLES,
 )
 from app.schemas.auth import UserResponse
+from app.models.audit import AuditLog, Permission, RolePermission
 
 router = APIRouter()
+
+
+def record_audit_log(
+    db: Session,
+    actor_email: str,
+    action: str,
+    target_entity: Optional[str] = None,
+    target_id: Optional[str] = None,
+    details: Optional[str] = None,
+    ip_address: Optional[str] = "127.0.0.1",
+):
+    try:
+        actor_user = db.query(User).filter(User.email == actor_email).first()
+        log_entry = AuditLog(
+            actor_id=actor_user.id if actor_user else None,
+            actor_email=actor_email,
+            action=action,
+            target_entity=target_entity,
+            target_id=target_id,
+            ip_address=ip_address,
+            payload_json=details,
+        )
+        db.add(log_entry)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+
 
 
 @router.get("/roles")
@@ -111,7 +139,7 @@ def create_user(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    require_admin(authorization, db)
+    admin = require_admin(authorization, db)
     if db.query(User).filter(User.email == payload.email).first():
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -129,6 +157,20 @@ def create_user(
     db.add(user)
     db.commit()
     db.refresh(user)
+    record_audit_log(db, admin.email, "CREATE_USER", "User", str(user.id), f"Khởi tạo tài khoản người dùng {user.email} với vai trò {user.role}")
+
+    # Send welcome email with initial password
+    try:
+        from app.services.email_service import send_account_created_email
+        send_account_created_email(
+            to_email=user.email,
+            full_name=user.full_name,
+            initial_password=payload.password,
+            roles_str=user.role,
+        )
+    except Exception as e:
+        pass
+
     return user.to_dict()
 
 
@@ -143,12 +185,43 @@ def update_roles(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
-    if user.id == admin.id and "admin" not in payload.roles:
-        raise HTTPException(status_code=400, detail="Bạn không thể tự thu hồi quyền Quản trị viên của mình")
-    user.role = ",".join(payload.roles)
+
+    new_roles = [r.strip().lower() for r in payload.roles if r.strip()]
+    if user.id == admin.id and "admin" not in new_roles:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bạn không thể tự thu hồi vai trò Quản trị hệ thống của chính mình.",
+            headers={"X-Error-Code": "SELF_ADMIN_ROLE_REMOVE_DENIED"}
+        )
+
+    user.role = ",".join(new_roles)
+
+    # Sync user_roles join table
+    from app.models.rbac import Role, UserRole
+    db.query(UserRole).filter(UserRole.user_id == user.id).delete()
+    db.commit()
+
+    matched_roles = db.query(Role).filter(Role.code.in_(new_roles)).all()
+    for r_obj in matched_roles:
+        db.add(UserRole(user_id=user.id, role_id=r_obj.id))
+
     db.commit()
     db.refresh(user)
-    return user.to_dict()
+
+    record_audit_log(db, admin.email, "UPDATE_ROLES", "User", str(user.id), f"Cập nhật vai trò cho {user.email} thành: {user.role}")
+
+    # Trigger email notification for role update
+    try:
+        from app.services.email_service import send_roles_updated_email
+        send_roles_updated_email(to_email=user.email, full_name=user.full_name, new_roles_str=user.role)
+    except Exception:
+        pass
+
+    from app.services.rbac_service import get_user_roles, get_effective_permissions
+    user_dict = user.to_dict()
+    user_dict["roles"] = get_user_roles(db, user)
+    user_dict["effective_permissions"] = get_effective_permissions(db, user)
+    return user_dict
 
 
 @router.post("/users/{user_id}/reset-password")
@@ -158,7 +231,7 @@ def reset_user_password(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    require_admin(authorization, db)
+    admin = require_admin(authorization, db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
@@ -167,6 +240,14 @@ def reset_user_password(
     user.hashed_password = hash_password(new_pwd)
     db.commit()
     db.refresh(user)
+    record_audit_log(db, admin.email, "ADMIN_RESET_PASSWORD", "User", str(user.id), f"Quản trị viên đặt lại mật khẩu cho tài khoản {user.email}")
+
+    # Trigger email notification with new password
+    try:
+        from app.services.email_service import send_new_password_email
+        send_new_password_email(to_email=user.email, new_password=new_pwd)
+    except Exception:
+        pass
 
     return {
         "message": f"Đặt lại mật khẩu cho tài khoản {user.email} thành công.",
@@ -193,6 +274,15 @@ def lock_user(
     user.lock_reason = payload.reason.strip()
     db.commit()
     db.refresh(user)
+    record_audit_log(db, admin.email, "LOCK_ACCOUNT", "User", str(user.id), f"Khóa tài khoản {user.email}. Lý do: {user.lock_reason}")
+
+    # Trigger email notification for account lock
+    try:
+        from app.services.email_service import send_account_status_email
+        send_account_status_email(to_email=user.email, full_name=user.full_name, is_locked=True, reason=user.lock_reason)
+    except Exception:
+        pass
+
     return user.to_dict()
 
 
@@ -202,7 +292,7 @@ def unlock_user(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    require_admin(authorization, db)
+    admin = require_admin(authorization, db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
@@ -211,6 +301,15 @@ def unlock_user(
     user.lock_reason = None
     db.commit()
     db.refresh(user)
+    record_audit_log(db, admin.email, "UNLOCK_ACCOUNT", "User", str(user.id), f"Mở khóa tài khoản {user.email}")
+
+    # Trigger email notification for account unlock
+    try:
+        from app.services.email_service import send_account_status_email
+        send_account_status_email(to_email=user.email, full_name=user.full_name, is_locked=False)
+    except Exception:
+        pass
+
     return user.to_dict()
 
 
@@ -446,8 +545,9 @@ def get_admin_dashboard_stats(
         "candidate": 0,
         "employee": 0,
     }
+    from app.services.rbac_service import get_user_roles
     for user in all_users:
-        user_roles = [r.strip().lower() for r in (user.role or "").split(",") if r.strip()]
+        user_roles = [r["code"].lower() for r in get_user_roles(db, user)]
         for r in user_roles:
             if r in role_distribution:
                 role_distribution[r] += 1
@@ -461,32 +561,7 @@ def get_admin_dashboard_stats(
     }
 
 
-from app.models.audit import AuditLog, Permission, RolePermission
-
-def record_audit_log(
-    db: Session,
-    actor_email: str,
-    action: str,
-    target_entity: Optional[str] = None,
-    target_id: Optional[str] = None,
-    details: Optional[str] = None,
-    ip_address: Optional[str] = "127.0.0.1",
-):
-    try:
-        actor_user = db.query(User).filter(User.email == actor_email).first()
-        log_entry = AuditLog(
-            actor_id=actor_user.id if actor_user else None,
-            actor_email=actor_email,
-            action=action,
-            target_entity=target_entity,
-            target_id=target_id,
-            ip_address=ip_address,
-            payload_json=details,
-        )
-        db.add(log_entry)
-        db.commit()
-    except Exception as e:
-        db.rollback()
+    return audit_log_records
 
 
 @router.get("/audit-logs")
@@ -523,45 +598,100 @@ def list_audit_logs(
     return result
 
 
+def ensure_permissions_seeded(db: Session):
+    existing_count = db.query(Permission).count()
+    if existing_count == 0:
+        initial_perms = [
+            {"code": "user:view", "name": "Xem người dùng", "module": "users", "description": "Xem danh sách người dùng & tài khoản"},
+            {"code": "user:create", "name": "Tạo người dùng", "module": "users", "description": "Tạo mới tài khoản người dùng"},
+            {"code": "user:edit", "name": "Sửa người dùng", "module": "users", "description": "Cập nhật thông tin tài khoản"},
+            {"code": "user:lock", "name": "Khóa/Mở khóa", "module": "users", "description": "Khóa hoặc mở khóa tài khoản"},
+            {"code": "user:reset_password", "name": "Reset Mật khẩu", "module": "users", "description": "Reset mật khẩu người dùng"},
+            {"code": "requisition:view", "name": "Xem Yêu cầu tuyển dụng", "module": "requisition", "description": "Xem danh sách yêu cầu tuyển dụng"},
+            {"code": "requisition:create", "name": "Tạo Yêu cầu tuyển dụng", "module": "requisition", "description": "Tạo mới yêu cầu tuyển dụng"},
+            {"code": "requisition:approve", "name": "Phê duyệt Yêu cầu", "module": "requisition", "description": "Phê duyệt hoặc từ chối yêu cầu"},
+            {"code": "candidate:view", "name": "Xem Hồ sơ Ứng viên", "module": "candidate", "description": "Xem danh sách và chi tiết ứng viên"},
+            {"code": "candidate:evaluate", "name": "Đánh giá Ứng viên", "module": "candidate", "description": "Đánh giá, chấm điểm và chuyển trạng thái ứng viên"},
+            {"code": "offer:create", "name": "Tạo Thư mời", "module": "offer", "description": "Tạo mới đề xuất offer cho ứng viên"},
+            {"code": "offer:approve", "name": "Duyệt Thư mời", "module": "offer", "description": "Phê duyệt đề xuất offer"},
+            {"code": "master_data:manage", "name": "Quản lý Danh mục", "module": "audit", "description": "Quản lý danh mục dữ liệu hệ thống"},
+            {"code": "audit:view", "name": "Xem Nhật ký Audit Logs", "module": "audit", "description": "Xem nhật ký thao tác hệ thống"},
+        ]
+        for p in initial_perms:
+            db.add(Permission(**p))
+        db.commit()
+
+        initial_grants = {
+            "admin": ["user:view", "user:create", "user:edit", "user:lock", "user:reset_password", "requisition:view", "requisition:create", "requisition:approve", "candidate:view", "candidate:evaluate", "offer:create", "offer:approve", "master_data:manage", "audit:view"],
+            "hr_manager": ["user:view", "requisition:view", "requisition:create", "candidate:view", "candidate:evaluate", "offer:create", "offer:approve"],
+            "recruiter": ["requisition:view", "candidate:view", "candidate:evaluate", "offer:create"],
+            "hiring_manager": ["requisition:view", "requisition:create", "candidate:view", "candidate:evaluate", "offer:create"],
+            "interviewer": ["candidate:view", "candidate:evaluate"],
+            "approver": ["requisition:view", "requisition:approve", "offer:approve"],
+            "candidate": []
+        }
+        for role, perm_codes in initial_grants.items():
+            for code in perm_codes:
+                db.add(RolePermission(role_code=role, permission_code=code, is_granted=True))
+        db.commit()
+
+
+MODULE_TITLE_MAP = {
+    "users": "Quản lý Người Dùng & Tài Khoản",
+    "requisition": "Yêu Cầu Tuyển Dụng (Requisition)",
+    "candidate": "Hồ Sơ Ứng Viên & Phỏng Vấn",
+    "offer": "Đề Xuất Offer & Phê Duyệt",
+    "audit": "Nhật Ký Hệ Thống & Audit Logs",
+}
+
+ALL_ROLES = ["admin", "hr_manager", "recruiter", "hiring_manager", "interviewer", "approver", "employee"]
+
+
 @router.get("/permissions/matrix")
 def get_rbac_matrix(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
     require_admin(authorization, db)
+    ensure_permissions_seeded(db)
+
     permissions = db.query(Permission).all()
-    role_perms = db.query(RolePermission).all()
+    role_perms = db.query(RolePermission).filter(RolePermission.is_granted == True).all()
 
-    # Group by module
-    modules_map = {}
-    for p in permissions:
-        mod = p.module
-        if mod not in modules_map:
-            modules_map[mod] = {
-                "id": mod,
-                "module": f"Phân hệ {mod.capitalize()}",
-                "permissions": {
-                    "admin": [],
-                    "hr_manager": [],
-                    "recruiter": [],
-                    "hiring_manager": [],
-                    "interviewer": [],
-                    "approver": [],
-                    "candidate": [],
-                    "employee": [],
-                },
-            }
+    # Map role -> granted permissions set
+    role_granted_map = {r: set() for r in ALL_ROLES}
 
-    # Fill granted permissions per role
     for rp in role_perms:
-        perm = db.query(Permission).filter(Permission.code == rp.permission_code).first()
-        if perm and perm.module in modules_map and rp.is_granted:
-            r_code = rp.role_code.lower()
-            if r_code in modules_map[perm.module]["permissions"]:
-                if perm.code not in modules_map[perm.module]["permissions"][r_code]:
-                    modules_map[perm.module]["permissions"][r_code].append(perm.code)
+        r_code = rp.role_code.lower()
+        if r_code in role_granted_map:
+            role_granted_map[r_code].add(rp.permission_code)
 
-    return list(modules_map.values())
+    # Super Admin ALWAYS has 100% ALL system permissions
+    all_perm_codes = {p.code for p in permissions}
+    role_granted_map["admin"] = all_perm_codes
+
+    # Group by module matching frontend format
+    modules_order = ["users", "requisition", "candidate", "offer", "audit"]
+    result = []
+
+    for mod_id in modules_order:
+        mod_perms = [p for p in permissions if p.module == mod_id]
+        if not mod_perms:
+            continue
+
+        module_obj = {
+            "id": mod_id,
+            "module": MODULE_TITLE_MAP.get(mod_id, f"Phân hệ {mod_id.capitalize()}"),
+            "permissions": {}
+        }
+
+        for r_code in ALL_ROLES:
+            granted_in_mod = [p.code for p in mod_perms if p.code in role_granted_map[r_code]]
+            module_obj["permissions"][r_code] = granted_in_mod
+
+        result.append(module_obj)
+
+    return result
 
 
 @router.put("/permissions/matrix")
@@ -571,10 +701,38 @@ def update_rbac_matrix(
     db: Session = Depends(get_db),
 ):
     current_admin = require_admin(authorization, db)
-    role_code = payload.get("role_code")
-    permission_code = payload.get("permission_code")
+    ensure_permissions_seeded(db)
+
+    # 1. Single toggle check
+    role_code = (payload.get("role_code") or "").lower().strip()
     is_granted = payload.get("is_granted", True)
 
+    if role_code == "admin" and not is_granted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Quyền của vai trò Quản trị hệ thống là quyền toàn phần và không thể thay đổi.",
+            headers={"X-Error-Code": "ADMIN_PERMISSION_IMMUTABLE"}
+        )
+
+    # 2. Batch changes check
+    changes = payload.get("changes") or payload.get("matrix") or payload.get("batch")
+    if changes and isinstance(changes, list):
+        for item in changes:
+            r_c = (item.get("role_code") or "").lower().strip()
+            allowed = item.get("allowed", item.get("is_granted", True))
+            if r_c == "admin" and not allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Quyền của vai trò Quản trị hệ thống là quyền toàn phần và không thể thay đổi.",
+                    headers={"X-Error-Code": "ADMIN_PERMISSION_IMMUTABLE"}
+                )
+
+        from app.services.rbac_service import update_permission_matrix
+        update_permission_matrix(db, changes, current_admin.email)
+        record_audit_log(db, current_admin.email, "BATCH_UPDATE_RBAC_MATRIX", "Permission", "ALL", "Đã cập nhật toàn bộ Ma trận Phân quyền RBAC vào CSDL")
+        return {"message": "Cập nhật toàn bộ ma trận phân quyền RBAC vào CSDL thành công"}
+
+    permission_code = payload.get("permission_code")
     if not role_code or not permission_code:
         raise HTTPException(status_code=400, detail="Thiếu role_code hoặc permission_code")
 
@@ -592,6 +750,7 @@ def update_rbac_matrix(
     db.commit()
     record_audit_log(db, current_admin.email, "UPDATE_RBAC_MATRIX", "Permission", permission_code, f"Set {role_code} -> {is_granted}")
     return {"message": "Cập nhật ma trận phân quyền RBAC thành công"}
+
 
 
 

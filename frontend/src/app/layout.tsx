@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Caveat } from "next/font/google";
 import "./globals.css";
+import { ToastProvider } from "@/components/ui/Toast";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -26,7 +27,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="vi" className={`${inter.variable} ${caveat.variable} scroll-smooth scroll-pt-24`} data-scroll-behavior="smooth">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }
+

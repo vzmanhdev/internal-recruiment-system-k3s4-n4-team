@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import { Sliders, Building, Briefcase, Plus, RefreshCw, CheckCircle2, X } from "lucide-react";
-import { authService } from "@/features/auth/services/auth.service";
+import { apiRequest, ApiError } from "@/lib/api-client";
 
 interface Department {
   id: number;
@@ -38,24 +37,15 @@ export default function MasterDataPage() {
   const fetchMasterData = async () => {
     setIsLoading(true);
     try {
-      const token = authService.getToken();
-      const headers = { Authorization: `Bearer ${token}` };
-
-      const [deptRes, jobRes] = await Promise.all([
-        fetch("http://localhost:8000/api/v1/hr/departments", { headers }),
-        fetch("http://localhost:8000/api/v1/hr/job-titles", { headers }),
+      const [deptData, jobData] = await Promise.all([
+        apiRequest<Department[]>("/hr/departments").catch(() => []),
+        apiRequest<JobTitle[]>("/hr/job-titles").catch(() => []),
       ]);
 
-      if (deptRes.ok) {
-        const deptData = await deptRes.json();
-        setDepartments(deptData || []);
-      }
-      if (jobRes.ok) {
-        const jobData = await jobRes.json();
-        setJobTitles(jobData || []);
-      }
-    } catch (err) {
-      console.error(err);
+      setDepartments(deptData || []);
+      setJobTitles(jobData || []);
+    } catch (err: any) {
+      console.error("Master data fetch error:", err);
     } finally {
       setIsLoading(false);
     }
@@ -71,12 +61,6 @@ export default function MasterDataPage() {
     setErrorMsg(null);
 
     try {
-      const token = authService.getToken();
-      const headers = {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      };
-
       if (activeTab === "departments") {
         if (!deptName || !deptCode) {
           setErrorMsg("Vui lòng nhập đầy đủ Tên phòng ban và Mã định danh");
@@ -84,16 +68,10 @@ export default function MasterDataPage() {
           return;
         }
 
-        const res = await fetch("http://localhost:8000/api/v1/hr/departments", {
+        await apiRequest("/hr/departments", {
           method: "POST",
-          headers,
           body: JSON.stringify({ name: deptName, code: deptCode.toUpperCase() }),
         });
-
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || "Không thể tạo phòng ban mới");
-        }
       } else {
         if (!jobName) {
           setErrorMsg("Vui lòng nhập Tên chức danh công việc");
@@ -101,19 +79,13 @@ export default function MasterDataPage() {
           return;
         }
 
-        const res = await fetch("http://localhost:8000/api/v1/hr/job-titles", {
+        await apiRequest("/hr/job-titles", {
           method: "POST",
-          headers,
           body: JSON.stringify({
             name: jobName,
             department_id: selectedDeptId ? parseInt(selectedDeptId) : null,
           }),
         });
-
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || "Không thể tạo chức danh mới");
-        }
       }
 
       // Reset & Refresh
@@ -124,14 +96,15 @@ export default function MasterDataPage() {
       setIsModalOpen(false);
       await fetchMasterData();
     } catch (err: any) {
-      setErrorMsg(err.message || "Lỗi thao tác dữ liệu");
+      setErrorMsg(err.message || "Không thể kết nối đến máy chủ Backend. Vui lòng kiểm tra dịch vụ máy chủ.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+
   return (
-    <AdminAppShell activeTab="master-data">
+    <>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -365,6 +338,6 @@ export default function MasterDataPage() {
           </div>
         </div>
       )}
-    </AdminAppShell>
+    </>
   );
 }

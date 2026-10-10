@@ -7,6 +7,12 @@ export interface UserItem {
   full_name: string;
   phone?: string;
   employee_code?: string;
+  date_of_birth?: string;
+  dob?: string;
+  gender?: string;
+  job_title?: string;
+  department?: string;
+  bio?: string;
   avatar_url?: string;
   role: string;
   roles?: string[];
@@ -16,6 +22,7 @@ export interface UserItem {
   lock_reason?: string;
   created_at?: string;
 }
+
 
 export interface AuthResponse {
   access_token: string;
@@ -121,7 +128,17 @@ export const authService = {
     });
   },
 
-  async updateProfile(payload: { full_name?: string; phone?: string; avatar_url?: string }): Promise<UserItem> {
+  async updateProfile(payload: {
+    full_name?: string;
+    phone?: string;
+    avatar_url?: string;
+    date_of_birth?: string;
+    dob?: string;
+    gender?: string;
+    job_title?: string;
+    department?: string;
+    bio?: string;
+  }): Promise<UserItem> {
     const res = await apiRequest<UserItem>("/auth/me", {
       method: "PUT",
       body: JSON.stringify(payload),
@@ -136,6 +153,7 @@ export const authService = {
     }
     return res;
   },
+
 
   async getAllUsers(): Promise<UserItem[]> {
     return await apiRequest<UserItem[]>("/auth/users", {

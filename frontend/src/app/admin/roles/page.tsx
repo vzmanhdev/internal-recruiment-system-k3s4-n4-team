@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import { ShieldCheck, Users, Lock, ArrowRight, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
-import { authService } from "@/features/auth/services/auth.service";
+import { apiRequest } from "@/lib/api-client";
 
 interface RoleCard {
   code: string;
@@ -21,12 +20,8 @@ export default function RolesOverviewPage() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const token = authService.getToken();
-        const res = await fetch("http://localhost:8000/api/v1/admin/stats", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
+        const data = await apiRequest<any>("/admin/stats");
+        if (data) {
           setStats(data.role_distribution || {});
         }
       } catch (err) {}
@@ -94,7 +89,7 @@ export default function RolesOverviewPage() {
   ];
 
   return (
-    <AdminAppShell activeTab="roles">
+    <>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -157,6 +152,6 @@ export default function RolesOverviewPage() {
           ))}
         </div>
       </div>
-    </AdminAppShell>
+    </>
   );
 }

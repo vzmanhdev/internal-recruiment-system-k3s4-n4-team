@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import {
   FileSpreadsheet,
   Download,
@@ -88,22 +87,19 @@ export default function ImportUsersPage() {
     setFileError(null);
 
     try {
-      // 1. Fetch existing users to validate duplicate emails
+      // 1. Fetch existing users from database to validate duplicate emails
       let existingEmails = new Set<string>();
       try {
-        const token = authService.getToken();
-        const res = await fetch("http://localhost:8000/api/v1/admin/users?page_size=1000", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          (data.items || []).forEach((u: any) => existingEmails.add((u.email || "").toLowerCase().trim()));
+        const users = await authService.getAllUsers();
+        if (Array.isArray(users)) {
+          users.forEach((u) => {
+            if (u.email) existingEmails.add(u.email.toLowerCase().trim());
+          });
         }
       } catch (e) {
-        // Ignore network errors in local fallback
+        // Fallback admin email if offline
+        existingEmails.add("admin@company.com");
       }
-
-      existingEmails.add("admin@company.com");
 
       // 2. Read file as ArrayBuffer for binary Excel support (.xlsx, .xls, .csv)
       const arrayBuffer = await uploadFile.arrayBuffer();
@@ -180,19 +176,19 @@ export default function ImportUsersPage() {
         let status: "VALID" | "ERROR" = "VALID";
         let errorReason = "";
 
-        // Validation Rules
+        // Strict Validation Rules (1 email per account)
         if (!fullName) {
           status = "ERROR";
-          errorReason = "Thiếu thông tin Họ và tên";
+          errorReason = "Không hợp lệ: Thiếu thông tin Họ và tên";
         } else if (!email || !email.includes("@")) {
           status = "ERROR";
-          errorReason = "Email không hợp lệ hoặc bị trống";
+          errorReason = "Không hợp lệ: Định dạng Email không đúng";
         } else if (existingEmails.has(email)) {
           status = "ERROR";
-          errorReason = `Email '${email}' đã tồn tại trong hệ thống.`;
+          errorReason = `Không hợp lệ: Email '${email}' đã tồn tại trên hệ thống`;
         } else if (seenEmailsInFile.has(email)) {
           status = "ERROR";
-          errorReason = `Email '${email}' bị trùng lặp nhiều dòng trong file import.`;
+          errorReason = `Không hợp lệ: Email '${email}' trùng lặp trong file`;
         }
 
         seenEmailsInFile.add(email);
@@ -208,6 +204,7 @@ export default function ImportUsersPage() {
           errorReason: status === "ERROR" ? errorReason : undefined,
         });
       }
+
 
       if (parsedRows.length === 0) {
         setFileError("Không tìm thấy dòng dữ liệu nhân sự nào hợp lệ trong file!");
@@ -236,32 +233,18 @@ export default function ImportUsersPage() {
     let failCount = errorRows.length;
 
     try {
-      const token = authService.getToken();
-
       for (const row of validRows) {
         try {
-          const res = await fetch("http://localhost:8000/api/v1/admin/users", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              full_name: row.fullName,
-              email: row.email,
-              phone: row.phone !== "---" ? row.phone : "0900000000",
-              password: "Password123!",
-              roles: [row.roles],
-            }),
+          await authService.register({
+            full_name: row.fullName,
+            email: row.email,
+            phone: row.phone !== "---" ? row.phone : "0900000000",
+            password: "Password123!",
+            role: row.roles,
           });
-
-          if (res.ok) {
-            successCount++;
-          } else {
-            failCount++;
-          }
-        } catch (e) {
           successCount++;
+        } catch (e) {
+          failCount++;
         }
       }
 
@@ -284,8 +267,9 @@ export default function ImportUsersPage() {
     }
   };
 
+
   return (
-    <AdminAppShell activeTab="import">
+    <>
       <div className="space-y-6 max-w-5xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 pb-4">
@@ -577,6 +561,6 @@ export default function ImportUsersPage() {
           </div>
         )}
       </div>
-    </AdminAppShell>
+    </>
   );
 }

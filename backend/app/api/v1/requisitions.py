@@ -7,7 +7,9 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
 from app.models.hr import Department
-from app.core.security import decode_access_token
+from app.api.deps import get_current_user_obj, require_permission
+from app.services.rbac_service import get_user_roles, get_effective_permissions
+from app.models.audit import AuditLog
 
 router = APIRouter()
 
@@ -32,22 +34,10 @@ class RequisitionApprovalAction(BaseModel):
     action: str = Field(..., example="approved") # approved, rejected
     comment: Optional[str] = None
 
-def get_current_user(authorization: Optional[str], db: Session) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    token = authorization.split(" ")[1]
-    user_id = decode_access_token(token)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    user = db.query(User).filter(User.id == int(user_id)).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Không tìm thấy thông tin người dùng")
-    return user
-
 @router.get("")
 def list_requisitions(
     status_filter: Optional[str] = None,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
     query = db.query(JobRequisition)
@@ -57,7 +47,11 @@ def list_requisitions(
     return [r.to_dict() for r in reqs]
 
 @router.get("/{req_id}")
-def get_requisition(req_id: int, db: Session = Depends(get_db)):
+def get_requisition(
+    req_id: int,
+    current_user: User = Depends(get_current_user_obj),
+    db: Session = Depends(get_db)
+):
     req = db.query(JobRequisition).filter(JobRequisition.id == req_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình tuyển dụng")
@@ -68,10 +62,9 @@ def get_requisition(req_id: int, db: Session = Depends(get_db)):
 @router.post("", status_code=201)
 def create_requisition(
     payload: RequisitionCreate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
     dept = db.query(Department).filter(Department.id == payload.department_id).first()
     if not dept:
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
@@ -99,14 +92,14 @@ def create_requisition(
             benefits=payload.benefits,
             status="pending_manager",
             current_approval_step="manager",
-            created_by_id=user.id
+            created_by_id=current_user.id
         )
         db.add(req)
         db.flush()
 
         log = RequisitionApprovalLog(
             requisition_id=req.id,
-            approver_id=user.id,
+            approver_id=current_user.id,
             step_name="Tạo mới tờ trình",
             action="submitted",
             comment="Đã khởi tạo tờ trình tuyển dụng và gửi trình duyệt"
@@ -123,11 +116,12 @@ def create_requisition(
 def approve_requisition(
     req_id: int,
     payload: RequisitionApprovalAction,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
-    user_roles = set(user.role.split(","))
+    roles = get_user_roles(db, current_user)
+    role_codes = {r["code"] for r in roles}
+    effective_perms = set(get_effective_permissions(db, current_user))
 
     req = db.query(JobRequisition).filter(JobRequisition.id == req_id).first()
     if not req:
@@ -140,12 +134,17 @@ def approve_requisition(
             detail=f"Tờ trình đã ở trạng thái '{req.status}', không thể thực hiện phê duyệt lại."
         )
 
-    # RBAC check: Only Manager/Admin can approve pending_manager, only HR/Admin can approve pending_hr
-    if req.status == "pending_manager" and not (user_roles.intersection({"manager", "admin"})):
-        raise HTTPException(status_code=403, detail="Chỉ Trưởng bộ phận hoặc Admin mới có quyền duyệt cấp 1.")
-    
-    if req.status == "pending_hr" and not (user_roles.intersection({"hr_manager", "admin"})):
-        raise HTTPException(status_code=403, detail="Chỉ HR Manager hoặc Admin mới có quyền duyệt thẩm định cấp 2.")
+    # RBAC check: Manager/Hiring Manager/Admin for pending_manager, HR Manager/Admin for pending_hr
+    has_approve_perm = "requisition:approve" in effective_perms or "admin" in role_codes
+
+    if req.status == "pending_manager":
+        is_allowed = "admin" in role_codes or "hiring_manager" in role_codes or "manager" in role_codes or has_approve_perm
+        if not is_allowed:
+            raise HTTPException(status_code=403, detail="Chỉ Trưởng bộ phận hoặc Admin mới có quyền duyệt cấp 1.")
+    elif req.status == "pending_hr":
+        is_allowed = "admin" in role_codes or "hr_manager" in role_codes or has_approve_perm
+        if not is_allowed:
+            raise HTTPException(status_code=403, detail="Chỉ HR Manager hoặc Admin mới có quyền duyệt thẩm định cấp 2.")
 
     try:
         if payload.action == "approved":
@@ -170,7 +169,7 @@ def approve_requisition(
 
         log = RequisitionApprovalLog(
             requisition_id=req.id,
-            approver_id=user.id,
+            approver_id=current_user.id,
             step_name=step_name,
             action=payload.action,
             comment=payload.comment
@@ -195,14 +194,13 @@ class RecruiterAssignRequest(BaseModel):
 def assign_recruiter(
     req_id: int,
     payload: RecruiterAssignRequest,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
     req = db.query(JobRequisition).filter(JobRequisition.id == req_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình")
-    
+
     from app.models.hr import RecruiterAssignment
     assignment = RecruiterAssignment(
         requisition_id=req.id,
@@ -221,12 +219,15 @@ class HeadcountOverrideRequest(BaseModel):
 def override_headcount(
     req_id: int,
     payload: HeadcountOverrideRequest,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
-    user_roles = set(user.role.split(","))
-    if not user_roles.intersection({"hr_manager", "admin"}):
+    roles = get_user_roles(db, current_user)
+    role_codes = {r["code"] for r in roles}
+    effective_perms = set(get_effective_permissions(db, current_user))
+
+    is_allowed = "admin" in role_codes or "hr_manager" in role_codes or "requisition:override_headcount" in effective_perms
+    if not is_allowed:
         raise HTTPException(status_code=403, detail="Chỉ HR Manager hoặc Admin mới có quyền xác nhận ghi đè Headcount.")
 
     req = db.query(JobRequisition).filter(JobRequisition.id == req_id).first()
@@ -235,7 +236,7 @@ def override_headcount(
 
     log = RequisitionApprovalLog(
         requisition_id=req.id,
-        approver_id=user.id,
+        approver_id=current_user.id,
         step_name="Xác nhận Ghi Đè Headcount",
         action="headcount_override",
         comment=f"HR Manager đã phê duyệt ghi đè chỉ tiêu Headcount. Lý do: {payload.reason}"

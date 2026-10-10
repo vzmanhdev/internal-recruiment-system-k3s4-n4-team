@@ -59,9 +59,10 @@ export function AvatarCropModal({
 
   const handleFileSelect = (file: File) => {
     if (file.size > 2 * 1024 * 1024) {
-      alert("Kích thước tệp quá lớn. Vui lòng chọn ảnh nhỏ hơn 2MB!");
+      console.warn("File avatar vượt quá 2MB");
       return;
     }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       if (e.target?.result) {

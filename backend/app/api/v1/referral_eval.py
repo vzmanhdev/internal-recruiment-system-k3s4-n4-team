@@ -7,7 +7,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.job import JobPosting
 from app.models.referral_eval import InternalReferral, CandidateEvaluation
-from app.core.security import decode_access_token
+from app.api.deps import get_current_user_obj
+from app.services.rbac_service import get_user_roles
 
 router = APIRouter()
 
@@ -30,28 +31,18 @@ class EvaluationCreate(BaseModel):
     recommendation: str = "hire" # hire, hold, reject
     comments: Optional[str] = None
 
-def get_current_user(authorization: Optional[str], db: Session) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    token = authorization.split(" ")[1]
-    user_id = decode_access_token(token)
-    user = db.query(User).filter(User.id == int(user_id)).first() if user_id else None
-    if not user:
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    return user
-
 @router.get("")
 def list_referrals(
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
-    roles = set(user.role.split(","))
-    
+    roles = get_user_roles(db, current_user)
+    role_codes = {r["code"] for r in roles}
+
     query = db.query(InternalReferral)
     # If standard employee, only list their own referrals
-    if "admin" not in roles and "hr_manager" not in roles:
-        query = query.filter(InternalReferral.referrer_id == user.id)
+    if "admin" not in role_codes and "hr_manager" not in role_codes:
+        query = query.filter(InternalReferral.referrer_id == current_user.id)
 
     referrals = query.order_by(InternalReferral.created_at.desc()).all()
     return [r.to_dict() for r in referrals]
@@ -59,16 +50,15 @@ def list_referrals(
 @router.post("", status_code=201)
 def create_referral(
     payload: ReferralCreate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
     job = db.query(JobPosting).filter(JobPosting.id == payload.job_posting_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
 
     ref = InternalReferral(
-        referrer_id=user.id,
+        referrer_id=current_user.id,
         candidate_name=payload.candidate_name,
         candidate_email=payload.candidate_email,
         candidate_phone=payload.candidate_phone,
@@ -88,13 +78,12 @@ def create_referral(
 @router.post("/evaluations", status_code=201)
 def create_evaluation(
     payload: EvaluationCreate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
     eval_item = CandidateEvaluation(
         application_id=payload.application_id,
-        evaluator_id=user.id,
+        evaluator_id=current_user.id,
         technical_score=payload.technical_score,
         culture_fit_score=payload.culture_fit_score,
         communication_score=payload.communication_score,

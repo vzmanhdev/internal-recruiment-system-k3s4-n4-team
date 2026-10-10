@@ -8,7 +8,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.application import JobApplication
 from app.models.interview import InterviewSchedule, InterviewInterviewer
-from app.core.security import decode_access_token
+from app.api.deps import get_current_user_obj
 
 router = APIRouter()
 
@@ -28,16 +28,6 @@ class InterviewFeedbackUpdate(BaseModel):
     score: Optional[int] = None # 1-10
     passed: Optional[bool] = None
 
-def get_current_user(authorization: Optional[str], db: Session) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    token = authorization.split(" ")[1]
-    user_id = decode_access_token(token)
-    user = db.query(User).filter(User.id == int(user_id)).first() if user_id else None
-    if not user:
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    return user
-
 @router.get("")
 def list_interviews(
     application_id: Optional[int] = None,
@@ -56,10 +46,9 @@ def list_interviews(
 @router.post("", status_code=201)
 def schedule_interview(
     payload: InterviewCreate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
     app = db.query(JobApplication).filter(JobApplication.id == payload.application_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
@@ -78,7 +67,7 @@ def schedule_interview(
         location=payload.location,
         meeting_link=payload.meeting_link,
         status="scheduled",
-        created_by_id=user.id
+        created_by_id=current_user.id
     )
     db.add(interview)
     db.commit()
@@ -103,10 +92,9 @@ def schedule_interview(
 def update_interview_feedback(
     interview_id: int,
     payload: InterviewFeedbackUpdate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
     interview = db.query(InterviewSchedule).filter(InterviewSchedule.id == interview_id).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Không tìm thấy lịch phỏng vấn")

@@ -13,10 +13,14 @@ class Settings(BaseSettings):
     
     SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-change-in-production-1234567890")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15 # 15 minutes Access JWT TTL
+    SESSION_IDLE_TIMEOUT_MINUTES: int = 60 # 60 minutes Idle Timeout
+    SESSION_ABSOLUTE_TIMEOUT_HOURS: int = 12 # 12 hours Absolute Session Expiration
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7 # 7 days Refresh Token Max Lifespan
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
     APP_ENV: str = "development"
     FRONTEND_URL: str = "http://localhost:3000"
+
 
     # SMTP Gmail & Email Configuration
     SMTP_HOST: str = "smtp.gmail.com"

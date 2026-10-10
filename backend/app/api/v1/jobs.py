@@ -7,8 +7,10 @@ import re
 from app.db.session import get_db
 from app.models.user import User
 from app.models.job import JobPosting
+from app.models.requisition import JobRequisition
 from app.models.hr import Department
-from app.core.security import decode_access_token
+from app.api.deps import get_current_user_obj, require_permission
+from app.services.rbac_service import get_user_roles, get_effective_permissions
 
 router = APIRouter()
 
@@ -41,16 +43,6 @@ class JobPostingCreate(BaseModel):
     benefits: Optional[str] = None
     status: str = "published"
 
-def get_current_user(authorization: Optional[str], db: Session) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    token = authorization.split(" ")[1]
-    user_id = decode_access_token(token)
-    user = db.query(User).filter(User.id == int(user_id)).first() if user_id else None
-    if not user:
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    return user
-
 @router.get("")
 def list_jobs(
     department: Optional[str] = None,
@@ -80,12 +72,15 @@ def list_jobs(
 
 @router.get("/admin-list")
 def list_all_jobs_for_admin(
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
-    user_roles = set(user.role.split(","))
-    if not user_roles.intersection({"admin", "hr_manager", "manager"}):
+    roles = get_user_roles(db, current_user)
+    role_codes = {r["code"] for r in roles}
+    effective_perms = set(get_effective_permissions(db, current_user))
+
+    is_allowed = "admin" in role_codes or "hr_manager" in role_codes or "recruiter" in role_codes or "candidate:create" in effective_perms
+    if not is_allowed:
         raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập danh sách tin tuyển dụng admin.")
     jobs = db.query(JobPosting).order_by(JobPosting.created_at.desc()).all()
     return [j.to_dict() for j in jobs]
@@ -96,10 +91,10 @@ def get_job(job_id_or_slug: str, db: Session = Depends(get_db)):
         job = db.query(JobPosting).filter(JobPosting.id == int(job_id_or_slug)).first()
     else:
         job = db.query(JobPosting).filter(JobPosting.slug == job_id_or_slug).first()
-    
+
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
-    
+
     # Increment view count safely
     try:
         job.views_count += 1
@@ -112,14 +107,28 @@ def get_job(job_id_or_slug: str, db: Session = Depends(get_db)):
 @router.post("", status_code=201)
 def create_job(
     payload: JobPostingCreate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
-    user_roles = set(user.role.split(","))
-    if not user_roles.intersection({"admin", "hr_manager"}):
-        raise HTTPException(status_code=403, detail="Chỉ Admin hoặc HR Manager mới được tạo tin tuyển dụng.")
-    
+    roles = get_user_roles(db, current_user)
+    role_codes = {r["code"] for r in roles}
+    effective_perms = set(get_effective_permissions(db, current_user))
+
+    is_allowed = "admin" in role_codes or "hr_manager" in role_codes or "recruiter" in role_codes or "candidate:create" in effective_perms
+    if not is_allowed:
+        raise HTTPException(status_code=403, detail="Chỉ Admin, HR Manager hoặc Recruiter mới được tạo tin tuyển dụng.")
+
+    # Business Guard: Requisition must be approved before creating a job posting
+    if payload.requisition_id:
+        req = db.query(JobRequisition).filter(JobRequisition.id == payload.requisition_id).first()
+        if not req:
+            raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình tuyển dụng được chỉ định.")
+        if req.status != "approved":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tờ trình #{req.code} đang ở trạng thái '{req.status}', chưa được phê duyệt chính thức (approved) nên không thể đăng tin tuyển dụng."
+            )
+
     base_slug = slugify(payload.title)
     slug = base_slug
     idx = 1
@@ -144,7 +153,7 @@ def create_job(
             requirements=payload.requirements,
             benefits=payload.benefits,
             status=payload.status,
-            created_by_id=user.id
+            created_by_id=current_user.id
         )
         db.add(job)
         db.commit()
@@ -158,14 +167,17 @@ def create_job(
 def update_job(
     job_id: int,
     payload: JobPostingCreate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
-    user_roles = set(user.role.split(","))
-    if not user_roles.intersection({"admin", "hr_manager"}):
+    roles = get_user_roles(db, current_user)
+    role_codes = {r["code"] for r in roles}
+    effective_perms = set(get_effective_permissions(db, current_user))
+
+    is_allowed = "admin" in role_codes or "hr_manager" in role_codes or "recruiter" in role_codes or "candidate:create" in effective_perms
+    if not is_allowed:
         raise HTTPException(status_code=403, detail="Chỉ Admin hoặc HR Manager mới được cập nhật tin tuyển dụng.")
-    
+
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")

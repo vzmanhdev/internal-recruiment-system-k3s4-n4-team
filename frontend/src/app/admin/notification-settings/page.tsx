@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import { Bell, CheckCircle2, Shield, Mail } from "lucide-react";
 
 export default function NotificationSettingsPage() {
@@ -20,7 +19,7 @@ export default function NotificationSettingsPage() {
   };
 
   return (
-    <AdminAppShell activeTab="notification-settings">
+    <>
       {toast && (
         <div className="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-2 shadow-xl animate-in fade-in duration-200">
           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -80,6 +79,6 @@ export default function NotificationSettingsPage() {
           </form>
         </div>
       </div>
-    </AdminAppShell>
+    </>
   );
 }

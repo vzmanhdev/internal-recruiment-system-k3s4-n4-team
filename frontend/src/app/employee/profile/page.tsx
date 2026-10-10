@@ -65,6 +65,7 @@ export default function EmployeeProfilePage() {
   });
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -90,13 +91,16 @@ export default function EmployeeProfilePage() {
             email: u.email || prev.email,
             phone: u.phone || prev.phone,
             employee_code: u.employee_code || prev.employee_code,
-            department: (u as any).department || prev.department,
+            dob: u.dob || u.date_of_birth || prev.dob || "",
+            gender: u.gender || prev.gender || "Nam",
+            job_title: u.job_title || prev.job_title || "Nhân viên",
+            department: u.department || prev.department || "Nhân sự",
           }));
           if (u.avatar_url && !savedAvatar) {
             setAvatarUrl(u.avatar_url);
           }
         }
-      } catch (err) {}
+      } catch (err) { }
     };
     fetchUser();
   }, []);
@@ -113,7 +117,7 @@ export default function EmployeeProfilePage() {
     window.dispatchEvent(new Event("avatar_updated"));
     try {
       await authService.updateProfile({ avatar_url: newUrl });
-      showToast("Cập nhật & lưu ảnh đại diện Base64 vào CSDL thành công!");
+      showToast("Cập nhật & lưu ảnh đại diện vào CSDL thành công!");
     } catch (err) {
       showToast("Cập nhật ảnh đại diện thành công!");
     }
@@ -125,13 +129,19 @@ export default function EmployeeProfilePage() {
       await authService.updateProfile({
         full_name: profile.full_name,
         phone: profile.phone,
+        date_of_birth: profile.dob,
+        dob: profile.dob,
+        gender: profile.gender,
+        job_title: profile.job_title,
+        department: profile.department,
         avatar_url: avatarUrl || undefined,
       });
       showToast("Lưu thông tin hồ sơ vào CSDL thành công!");
-    } catch (err) {
-      showToast("Lưu thay đổi thông tin cá nhân thành công!");
+    } catch (err: any) {
+      showToast(err.message || "Lỗi khi lưu thông tin hồ sơ!", "error");
     }
   };
+
 
   const getPasswordStrength = (pwd: string) => {
     if (!pwd) return { score: 0, label: "", color: "bg-gray-200" };
@@ -146,7 +156,7 @@ export default function EmployeeProfilePage() {
     return { score: 100, label: "Mạnh (An toàn)", color: "bg-emerald-500", text: "text-emerald-600" };
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError(null);
     setPasswordSuccess(null);
@@ -167,13 +177,21 @@ export default function EmployeeProfilePage() {
     }
 
     setIsChangingPassword(true);
-    setTimeout(() => {
-      setIsChangingPassword(false);
+    try {
+      await authService.changePassword({
+        current_password: passwordForm.current_password,
+        new_password: passwordForm.new_password,
+      });
       setPasswordSuccess("Đổi mật khẩu tài khoản thành công!");
       setPasswordForm({ current_password: "", new_password: "", confirm_password: "" });
       showToast("Đổi mật khẩu tài khoản thành công!");
-    }, 800);
+    } catch (err: any) {
+      setPasswordError(err.message || "Không thể đổi mật khẩu. Vui lòng kiểm tra lại mật khẩu hiện tại.");
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
+
 
   const strengthInfo = getPasswordStrength(passwordForm.new_password);
 
@@ -191,11 +209,10 @@ export default function EmployeeProfilePage() {
       {/* Toast Alert */}
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200 ${
-            toast.type === "success"
-              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-              : "bg-rose-50 text-rose-800 border-rose-200"
-          }`}
+          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200 ${toast.type === "success"
+            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+            : "bg-rose-50 text-rose-800 border-rose-200"
+            }`}
         >
           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           <span>{toast.message}</span>
@@ -224,7 +241,7 @@ export default function EmployeeProfilePage() {
 
         {/* 3-COLUMN MAIN LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
+
           {/* LEFT COLUMN: User Profile Card (3 cols) */}
           <div className="lg:col-span-3 space-y-4">
             <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-xs text-center space-y-4">
@@ -328,16 +345,15 @@ export default function EmployeeProfilePage() {
           {/* CENTER COLUMN: Main Form & Tabs (6 cols) */}
           <div className="lg:col-span-6 space-y-6">
             <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-xs space-y-6">
-              
+
               {/* Tabs Navigation */}
               <div className="flex items-center gap-6 border-b border-gray-100 pb-px">
                 <button
                   onClick={() => setActiveTab("info")}
-                  className={`pb-3 text-xs font-extrabold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
-                    activeTab === "info"
-                      ? "border-[#4285F4] text-[#4285F4]"
-                      : "border-transparent text-slate-500 hover:text-slate-800"
-                  }`}
+                  className={`pb-3 text-xs font-extrabold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${activeTab === "info"
+                    ? "border-[#4285F4] text-[#4285F4]"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                    }`}
                 >
                   <UserIcon className="w-4 h-4" />
                   <span>Thông tin cá nhân</span>
@@ -345,11 +361,10 @@ export default function EmployeeProfilePage() {
 
                 <button
                   onClick={() => setActiveTab("password")}
-                  className={`pb-3 text-xs font-extrabold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
-                    activeTab === "password"
-                      ? "border-[#4285F4] text-[#4285F4]"
-                      : "border-transparent text-slate-500 hover:text-slate-800"
-                  }`}
+                  className={`pb-3 text-xs font-extrabold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${activeTab === "password"
+                    ? "border-[#4285F4] text-[#4285F4]"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                    }`}
                 >
                   <Lock className="w-4 h-4" />
                   <span>Đổi mật khẩu</span>
@@ -357,11 +372,10 @@ export default function EmployeeProfilePage() {
 
                 <button
                   onClick={() => setIsAvatarModalOpen(true)}
-                  className={`pb-3 text-xs font-extrabold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${
-                    activeTab === "avatar"
-                      ? "border-[#4285F4] text-[#4285F4]"
-                      : "border-transparent text-slate-500 hover:text-slate-800"
-                  }`}
+                  className={`pb-3 text-xs font-extrabold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${activeTab === "avatar"
+                    ? "border-[#4285F4] text-[#4285F4]"
+                    : "border-transparent text-slate-500 hover:text-slate-800"
+                    }`}
                 >
                   <ImageIcon className="w-4 h-4" />
                   <span>Ảnh đại diện</span>
@@ -580,14 +594,24 @@ export default function EmployeeProfilePage() {
 
                   <div>
                     <label className="block font-bold text-slate-700 mb-1">Xác nhận mật khẩu mới *</label>
-                    <input
-                      type="password"
-                      required
-                      value={passwordForm.confirm_password}
-                      onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl font-medium focus:outline-none focus:border-[#4285F4]"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        required
+                        value={passwordForm.confirm_password}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, confirm_password: e.target.value })}
+                        className="w-full pl-3.5 pr-10 py-2.5 bg-slate-50 border border-gray-200 rounded-xl font-medium focus:outline-none focus:border-[#4285F4]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
+
 
                   <div className="pt-3 flex justify-end">
                     <button

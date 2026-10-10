@@ -24,16 +24,44 @@ Base.metadata.create_all(bind=engine)
 
 # Lightweight compatibility migration for existing local databases.
 with engine.begin() as connection:
-    user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
-    if "account_status" not in user_columns:
-        connection.execute(text("ALTER TABLE users ADD COLUMN account_status VARCHAR(20) NOT NULL DEFAULT 'active'"))
-        connection.execute(text("UPDATE users SET account_status = 'pending' WHERE is_active = false"))
-    if "lock_reason" not in user_columns:
-        connection.execute(text("ALTER TABLE users ADD COLUMN lock_reason VARCHAR(500)"))
-    if "avatar_url" not in user_columns:
-        connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(4000000)"))
-    if "employee_code" not in user_columns:
-        connection.execute(text("ALTER TABLE users ADD COLUMN employee_code VARCHAR(50)"))
+    if inspect(engine).has_table("users"):
+        user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
+        if "account_status" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN account_status VARCHAR(20) NOT NULL DEFAULT 'active'"))
+            connection.execute(text("UPDATE users SET account_status = 'pending' WHERE is_active = false"))
+        if "lock_reason" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN lock_reason VARCHAR(500)"))
+        if "avatar_url" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(4000000)"))
+        if "employee_code" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN employee_code VARCHAR(50)"))
+        if "date_of_birth" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN date_of_birth VARCHAR(50)"))
+        if "gender" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN gender VARCHAR(20)"))
+        if "job_title" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN job_title VARCHAR(255)"))
+        if "department" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN department VARCHAR(255) DEFAULT 'Nhân sự'"))
+        if "bio" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN bio VARCHAR(1000)"))
+        if "created_at" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
+        if "updated_at" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN updated_at DATETIME"))
+        if "failed_login_attempts" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER NOT NULL DEFAULT 0"))
+        if "locked_until" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN locked_until DATETIME"))
+        if "security_version" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN security_version INTEGER NOT NULL DEFAULT 1"))
+        if "last_login_at" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+        if "version" not in user_columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN version INTEGER NOT NULL DEFAULT 1"))
+
+
+
     competency_columns = {column["name"] for column in inspect(engine).get_columns("competencies")}
     if "weight" not in competency_columns:
         connection.execute(text("ALTER TABLE competencies ADD COLUMN weight FLOAT NOT NULL DEFAULT 0"))
@@ -46,6 +74,25 @@ with engine.begin() as connection:
             connection.execute(text("ALTER TABLE job_postings ADD COLUMN views_count INTEGER NOT NULL DEFAULT 0"))
         if "applications_count" not in job_columns:
             connection.execute(text("ALTER TABLE job_postings ADD COLUMN applications_count INTEGER NOT NULL DEFAULT 0"))
+
+    if inspect(engine).has_table("audit_logs"):
+        audit_columns = {column["name"] for column in inspect(engine).get_columns("audit_logs")}
+        if "actor_id" not in audit_columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN actor_id INTEGER"))
+        if "actor_email" not in audit_columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN actor_email VARCHAR(255) DEFAULT ''"))
+        if "action" not in audit_columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN action VARCHAR(100) DEFAULT ''"))
+        if "target_entity" not in audit_columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN target_entity VARCHAR(100)"))
+        if "target_id" not in audit_columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN target_id VARCHAR(100)"))
+        if "ip_address" not in audit_columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(50)"))
+        if "payload_json" not in audit_columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN payload_json TEXT"))
+        if "created_at" not in audit_columns:
+            connection.execute(text("ALTER TABLE audit_logs ADD COLUMN created_at DATETIME"))
 
 app = FastAPI(
     title="Internal Recruitment System API",

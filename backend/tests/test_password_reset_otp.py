@@ -271,3 +271,54 @@ def test_change_password_endpoint_flow():
     })
     assert new_login.status_code == 200
 
+def test_profile_update_and_fetch_flow():
+    client = TestClient(app)
+
+    # 1. Login to obtain access token
+    login_res = client.post("/api/v1/auth/login", json={
+        "email": "testuser@company.com",
+        "password": "OldPassword123!"
+    })
+    assert login_res.status_code == 200
+    token = login_res.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Fetch current profile GET /api/v1/auth/me
+    me_res = client.get("/api/v1/auth/me", headers=headers)
+    assert me_res.status_code == 200
+    me_data = me_res.json()
+    assert me_data["email"] == "testuser@company.com"
+    assert me_data["full_name"] == "Test OTP User"
+
+    # 3. Update profile PUT /api/v1/auth/me with full details
+    update_payload = {
+        "full_name": "Test User Updated",
+        "phone": "0912345678",
+        "date_of_birth": "1995-05-15",
+        "gender": "Nam",
+        "job_title": "Chuyên viên Kiểm thử",
+        "department": "Nhân sự",
+        "bio": "Mô tả cá nhân kiểm thử"
+    }
+    update_res = client.put("/api/v1/auth/me", headers=headers, json=update_payload)
+    assert update_res.status_code == 200
+    updated_data = update_res.json()
+
+    assert updated_data["full_name"] == "Test User Updated"
+    assert updated_data["phone"] == "0912345678"
+    assert updated_data["date_of_birth"] == "1995-05-15"
+    assert updated_data["gender"] == "Nam"
+    assert updated_data["job_title"] == "Chuyên viên Kiểm thử"
+    assert updated_data["department"] == "Nhân sự"
+    assert updated_data["bio"] == "Mô tả cá nhân kiểm thử"
+
+    # 4. Fetch profile again to confirm DB persistence
+    me_refetched = client.get("/api/v1/auth/me", headers=headers)
+    assert me_refetched.status_code == 200
+    refetched_data = me_refetched.json()
+    assert refetched_data["full_name"] == "Test User Updated"
+    assert refetched_data["phone"] == "0912345678"
+    assert refetched_data["date_of_birth"] == "1995-05-15"
+    assert refetched_data["job_title"] == "Chuyên viên Kiểm thử"
+
+

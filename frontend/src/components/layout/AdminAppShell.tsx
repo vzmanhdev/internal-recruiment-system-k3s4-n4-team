@@ -24,6 +24,7 @@ import {
   Briefcase
 } from "lucide-react";
 import { authService } from "@/features/auth/services/auth.service";
+import { useAuth } from "@/providers/auth-provider";
 import clsx from "clsx";
 
 
@@ -35,53 +36,37 @@ interface AdminAppShellProps {
 export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { currentUser, isAuthInitialized, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  const [adminProfile, setAdminProfile] = useState({
-    name: "System Admin",
-    email: "admin@company.com",
-    avatarUrl: "",
-    role: "Quản trị viên Cấp cao",
-    department: "Ban Công Nghệ & Quản Trị Hệ Thống",
-  });
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const loadAvatar = () => {
       const saved = localStorage.getItem("user_avatar_url");
       if (saved) setAvatarUrl(saved);
+      else if (currentUser?.avatar_url) setAvatarUrl(currentUser.avatar_url);
     };
     loadAvatar();
     window.addEventListener("avatar_updated", loadAvatar);
     return () => window.removeEventListener("avatar_updated", loadAvatar);
-  }, []);
+  }, [currentUser]);
 
-  // Fetch admin profile info from auth endpoint or localStorage
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const user = await authService.getCurrentUser();
-        if (user) {
-          setAdminProfile({
-            name: user.full_name || "System Admin",
-            email: user.email || "admin@company.com",
-            avatarUrl: user.avatar_url || "",
-            role: "Quản trị viên Cấp cao (Admin)",
-            department: (user as any).department || "Ban Quản Trị Hệ Thống",
-          });
-          if (user.avatar_url && !localStorage.getItem("user_avatar_url")) {
-            setAvatarUrl(user.avatar_url);
-          }
-        }
-      } catch (err) {
-        // Fallback to local user
-      }
-    };
-    fetchProfile();
-  }, []);
+  const adminProfile = {
+    name: mounted ? (currentUser?.full_name || "Quản Trị Viên") : "Quản Trị Viên",
+    email: currentUser?.email || "admin@company.com",
+    avatarUrl: avatarUrl || currentUser?.avatar_url || "",
+    role: currentUser?.role || "Quản trị viên Cấp cao (Admin)",
+    department: currentUser?.department || "Ban Quản Trị Hệ Thống",
+  };
+
 
   // Handle click outside dropdown
   useEffect(() => {
@@ -98,9 +83,10 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
   }, []);
 
   const handleLogout = () => {
-    authService.logout();
+    logout();
     router.push("/login");
   };
+
 
   const navGroups = [
     {
@@ -261,14 +247,14 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
               onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
               className="flex items-center gap-2.5 p-1.5 pl-2 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-200 cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-xs border border-blue-200 shadow-xs overflow-hidden">
+              <div suppressHydrationWarning className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-xs border border-blue-200 shadow-xs overflow-hidden">
                 {avatarUrl ? (
                   <img src={avatarUrl} alt={adminProfile.name} className="w-full h-full object-cover" />
                 ) : (
                   adminProfile.name.charAt(0)
                 )}
               </div>
-              <div className="text-left hidden sm:block">
+              <div className="text-left hidden sm:block" suppressHydrationWarning>
                 <div className="text-xs font-bold text-slate-900 leading-tight">
                   {adminProfile.name}
                 </div>

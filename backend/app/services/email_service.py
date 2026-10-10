@@ -145,3 +145,254 @@ def send_new_password_email(to_email: str, new_password: str) -> bool:
     </html>
     """
     return send_smtp_email(to_email, subject, html_content)
+
+
+def send_password_changed_notification(to_email: str) -> bool:
+    """Sends a security alert email when a user's password has been updated."""
+    log_msg = f"[SECURITY ALERT EMAIL] Password changed for: {to_email}"
+    print(f"\n==================================================", flush=True)
+    print(log_msg, flush=True)
+    print(f"==================================================\n", flush=True)
+    logger.info(log_msg)
+
+    subject = "Canh bao bao mat: Mat khau tai khoan da duoc thay doi - TUYEN DUNG NOI BO"
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; }}
+        .card {{ max-width: 500px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+        .logo {{ font-size: 18px; font-weight: 800; color: #0284c7; text-align: center; margin-bottom: 24px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .title {{ font-size: 20px; font-weight: 700; color: #0f172a; text-align: center; margin-bottom: 8px; }}
+        .subtitle {{ font-size: 14px; color: #64748b; text-align: center; margin-bottom: 24px; line-height: 1.5; }}
+        .notice {{ font-size: 12px; color: #64748b; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px; }}
+        .warning {{ color: #e11d48; font-weight: 600; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">TUYỂN DỤNG NỘI BỘ</div>
+        <div class="title">Thông Báo Cập Nhật Mật Khẩu</div>
+        <div class="subtitle">Mật khẩu tài khoản (<strong>{to_email}</strong>) vừa được thay đổi thành công vào thời điểm hiện tại.</div>
+        
+        <div class="notice">
+          <p class="warning">⚠️ Nếu KHÔNG phải bạn thực hiện thay đổi này, vui lòng liên hệ ngay với Quản trị viên hệ thống (Admin) để khóa tài khoản và bảo vệ dữ liệu.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return send_smtp_email(to_email, subject, html_content)
+
+
+def send_account_created_email(to_email: str, full_name: str, initial_password: str, roles_str: str) -> bool:
+    """Sends welcome email with initial credentials to newly created user non-blockingly."""
+    log_msg = f"[NEW USER ACCOUNT CREATED EMAIL] EMAIL: {to_email} | FULL_NAME: {full_name} | PASS: {initial_password}"
+    print(f"\n==================================================", flush=True)
+    print(log_msg, flush=True)
+    print(f"==================================================\n", flush=True)
+    logger.info(log_msg)
+
+    subject = "Thong bao khoi tao tai khoan nguoi dung - TUYEN DUNG NOI BO"
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; }}
+        .card {{ max-width: 520px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+        .logo {{ font-size: 18px; font-weight: 800; color: #0284c7; text-align: center; margin-bottom: 24px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .title {{ font-size: 20px; font-weight: 700; color: #0f172a; text-align: center; margin-bottom: 8px; }}
+        .subtitle {{ font-size: 14px; color: #64748b; text-align: center; margin-bottom: 24px; line-height: 1.5; }}
+        .info-box {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px; }}
+        .info-row {{ margin-bottom: 8px; font-size: 13px; }}
+        .info-label {{ color: #64748b; font-weight: 600; }}
+        .info-value {{ color: #0f172a; font-weight: 700; word-break: break-all; }}
+        .pass-box {{ background: #f0f9ff; border: 1.5px dashed #0284c7; border-radius: 10px; padding: 14px; text-align: center; margin-top: 14px; }}
+        .pass-text {{ font-size: 20px; font-weight: 800; color: #0369a1; font-family: monospace; letter-spacing: 1.5px; word-break: break-all; }}
+        .notice {{ font-size: 12px; color: #64748b; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px; }}
+        .button {{ display: block; width: 100%; text-align: center; background: #0284c7; color: #ffffff !important; font-weight: 700; padding: 14px 0; border-radius: 10px; text-decoration: none; margin-top: 20px; box-sizing: border-box; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">TUYỂN DỤNG NỘI BỘ</div>
+        <div class="title">Tài Khoản Mới Đã Được Khởi Tạo</div>
+        <div class="subtitle">Xin chào <strong>{full_name}</strong>, Quản trị viên vừa khởi tạo tài khoản truy cập hệ thống Tuyển Dụng Nội Bộ cho bạn.</div>
+        
+        <div class="info-box">
+          <div class="info-row"><span class="info-label">Họ và tên:</span> <span class="info-value">{full_name}</span></div>
+          <div class="info-row"><span class="info-label">Email đăng nhập:</span> <span class="info-value">{to_email}</span></div>
+          <div class="info-row"><span class="info-label">Vai trò hệ thống:</span> <span class="info-value">{roles_str}</span></div>
+          
+          <div class="pass-box">
+            <div style="font-size: 11px; color: #0284c7; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Mật khẩu ban đầu của bạn</div>
+            <div class="pass-text">{initial_password}</div>
+          </div>
+        </div>
+
+        <div class="notice">
+          <p>📌 <strong>Khuyên dùng:</strong> Vì mục đích an toàn thông tin, vui lòng đổi lại mật khẩu cá nhân ngay sau lần đăng nhập đầu tiên.</p>
+        </div>
+
+        <a href="{settings.FRONTEND_URL}/login" class="button">Đăng Nhập Ngay</a>
+      </div>
+    </body>
+    </html>
+    """
+    return send_smtp_email(to_email, subject, html_content)
+
+
+def send_account_status_email(to_email: str, full_name: str, is_locked: bool, reason: Optional[str] = None) -> bool:
+    """Sends email notification when a user's account is locked or unlocked by admin."""
+    action_text = "Đã bị khóa" if is_locked else "Đã được mở khóa"
+    subject_status = "KHOA TAI KHOAN" if is_locked else "MO KHOA TAI KHOAN"
+    log_msg = f"[ACCOUNT STATUS EMAIL] EMAIL: {to_email} | LOCKED: {is_locked} | REASON: {reason}"
+    print(f"\n==================================================", flush=True)
+    print(log_msg, flush=True)
+    print(f"==================================================\n", flush=True)
+    logger.info(log_msg)
+
+    subject = f"Canh bao bao mat: Tai khoan {subject_status} - TUYEN DUNG NOI BO"
+    status_badge_bg = "#fef2f2" if is_locked else "#f0fdf4"
+    status_badge_border = "#fecaca" if is_locked else "#bbf7d0"
+    status_badge_color = "#dc2626" if is_locked else "#16a34a"
+
+    reason_html = f"""
+    <div class="info-box" style="background: #fff1f2; border-color: #fecaca; margin-top: 16px;">
+      <div style="font-size: 11px; color: #9f1239; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Lý do thực hiện</div>
+      <div style="font-size: 13px; color: #881337; font-weight: 600;">{reason}</div>
+    </div>
+    """ if (is_locked and reason) else ""
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; }}
+        .card {{ max-width: 520px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+        .logo {{ font-size: 18px; font-weight: 800; color: #0284c7; text-align: center; margin-bottom: 24px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .title {{ font-size: 20px; font-weight: 700; color: #0f172a; text-align: center; margin-bottom: 8px; }}
+        .subtitle {{ font-size: 14px; color: #64748b; text-align: center; margin-bottom: 24px; line-height: 1.5; }}
+        .status-badge {{ background: {status_badge_bg}; border: 1px solid {status_badge_border}; color: {status_badge_color}; padding: 12px 20px; border-radius: 12px; text-align: center; font-weight: 800; font-size: 15px; margin-bottom: 20px; }}
+        .notice {{ font-size: 12px; color: #64748b; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">TUYỂN DỤNG NỘI BỘ</div>
+        <div class="title">Thông Báo Trạng Thái Tài Khoản</div>
+        <div class="subtitle">Xin chào <strong>{full_name}</strong>, Quản trị viên vừa cập nhật trạng thái truy cập tài khoản của bạn.</div>
+        
+        <div class="status-badge">Trạng thái tài khoản: {action_text}</div>
+
+        {reason_html}
+
+        <div class="notice">
+          <p>Nếu bạn có bất kỳ thắc mắc nào về thay đổi này, vui lòng liên hệ trực tiếp với Ban Quản Trị Hệ Thống (Admin).</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return send_smtp_email(to_email, subject, html_content)
+
+
+def send_roles_updated_email(to_email: str, full_name: str, new_roles_str: str) -> bool:
+    """Sends email notification when a user's assigned roles/permissions are updated."""
+    log_msg = f"[ROLES UPDATED EMAIL] EMAIL: {to_email} | ROLES: {new_roles_str}"
+    print(f"\n==================================================", flush=True)
+    print(log_msg, flush=True)
+    print(f"==================================================\n", flush=True)
+    logger.info(log_msg)
+
+    subject = "Cap nhat vai tro va quuyen han truy cap - TUYEN DUNG NOI BO"
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; }}
+        .card {{ max-width: 520px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+        .logo {{ font-size: 18px; font-weight: 800; color: #0284c7; text-align: center; margin-bottom: 24px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .title {{ font-size: 20px; font-weight: 700; color: #0f172a; text-align: center; margin-bottom: 8px; }}
+        .subtitle {{ font-size: 14px; color: #64748b; text-align: center; margin-bottom: 24px; line-height: 1.5; }}
+        .roles-box {{ background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px; padding: 18px; text-align: center; margin-bottom: 20px; }}
+        .roles-text {{ font-size: 16px; font-weight: 800; color: #0284c7; }}
+        .notice {{ font-size: 12px; color: #64748b; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px; }}
+        .button {{ display: block; width: 100%; text-align: center; background: #0284c7; color: #ffffff !important; font-weight: 700; padding: 14px 0; border-radius: 10px; text-decoration: none; margin-top: 20px; box-sizing: border-box; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">TUYỂN DỤNG NỘI BỘ</div>
+        <div class="title">Thay Đổi Vai Trò & Phân Quyền</div>
+        <div class="subtitle">Xin chào <strong>{full_name}</strong>, Quản trị viên vừa cập nhật danh sách vai trò và quyền hạn làm việc của bạn trên hệ thống.</div>
+        
+        <div class="roles-box">
+          <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; margin-bottom: 6px;">Danh sách vai trò hiện tại</div>
+          <div class="roles-text">{new_roles_str}</div>
+        </div>
+
+        <div class="notice">
+          <p>Các quyền hạn mới sẽ có hiệu lực lập tức cho các thao tác làm việc tiếp theo của bạn.</p>
+        </div>
+
+        <a href="{settings.FRONTEND_URL}/login" class="button">Truy Cập Hệ Thống</a>
+      </div>
+    </body>
+    </html>
+    """
+    return send_smtp_email(to_email, subject, html_content)
+
+
+def send_account_locked_temp_email(to_email: str, full_name: str, lock_minutes: int = 15) -> bool:
+    """Sends email notification when account is temporarily locked due to 5 failed login attempts."""
+    log_msg = f"[ACCOUNT TEMP LOCKED EMAIL] EMAIL: {to_email} | LOCK_MINUTES: {lock_minutes}"
+    print(f"\n==================================================", flush=True)
+    print(log_msg, flush=True)
+    print(f"==================================================\n", flush=True)
+    logger.info(log_msg)
+
+    subject = f"Canh bao bao mat: Tai khoan bi tam khoa {lock_minutes} phut - TUYEN DUNG NOI BO"
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; }}
+        .card {{ max-width: 520px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }}
+        .logo {{ font-size: 18px; font-weight: 800; color: #0284c7; text-align: center; margin-bottom: 24px; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .title {{ font-size: 20px; font-weight: 700; color: #0f172a; text-align: center; margin-bottom: 8px; }}
+        .subtitle {{ font-size: 14px; color: #64748b; text-align: center; margin-bottom: 24px; line-height: 1.5; }}
+        .status-badge {{ background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 12px 20px; border-radius: 12px; text-align: center; font-weight: 800; font-size: 15px; margin-bottom: 20px; }}
+        .notice {{ font-size: 12px; color: #64748b; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px; }}
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="logo">TUYỂN DỤNG NỘI BỘ</div>
+        <div class="title">Cảnh Báo Bảo Mật Đăng Nhập</div>
+        <div class="subtitle">Xin chào <strong>{full_name}</strong>, hệ thống phát hiện <strong>5 lần đăng nhập không thành công liên tiếp</strong> vào tài khoản của bạn.</div>
+        
+        <div class="status-badge">Tài khoản tạm thời bị khóa trong {lock_minutes} phút</div>
+
+        <div class="notice">
+          <p>Vì lý do an toàn bảo mật, tính năng đăng nhập vào tài khoản của bạn sẽ bị tạm dừng trong {lock_minutes} phút. Nếu đây không phải là thao tác của bạn, vui lòng liên hệ Quản trị viên hệ thống ngay.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return send_smtp_email(to_email, subject, html_content)
+
+
+
+

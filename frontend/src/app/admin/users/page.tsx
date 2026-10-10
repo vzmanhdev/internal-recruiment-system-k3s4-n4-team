@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import {
   Users,
   Search,
@@ -381,7 +380,7 @@ export default function UserManagementPage() {
   const lockedAccounts = users.filter((u) => !u.is_active || u.account_status === "locked").length;
 
   return (
-    <AdminAppShell activeTab="users">
+    <>
       {/* Toast Feedback Alert */}
       {toast && (
         <div
@@ -1189,6 +1188,6 @@ export default function UserManagementPage() {
           </div>
         </div>
       )}
-    </AdminAppShell>
+    </>
   );
 }

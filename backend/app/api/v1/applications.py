@@ -7,6 +7,8 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.job import JobPosting
 from app.models.application import JobApplication, ApplicationLog
+from app.api.deps import get_current_user_obj
+from app.services.rbac_service import get_user_roles, get_effective_permissions
 from app.core.security import decode_access_token
 
 router = APIRouter()
@@ -31,22 +33,12 @@ class ApplicationStatusUpdate(BaseModel):
     hr_notes: Optional[str] = None
     rejection_reason: Optional[str] = None
 
-def get_current_user(authorization: Optional[str], db: Session) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    token = authorization.split(" ")[1]
-    user_id = decode_access_token(token)
-    user = db.query(User).filter(User.id == int(user_id)).first() if user_id else None
-    if not user:
-        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-    return user
-
 @router.get("")
 def list_applications(
     job_id: Optional[int] = None,
     status_filter: Optional[str] = None,
     search: Optional[str] = None,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
     query = db.query(JobApplication)
@@ -65,11 +57,15 @@ def list_applications(
     return [a.to_dict() for a in apps]
 
 @router.get("/{app_id}")
-def get_application(app_id: int, db: Session = Depends(get_db)):
+def get_application(
+    app_id: int,
+    current_user: User = Depends(get_current_user_obj),
+    db: Session = Depends(get_db)
+):
     app = db.query(JobApplication).filter(JobApplication.id == app_id).first()
     if not app:
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
-    
+
     res = app.to_dict()
     res["logs"] = [log.to_dict() for log in app.logs]
     res["interviews"] = [i.to_dict() for i in app.interviews]
@@ -89,9 +85,12 @@ def submit_application(
     candidate_id = None
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
-        user_id = decode_access_token(token)
-        if user_id:
-            candidate_id = int(user_id)
+        payload_jwt = decode_access_token(token)
+        if payload_jwt and payload_jwt.get("sub"):
+            try:
+                candidate_id = int(payload_jwt["sub"])
+            except ValueError:
+                candidate_id = None
 
     try:
         app = JobApplication(
@@ -121,12 +120,15 @@ def submit_application(
 def update_application_status(
     app_id: int,
     payload: ApplicationStatusUpdate,
-    authorization: Optional[str] = Header(None),
+    current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    user = get_current_user(authorization, db)
-    user_roles = set(user.role.split(","))
-    if not user_roles.intersection({"admin", "hr_manager", "manager"}):
+    roles = get_user_roles(db, current_user)
+    role_codes = {r["code"] for r in roles}
+    effective_perms = set(get_effective_permissions(db, current_user))
+
+    is_allowed = "admin" in role_codes or "hr_manager" in role_codes or "recruiter" in role_codes or "hiring_manager" in role_codes or "candidate:edit" in effective_perms
+    if not is_allowed:
         raise HTTPException(status_code=403, detail="Bạn không có quyền cập nhật trạng thái hồ sơ ứng tuyển.")
 
     if payload.status not in ALLOWED_STATUSES:
@@ -149,7 +151,7 @@ def update_application_status(
         # Atomic Audit log
         log = ApplicationLog(
             application_id=app.id,
-            changed_by_id=user.id,
+            changed_by_id=current_user.id,
             from_status=old_status,
             to_status=payload.status,
             comment=payload.hr_notes or payload.rejection_reason or f"Chuyển trạng thái từ {old_status} sang {payload.status}"
