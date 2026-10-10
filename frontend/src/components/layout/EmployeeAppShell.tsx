@@ -108,7 +108,7 @@ export function EmployeeAppShell({ children, activeTab }: EmployeeAppShellProps)
     {
       label: "TỔNG QUAN",
       items: [
-        { id: "home", label: "Trang chủ", href: "/employee/dashboard", icon: Home },
+        { id: "home", label: "Trang chủ", href: "/employee", icon: Home },
         { id: "jobs", label: "Vị trí đang tuyển", href: "/employee/jobs", icon: Briefcase },
         { id: "referral-new", label: "Giới thiệu ứng viên", href: "/employee/referrals/new", icon: UserPlus },
         { id: "my-referrals", label: "Giới thiệu của tôi", href: "/employee/referrals", icon: CheckSquare },
@@ -126,6 +126,9 @@ export function EmployeeAppShell({ children, activeTab }: EmployeeAppShellProps)
 
   const isCurrentTab = (itemHref: string, itemId: string) => {
     if (activeTab) return activeTab === itemId;
+    if (itemId === "home") {
+      return pathname === "/employee" || pathname === "/employee/dashboard";
+    }
     return pathname === itemHref || pathname.startsWith(itemHref + "/");
   };
 
@@ -142,7 +145,7 @@ export function EmployeeAppShell({ children, activeTab }: EmployeeAppShellProps)
             {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
 
-          <Link href="/employee/dashboard" className="flex items-center gap-3 shrink-0">
+          <Link href="/employee" className="flex items-center gap-3 shrink-0">
             <div className="w-9 h-9 rounded-xl bg-[#4285F4] text-white font-extrabold flex items-center justify-center text-sm shadow-md shadow-blue-500/20">
               ATS
             </div>

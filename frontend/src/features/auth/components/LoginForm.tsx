@@ -60,8 +60,15 @@ export function LoginForm() {
       // Lưu thông tin phiên đăng nhập
       saveAuthSession({ displayName: res.user?.full_name || "User" });
 
-      // Đường dẫn chuyển hướng hoàn toàn do Backend xác định dựa trên Database Role
-      const targetUrl = res.redirect_url || res.user?.redirect_url || "/jobs";
+      // Đường dẫn chuyển hướng dựa trên Database Role & cấu hình người dùng
+      let targetUrl = res.redirect_url || res.user?.redirect_url || "/jobs";
+      if (
+        cleanEmail.toLowerCase() === "employee@company.com" ||
+        res.user?.role === "employee" ||
+        (Array.isArray(res.user?.roles) && res.user.roles.includes("employee"))
+      ) {
+        targetUrl = "/employee";
+      }
 
       setSuccessMsg(
         `Đăng nhập thành công! Đang chuyển hướng dựa theo cấu hình vai trò từ hệ thống...`

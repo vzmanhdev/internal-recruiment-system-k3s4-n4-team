@@ -1,5 +1,7 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import EmployeeDashboardPage from "./dashboard/page";
 
 export default function EmployeeRootPage() {
-  redirect("/employee/dashboard");
+  return <EmployeeDashboardPage />;
 }

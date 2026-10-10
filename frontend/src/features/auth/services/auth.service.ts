@@ -9,6 +9,7 @@ export interface UserItem {
   employee_code?: string;
   avatar_url?: string;
   role: string;
+  roles?: string[];
   redirect_url?: string;
   is_active: boolean;
   account_status?: string;
