@@ -371,13 +371,76 @@ export default function EmployeeProfilePage() {
               {/* TAB 1: THÔNG TIN CÁ NHÂN */}
               {activeTab === "info" && (
                 <form onSubmit={handleSaveProfile} className="space-y-6 text-xs">
-                  {/* Section 1: Thông tin cơ bản */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2 border-b border-gray-50 pb-2">
-                      <UserIcon className="w-4 h-4 text-[#4285F4]" />
+                  {/* User Story 3: Alert Box phía trên Form */}
+                  <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200/80 text-blue-700 text-xs font-semibold flex items-center gap-3 shadow-xs">
+                    <span className="text-lg shrink-0">💡</span>
+                    <span>Đảm bảo số điện thoại của bạn luôn chính xác để nhận thông báo lịch phỏng vấn kịp thời.</span>
+                  </div>
+
+                  {/* Section: Thông tin liên lạc (Nổi bật) */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-blue-50/50 via-white to-slate-50 border-2 border-blue-200/90 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between border-b border-blue-100/80 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold">
+                          <Phone className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-sm text-slate-900">Thông tin liên lạc trực tiếp</h3>
+                          <p className="text-[11px] text-slate-500">Kênh kết nối chính thức phục vụ phỏng vấn và thông báo tuyển dụng</p>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-extrabold border border-blue-200">
+                        Ưu tiên cập nhật
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <h3 className="font-extrabold text-sm text-slate-900">Thông tin cơ bản</h3>
-                        <p className="text-[11px] text-slate-400">Cập nhật thông tin cá nhân hiển thị trong hệ thống tuyển dụng</p>
+                        <label className="block font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Số điện thoại liên hệ *</span>
+                        </label>
+                        <input
+                          type="tel"
+                          required
+                          value={profile.phone}
+                          onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                          placeholder="09xx xxx xxx"
+                          className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20 shadow-xs text-sm"
+                        />
+                        <span className="text-[10px] text-blue-600 font-medium mt-1 block">
+                          Nhận SMS và cuộc gọi xác nhận lịch hẹn phỏng vấn
+                        </span>
+                      </div>
+
+                      <div>
+                        <label className="block font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Email công ty (Nội bộ)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="email"
+                            readOnly
+                            value={profile.email}
+                            className="w-full pl-3.5 pr-9 py-2.5 bg-slate-100 border border-slate-200 rounded-xl font-semibold text-slate-600 cursor-not-allowed text-xs"
+                          />
+                          <Lock className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3" />
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium mt-1 block">
+                          🔒 Email công ty cố định do hệ thống quản trị cấp
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Section: Thông tin cá nhân cơ bản */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                      <UserIcon className="w-4 h-4 text-blue-600" />
+                      <div>
+                        <h3 className="font-extrabold text-sm text-slate-900">Thông tin cá nhân cơ bản</h3>
+                        <p className="text-[11px] text-slate-400">Thông tin định danh hiển thị trên hồ sơ ứng tuyển nội bộ</p>
                       </div>
                     </div>
 
@@ -389,32 +452,7 @@ export default function EmployeeProfilePage() {
                           required
                           value={profile.full_name}
                           onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl font-medium text-slate-900 focus:outline-none focus:border-[#4285F4]"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Email công ty</label>
-                        <div className="relative">
-                          <input
-                            type="email"
-                            readOnly
-                            value={profile.email}
-                            className="w-full pl-3.5 pr-9 py-2.5 bg-slate-100 border border-gray-200 rounded-xl font-medium text-slate-500 cursor-not-allowed"
-                          />
-                          <Lock className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-3" />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block font-bold text-slate-700 mb-1">Số điện thoại *</label>
-                        <input
-                          type="text"
-                          value={profile.phone}
-                          onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl font-medium text-slate-900 focus:outline-none focus:border-[#4285F4]"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl font-medium text-slate-900 focus:outline-none focus:border-blue-600"
                         />
                       </div>
 
@@ -424,7 +462,7 @@ export default function EmployeeProfilePage() {
                           type="date"
                           value={profile.dob}
                           onChange={(e) => setProfile({ ...profile, dob: e.target.value })}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl font-medium text-slate-900 focus:outline-none focus:border-[#4285F4]"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl font-medium text-slate-900 focus:outline-none focus:border-blue-600"
                         />
                       </div>
                     </div>

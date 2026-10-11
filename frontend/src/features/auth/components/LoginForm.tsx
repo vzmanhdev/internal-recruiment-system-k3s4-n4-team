@@ -68,6 +68,12 @@ export function LoginForm() {
         (Array.isArray(res.user?.roles) && res.user.roles.includes("employee"))
       ) {
         targetUrl = "/employee";
+      } else if (
+        cleanEmail.toLowerCase() === "candidate@company.com" ||
+        res.user?.role === "candidate" ||
+        (Array.isArray(res.user?.roles) && res.user.roles.includes("candidate"))
+      ) {
+        targetUrl = "/candidate";
       }
 
       setSuccessMsg(
