@@ -21,6 +21,8 @@ export interface JobPostingItem {
   status: string;
   views_count?: number;
   applications_count?: number;
+  published_by_id?: number | null;
+  published_at?: string | null;
   created_at?: string;
 }
 
@@ -59,5 +61,18 @@ export const jobService = {
       method: "PUT",
       body: JSON.stringify(data),
     });
-  }
+  },
+
+  async getAdminJobs(status_filter?: string): Promise<JobPostingItem[]> {
+    const query = status_filter ? `?status_filter=${encodeURIComponent(status_filter)}` : "";
+    return apiRequest<JobPostingItem[]>(`/jobs/admin-list${query}`);
+  },
+
+  async publishJob(id: number): Promise<JobPostingItem> {
+    return apiRequest<JobPostingItem>(`/jobs/${id}/publish`, { method: "POST" });
+  },
+
+  async closeJob(id: number): Promise<JobPostingItem> {
+    return apiRequest<JobPostingItem>(`/jobs/${id}/close`, { method: "POST" });
+  },
 };

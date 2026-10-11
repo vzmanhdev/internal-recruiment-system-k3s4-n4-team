@@ -12,7 +12,7 @@ from app.models.user import User
 from app.models.password_reset import PasswordResetSession
 from app.core.config import settings
 
-TEST_DB_FILE = "./test_otp_reset.db"
+TEST_DB_FILE = os.path.join(os.environ.get("TEST_TMP_DIR", "."), "test_otp_reset.db").replace("\\", "/")
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -64,10 +64,12 @@ def test_email_existence_check():
     data1 = resp1.json()
     assert "reset_session_id" in data1
 
-    # Request reset for NON-EXISTENT email -> Should return 400 BAD REQUEST
+    # S1-03 AC3: a NON-EXISTENT email must get the same response (no account enumeration)
     resp2 = client.post("/api/v1/auth/password-reset/request", json={"email": "nonexistent@company.com"})
-    assert resp2.status_code == 400
-    assert "Tài khoản Email không chính xác" in resp2.json()["detail"]
+    assert resp2.status_code == 202
+    data2 = resp2.json()
+    assert set(data2.keys()) == set(data1.keys())
+    assert data2["message"] == data1["message"]
 
 def test_otp_digest_not_stored_as_plaintext():
     client = TestClient(app)

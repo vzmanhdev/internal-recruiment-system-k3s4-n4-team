@@ -61,12 +61,9 @@ class PasswordResetService:
             )
 
         # 3. Lookup real user
+        # S1-03 AC3: an unknown email gets exactly the same response; a decoy session (user_id=None) is
+        # created and no email is sent, so the reset flow cannot be used to enumerate accounts.
         user = db.query(User).filter(User.email == normalized_email).first()
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Tài khoản Email không chính xác."
-            )
 
         # 4. Generate Cryptographic OTP
         otp_code = generate_secure_otp()

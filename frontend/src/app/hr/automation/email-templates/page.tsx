@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { apiRequest, ApiError } from "@/lib/api-client";
 import {
   Mail,
   Plus,
@@ -69,16 +70,15 @@ export default function EmailTemplatesPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  const errMsg = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
+  const BASE = "/email-automation/templates";
+
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/email-automation/templates");
-      if (res.ok) {
-        const data = await res.json();
-        setTemplates(data);
-      }
+      setTemplates(await apiRequest<EmailTemplate[]>(BASE));
     } catch (err) {
-      console.error(err);
+      showToast(errMsg(err, "Không tải được danh sách mẫu email."), "error");
     } finally {
       setLoading(false);
     }
@@ -86,22 +86,19 @@ export default function EmailTemplatesPage() {
 
   useEffect(() => {
     fetchTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleToggleAutoSend = async (tpl: EmailTemplate) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/email-automation/templates/${tpl.id}`, {
+      const updated = await apiRequest<EmailTemplate>(`${BASE}/${tpl.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_auto_send: !tpl.is_auto_send })
+        body: JSON.stringify({ is_auto_send: !tpl.is_auto_send }),
       });
-      if (res.ok) {
-        const updated = await res.json();
-        setTemplates((prev) => prev.map((t) => (t.id === tpl.id ? updated : t)));
-        showToast(`Đã ${updated.is_auto_send ? "bật" : "tắt"} tự động gửi cho mẫu "${tpl.name}"`);
-      }
+      setTemplates((prev) => prev.map((t) => (t.id === tpl.id ? updated : t)));
+      showToast(`Đã ${updated.is_auto_send ? "bật" : "tắt"} tự động gửi cho mẫu "${tpl.name}"`);
     } catch (err) {
-      showToast("Lỗi khi cập nhật trạng thái tự động gửi!", "error");
+      showToast(errMsg(err, "Lỗi khi cập nhật trạng thái tự động gửi!"), "error");
     }
   };
 
@@ -114,54 +111,42 @@ export default function EmailTemplatesPage() {
 
     try {
       if (editingTemplate.id) {
-        // Update
-        const res = await fetch(`http://localhost:8000/api/v1/email-automation/templates/${editingTemplate.id}`, {
+        const { name, category, subject, body_html, is_auto_send, is_active } = editingTemplate;
+        const updated = await apiRequest<EmailTemplate>(`${BASE}/${editingTemplate.id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(editingTemplate)
+          body: JSON.stringify({ name, category, subject, body_html, is_auto_send, is_active }),
         });
-        if (res.ok) {
-          const updated = await res.json();
-          setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-          showToast("Cập nhật mẫu email thành công!");
-          setIsEditModalOpen(false);
-        }
+        setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+        showToast("Cập nhật mẫu email thành công!");
       } else {
-        // Create new
-        const newCode = editingTemplate.code || `TPL_${Date.now()}`;
-        const res = await fetch("http://localhost:8000/api/v1/email-automation/templates", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...editingTemplate, code: newCode })
-        });
-        if (res.ok) {
-          const created = await res.json();
-          setTemplates((prev) => [...prev, created]);
-          showToast("Tạo mẫu email mới thành công!");
-          setIsEditModalOpen(false);
+        const code = (editingTemplate.code || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+        if (!code) {
+          showToast("Vui lòng nhập mã mẫu (ví dụ INVITE_INTERVIEW_ROUND2).", "error");
+          return;
         }
+        const created = await apiRequest<EmailTemplate>(BASE, {
+          method: "POST",
+          body: JSON.stringify({ ...editingTemplate, code }),
+        });
+        setTemplates((prev) => [...prev, created]);
+        showToast("Tạo mẫu email mới thành công!");
       }
+      setIsEditModalOpen(false);
     } catch (err) {
-      showToast("Không thể lưu mẫu email!", "error");
+      showToast(errMsg(err, "Không thể lưu mẫu email!"), "error");
     }
   };
 
   const handlePreview = async (tpl: EmailTemplate) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/email-automation/templates/${tpl.id}/preview`, {
-        method: "POST"
+      const data = await apiRequest<{ rendered_subject: string; rendered_body_html: string }>(`${BASE}/${tpl.id}/preview`, {
+        method: "POST",
+        body: JSON.stringify({}),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setPreviewData({
-          name: tpl.name,
-          subject: data.rendered_subject,
-          body_html: data.rendered_body_html
-        });
-        setIsPreviewModalOpen(true);
-      }
+      setPreviewData({ name: tpl.name, subject: data.rendered_subject, body_html: data.rendered_body_html });
+      setIsPreviewModalOpen(true);
     } catch (err) {
-      showToast("Lỗi khi tải bản xem trước!", "error");
+      showToast(errMsg(err, "Lỗi khi tải bản xem trước!"), "error");
     }
   };
 

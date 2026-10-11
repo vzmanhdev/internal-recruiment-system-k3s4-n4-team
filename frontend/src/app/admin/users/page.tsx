@@ -19,7 +19,7 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { authService } from "@/features/auth/services/auth.service";
+import { apiRequest, ApiError } from "@/lib/api-client";
 
 interface UserItem {
   id: number;
@@ -35,75 +35,6 @@ interface UserItem {
   created_at?: string;
 }
 
-const defaultFallbackUsers: UserItem[] = [
-  {
-    id: 1,
-    email: "admin@company.com",
-    full_name: "Nguyễn Văn Quản Trị (Admin)",
-    phone: "0901234567",
-    employee_code: "NV-ADM-01",
-    role: "admin",
-    roles: ["admin"],
-    is_active: true,
-    account_status: "active",
-  },
-  {
-    id: 2,
-    email: "hrmanager@company.com",
-    full_name: "Trần Thị HR Manager",
-    phone: "0912345678",
-    employee_code: "NV-HRM-02",
-    role: "hr_manager",
-    roles: ["hr_manager"],
-    is_active: true,
-    account_status: "active",
-  },
-  {
-    id: 3,
-    email: "recruiter@company.com",
-    full_name: "Lê Văn Recruiter",
-    phone: "0923456789",
-    employee_code: "NV-REC-03",
-    role: "recruiter",
-    roles: ["recruiter"],
-    is_active: true,
-    account_status: "active",
-  },
-  {
-    id: 4,
-    email: "manager@company.com",
-    full_name: "Hoàng Đình Hiring Manager",
-    phone: "0934567890",
-    employee_code: "NV-MGR-04",
-    role: "hiring_manager",
-    roles: ["hiring_manager"],
-    is_active: true,
-    account_status: "active",
-  },
-  {
-    id: 5,
-    email: "interviewer@company.com",
-    full_name: "Phạm Văn Interviewer",
-    phone: "0945678912",
-    employee_code: "NV-INT-05",
-    role: "interviewer",
-    roles: ["interviewer"],
-    is_active: true,
-    account_status: "active",
-  },
-  {
-    id: 6,
-    email: "locked.user@company.com",
-    full_name: "Vũ Đình Tạm Khóa",
-    phone: "0967891234",
-    employee_code: "NV-LCK-06",
-    role: "employee",
-    roles: ["employee"],
-    is_active: false,
-    account_status: "locked",
-    lock_reason: "Chuyển công tác & bàn giao quyền",
-  },
-];
 
 export default function UserManagementPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -122,6 +53,7 @@ export default function UserManagementPage() {
   const [isEditRolesOpen, setIsEditRolesOpen] = useState(false);
   const [isLockModalOpen, setIsLockModalOpen] = useState(false);
   const [isUnlockModalOpen, setIsUnlockModalOpen] = useState(false);
+  const [handover, setHandover] = useState<Array<{ requisition_id: number; code: string; title: string; relation: string }>>([]);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
 
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
@@ -166,43 +98,27 @@ export default function UserManagementPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  const errMsg = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
+
   const fetchUsers = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = authService.getToken();
       const queryParams = new URLSearchParams({
         search,
         status: statusFilter,
         role: roleFilter,
         page: page.toString(),
-        page_size: "15",
+        page_size: "20", // S1-08 AC4: 20 rows per page by default
       });
-
-      const res = await fetch(`http://localhost:8000/api/v1/admin/users?${queryParams.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!res.ok) {
-        // Fallback gracefully to default enterprise dataset
-        setUsers(defaultFallbackUsers);
-        setTotalPages(1);
-        return;
-      }
-
-      const data = await res.json();
-      if (data.items && data.items.length > 0) {
-        setUsers(data.items);
-        setTotalPages(data.pages || 1);
-      } else {
-        setUsers(defaultFallbackUsers);
-        setTotalPages(1);
-      }
-    } catch (err: any) {
-      setUsers(defaultFallbackUsers);
+      const data = await apiRequest<{ items: UserItem[]; pages?: number }>(`/admin/users?${queryParams.toString()}`);
+      setUsers(data.items || []);
+      setTotalPages(data.pages || 1);
+    } catch (err) {
+      // Never substitute sample accounts: an admin must not act on users that do not exist.
+      setUsers([]);
       setTotalPages(1);
+      setError(errMsg(err, "Không tải được danh sách tài khoản."));
     } finally {
       setIsLoading(false);
     }
@@ -210,6 +126,7 @@ export default function UserManagementPage() {
 
   useEffect(() => {
     fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, roleFilter, statusFilter, page]);
 
   // Handle Create User Submit (S1-08)
@@ -229,21 +146,7 @@ export default function UserManagementPage() {
 
     setIsSubmittingCreate(true);
     try {
-      const token = authService.getToken();
-      const res = await fetch("http://localhost:8000/api/v1/admin/users", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(createForm),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Không thể tạo tài khoản người dùng mới");
-      }
-
+      await apiRequest("/admin/users", { method: "POST", body: JSON.stringify(createForm) });
       showToast("Tạo tài khoản người dùng mới thành công!");
       setIsCreateModalOpen(false);
       setCreateForm({
@@ -254,8 +157,8 @@ export default function UserManagementPage() {
         roles: ["employee"],
       });
       fetchUsers();
-    } catch (err: any) {
-      setCreateError(err.message);
+    } catch (err) {
+      setCreateError(errMsg(err, "Không thể tạo tài khoản người dùng mới"));
     } finally {
       setIsSubmittingCreate(false);
     }
@@ -274,28 +177,31 @@ export default function UserManagementPage() {
 
     setIsSubmittingRoles(true);
     try {
-      const token = authService.getToken();
-      const res = await fetch(`http://localhost:8000/api/v1/admin/users/${selectedUser.id}/roles`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ roles: selectedRoles }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Không thể cập nhật danh sách vai trò");
-      }
-
+      await apiRequest(`/admin/users/${selectedUser.id}/roles`, { method: "PUT", body: JSON.stringify({ roles: selectedRoles }) });
       showToast("Cập nhật phân quyền vai trò tài khoản thành công!");
       setIsEditRolesOpen(false);
       fetchUsers();
-    } catch (err: any) {
-      setRolesError(err.message);
+    } catch (err) {
+      setRolesError(errMsg(err, "Không thể cập nhật danh sách vai trò"));
     } finally {
       setIsSubmittingRoles(false);
+    }
+  };
+
+  // S1-10 AC3: warn about open positions that must be handed over before locking.
+  const openLockModal = async (u: UserItem) => {
+    setSelectedUser(u);
+    setLockReason("");
+    setLockError(null);
+    setHandover([]);
+    setIsLockModalOpen(true);
+    try {
+      const res = await apiRequest<{ positions: Array<{ requisition_id: number; code: string; title: string; relation: string }> }>(
+        `/admin/users/${u.id}/handover-check`,
+      );
+      setHandover(res.positions);
+    } catch {
+      setHandover([]);
     }
   };
 
@@ -312,27 +218,13 @@ export default function UserManagementPage() {
 
     setIsSubmittingLock(true);
     try {
-      const token = authService.getToken();
-      const res = await fetch(`http://localhost:8000/api/v1/admin/users/${selectedUser.id}/lock`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ reason: lockReason }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Không thể khóa tài khoản này");
-      }
-
-      showToast("Khóa tài khoản và làm mới session thành công!", "success");
+      await apiRequest(`/admin/users/${selectedUser.id}/lock`, { method: "POST", body: JSON.stringify({ reason: lockReason }) });
+      showToast("Khóa tài khoản và thu hồi phiên đăng nhập thành công!", "success");
       setIsLockModalOpen(false);
       setLockReason("");
       fetchUsers();
-    } catch (err: any) {
-      setLockError(err.message);
+    } catch (err) {
+      setLockError(errMsg(err, "Không thể khóa tài khoản này"));
     } finally {
       setIsSubmittingLock(false);
     }
@@ -342,24 +234,12 @@ export default function UserManagementPage() {
   const handleUnlockAccount = async () => {
     if (!selectedUser) return;
     try {
-      const token = authService.getToken();
-      const res = await fetch(`http://localhost:8000/api/v1/admin/users/${selectedUser.id}/unlock`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || "Không thể mở khóa tài khoản");
-      }
-
+      await apiRequest(`/admin/users/${selectedUser.id}/unlock`, { method: "POST" });
       showToast("Mở khóa tài khoản thành công!");
       setIsUnlockModalOpen(false);
       fetchUsers();
-    } catch (err: any) {
-      showToast(err.message, "error");
+    } catch (err) {
+      showToast(errMsg(err, "Không thể mở khóa tài khoản"), "error");
     }
   };
 
@@ -678,12 +558,7 @@ export default function UserManagementPage() {
                           {/* Lock / Unlock (S1-10) */}
                           {u.is_active && u.account_status !== "locked" ? (
                             <button
-                              onClick={() => {
-                                setSelectedUser(u);
-                                setLockReason("");
-                                setLockError(null);
-                                setIsLockModalOpen(true);
-                              }}
+                              onClick={() => openLockModal(u)}
                               className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                               title="Khóa tài khoản"
                             >
@@ -1021,6 +896,22 @@ export default function UserManagementPage() {
                 Nếu người dùng đang phụ trách Yêu cầu tuyển dụng hoặc Lịch phỏng vấn, vui lòng phân công lại nhân sự trước khi thực hiện.
               </p>
             </div>
+
+            {handover.length > 0 && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs space-y-1">
+                <div className="font-bold flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Tài khoản đang phụ trách {handover.length} vị trí — cần bàn giao:</span>
+                </div>
+                <ul className="list-disc pl-6">
+                  {handover.map((h) => (
+                    <li key={`${h.relation}-${h.requisition_id}`}>
+                      {h.code} — {h.title} ({h.relation === "owner" ? "người tạo tờ trình" : "recruiter phụ trách"})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {lockError && (
               <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">

@@ -20,6 +20,7 @@ import {
   Gift
 } from "lucide-react";
 import { authService } from "@/features/auth/services/auth.service";
+import { useNotifications, unreadLabel } from "@/hooks/useNotifications";
 
 interface EmployeeAppShellProps {
   children: React.ReactNode;
@@ -32,14 +33,15 @@ export function EmployeeAppShell({ children, activeTab }: EmployeeAppShellProps)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const notifications = useNotifications();
   const profileDropdownRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const [employeeProfile, setEmployeeProfile] = useState({
-    name: "Tống thị quỳnh ngoo",
-    email: "vzmanhsoft208@gmail.com",
+    name: "Nhân viên",
+    email: "",
     avatarUrl: "",
     title: "Nhân viên nội bộ",
     department: "Phòng Công Nghệ",
@@ -47,9 +49,12 @@ export function EmployeeAppShell({ children, activeTab }: EmployeeAppShellProps)
 
   useEffect(() => {
     const loadAvatar = () => {
-      const saved = localStorage.getItem("user_avatar_url");
-      if (saved) {
-        setAvatarUrl(saved);
+      const u = authService.getUserInfo();
+      if (u) {
+        const saved = authService.getUserAvatar(u.id);
+        setAvatarUrl(saved || u.avatar_url || null);
+      } else {
+        setAvatarUrl(null);
       }
     };
     loadAvatar();
@@ -63,18 +68,28 @@ export function EmployeeAppShell({ children, activeTab }: EmployeeAppShellProps)
         const user = await authService.getCurrentUser();
         if (user) {
           setEmployeeProfile({
-            name: user.full_name || "Tống thị quỳnh ngoo",
-            email: user.email || "vzmanhsoft208@gmail.com",
+            name: user.full_name || "Nhân viên",
+            email: user.email || "",
             avatarUrl: user.avatar_url || "",
-            title: "Nhân viên nội bộ",
+            title: user.job_title || "Nhân viên nội bộ",
             department: (user as any).department || "Phòng Công Nghệ",
           });
-          if (user.avatar_url && !localStorage.getItem("user_avatar_url")) {
-            setAvatarUrl(user.avatar_url);
-          }
+          const saved = authService.getUserAvatar(user.id);
+          setAvatarUrl(saved || user.avatar_url || null);
         }
       } catch (err) {
-        // Fallback to demo profile
+        const local = authService.getUserInfo();
+        if (local) {
+          setEmployeeProfile({
+            name: local.full_name || "Nhân viên",
+            email: local.email || "",
+            avatarUrl: local.avatar_url || "",
+            title: local.job_title || "Nhân viên nội bộ",
+            department: (local as any).department || "Phòng Công Nghệ",
+          });
+          const saved = authService.getUserAvatar(local.id);
+          setAvatarUrl(saved || local.avatar_url || null);
+        }
       }
     };
     fetchProfile();
@@ -191,9 +206,11 @@ export function EmployeeAppShell({ children, activeTab }: EmployeeAppShellProps)
               className="p-2.5 rounded-xl text-slate-500 hover:bg-slate-100 relative cursor-pointer"
             >
               <Bell className="w-5 h-5" />
-              <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-extrabold flex items-center justify-center absolute top-1 right-1 ring-2 ring-white">
-                3
-              </span>
+              {notifications.unread > 0 && (
+                <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-extrabold flex items-center justify-center absolute top-1 right-1 ring-2 ring-white">
+                  {unreadLabel(notifications.unread)}
+                </span>
+              )}
             </button>
 
             {isNotificationOpen && (
@@ -205,18 +222,21 @@ export function EmployeeAppShell({ children, activeTab }: EmployeeAppShellProps)
                   </Link>
                 </div>
                 <div className="divide-y divide-gray-50 text-xs">
-                  <div className="p-3 hover:bg-slate-50 cursor-pointer">
-                    <p className="font-bold text-slate-800">Tin tuyển dụng mới phù hợp</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Vị trí Senior Backend Engineer vừa được đăng</p>
-                  </div>
-                  <div className="p-3 hover:bg-slate-50 cursor-pointer">
-                    <p className="font-bold text-slate-800">Lịch phỏng vấn sắp tới</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Bạn có lịch phỏng vấn vào 25/10/2024</p>
-                  </div>
-                  <div className="p-3 hover:bg-slate-50 cursor-pointer">
-                    <p className="font-bold text-slate-800">Trạng thái ứng viên đã thay đổi</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Nguyễn Thị Mai đã chuyển sang phỏng vấn</p>
-                  </div>
+                  {notifications.items.length === 0 ? (
+                    <div className="p-4 text-center text-[11px] text-slate-400">Chưa có thông báo nào.</div>
+                  ) : (
+                    notifications.items.map((n) => (
+                      <Link
+                        key={n.id}
+                        href={n.link || "/employee/notifications"}
+                        onClick={() => { setIsNotificationOpen(false); if (!n.is_read) notifications.markRead(n.id); }}
+                        className={`block p-3 hover:bg-slate-50 ${n.is_read ? "" : "bg-blue-50/40"}`}
+                      >
+                        <p className="font-bold text-slate-800">{n.title}</p>
+                        {n.message && <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{n.message}</p>}
+                      </Link>
+                    ))
+                  )}
                 </div>
               </div>
             )}

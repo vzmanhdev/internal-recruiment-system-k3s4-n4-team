@@ -22,6 +22,15 @@ export interface ApplicationItem {
   rejection_reason?: string;
   applied_date?: string;
   created_at?: string;
+  updated_at?: string;
+  tracking_code?: string;
+  source?: string;
+  rating?: number | null;
+  tags?: string[];
+  match_score?: number | null;
+  meets_requirements?: boolean | null;
+  is_overdue?: boolean;
+  public_status?: string;
 }
 
 export const applicationService = {
@@ -63,5 +72,12 @@ export const applicationService = {
       method: "PUT",
       body: JSON.stringify(data),
     });
-  }
+  },
+
+  async hiringDecision(id: number, decision: "offer" | "reject", reason?: string): Promise<ApplicationItem> {
+    return apiRequest<ApplicationItem>(`/applications/${id}/hiring-decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision, reason }),
+    });
+  },
 };

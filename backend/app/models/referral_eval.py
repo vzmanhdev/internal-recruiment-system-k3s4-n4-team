@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
@@ -60,6 +60,12 @@ class CandidateEvaluation(Base):
     strengths = Column(Text, nullable=True)
     weaknesses = Column(Text, nullable=True)
     recommendation = Column(String(50), default="hire", nullable=False) # hire, hold, reject
+    # S6-07 competency scorecard snapshot / S6-08 reopen
+    interview_id = Column(Integer, ForeignKey("interview_schedules.id"), nullable=True)
+    framework_id = Column(String(100), nullable=True)
+    criteria_json = Column(Text, nullable=True)
+    weighted_score = Column(Float, nullable=True)
+    reopened_at = Column(DateTime, nullable=True)
     comments = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

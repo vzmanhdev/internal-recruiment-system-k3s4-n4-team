@@ -1,5 +1,6 @@
 'use client';
 
+import { authService } from '@/features/auth/services/auth.service';
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import UnifiedAppShell from '@/components/layout/UnifiedAppShell';
@@ -37,21 +38,16 @@ export default function MultiRoleWorkspacePage() {
       } catch (e) {}
     }
 
-    const token = localStorage.getItem('token') || localStorage.getItem('access_token');
-    if (token) {
-      fetch('http://localhost:8000/api/v1/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => (res.ok ? res.json() : null))
+    if (authService.getToken()) {
+      // Shared client: env-configured base URL, refresh-on-expiry and the 401/403 policy.
+      authService.getCurrentUser()
         .then((data) => {
-          if (data) {
-            setUser(data);
-            localStorage.setItem('user', JSON.stringify(data));
-            localStorage.setItem('user_info', JSON.stringify(data));
-          }
-          setLoading(false);
+          setUser(data);
+          localStorage.setItem('user', JSON.stringify(data));
+          localStorage.setItem('user_info', JSON.stringify(data));
         })
-        .catch(() => setLoading(false));
+        .catch(() => undefined)
+      .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }

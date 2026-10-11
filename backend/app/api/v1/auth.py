@@ -14,7 +14,7 @@ from app.core.security import (
     hash_password, verify_password, create_access_token, decode_access_token,
     generate_refresh_token, hash_token, parse_user_agent
 )
-from app.api.deps import get_current_session_user
+from app.api.deps import get_current_session_user, authenticate_bearer
 from app.schemas.auth import (
     ChangePasswordRequest, ProfileUpdateRequest, RegistrationResponse, UserRegister, UserLogin,
     Token, UserResponse, ErrorResponse, RefreshRequest, SessionResponse,
@@ -24,9 +24,13 @@ from app.schemas.auth import (
     ForgotPasswordRequest, ForgotPasswordResponse
 )
 from app.services.password_reset_service import PasswordResetService
+from app.services import login_guard
 
 
 router = APIRouter()
+
+# Pre-computed bcrypt hash used to equalise login timing for unknown emails.
+_DUMMY_PASSWORD_HASH = hash_password("timing-equaliser-not-a-real-password")
 
 @router.post(
     "/register",
@@ -103,88 +107,79 @@ def get_role_redirect_url(role: str) -> str:
     }
 )
 def login(user_in: UserLogin, request: Request, response: JSONResponse, db: Session = Depends(get_db)):
+    # S1-01 AC3: throttling is tied to the browser session (HttpOnly cookie), never to the account,
+    # so a new browser / incognito window can still sign in while this one is locked.
+    client_id, _ = login_guard.client_id_from(request.cookies.get(login_guard.CLIENT_COOKIE))
+    resp = _login(user_in, request, db, client_id)
+    resp.set_cookie(
+        key=login_guard.CLIENT_COOKIE,
+        value=client_id,
+        httponly=True,
+        samesite="lax",
+        secure=settings.is_production,
+        path="/api/v1/auth",
+        max_age=login_guard.CLIENT_COOKIE_MAX_AGE,
+    )
+    return resp
+
+
+def _locked_response(remaining_secs: int) -> JSONResponse:
+    remaining_mins = max(1, (remaining_secs + 59) // 60)
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        headers={"Retry-After": str(remaining_secs)},
+        content={
+            "detail": f"Phiên đăng nhập trên trình duyệt này đang bị tạm khóa {login_guard.LOCK_MINUTES} phút do nhập sai {login_guard.MAX_FAILURES}/{login_guard.MAX_FAILURES} lần liên tiếp. "
+                      f"Vui lòng thử lại sau {remaining_mins} phút.",
+            "field_errors": {"password": f"Tạm khóa đăng nhập trên trình duyệt này. Thử lại sau {remaining_mins} phút ({remaining_secs} giây)."},
+        },
+    )
+
+
+def _login(user_in: UserLogin, request: Request, db: Session, client_id: str) -> JSONResponse:
     now = datetime.utcnow()
+    client_ip = request.client.host if request.client else "127.0.0.1"
 
-    # Find user by email from Database
+    # Locked browser session: refuse before checking the password (even a correct one).
+    remaining = login_guard.locked_for(db, client_id, client_ip, user_in.email, now)
+    if remaining:
+        return _locked_response(remaining)
+
     user = db.query(User).filter(User.email == user_in.email).first()
-    if not user:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "detail": "Tài Khoản hoặc Mật khẩu không chính xác. Vui lòng thử lại.",
-                "field_errors": {
-                    "email": "Tài khoản Email không tồn tại trong hệ thống."
-                }
-            }
-        )
+    # S1-01 AC2: same response (and comparable bcrypt cost) whether or not the email exists.
+    password_ok = verify_password(user_in.password, user.hashed_password if user else _DUMMY_PASSWORD_HASH) and user is not None
 
-    # Check 15-minute temporary account lockout due to 5 failed login attempts
-    if user.locked_until and user.locked_until > now:
-        remaining_secs = int((user.locked_until - now).total_seconds())
-        remaining_mins = max(1, (remaining_secs + 59) // 60)
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "detail": f"Tài khoản/Phiên làm việc đang bị tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau {remaining_mins} phút.",
-                "field_errors": {
-                    "password": f"Tài khoản bị tạm khóa. Vui lòng thử lại sau {remaining_mins} phút ({remaining_secs} giây)."
-                }
-            }
-        )
-
-    # Verify password
-    if not verify_password(user_in.password, user.hashed_password):
-        user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
-        if user.failed_login_attempts >= 5:
-            user.locked_until = now + timedelta(minutes=15)
-            db.commit()
-
-            # Audit Log & Notification Email
+    if not password_ok:
+        # Unknown e-mails count as failures too, so a lock never reveals whether an account exists.
+        just_locked, failed_count, remaining_secs = login_guard.register_failure(db, client_id, client_ip, user_in.email, now)
+        if just_locked:
             try:
                 from app.models.audit import AuditLog
-                audit = AuditLog(
-                    actor_id=user.id,
-                    actor_email=user.email,
-                    action="LOGIN_FAILED_LOCKED",
+                db.add(AuditLog(
+                    actor_id=user.id if user else None,
+                    actor_email=user_in.email,
+                    action="LOGIN_SESSION_THROTTLED",
                     target_entity="AUTH",
-                    target_id=str(user.id),
-                    ip_address=request.client.host if request.client else "127.0.0.1",
-                    payload_json="Tài khoản bị tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần"
-                )
-                db.add(audit)
+                    target_id=str(user.id) if user else None,
+                    ip_address=client_ip,
+                    payload_json=f"Trình duyệt bị tạm khóa đăng nhập {login_guard.LOCK_MINUTES} phút sau {failed_count}/{login_guard.MAX_FAILURES} lần sai liên tiếp (tài khoản không bị khóa)",
+                ))
                 db.commit()
             except Exception:
-                pass
+                db.rollback()
+            return _locked_response(remaining_secs)
 
-            try:
-                from app.services.email_service import send_account_locked_temp_email
-                send_account_locked_temp_email(user.email, user.full_name, lock_minutes=15)
-            except Exception:
-                pass
-
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content={
-                    "detail": "Bạn đã nhập sai mật khẩu 5 lần liên tiếp. Tài khoản của bạn đã bị tạm khóa trong 15 phút.",
-                    "field_errors": {
-                        "password": "Tài khoản bị tạm khóa 15 phút do nhập sai mật khẩu 5 lần."
-                    }
-                }
-            )
-
-        remaining_attempts = 5 - user.failed_login_attempts
-        db.commit()
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "detail": f"Mật khẩu không chính xác. Bạn còn {remaining_attempts} lần thử trước khi tài khoản bị khóa 15 phút.",
+                "detail": f"Tài khoản hoặc mật khẩu không chính xác. Bạn đã nhập sai {failed_count}/{login_guard.MAX_FAILURES} lần. Nếu nhập sai {login_guard.MAX_FAILURES} lần liên tiếp sẽ bị tạm khóa {login_guard.LOCK_MINUTES} phút.",
                 "field_errors": {
-                    "password": f"Mật khẩu không chính xác (Còn {remaining_attempts} lần thử)."
+                    "password": f"Tài khoản hoặc mật khẩu không chính xác (Đã sai {failed_count}/{login_guard.MAX_FAILURES} lần)."
                 }
             }
         )
 
-    # Check account active & status
+    # Check account active & status (admin lock is the only account-level lock)
     if not user.is_active:
         if user.account_status == "locked":
             message = "Tài khoản đã bị khóa. Vui lòng liên hệ Quản trị viên."
@@ -200,7 +195,8 @@ def login(user_in: UserLogin, request: Request, response: JSONResponse, db: Sess
             }
         )
 
-    # Reset failed login counters on successful authentication
+    login_guard.register_success(db, client_id, client_ip, user_in.email)
+    # Legacy per-account counters are no longer used for throttling; clear any old values.
     user.failed_login_attempts = 0
     user.locked_until = None
     user.last_login_at = now
@@ -217,7 +213,9 @@ def login(user_in: UserLogin, request: Request, response: JSONResponse, db: Sess
     family_id = str(uuid.uuid4())
     refresh_token = generate_refresh_token()
     refresh_hash = hash_token(refresh_token)
-    session_exp = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    # Absolute session lifetime: refreshing never extends it.
+    session_exp = now + min(timedelta(hours=settings.SESSION_ABSOLUTE_TIMEOUT_HOURS),
+                            timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS))
 
     new_session = AuthSession(
         id=session_id,
@@ -281,7 +279,8 @@ def login(user_in: UserLogin, request: Request, response: JSONResponse, db: Sess
         value=refresh_token,
         httponly=True,
         samesite="lax",
-        secure=False, # Set True in production HTTPS
+        secure=settings.is_production,
+        path="/api/v1/auth",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
     )
 
@@ -324,7 +323,7 @@ def refresh_token_endpoint(
         # REUSE DETECTION SAFETY CHECK:
         # Check if this hash belongs to an old rotated/revoked session in the database
         revoked_family_session = db.query(AuthSession).filter(
-            AuthSession.refresh_token_hash == incoming_hash
+            (AuthSession.refresh_token_hash == incoming_hash) | (AuthSession.previous_refresh_token_hash == incoming_hash)
         ).first()
 
 
@@ -388,36 +387,35 @@ def refresh_token_endpoint(
             detail={"code": "ACCOUNT_INACTIVE", "message": "Tài khoản không hoạt động."}
         )
 
-    # 5. ROTATE REFRESH TOKEN (Single-refresh token rotation within family chain)
-    auth_session.refresh_rotated_at = now
-    auth_session.revoked_at = now
-    auth_session.revoke_reason = "ROTATED"
-
+    # 5. ROTATE the refresh token IN PLACE (same server-side session, same absolute expiry).
+    # Compare-and-set on the current hash: of two concurrent refreshes with the same token only one wins.
     new_refresh_token = generate_refresh_token()
-    new_session_id = str(uuid.uuid4())
-    session_exp = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-
-    new_session = AuthSession(
-        id=new_session_id,
-        user_id=user.id,
-        refresh_token_hash=hash_token(new_refresh_token),
-        refresh_family_id=auth_session.refresh_family_id, # Inherit family ID for reuse detection
-        device_name=auth_session.device_name,
-        browser=auth_session.browser,
-        os=auth_session.os,
-        user_agent=auth_session.user_agent,
-        ip_address=request.client.host if request.client else auth_session.ip_address,
-        created_at=now,
-        last_active_at=now,
-        expires_at=session_exp
+    rotated = db.query(AuthSession).filter(
+        AuthSession.id == auth_session.id,
+        AuthSession.refresh_token_hash == incoming_hash,
+        AuthSession.revoked_at.is_(None),
+    ).update(
+        {
+            AuthSession.refresh_token_hash: hash_token(new_refresh_token),
+            AuthSession.previous_refresh_token_hash: incoming_hash,
+            AuthSession.refresh_rotated_at: now,
+            AuthSession.last_active_at: now,
+            AuthSession.ip_address: request.client.host if request.client else auth_session.ip_address,
+        },
+        synchronize_session=False,
     )
-    db.add(new_session)
+    if rotated != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "REFRESH_IN_PROGRESS", "message": "Phiên đang được làm mới ở một tab khác. Vui lòng thử lại."}
+        )
     db.commit()
 
-    # 6. Issue new Access Token
+    # 6. Issue new Access Token bound to the SAME session
     new_access_token = create_access_token(
         subject=user.id,
-        session_id=new_session.id,
+        session_id=auth_session.id,
         security_version=user.security_version
     )
 
@@ -438,7 +436,8 @@ def refresh_token_endpoint(
         value=new_refresh_token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=settings.is_production,
+        path="/api/v1/auth",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
     )
     return resp
@@ -480,7 +479,7 @@ def logout(
         pass
 
     resp = JSONResponse(content={"success": True, "message": "Đăng xuất thành công."})
-    resp.delete_cookie("refresh_token")
+    resp.delete_cookie("refresh_token", path="/api/v1/auth")
     return resp
 
 
@@ -528,7 +527,7 @@ def logout_all_sessions(
         pass
 
     resp = JSONResponse(content={"success": True, "message": "Đã đăng xuất thành công khỏi tất cả các thiết bị."})
-    resp.delete_cookie("refresh_token")
+    resp.delete_cookie("refresh_token", path="/api/v1/auth")
     return resp
 
 
@@ -685,51 +684,84 @@ def change_password(
 
 
 
+# Password reset (OTP) endpoints — restored after accidental removal in 4f30af6 (S1-03).
+@router.post(
+    "/password-reset/request",
+    response_model=PasswordResetInitResponse,
+    status_code=status.HTTP_202_ACCEPTED
+)
+def request_password_reset(
+    payload: PasswordResetInitRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.request_reset(db=db, email=payload.email, client_ip=client_ip)
+
+@router.post(
+    "/password-reset/verify",
+    response_model=PasswordResetVerifyResponse,
+    status_code=status.HTTP_200_OK
+)
+def verify_password_reset_otp(
+    payload: PasswordResetVerifyRequest,
+    db: Session = Depends(get_db)
+):
+    return PasswordResetService.verify_otp_and_reset_password(
+        db=db,
+        reset_session_id=payload.reset_session_id,
+        otp=payload.otp
+    )
+
+@router.post(
+    "/password-reset/resend",
+    response_model=PasswordResetResendResponse,
+    status_code=status.HTTP_200_OK
+)
+def resend_password_reset_otp(
+    payload: PasswordResetResendRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.resend_otp(
+        db=db,
+        reset_session_id=payload.reset_session_id,
+        client_ip=client_ip
+    )
+
+# Legacy backwards-compatibility alias for /forgot-password
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_202_ACCEPTED
+)
+def forgot_password_legacy(
+    req: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+
 def require_admin(authorization: Optional[str], db: Session) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Vui lòng đăng nhập bằng tài khoản Quản trị viên")
-    token_str = authorization.split(" ", 1)[1]
-    payload = decode_access_token(token_str)
-    if not payload or not payload.get("sub"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-
-    admin = db.query(User).filter(User.id == int(payload["sub"])).first()
-    if not admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ Quản trị viên active mới có quyền thực hiện thao tác này")
-
-    from app.services.rbac_service import get_user_roles
-    roles = set([r["code"] for r in get_user_roles(db, admin)])
-    if "admin" not in roles or not admin.is_active or admin.account_status != "active":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ Quản trị viên active mới có quyền thực hiện thao tác này")
-
-    # Verify security version
-    if int(payload.get("ver", 1)) != admin.security_version:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập đã bị vô hiệu hóa do thay đổi bảo mật")
-    return admin
+    """Legacy helper kept for existing routers; delegates to the shared session-validating guard."""
+    return require_roles(authorization, db, {"admin"})
 
 def require_roles(authorization: Optional[str], db: Session, allowed_roles: set[str]) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Vui lòng đăng nhập để tiếp tục")
-    token_str = authorization.split(" ", 1)[1]
-    payload = decode_access_token(token_str)
-    if not payload or not payload.get("sub"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
-
-    user = db.query(User).filter(User.id == int(payload["sub"])).first()
-    if not user or not user.is_active or user.account_status != "active":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản không hoạt động hoặc không tồn tại")
-
-    if int(payload.get("ver", 1)) != user.security_version:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập đã bị vô hiệu hóa do thay đổi bảo mật")
+    """Authenticates via authenticate_bearer (JWT + server-side session + status + security version)
+    and then checks the user's DB-assigned roles. Admin has full access."""
+    user, _ = authenticate_bearer(authorization, db)
 
     from app.services.rbac_service import get_user_roles
     roles = set([r["code"] for r in get_user_roles(db, user)])
-    # Admin Full Override: Admin account has full access to ALL features & APIs
     if "admin" in roles:
         return user
 
     if not roles.intersection(allowed_roles):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền thực hiện thao tác này")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "PERMISSION_DENIED", "message": "Bạn không có quyền thực hiện thao tác này."}
+        )
     return user
 
 @router.get("/users", response_model=list[UserResponse])
@@ -830,7 +862,18 @@ def update_me(
     if payload.phone is not None:
         user.phone = payload.phone.replace(" ", "") if payload.phone else None
     if payload.avatar_url is not None:
-        user.avatar_url = payload.avatar_url
+        # S2-03: only JPG/PNG ≤ 2MB — either an uploaded avatar file of this user or a validated data URL
+        value = payload.avatar_url.strip()
+        if value.startswith("data:"):
+            from app.services.file_storage import decode_avatar_data_url
+            decode_avatar_data_url(value)
+        elif value:
+            from app.models.master_data import StoredFile
+            file_id = value.rstrip("/").split("/")[-1]
+            if not value.startswith("/api/v1/files/") or not db.query(StoredFile.id).filter(
+                    StoredFile.id == file_id, StoredFile.kind == "avatar", StoredFile.owner_id == user.id).first():
+                raise HTTPException(status_code=422, detail="Ảnh đại diện phải là tệp JPG/PNG do bạn tải lên.")
+        user.avatar_url = value or None
     if payload.date_of_birth is not None:
         user.date_of_birth = payload.date_of_birth
     elif payload.dob is not None:
@@ -839,8 +882,8 @@ def update_me(
         user.gender = payload.gender
     if payload.job_title is not None:
         user.job_title = payload.job_title
-    if payload.department is not None:
-        user.department = payload.department
+    # S2-02 AC2: email, department and roles are managed by administrators, never self-edited.
+    # (payload.department is accepted for backward compatibility but ignored.)
     if payload.bio is not None:
         user.bio = payload.bio
 

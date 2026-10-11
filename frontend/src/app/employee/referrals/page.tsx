@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { referralService, type ReferralItem } from "@/services/referral.service";
+import { ApiError } from "@/lib/api-client";
 import { EmployeeAppShell } from "@/components/layout/EmployeeAppShell";
 import { CheckSquare, Plus, Search, User, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import Link from "next/link";
@@ -8,44 +10,34 @@ import Link from "next/link";
 export default function MyReferralsPage() {
   const [search, setSearch] = useState("");
 
-  const [referrals, setReferrals] = useState([
-    {
-      id: 1,
-      candidateName: "Nguyễn Thị Mai",
-      jobTitle: "UX/UI Designer",
-      email: "mai.nguyen@example.com",
-      phone: "0912 345 678",
-      submittedDate: "12/10/2024",
-      status: "IN_REVIEW",
-      statusLabel: "Đang xét duyệt",
-      statusBadge: "bg-amber-50 text-amber-700 border-amber-200",
-      note: "Hồ sơ đã chuyển tới Trưởng nhóm Thiết kế rà soát.",
-    },
-    {
-      id: 2,
-      candidateName: "Lê Hoàng Minh",
-      jobTitle: "Senior Backend Engineer",
-      email: "minh.le@example.com",
-      phone: "0988 765 432",
-      submittedDate: "05/10/2024",
-      status: "INTERVIEWED",
-      statusLabel: "Đã phỏng vấn",
-      statusBadge: "bg-blue-50 text-[#4285F4] border-blue-200",
-      note: "Hoàn thành 2 vòng phỏng vấn kỹ thuật với kết quả Tốt.",
-    },
-    {
-      id: 3,
-      candidateName: "Phạm Thu Hà",
-      jobTitle: "Chuyên Viên Tuyển Dụng",
-      email: "ha.pham@example.com",
-      phone: "0904 112 233",
-      submittedDate: "20/09/2024",
-      status: "HIRED",
-      statusLabel: "Đã tuyển dụng",
-      statusBadge: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      note: "Đã nhận việc thành công vào ngày 01/10/2024.",
-    },
-  ]);
+  type ReferralRow = {
+    id: number; candidateName: string; jobTitle: string; email: string; phone: string;
+    submittedDate: string; status: string; statusLabel: string; statusBadge: string; note: string;
+  };
+  const STATUS_VIEW: Record<string, { label: string; badge: string }> = {
+    pending: { label: "Chờ HR tiếp nhận", badge: "bg-slate-50 text-slate-700 border-slate-200" },
+    in_review: { label: "Đang xét duyệt", badge: "bg-amber-50 text-amber-700 border-amber-200" },
+    interviewed: { label: "Đã phỏng vấn", badge: "bg-blue-50 text-[#4285F4] border-blue-200" },
+    hired: { label: "Đã tuyển dụng", badge: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    rejected: { label: "Không phù hợp", badge: "bg-rose-50 text-rose-700 border-rose-200" },
+  };
+  const [referrals, setReferrals] = useState<ReferralRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    referralService.getReferrals()
+      .then((items: ReferralItem[]) => setReferrals(items.map((r) => {
+        const view = STATUS_VIEW[r.status] || { label: r.status, badge: "bg-slate-50 text-slate-700 border-slate-200" };
+        return {
+          id: r.id, candidateName: r.candidate_name, jobTitle: r.job_title || "", email: r.candidate_email,
+          phone: r.candidate_phone, submittedDate: r.created_at ? new Date(r.created_at + "Z").toLocaleDateString("vi-VN") : "",
+          status: r.status, statusLabel: view.label, statusBadge: view.badge, note: r.relationship_note || "",
+        };
+      })))
+      .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Không tải được danh sách giới thiệu."))
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
     <EmployeeAppShell activeTab="my-referrals">
@@ -99,6 +91,9 @@ export default function MyReferralsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 font-medium">
+                {loading && <tr><td colSpan={10} className="p-6 text-center text-slate-500">Đang tải...</td></tr>}
+                {loadError && <tr><td colSpan={10} className="p-6 text-center text-rose-600">{loadError}</td></tr>}
+                {!loading && !loadError && referrals.length === 0 && <tr><td colSpan={10} className="p-6 text-center text-slate-500">Bạn chưa giới thiệu ứng viên nào.</td></tr>}
                 {referrals.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50">
                     <td className="py-3.5 px-4">

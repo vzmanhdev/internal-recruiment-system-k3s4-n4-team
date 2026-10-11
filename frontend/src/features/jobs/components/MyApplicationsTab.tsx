@@ -19,7 +19,6 @@ interface ApplicationItem {
   job_department?: string;
   job_location?: string;
   score?: number;
-  hr_notes?: string;
 }
 
 export function MyApplicationsTab() {
@@ -34,13 +33,13 @@ export function MyApplicationsTab() {
   const fetchMyApplications = async () => {
     setLoading(true);
     try {
-      const res = await apiRequest<ApplicationItem[]>("/applications");
+      const res = await apiRequest<ApplicationItem[]>("/applications?mine=true");
       if (Array.isArray(res)) {
         setApplications(res);
         if (res.length > 0) setSelectedApp(res[0]);
       }
     } catch (err) {
-      console.error("Failed to fetch my applications:", err);
+      console.warn("Failed to fetch my applications:", err);
     } finally {
       setLoading(false);
     }
@@ -235,13 +234,7 @@ export function MyApplicationsTab() {
             )}
           </div>
 
-          {/* Notes / Evaluation Summary if any */}
-          {selectedApp.hr_notes && (
-            <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-100 text-xs space-y-1">
-              <span className="font-bold text-blue-900 uppercase text-[10px] tracking-wider block">Ghi chú từ Phòng Nhân Sự:</span>
-              <p className="text-slate-700 font-medium italic">"{selectedApp.hr_notes}"</p>
-            </div>
-          )}
+          {/* S5-04 AC3: internal HR notes are never shown to the candidate (the API omits them too). */}
         </div>
       )}
     </div>

@@ -120,9 +120,64 @@ export function AvatarCropModal({
     setPosition({ x: 0, y: 0 });
   };
 
-  const handleSave = () => {
+  const getCroppedDataUrl = (): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!selectedImage) {
+        resolve("");
+        return;
+      }
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          const size = 256;
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(selectedImage);
+            return;
+          }
+
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, size, size);
+
+          ctx.save();
+          ctx.translate(size / 2, size / 2);
+          ctx.rotate((rotation * Math.PI) / 180);
+          const scale = zoomLevel / 100;
+          ctx.scale(scale, scale);
+          ctx.translate(position.x * (size / 300), position.y * (size / 300));
+
+          const aspect = img.width / img.height;
+          let drawW = size;
+          let drawH = size;
+          if (aspect > 1) {
+            drawW = size * aspect;
+          } else {
+            drawH = size / aspect;
+          }
+          ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+          ctx.restore();
+
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
+          resolve(dataUrl);
+        } catch {
+          resolve(selectedImage);
+        }
+      };
+      img.onerror = () => {
+        resolve(selectedImage);
+      };
+      img.src = selectedImage;
+    });
+  };
+
+  const handleSave = async () => {
     if (selectedImage) {
-      onSaveAvatar(selectedImage);
+      const cropped = await getCroppedDataUrl();
+      onSaveAvatar(cropped || selectedImage);
     }
     onClose();
   };

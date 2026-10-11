@@ -26,6 +26,7 @@ import {
 import { authService } from "@/features/auth/services/auth.service";
 import { useAuth } from "@/providers/auth-provider";
 import clsx from "clsx";
+import { useNotifications, unreadLabel } from "@/hooks/useNotifications";
 
 
 interface AdminAppShellProps {
@@ -43,6 +44,7 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const notifications = useNotifications();
 
   useEffect(() => {
     setMounted(true);
@@ -50,9 +52,13 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
 
   useEffect(() => {
     const loadAvatar = () => {
-      const saved = localStorage.getItem("user_avatar_url");
-      if (saved) setAvatarUrl(saved);
-      else if (currentUser?.avatar_url) setAvatarUrl(currentUser.avatar_url);
+      const u = currentUser || authService.getUserInfo();
+      if (u) {
+        const saved = authService.getUserAvatar(u.id);
+        setAvatarUrl(saved || u.avatar_url || null);
+      } else {
+        setAvatarUrl(null);
+      }
     };
     loadAvatar();
     window.addEventListener("avatar_updated", loadAvatar);
@@ -238,7 +244,11 @@ export function AdminAppShell({ children, activeTab }: AdminAppShellProps) {
             className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative cursor-pointer"
           >
             <Bell className="w-5 h-5" />
-            <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-2 right-2 ring-2 ring-white"></span>
+            {notifications.unread > 0 && (
+              <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-extrabold flex items-center justify-center absolute top-0.5 right-0.5 ring-2 ring-white">
+                {unreadLabel(notifications.unread)}
+              </span>
+            )}
           </Link>
 
           {/* Profile Dropdown */}

@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sqlalchemy.orm import Session
 from app.db.session import engine, SessionLocal, Base
 from app.core.security import hash_password
+import app.models  # Register all SQLAlchemy models and relationships
 from app.models.user import User
 from app.models.hr import Department, JobTitle, Competency, SharedCategory
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
@@ -17,6 +18,7 @@ from app.models.offer_onboarding import JobOffer, OnboardingChecklist
 from app.models.referral_eval import InternalReferral
 from app.models.email_automation import EmailTemplate, EmailLog
 from app.models.audit import AuditLog, Permission, RolePermission
+from app.db.seed_rbac import seed_rbac
 
 def reset_and_seed_database():
     print("=========================================================================")
@@ -281,33 +283,8 @@ def reset_and_seed_database():
         print(" -> Seeded 1 Interview Schedule")
 
         # 7. Default RBAC Permissions & Role Permissions
-        permissions_seed = [
-            ("user:view", "Xem danh sách người dùng", "user"),
-            ("user:create", "Tạo mới người dùng", "user"),
-            ("user:edit", "Chỉnh sửa người dùng", "user"),
-            ("user:lock", "Khóa / Mở khóa người dùng", "user"),
-            ("user:reset_password", "Đặt lại mật khẩu người dùng", "user"),
-            ("requisition:view", "Xem yêu cầu tuyển dụng", "requisition"),
-            ("requisition:create", "Tạo yêu cầu tuyển dụng", "requisition"),
-            ("requisition:approve", "Phê duyệt yêu cầu tuyển dụng", "requisition"),
-            ("candidate:view", "Xem danh sách ứng viên", "candidate"),
-            ("candidate:evaluate", "Đánh giá ứng viên", "candidate"),
-            ("offer:create", "Tạo thư mời nhận việc (Offer)", "offer"),
-            ("offer:approve", "Duyệt thư mời nhận việc", "offer"),
-            ("master_data:manage", "Quản lý danh mục dùng chung", "master_data"),
-            ("audit:view", "Xem nhật ký hệ thống Audit Logs", "system"),
-        ]
-        for code, name, module in permissions_seed:
-            perm = Permission(code=code, name=name, module=module)
-            db.add(perm)
-        db.commit()
-
-        # Role permissions map for Admin, HR Manager, Recruiter
-        for code, _, _ in permissions_seed:
-            db.add(RolePermission(role_code="admin", permission_code=code, is_granted=True))
-            if "requisition" in code or "candidate" in code or "offer" in code or "user:view" in code:
-                db.add(RolePermission(role_code="hr_manager", permission_code=code, is_granted=True))
-        db.commit()
+        print(" -> Seeding RBAC Roles, Permissions & User Mappings...")
+        seed_rbac()
         print(" -> Seeded Default RBAC Permissions & Role Mappings")
 
         # 8. Seed Initial Audit Log

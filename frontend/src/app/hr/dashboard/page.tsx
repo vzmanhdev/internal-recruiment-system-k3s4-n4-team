@@ -8,6 +8,7 @@ import {
   CheckCircle2, AlertCircle
 } from 'lucide-react';
 import RecruitmentComboChart from '@/components/RecruitmentComboChart';
+import { apiRequest, ApiError } from '@/lib/api-client';
 
 
 interface DashboardData {
@@ -19,7 +20,7 @@ interface DashboardData {
     pending_offers: number;
     hired_count: number;
     remaining_headcount: number;
-    budget_usage_percent: number;
+    budget_usage_percent: number | null;
     conversion_rate: number;
   };
   application_pipeline: {
@@ -36,16 +37,17 @@ interface DashboardData {
     department: string;
     target_date: string;
     delay_days: number;
-    recruiter: string;
+    recruiter: string | null;
     status: string;
   }>;
   hr_action_items: Array<{
-    id: number;
+    id: number | string;
     type: string;
     title: string;
     priority: string;
     time: string;
   }>;
+  weekly_applications?: Array<{ week_start: string; applications: number; closed_positions: number }>;
   department_metrics: Array<{
     name: string;
     requisitions: number;
@@ -56,6 +58,7 @@ interface DashboardData {
 
 export default function HRDashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -65,94 +68,28 @@ export default function HRDashboardPage() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:8000/api/v1/analytics/overview');
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      } else {
-        // Fallback default enterprise data if backend is offline
-        setData(fallbackData);
-      }
+      setLoadError(null);
+      setData(await apiRequest<DashboardData>('/analytics/overview'));
     } catch (err) {
-      setData(fallbackData);
+      // Never substitute fabricated numbers: show the failure and keep the last real data (if any).
+      setLoadError(err instanceof ApiError ? err.message : 'Không tải được dữ liệu dashboard.');
     } finally {
       setLoading(false);
     }
   };
 
-  const fallbackData: DashboardData = {
+  const emptyData: DashboardData = {
     kpis: {
-      active_requisitions: 8,
-      pending_approvals: 3,
-      new_candidates_this_week: 24,
-      interviews_this_week: 12,
-      pending_offers: 5,
-      hired_count: 18,
-      remaining_headcount: 14,
-      budget_usage_percent: 68.5,
-      conversion_rate: 15.2,
+      active_requisitions: 0, pending_approvals: 0, new_candidates_this_week: 0, interviews_this_week: 0,
+      pending_offers: 0, hired_count: 0, remaining_headcount: 0, budget_usage_percent: null, conversion_rate: 0,
     },
-    application_pipeline: {
-      submitted: 24,
-      screening: 18,
-      interviewing: 12,
-      offered: 5,
-      hired: 18,
-      rejected: 9,
-    },
-    overdue_requisitions: [
-      {
-        id: "REQ-2026-004",
-        title: "Chuyên viên Senior DevOps / Cloud Architect",
-        department: "Khối Công Nghệ",
-        target_date: "30/09/2026",
-        delay_days: 5,
-        recruiter: "Nguyễn Văn Hùng",
-        status: "Quá SLA 5 ngày"
-      },
-      {
-        id: "REQ-2026-008",
-        title: "Trưởng nhóm Data Analyst & BI",
-        department: "Khối Dữ Liệu & Phân Tích",
-        target_date: "02/10/2026",
-        delay_days: 3,
-        recruiter: "Lê Thị Mai",
-        status: "Quá SLA 3 ngày"
-      }
-    ],
-    hr_action_items: [
-      {
-        id: 1,
-        type: "headcount_override",
-        title: "Cần xác nhận Ghi đè Headcount REQ-2026-001 (Phòng CNTT)",
-        priority: "Cao",
-        time: "2 giờ trước"
-      },
-      {
-        id: 2,
-        type: "offer_approval",
-        title: "Phê duyệt Offer cho ứng viên Đỗ Hoàng Long (Vượt band 12%)",
-        priority: "Vượt dải lương",
-        time: "Hôm nay, 10:30"
-      },
-      {
-        id: 3,
-        type: "job_review",
-        title: "Thẩm định tin tuyển dụng Chuyên viên Digital Marketing",
-        priority: "Trung bình",
-        time: "Hôm nay, 08:15"
-      }
-    ],
-    department_metrics: [
-      { name: "Công Nghệ Thông Tin", requisitions: 5, candidates: 38, hired: 8 },
-      { name: "Khối Dữ Liệu", requisitions: 3, candidates: 22, hired: 4 },
-      { name: "Marketing & Growth", requisitions: 2, candidates: 15, hired: 3 },
-      { name: "Tài Chính & Kế Toán", requisitions: 1, candidates: 8, hired: 2 },
-      { name: "Nhân Sự & Vận Hành", requisitions: 1, candidates: 6, hired: 1 }
-    ]
+    application_pipeline: { submitted: 0, screening: 0, interviewing: 0, offered: 0, hired: 0, rejected: 0 },
+    overdue_requisitions: [],
+    hr_action_items: [],
+    department_metrics: [],
   };
 
-  const kpis = data?.kpis || fallbackData.kpis;
+  const kpis = data?.kpis ?? emptyData.kpis;
 
   const getPriorityBadgeClass = (priority: string) => {
     switch (priority) {
@@ -167,6 +104,11 @@ export default function HRDashboardPage() {
 
   return (
     <div className="space-y-8">
+      {loadError && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold">
+          <AlertCircle className="w-4 h-4" /> {loadError}
+        </div>
+      )}
       {/* ========================================================================= */}
       {/* 1. TOP HEADER WITH PRIMARY GLOW & GHOST ACTIONS */}
       {/* ========================================================================= */}
@@ -178,7 +120,7 @@ export default function HRDashboardPage() {
             </h1>
             <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-[10px] font-extrabold px-3 py-1 rounded-full uppercase border border-emerald-200/80 shadow-xs">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live System Data
+              {loadError ? 'Dữ liệu chưa tải được' : 'Dữ liệu thời gian thực'}
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 font-medium">
@@ -309,7 +251,7 @@ export default function HRDashboardPage() {
           <div>
             <div className="text-3xl font-black text-slate-900 tracking-tight">{kpis.remaining_headcount}</div>
             <div className="text-[11px] text-slate-500 font-medium mt-1.5">
-              Đã dùng {kpis.budget_usage_percent}% ngân sách
+              {kpis.budget_usage_percent === null ? 'Chưa khai báo ngân sách headcount' : `Đã dùng ${kpis.budget_usage_percent}% ngân sách`}
             </div>
           </div>
         </div>
@@ -319,7 +261,7 @@ export default function HRDashboardPage() {
       {/* ========================================================================= */}
       {/* 3. RECRUITMENT VELOCITY COMBO CHART (COMPOSED CHART: BAR + LINE)          */}
       {/* ========================================================================= */}
-      <RecruitmentComboChart />
+      <RecruitmentComboChart weekly={data?.weekly_applications ?? []} />
 
       {/* ========================================================================= */}
       {/* 4. SLA BREACH ALERT (SOFT DANGER UI) & HR ACTION ITEMS (STACKED CARDS) */}
@@ -357,7 +299,7 @@ export default function HRDashboardPage() {
 
           {/* List of Overdue Requisitions */}
           <div className="space-y-3.5">
-            {(data?.overdue_requisitions || fallbackData.overdue_requisitions).map((item) => (
+            {(data?.overdue_requisitions ?? emptyData.overdue_requisitions).map((item) => (
               <div 
                 key={item.id} 
                 className="p-4 sm:p-5 rounded-2xl bg-rose-50/40 backdrop-blur-xs border border-rose-200/60 shadow-xs hover:border-rose-300 hover:shadow-md hover:shadow-rose-500/5 transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
@@ -411,7 +353,7 @@ export default function HRDashboardPage() {
 
             {/* Stacked Cards List */}
             <div className="space-y-3">
-              {(data?.hr_action_items || fallbackData.hr_action_items).map((action) => (
+              {(data?.hr_action_items ?? emptyData.hr_action_items).map((action) => (
                 <div 
                   key={action.id} 
                   className="group p-4 rounded-2xl border border-slate-200/70 bg-white hover:bg-slate-50/80 hover:border-blue-200/80 shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 space-y-2"
@@ -477,13 +419,20 @@ export default function HRDashboardPage() {
           </div>
 
           <div className="space-y-4 pt-1">
-            {[
-              { stage: "Nộp hồ sơ (Submitted)", count: data?.application_pipeline.submitted || 24, percent: "100%", color: "bg-blue-600" },
-              { stage: "Sàng lọc CV (Screening)", count: data?.application_pipeline.screening || 18, percent: "75%", color: "bg-indigo-600" },
-              { stage: "Phỏng vấn (Interviewing)", count: data?.application_pipeline.interviewing || 12, percent: "50%", color: "bg-purple-600" },
-              { stage: "Đề xuất Offer (Offered)", count: data?.application_pipeline.offered || 5, percent: "20.8%", color: "bg-amber-500" },
-              { stage: "Đã nhận việc (Hired)", count: data?.application_pipeline.hired || 18, percent: "75%", color: "bg-emerald-600" },
-            ].map((step, idx) => (
+            {(() => {
+              // Funnel built only from real pipeline counts; percentages are relative to all applications.
+              const p = data?.application_pipeline ?? emptyData.application_pipeline;
+              const total = Object.values(p).reduce((a, b) => a + b, 0);
+              const pct = (n: number) => (total ? `${Math.round((n / total) * 1000) / 10}%` : '0%');
+              return [
+                { stage: "Nộp hồ sơ (Submitted)", count: p.submitted, percent: pct(p.submitted), color: "bg-blue-600" },
+                { stage: "Sàng lọc CV (Screening)", count: p.screening, percent: pct(p.screening), color: "bg-indigo-600" },
+                { stage: "Phỏng vấn (Interviewing)", count: p.interviewing, percent: pct(p.interviewing), color: "bg-purple-600" },
+                { stage: "Đề xuất Offer (Offered)", count: p.offered, percent: pct(p.offered), color: "bg-amber-500" },
+                { stage: "Đã nhận việc (Hired)", count: p.hired, percent: pct(p.hired), color: "bg-emerald-600" },
+              ];
+            })()
+            .map((step, idx) => (
               <div key={idx} className="space-y-1.5 group">
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
                   <span className="group-hover:text-blue-600 transition-colors">{step.stage}</span>
@@ -531,7 +480,7 @@ export default function HRDashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {(data?.department_metrics || fallbackData.department_metrics).map((dept, idx) => (
+                {(data?.department_metrics ?? emptyData.department_metrics).map((dept, idx) => (
                   <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                     <td className="p-3.5 font-bold text-slate-900 flex items-center gap-2">
                       <Building2 className="w-3.5 h-3.5 text-slate-400" />

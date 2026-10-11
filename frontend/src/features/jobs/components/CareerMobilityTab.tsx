@@ -37,17 +37,17 @@ export function CareerMobilityTab({ onSelectJob }: CareerMobilityTabProps) {
   return (
     <div className="space-y-6">
       {/* AI Mobility Header Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="bg-gradient-to-br from-white via-sky-50/70 to-blue-50/80 rounded-3xl p-6 sm:p-8 text-slate-900 shadow-lg shadow-blue-500/5 relative overflow-hidden border border-blue-100/90">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-400/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="relative z-10 max-w-2xl space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-bold uppercase tracking-wider">
-            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-blue-700 text-xs font-bold uppercase tracking-wider">
+            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
             <span>AI Career Mobility Assistant</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
             Lộ Trình Phát Triển & Gợi Ý Vị Trí Nội Bộ P-Fit
           </h2>
-          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-normal">
             Hệ thống phân tích Khung năng lực cá nhân và tự động đối chiếu với các Vị trí Tuyển dụng Nội bộ đang mở để gợi ý hướng chuyển đổi sự nghiệp tối ưu nhất cho bạn.
           </p>
         </div>
@@ -58,7 +58,7 @@ export function CareerMobilityTab({ onSelectJob }: CareerMobilityTabProps) {
         {careerPaths.map((path, idx) => (
           <div 
             key={idx} 
-            className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-5"
+            className="bg-white rounded-3xl border border-blue-100/90 hover:border-blue-300 p-6 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-5"
           >
             <div className="space-y-4">
               {/* Header Match Score */}

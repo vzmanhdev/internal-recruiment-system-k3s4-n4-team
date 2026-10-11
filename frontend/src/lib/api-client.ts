@@ -38,6 +38,15 @@ interface CustomRequestInit extends RequestInit {
 
 let refreshPromise: Promise<string | null> | null = null;
 
+function endLocalSession(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("user_info");
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login";
+  }
+}
+
 async function performTokenRefresh(): Promise<string | null> {
   if (refreshPromise) {
     return refreshPromise;
@@ -45,10 +54,18 @@ async function performTokenRefresh(): Promise<string | null> {
 
   refreshPromise = (async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      // The refresh token lives only in an HttpOnly cookie; it must be sent cross-origin.
+      const callRefresh = () => fetch(`${API_BASE_URL}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
       });
+      let response = await callRefresh();
+      if (response.status === 409) {
+        // Another tab is rotating the same session right now: wait briefly and retry once.
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        response = await callRefresh();
+      }
 
       if (!response.ok) {
         throw new Error("Refresh token expired");
@@ -63,11 +80,7 @@ async function performTokenRefresh(): Promise<string | null> {
       }
       return null;
     } catch {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("user_info");
-        window.location.href = "/login";
-      }
+      endLocalSession();
       return null;
     } finally {
       refreshPromise = null;
@@ -96,6 +109,7 @@ export async function apiRequest<T>(path: string, init?: CustomRequestInit): Pro
     const response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers,
+      credentials: "include",
       signal: controller.signal,
     });
 
@@ -108,10 +122,14 @@ export async function apiRequest<T>(path: string, init?: CustomRequestInit): Pro
 
       try {
         const errorData = await response.json();
+        if (errorData.error && typeof errorData.error === "object") {
+          errorCode = errorData.error.code;
+          if (errorData.error.message) errorDetail = errorData.error.message;
+        }
         if (errorData.detail) {
           if (typeof errorData.detail === "object") {
-            errorDetail = errorData.detail.message || JSON.stringify(errorData.detail);
-            errorCode = errorData.detail.code;
+            errorDetail = errorData.detail.message || errorDetail;
+            errorCode = errorData.detail.code || errorCode;
           } else {
             errorDetail = errorData.detail;
           }
@@ -123,29 +141,23 @@ export async function apiRequest<T>(path: string, init?: CustomRequestInit): Pro
         errorDetail = HTTP_STATUS_MESSAGES_VI[response.status] ?? errorDetail;
       }
 
-      // Handle 401 Unauthorized (Expired or Revoked Token)
-      if (response.status === 401 && !init?._retry && path !== "/auth/login" && path !== "/auth/refresh") {
-        if (errorCode === "TOKEN_EXPIRED" || errorDetail.includes("hết hạn")) {
+      // 401 = authentication/session failure. An expired access token is refreshed once;
+      // any other 401 (revoked, idle, locked, security version changed) ends the local session.
+      // 403 (permission denied) never logs the user out.
+      const isAuthEndpoint = path.startsWith("/auth/login") || path.startsWith("/auth/refresh") || path.startsWith("/auth/password-reset");
+      if (response.status === 401 && !isAuthEndpoint) {
+        if (!init?._retry && errorCode === "TOKEN_EXPIRED") {
           const newToken = await performTokenRefresh();
           if (newToken) {
             return apiRequest<T>(path, { ...init, _retry: true });
           }
-        } else if (["SESSION_REVOKED", "SESSION_EXPIRED", "ACCOUNT_INACTIVE", "REFRESH_TOKEN_REUSED"].includes(errorCode || "")) {
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("access_token");
-            localStorage.removeItem("user_info");
-            window.location.href = "/login";
-          }
+        } else {
+          endLocalSession();
         }
       }
 
-      // Handle 423 Account Locked
-      if (response.status === 423) {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("access_token");
-          localStorage.removeItem("user_info");
-          window.location.href = "/login";
-        }
+      if (response.status === 423 && !isAuthEndpoint) {
+        endLocalSession();
       }
 
       throw new ApiError(response.status, errorDetail, fieldErrors);

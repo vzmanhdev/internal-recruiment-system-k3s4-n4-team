@@ -8,56 +8,122 @@ from app.core.config import settings
 
 logger = logging.getLogger("email_service")
 
-def _send_smtp_email_worker(to_email: str, subject: str, html_body: str) -> bool:
-    """Synchronous worker that performs the actual SMTP network handshake."""
-    if not settings.SMTP_USERNAME or not settings.SMTP_APP_PASSWORD:
-        logger.warning(
-            f"[SMTP DEV MODE] SMTP credentials not configured in .env. Email to {to_email} skipped. Subject: {subject}"
-        )
-        return True
+SENSITIVE_BODY_PLACEHOLDER = "[Nội dung bảo mật (OTP/mật khẩu) — không lưu vào nhật ký]"
 
+
+def smtp_configured() -> bool:
+    return bool(settings.SMTP_HOST and settings.SMTP_USERNAME and settings.SMTP_APP_PASSWORD)
+
+
+def _dev_console(message: str) -> None:
+    """Echo a message that may contain a secret ONLY on a development machine without SMTP.
+
+    Production/test logs never contain OTPs or passwords.
+    """
+    if settings.APP_ENV.strip().lower() == "development" and not smtp_configured():
+        print(f"[DEV ONLY - SMTP not configured] {message}", flush=True)
+
+
+def _mask(email: str) -> str:
+    name, _, domain = (email or "").partition("@")
+    return f"{name[:2]}***@{domain}" if domain else "***"
+
+
+def _smtp_send(to_email: str, subject: str, html_body: str) -> None:
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_USERNAME}>"
+    msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL or settings.SMTP_USERNAME}>"
     msg["To"] = to_email
-
     msg.attach(MIMEText(html_body, "html", "utf-8"))
-
+    if settings.SMTP_STARTTLS:
+        server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=8)
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+    else:
+        server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=8)
     try:
-        if settings.SMTP_STARTTLS:
-            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=8)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-        else:
-            server = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=8)
-
         server.login(settings.SMTP_USERNAME, settings.SMTP_APP_PASSWORD)
-        server.sendmail(settings.SMTP_USERNAME, [to_email], msg.as_string())
-        server.quit()
-        logger.info(f"Successfully sent email to {to_email} | Subject: {subject}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to send SMTP email to {to_email}: {str(e)}")
-        return False
+        server.sendmail(settings.SMTP_FROM_EMAIL or settings.SMTP_USERNAME, [to_email], msg.as_string())
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
 
-def send_smtp_email(to_email: str, subject: str, html_body: str) -> bool:
-    """Dispatches SMTP email in a background daemon thread so HTTP response never hangs."""
-    thread = threading.Thread(
-        target=_send_smtp_email_worker,
-        args=(to_email, subject, html_body),
-        daemon=True
-    )
-    thread.start()
-    return True
+
+def deliver_email_log(log_id: int, html_body: str, db=None) -> str:
+    """Attempt delivery for an EmailLog row and record the REAL outcome: sent / failed / skipped."""
+    from datetime import datetime
+    from app.db.session import SessionLocal
+    from app.models.email_automation import EmailLog
+
+    owns_session = db is None
+    db = db or SessionLocal()
+    try:
+        log = db.query(EmailLog).filter(EmailLog.id == log_id).first()
+        if not log:
+            return "missing"
+        log.status = "processing"
+        db.commit()
+        if not smtp_configured():
+            log.status = "skipped"
+            log.error_message = "SMTP chưa được cấu hình — email KHÔNG được gửi."
+            logger.warning("email_log=%s to=%s skipped: SMTP not configured", log.id, _mask(log.recipient_email))
+        else:
+            try:
+                _smtp_send(log.recipient_email, log.subject, html_body)
+                log.status = "sent"
+                log.error_message = None
+                log.sent_at = datetime.utcnow()
+                logger.info("email_log=%s to=%s sent", log.id, _mask(log.recipient_email))
+            except Exception as exc:  # network/auth/SMTP errors
+                log.status = "failed"
+                log.error_message = f"{type(exc).__name__}: không gửi được email qua SMTP."
+                logger.error("email_log=%s to=%s failed: %s", log.id, _mask(log.recipient_email), type(exc).__name__)
+        db.commit()
+        return log.status
+    finally:
+        if owns_session:
+            db.close()
+
+
+def send_smtp_email(to_email: str, subject: str, html_body: str, template_code: Optional[str] = None,
+                    recipient_name: Optional[str] = None, sensitive: bool = False) -> Optional[int]:
+    """Queue an email: persist an EmailLog (status=queued) then deliver it on a background thread.
+
+    Returns the EmailLog id. The returned value only means "queued", never "sent".
+    """
+    from app.db.session import SessionLocal
+    from app.models.email_automation import EmailLog
+
+    db = SessionLocal()
+    try:
+        log = EmailLog(
+            template_code=template_code,
+            recipient_name=recipient_name or to_email,
+            recipient_email=to_email,
+            subject=subject,
+            body_html=SENSITIVE_BODY_PLACEHOLDER if sensitive else html_body,
+            status="queued",
+        )
+        db.add(log)
+        db.commit()
+        log_id = log.id
+    except Exception:
+        db.rollback()
+        logger.exception("Could not persist email log for %s", _mask(to_email))
+        return None
+    finally:
+        db.close()
+
+    threading.Thread(target=deliver_email_log, args=(log_id, html_body), daemon=True).start()
+    return log_id
 
 def send_otp_email(to_email: str, otp_code: str, expires_in_minutes: int = 10) -> bool:
     """Sends 6-digit OTP verification code email non-blockingly and logs to terminal."""
     log_msg = f"[DEV OTP CODE] EMAIL: {to_email} | OTP: {otp_code}"
-    print(f"\n==================================================", flush=True)
-    print(log_msg, flush=True)
-    print(f"==================================================\n", flush=True)
-    logger.info(log_msg)
+    _dev_console(log_msg)
 
     subject = f"[{otp_code}] Ma xac thuc dat lai mat khau - TUYEN DUNG NOI BO"
     html_content = f"""
@@ -97,15 +163,12 @@ def send_otp_email(to_email: str, otp_code: str, expires_in_minutes: int = 10) -
     </body>
     </html>
     """
-    return send_smtp_email(to_email, subject, html_content)
+    return send_smtp_email(to_email, subject, html_content, template_code="PASSWORD_RESET_OTP", sensitive=True)
 
 def send_new_password_email(to_email: str, new_password: str) -> bool:
     """Sends new temporary password email non-blockingly and logs to terminal."""
     log_msg = f"[DEV NEW PASSWORD] EMAIL: {to_email} | PASS: {new_password}"
-    print(f"\n==================================================", flush=True)
-    print(log_msg, flush=True)
-    print(f"==================================================\n", flush=True)
-    logger.info(log_msg)
+    _dev_console(log_msg)
 
     subject = "Dat lai mat khau thanh cong - TUYEN DUNG NOI BO"
     html_content = f"""
@@ -144,16 +207,13 @@ def send_new_password_email(to_email: str, new_password: str) -> bool:
     </body>
     </html>
     """
-    return send_smtp_email(to_email, subject, html_content)
+    return send_smtp_email(to_email, subject, html_content, template_code="PASSWORD_RESET_NEW_PASSWORD", sensitive=True)
 
 
 def send_password_changed_notification(to_email: str) -> bool:
     """Sends a security alert email when a user's password has been updated."""
     log_msg = f"[SECURITY ALERT EMAIL] Password changed for: {to_email}"
-    print(f"\n==================================================", flush=True)
-    print(log_msg, flush=True)
-    print(f"==================================================\n", flush=True)
-    logger.info(log_msg)
+    _dev_console(log_msg)
 
     subject = "Canh bao bao mat: Mat khau tai khoan da duoc thay doi - TUYEN DUNG NOI BO"
     html_content = f"""
@@ -190,10 +250,7 @@ def send_password_changed_notification(to_email: str) -> bool:
 def send_account_created_email(to_email: str, full_name: str, initial_password: str, roles_str: str) -> bool:
     """Sends welcome email with initial credentials to newly created user non-blockingly."""
     log_msg = f"[NEW USER ACCOUNT CREATED EMAIL] EMAIL: {to_email} | FULL_NAME: {full_name} | PASS: {initial_password}"
-    print(f"\n==================================================", flush=True)
-    print(log_msg, flush=True)
-    print(f"==================================================\n", flush=True)
-    logger.info(log_msg)
+    _dev_console(log_msg)
 
     subject = "Thong bao khoi tao tai khoan nguoi dung - TUYEN DUNG NOI BO"
     html_content = f"""
@@ -243,7 +300,7 @@ def send_account_created_email(to_email: str, full_name: str, initial_password: 
     </body>
     </html>
     """
-    return send_smtp_email(to_email, subject, html_content)
+    return send_smtp_email(to_email, subject, html_content, template_code="ACCOUNT_CREATED", recipient_name=full_name, sensitive=True)
 
 
 def send_account_status_email(to_email: str, full_name: str, is_locked: bool, reason: Optional[str] = None) -> bool:
@@ -251,10 +308,7 @@ def send_account_status_email(to_email: str, full_name: str, is_locked: bool, re
     action_text = "Đã bị khóa" if is_locked else "Đã được mở khóa"
     subject_status = "KHOA TAI KHOAN" if is_locked else "MO KHOA TAI KHOAN"
     log_msg = f"[ACCOUNT STATUS EMAIL] EMAIL: {to_email} | LOCKED: {is_locked} | REASON: {reason}"
-    print(f"\n==================================================", flush=True)
-    print(log_msg, flush=True)
-    print(f"==================================================\n", flush=True)
-    logger.info(log_msg)
+    _dev_console(log_msg)
 
     subject = f"Canh bao bao mat: Tai khoan {subject_status} - TUYEN DUNG NOI BO"
     status_badge_bg = "#fef2f2" if is_locked else "#f0fdf4"
@@ -306,10 +360,7 @@ def send_account_status_email(to_email: str, full_name: str, is_locked: bool, re
 def send_roles_updated_email(to_email: str, full_name: str, new_roles_str: str) -> bool:
     """Sends email notification when a user's assigned roles/permissions are updated."""
     log_msg = f"[ROLES UPDATED EMAIL] EMAIL: {to_email} | ROLES: {new_roles_str}"
-    print(f"\n==================================================", flush=True)
-    print(log_msg, flush=True)
-    print(f"==================================================\n", flush=True)
-    logger.info(log_msg)
+    _dev_console(log_msg)
 
     subject = "Cap nhat vai tro va quuyen han truy cap - TUYEN DUNG NOI BO"
     html_content = f"""
@@ -355,10 +406,7 @@ def send_roles_updated_email(to_email: str, full_name: str, new_roles_str: str) 
 def send_account_locked_temp_email(to_email: str, full_name: str, lock_minutes: int = 15) -> bool:
     """Sends email notification when account is temporarily locked due to 5 failed login attempts."""
     log_msg = f"[ACCOUNT TEMP LOCKED EMAIL] EMAIL: {to_email} | LOCK_MINUTES: {lock_minutes}"
-    print(f"\n==================================================", flush=True)
-    print(log_msg, flush=True)
-    print(f"==================================================\n", flush=True)
-    logger.info(log_msg)
+    _dev_console(log_msg)
 
     subject = f"Canh bao bao mat: Tai khoan bi tam khoa {lock_minutes} phut - TUYEN DUNG NOI BO"
     html_content = f"""

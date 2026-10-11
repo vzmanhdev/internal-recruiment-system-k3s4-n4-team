@@ -67,6 +67,13 @@ export const authService = {
     if (res.access_token) {
       localStorage.setItem("access_token", res.access_token);
       localStorage.setItem("user_info", JSON.stringify(res.user));
+      localStorage.removeItem("user_avatar_url");
+      if (res.user.avatar_url) {
+        localStorage.setItem(`user_avatar_url_${res.user.id}`, res.user.avatar_url);
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("avatar_updated"));
+      }
     }
     return res;
   },
@@ -83,6 +90,13 @@ export const authService = {
     if (res.access_token) {
       localStorage.setItem("access_token", res.access_token);
       localStorage.setItem("user_info", JSON.stringify(res.user));
+      localStorage.removeItem("user_avatar_url");
+      if (res.user.avatar_url) {
+        localStorage.setItem(`user_avatar_url_${res.user.id}`, res.user.avatar_url);
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("avatar_updated"));
+      }
     }
     return res;
   },
@@ -147,8 +161,17 @@ export const authService = {
       const currentUser = this.getUserInfo() || ({} as any);
       const updatedUser = { ...currentUser, ...res };
       localStorage.setItem("user_info", JSON.stringify(updatedUser));
+      const targetId = res.id || updatedUser.id;
       if (res.avatar_url) {
-        localStorage.setItem("user_avatar_url", res.avatar_url);
+        if (targetId) {
+          localStorage.setItem(`user_avatar_url_${targetId}`, res.avatar_url);
+        }
+      } else if (targetId) {
+        localStorage.removeItem(`user_avatar_url_${targetId}`);
+      }
+      localStorage.removeItem("user_avatar_url");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("avatar_updated"));
       }
     }
     return res;
@@ -206,10 +229,38 @@ export const authService = {
     return null;
   },
 
+  getUserAvatar(userId?: number): string | null {
+    if (typeof window !== "undefined") {
+      const user = this.getUserInfo();
+      const targetId = userId || user?.id;
+      if (targetId) {
+        const cached = localStorage.getItem(`user_avatar_url_${targetId}`);
+        if (cached) return cached;
+      }
+      if (user?.avatar_url) {
+        return user.avatar_url;
+      }
+    }
+    return null;
+  },
+
   logout() {
     if (typeof window !== "undefined") {
+      const token = localStorage.getItem("access_token");
       localStorage.removeItem("access_token");
       localStorage.removeItem("user_info");
+      localStorage.removeItem("user_avatar_url");
+      window.dispatchEvent(new Event("avatar_updated"));
+      if (token) {
+        // Revoke the server-side session and clear the HttpOnly refresh cookie (best effort, non-blocking).
+        const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+        fetch(`${base}/auth/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+          keepalive: true,
+        }).catch(() => undefined);
+      }
     }
   }
 };

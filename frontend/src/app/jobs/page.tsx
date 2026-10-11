@@ -9,10 +9,12 @@ import {
 } from "lucide-react";
 import { jobService, JobPostingItem } from "@/services/job.service";
 import type { Job } from "@/types/job";
+import { toJob } from "@/features/jobs/mapPosting";
 import { JobDetailModal } from "@/features/jobs/components/JobDetailModal";
 import { ApplyJobModal } from "@/features/jobs/components/ApplyJobModal";
 import { MyApplicationsTab } from "@/features/jobs/components/MyApplicationsTab";
 import { CareerMobilityTab } from "@/features/jobs/components/CareerMobilityTab";
+import { apiRequest } from "@/lib/api-client";
 
 export default function JobsPage() {
   const [activeTab, setActiveTab] = useState<"all" | "applications" | "saved" | "mobility">("all");
@@ -29,6 +31,7 @@ export default function JobsPage() {
   const [selectedJobForDetail, setSelectedJobForDetail] = useState<Job | null>(null);
   const [selectedJobForApply, setSelectedJobForApply] = useState<Job | null>(null);
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
+  const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
 
   // User session info
   const [userProfile, setUserProfile] = useState({
@@ -69,6 +72,23 @@ export default function JobsPage() {
       // Load saved jobs
       const saved = localStorage.getItem("saved_internal_jobs");
       if (saved) setSavedJobIds(JSON.parse(saved));
+
+      // Fetch active user applications to mark applied jobs
+      const token = localStorage.getItem("token") || localStorage.getItem("access_token");
+      if (token) {
+        apiRequest<any[]>("/applications?mine=true")
+          .then((apps) => {
+            if (isMounted && Array.isArray(apps)) {
+              const activeApplied = apps
+                .filter((app) => !["rejected", "withdrawn"].includes(app.status))
+                .map((app) => String(app.job_posting_id));
+              setAppliedJobIds(new Set(activeApplied));
+            }
+          })
+          .catch((err) => {
+            console.warn("Could not fetch user applications:", err);
+          });
+      }
     }
 
     return () => {
@@ -77,24 +97,7 @@ export default function JobsPage() {
   }, []);
 
   const formattedJobs: Job[] = useMemo(() => {
-    return dbJobs.map((j) => ({
-      id: String(j.id),
-      title: j.title,
-      department: j.department_name || j.department || "Khối Công Nghệ",
-      location: j.location || "Hà Nội",
-      employmentType: j.type || "Toàn thời gian",
-      openings: "Tuyển 2 chỉ tiêu",
-      status: j.status === "published" ? "open" : j.status === "paused" ? "closingSoon" : "closed",
-      description: j.description || "Tham gia phát triển các hệ thống core của tập đoàn, tối ưu hóa quy trình nghiệp vụ.",
-      skills: j.requirements ? j.requirements.split(",").map((s) => s.trim()) : ["Tuyển dụng nội bộ", "Chuyên môn cao"],
-      deadline: j.deadline || "31/12/2026",
-      responsibilities: [
-        "Chịu trách nhiệm trực tiếp công việc chuyên môn được phân công",
-        "Phối hợp cùng Trưởng bộ phận tối ưu hóa tiến độ và SLA",
-        "Báo cáo kết quả định kỳ tới Quản lý dự án"
-      ],
-      requirements: j.requirements ? [j.requirements] : ["Năng lực phù hợp vị trí", "Kinh nghiệm > 1 năm"],
-    }));
+    return dbJobs.map(toJob);
   }, [dbJobs]);
 
   const filteredJobs = useMemo(() => {
@@ -135,38 +138,39 @@ export default function JobsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fafbfc] text-slate-800 font-sans flex flex-col antialiased">
+    <div className="min-h-screen bg-[#f8fbff] text-slate-800 font-sans flex flex-col antialiased">
       <Header />
 
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
         {/* HERO BANNER SECTION */}
-        <div className="relative bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 rounded-[32px] p-6 sm:p-10 text-white shadow-2xl overflow-hidden border border-blue-900/50">
-          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="relative bg-gradient-to-br from-white via-sky-50/70 to-blue-50/80 rounded-[32px] p-6 sm:p-10 text-slate-900 shadow-xl shadow-blue-500/5 overflow-hidden border border-blue-100/90">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-blue-400/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute -bottom-10 -left-10 w-80 h-80 bg-sky-300/15 rounded-full blur-3xl pointer-events-none"></div>
 
           <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
             <div className="space-y-3 max-w-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-bold uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-blue-700 text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
                 <span>Internal Mobility Career Hub</span>
               </div>
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight text-slate-900">
                 Cổng Tuyển Dụng & Phát Triển Sự Nghiệp Nội Bộ
               </h1>
-              <p className="text-sm sm:text-base text-slate-300 font-normal leading-relaxed">
+              <p className="text-sm sm:text-base text-slate-600 font-normal leading-relaxed">
                 Khám phá cơ hội điều chuyển vị trí, nâng cao bậc dải lương và thử sức ở các dự án trọng điểm toàn tập đoàn dành riêng cho cán bộ nhân viên.
               </p>
             </div>
 
             {/* Quick Employee Card */}
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/15 shrink-0 flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center font-extrabold text-base shadow-md">
+            <div className="bg-white/90 backdrop-blur-md rounded-2xl p-4 border border-blue-100/90 shadow-sm shadow-blue-500/5 shrink-0 flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-500 text-white flex items-center justify-center font-extrabold text-base shadow-md shadow-blue-500/20">
                 {userProfile.name ? userProfile.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() : "NV"}
               </div>
               <div>
-                <div className="font-bold text-sm text-white">{userProfile.name}</div>
-                <div className="text-xs text-blue-200">{userProfile.department} • {userProfile.code}</div>
-                <span className="inline-block mt-1 text-[10px] font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-400/30">
+                <div className="font-bold text-sm text-slate-900">{userProfile.name}</div>
+                <div className="text-xs text-slate-500">{userProfile.department} • {userProfile.code}</div>
+                <span className="inline-block mt-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/80">
                   Tài khoản Nhân viên Chính thức
                 </span>
               </div>
@@ -174,34 +178,34 @@ export default function JobsPage() {
           </div>
 
           {/* PORTAL STATS QUICK COUNTER */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-8 pt-6 border-t border-white/10">
-            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-              <span className="text-[11px] text-slate-400 font-medium block">Vị trí tuyển mở</span>
-              <span className="text-xl font-extrabold text-white">{formattedJobs.length} công việc</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-8 pt-6 border-t border-blue-100/80">
+            <div className="bg-white/95 rounded-2xl p-3.5 border border-blue-100/90 shadow-xs">
+              <span className="text-[11px] text-slate-500 font-medium block">Vị trí tuyển mở</span>
+              <span className="text-xl font-extrabold text-blue-600">{formattedJobs.length} công việc</span>
             </div>
-            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-              <span className="text-[11px] text-slate-400 font-medium block">Hạn phỏng vấn SLA</span>
-              <span className="text-xl font-extrabold text-emerald-400">Rút gọn 3 ngày</span>
+            <div className="bg-white/95 rounded-2xl p-3.5 border border-blue-100/90 shadow-xs">
+              <span className="text-[11px] text-slate-500 font-medium block">Hạn phỏng vấn SLA</span>
+              <span className="text-xl font-extrabold text-emerald-600">Rút gọn 3 ngày</span>
             </div>
-            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-              <span className="text-[11px] text-slate-400 font-medium block">Vị trí đã lưu</span>
-              <span className="text-xl font-extrabold text-amber-400">{savedJobIds.length} vị trí</span>
+            <div className="bg-white/95 rounded-2xl p-3.5 border border-blue-100/90 shadow-xs">
+              <span className="text-[11px] text-slate-500 font-medium block">Vị trí đã lưu</span>
+              <span className="text-xl font-extrabold text-amber-600">{savedJobIds.length} vị trí</span>
             </div>
-            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-              <span className="text-[11px] text-slate-400 font-medium block">Quyền lợi thâm niên</span>
-              <span className="text-xl font-extrabold text-purple-400">100% Bảo lưu</span>
+            <div className="bg-white/95 rounded-2xl p-3.5 border border-blue-100/90 shadow-xs">
+              <span className="text-[11px] text-slate-500 font-medium block">Quyền lợi thâm niên</span>
+              <span className="text-xl font-extrabold text-indigo-600">100% Bảo lưu</span>
             </div>
           </div>
         </div>
 
         {/* NAVIGATION TABS */}
-        <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1 scrollbar-none">
+        <div className="flex items-center gap-2 border-b border-blue-100 overflow-x-auto pb-1 scrollbar-none">
           <button
             onClick={() => setActiveTab("all")}
             className={`px-5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
               activeTab === "all"
                 ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"
             }`}
           >
             <Briefcase className="w-4 h-4" />
@@ -213,7 +217,7 @@ export default function JobsPage() {
             className={`px-5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
               activeTab === "applications"
                 ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"
             }`}
           >
             <FileText className="w-4 h-4" />
@@ -225,7 +229,7 @@ export default function JobsPage() {
             className={`px-5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
               activeTab === "saved"
                 ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"
             }`}
           >
             <Star className="w-4 h-4" />
@@ -237,10 +241,10 @@ export default function JobsPage() {
             className={`px-5 py-3 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
               activeTab === "mobility"
                 ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"
             }`}
           >
-            <Compass className="w-4 h-4 text-amber-400" />
+            <Compass className="w-4 h-4 text-blue-500" />
             <span>Lộ trình phát triển & Gợi ý AI</span>
           </button>
         </div>
@@ -249,7 +253,7 @@ export default function JobsPage() {
         {activeTab === "all" && (
           <div className="space-y-6">
             {/* SEARCH AND FILTERS BAR */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white rounded-2xl border border-blue-100 p-4 shadow-sm shadow-blue-500/5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* Keyword Search */}
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
@@ -258,7 +262,7 @@ export default function JobsPage() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Tìm theo tên công việc, kỹ năng..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 bg-blue-50/30 border border-blue-100 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-400/20 focus:border-blue-500 outline-none transition-all"
                 />
               </div>
 
@@ -267,7 +271,7 @@ export default function JobsPage() {
                 <select
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium"
+                  className="w-full px-3 py-2.5 bg-blue-50/30 border border-blue-100 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-400/20 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium"
                 >
                   <option value="">Tất cả phòng ban</option>
                   {departmentsList.map((dept) => (
@@ -281,7 +285,7 @@ export default function JobsPage() {
                 <select
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium"
+                  className="w-full px-3 py-2.5 bg-blue-50/30 border border-blue-100 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-400/20 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium"
                 >
                   <option value="">Tất cả địa điểm</option>
                   {locationsList.map((loc) => (
@@ -295,7 +299,7 @@ export default function JobsPage() {
                 <select
                   value={employmentType}
                   onChange={(e) => setEmploymentType(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium"
+                  className="w-full px-3 py-2.5 bg-blue-50/30 border border-blue-100 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-400/20 focus:border-blue-500 outline-none transition-all text-slate-700 font-medium"
                 >
                   <option value="">Hình thức làm việc</option>
                   <option value="Toàn thời gian">Toàn thời gian</option>
@@ -318,7 +322,7 @@ export default function JobsPage() {
                   return (
                     <div
                       key={job.id}
-                      className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all flex flex-col justify-between space-y-4 group"
+                      className="bg-white rounded-3xl border border-blue-100/90 hover:border-blue-300 p-6 shadow-xs hover:shadow-xl hover:shadow-blue-500/10 hover:-translate-y-1 transition-all flex flex-col justify-between space-y-4 group"
                     >
                       <div className="space-y-3">
                         {/* Top Badges */}
@@ -357,7 +361,7 @@ export default function JobsPage() {
                           {job.skills.slice(0, 3).map((skill, sIdx) => (
                             <span
                               key={sIdx}
-                              className="px-2.5 py-0.5 bg-slate-100 text-slate-600 text-[11px] font-semibold rounded-lg"
+                              className="px-2.5 py-0.5 bg-blue-50/60 text-blue-700 text-[11px] font-semibold rounded-lg border border-blue-100/60"
                             >
                               {skill}
                             </span>
@@ -381,17 +385,28 @@ export default function JobsPage() {
                         <div className="flex items-center gap-2 pt-1">
                           <button
                             onClick={() => setSelectedJobForDetail(job)}
-                            className="flex-1 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all text-center cursor-pointer"
+                            className="flex-1 py-2.5 px-3 bg-blue-50/70 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all text-center cursor-pointer"
                           >
                             Xem chi tiết
                           </button>
-                          <button
-                            onClick={() => setSelectedJobForApply(job)}
-                            className="flex-1 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <Send className="w-3.5 h-3.5" />
-                            <span>Ứng tuyển</span>
-                          </button>
+                          {appliedJobIds.has(String(job.id)) ? (
+                            <button
+                              onClick={() => setActiveTab("applications")}
+                              className="flex-1 py-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Đã ứng tuyển</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setSelectedJobForApply(job)}
+                              disabled={job.isExpired}
+                              className="flex-1 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:bg-slate-300 disabled:shadow-none disabled:cursor-not-allowed"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>{job.isExpired ? "Đã hết hạn" : "Ứng tuyển"}</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -419,7 +434,7 @@ export default function JobsPage() {
                 {savedJobsList.map((job) => (
                   <div
                     key={job.id}
-                    className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm hover:shadow-md transition-all space-y-4"
+                    className="bg-white rounded-3xl border border-blue-100/90 hover:border-blue-300 p-6 shadow-xs hover:shadow-md transition-all space-y-4"
                   >
                     <div className="flex items-center justify-between">
                       <span className="px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-200">
@@ -441,16 +456,27 @@ export default function JobsPage() {
                     <div className="pt-3 border-t border-slate-100 flex gap-2">
                       <button
                         onClick={() => setSelectedJobForDetail(job)}
-                        className="flex-1 py-2 px-3 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold"
+                        className="flex-1 py-2 px-3 bg-blue-50/70 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                       >
                         Chi tiết
                       </button>
-                      <button
-                        onClick={() => setSelectedJobForApply(job)}
-                        className="flex-1 py-2 px-3 bg-blue-600 text-white rounded-xl text-xs font-bold"
-                      >
-                        Ứng tuyển
-                      </button>
+                      {appliedJobIds.has(String(job.id)) ? (
+                        <button
+                          onClick={() => setActiveTab("applications")}
+                          className="flex-1 py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Đã ứng tuyển</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setSelectedJobForApply(job)}
+                          disabled={job.isExpired}
+                          className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold disabled:bg-slate-300 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          {job.isExpired ? "Đã hết hạn" : "Ứng tuyển"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -486,13 +512,19 @@ export default function JobsPage() {
         onApply={(job) => setSelectedJobForApply(job)}
         isSaved={selectedJobForDetail ? savedJobIds.includes(selectedJobForDetail.id) : false}
         onToggleSave={toggleSaveJob}
+        isApplied={selectedJobForDetail ? appliedJobIds.has(String(selectedJobForDetail.id)) : false}
       />
 
       <ApplyJobModal
         job={selectedJobForApply}
         isOpen={!!selectedJobForApply}
         onClose={() => setSelectedJobForApply(null)}
+        isAlreadyApplied={selectedJobForApply ? appliedJobIds.has(String(selectedJobForApply.id)) : false}
+        onAlreadyApplied={(jobId) => setAppliedJobIds((prev) => new Set([...prev, jobId]))}
         onSuccess={(appData) => {
+          if (selectedJobForApply) {
+            setAppliedJobIds((prev) => new Set([...prev, String(selectedJobForApply.id)]));
+          }
           alert(`Đã nộp thành công hồ sơ ứng tuyển vị trí ${selectedJobForApply?.title}!`);
           setActiveTab("applications");
         }}

@@ -74,13 +74,6 @@ export default function EmployeeProfilePage() {
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
-    // 1. Check LocalStorage for saved avatar
-    const savedAvatar = localStorage.getItem("user_avatar_url");
-    if (savedAvatar) {
-      setAvatarUrl(savedAvatar);
-    }
-
-    // 2. Fetch current logged in user from auth service
     const fetchUser = async () => {
       try {
         const u = await authService.getCurrentUser();
@@ -96,11 +89,23 @@ export default function EmployeeProfilePage() {
             job_title: u.job_title || prev.job_title || "Nhân viên",
             department: u.department || prev.department || "Nhân sự",
           }));
-          if (u.avatar_url && !savedAvatar) {
-            setAvatarUrl(u.avatar_url);
-          }
+          const savedAvatar = authService.getUserAvatar(u.id);
+          setAvatarUrl(savedAvatar || u.avatar_url || null);
         }
-      } catch (err) { }
+      } catch (err) {
+        const local = authService.getUserInfo();
+        if (local) {
+          setProfile((prev) => ({
+            ...prev,
+            full_name: local.full_name || prev.full_name,
+            email: local.email || prev.email,
+            phone: local.phone || prev.phone,
+            employee_code: local.employee_code || prev.employee_code,
+          }));
+          const savedAvatar = authService.getUserAvatar(local.id);
+          setAvatarUrl(savedAvatar || local.avatar_url || null);
+        }
+      }
     };
     fetchUser();
   }, []);
@@ -113,7 +118,11 @@ export default function EmployeeProfilePage() {
   // Save Avatar handler with live event dispatching and backend database persistence
   const handleSaveAvatar = async (newUrl: string) => {
     setAvatarUrl(newUrl);
-    localStorage.setItem("user_avatar_url", newUrl);
+    const u = authService.getUserInfo();
+    if (u?.id) {
+      localStorage.setItem(`user_avatar_url_${u.id}`, newUrl);
+    }
+    localStorage.removeItem("user_avatar_url");
     window.dispatchEvent(new Event("avatar_updated"));
     try {
       await authService.updateProfile({ avatar_url: newUrl });
@@ -371,7 +380,7 @@ export default function EmployeeProfilePage() {
                 </button>
 
                 <button
-                  onClick={() => setIsAvatarModalOpen(true)}
+                  onClick={() => setActiveTab("avatar")}
                   className={`pb-3 text-xs font-extrabold transition-all border-b-2 flex items-center gap-2 cursor-pointer ${activeTab === "avatar"
                     ? "border-[#4285F4] text-[#4285F4]"
                     : "border-transparent text-slate-500 hover:text-slate-800"
@@ -623,6 +632,57 @@ export default function EmployeeProfilePage() {
                     </button>
                   </div>
                 </form>
+              )}
+
+              {/* TAB 3: ẢNH ĐẠI DIỆN */}
+              {activeTab === "avatar" && (
+                <div className="space-y-6 text-xs">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">Quản Lý Ảnh Đại Diện</h3>
+                    <p className="text-[11px] text-slate-400">Xem trước và thay đổi ảnh đại diện cá nhân</p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-slate-50 rounded-2xl border border-gray-100">
+                    <div className="relative">
+                      {avatarUrl ? (
+                        <img
+                          src={avatarUrl}
+                          alt={profile.full_name}
+                          className="w-28 h-28 rounded-full object-cover border-4 border-white shadow-lg"
+                        />
+                      ) : (
+                        <div className="w-28 h-28 rounded-full bg-gradient-to-br from-[#4285F4] to-blue-600 text-white font-black text-4xl flex items-center justify-center border-4 border-white shadow-lg">
+                          {profile.full_name.charAt(0)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-3 text-center sm:text-left">
+                      <div>
+                        <div className="font-extrabold text-sm text-slate-800">{profile.full_name}</div>
+                        <div className="text-[11px] text-slate-400 font-medium">Hỗ trợ định dạng: JPG, PNG, WEBP (Tối đa 2MB)</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                        <button
+                          type="button"
+                          onClick={() => setIsAvatarModalOpen(true)}
+                          className="px-4 py-2 rounded-xl bg-[#4285F4] text-white hover:bg-blue-600 font-bold text-xs shadow-md shadow-blue-500/20 transition-all flex items-center gap-2 cursor-pointer"
+                        >
+                          <Camera className="w-4 h-4" />
+                          <span>Thay đổi ảnh</span>
+                        </button>
+                        {avatarUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleSaveAvatar("")}
+                            className="px-4 py-2 rounded-xl border border-gray-200 text-rose-600 hover:bg-rose-50 font-bold text-xs transition-all cursor-pointer"
+                          >
+                            Xóa ảnh
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </div>

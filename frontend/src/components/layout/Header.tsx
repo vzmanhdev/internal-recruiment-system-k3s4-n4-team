@@ -8,6 +8,7 @@ import { BrandLogo } from "./BrandLogo";
 import { Container } from "./Container";
 import { Button } from "@/components/ui/Button";
 import { useActiveSection } from "@/hooks/useActiveSection";
+import { authService } from "@/features/auth/services/auth.service";
 
 interface UserProfile {
   id: number;
@@ -44,8 +45,13 @@ export function Header() {
   useEffect(() => {
     const loadAvatar = () => {
       if (typeof window !== "undefined") {
-        const saved = localStorage.getItem("user_avatar_url");
-        if (saved) setAvatarUrl(saved);
+        const u = authService.getUserInfo();
+        if (u) {
+          const saved = authService.getUserAvatar(u.id);
+          setAvatarUrl(saved || u.avatar_url || null);
+        } else {
+          setAvatarUrl(null);
+        }
       }
     };
     loadAvatar();
@@ -61,22 +67,22 @@ export function Header() {
         try {
           const u = JSON.parse(uStr);
           setUser(u);
-          if (u.avatar_url && !localStorage.getItem("user_avatar_url")) {
-            setAvatarUrl(u.avatar_url);
-          }
+          const saved = authService.getUserAvatar(u.id);
+          setAvatarUrl(saved || u.avatar_url || null);
         } catch (e) {
           console.error("Failed to parse user_info", e);
         }
+      } else {
+        setUser(null);
+        setAvatarUrl(null);
       }
     }
   }, []);
 
   const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_info");
-    }
+    authService.logout();
     setUser(null);
+    setAvatarUrl(null);
     router.push("/login");
   };
 

@@ -8,12 +8,14 @@ class Department(Base):
     name = Column(String(120), nullable=False)
     code = Column(String(30), unique=True, nullable=False)
     parent_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
+    head_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # S2-04: người phụ trách
     sort_order = Column(Integer, default=0, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):
-        return {"id": self.id, "name": self.name, "code": self.code, "parent_id": self.parent_id, "sort_order": self.sort_order, "is_active": self.is_active}
+        return {"id": self.id, "name": self.name, "code": self.code, "parent_id": self.parent_id, "head_user_id": self.head_user_id,
+                "sort_order": self.sort_order, "is_active": self.is_active}
 
 class JobTitle(Base):
     __tablename__ = "job_titles"
@@ -86,13 +88,24 @@ class ApprovalFlow(Base):
     min_salary_threshold = Column(Float, default=0.0, nullable=False)
     max_salary_threshold = Column(Float, default=100000000.0, nullable=False)
     status = Column(String(50), default="active", nullable=False)
+    # Ordered approval steps, e.g. ["manager", "hr", "executive"] (S3-01)
+    steps_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def steps(self):
+        import json
+        try:
+            value = json.loads(self.steps_json) if self.steps_json else None
+        except ValueError:
+            value = None
+        return value or ["manager", "hr"][: max(1, self.max_levels or 2)]
 
     def to_dict(self):
         return {
             "id": self.id,
             "department_id": self.department_id,
             "name": self.name,
+            "steps": self.steps(),
             "max_levels": self.max_levels,
             "min_salary_threshold": self.min_salary_threshold,
             "max_salary_threshold": self.max_salary_threshold,

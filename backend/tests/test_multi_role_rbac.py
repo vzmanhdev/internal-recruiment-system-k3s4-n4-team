@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from tests.conftest import session_token
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -92,7 +93,7 @@ def setup_admin_user():
         db.add(UserRole(user_id=admin.id, role_id=role_obj.id))
         db.commit()
 
-    token = create_access_token(subject=admin.id, security_version=admin.security_version)
+    token = session_token(db, admin)
     db.close()
     return admin.id, f"Bearer {token}"
 

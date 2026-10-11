@@ -1,152 +1,85 @@
 'use client';
 
-import React, { useState } from 'react';
-import { 
-  Award, Plus, Search, Filter, DollarSign, Building2, CheckCircle2, 
-  Edit2, Trash2, ShieldCheck
-} from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { masterDataService, type Department, type JobTitle } from '@/services/master-data.service';
+import { MasterDataFrame, fieldClass, primaryBtn, ghostBtn } from '@/components/hr/MasterDataFrame';
+import { useToast } from '@/components/ui/Toast';
+import { ApiError } from '@/lib/api-client';
 
-interface PositionItem {
-  id: string;
-  code: string;
-  title: string;
-  department: string;
-  level: string;
-  min_salary: number;
-  mid_salary: number;
-  max_salary: number;
-  status: 'active' | 'inactive';
-}
+const EMPTY = { name: '', department_id: null as number | null, level: 'Middle', min_salary: 0, max_salary: 0, description: '' };
 
 export default function HRPositionsPage() {
-  const [positions, setPositions] = useState<PositionItem[]>([
-    {
-      id: "POS-001",
-      code: "SWE-SR",
-      title: "Senior Backend Engineer",
-      department: "Công Nghệ Thông Tin",
-      level: "Level 4 (Senior)",
-      min_salary: 35,
-      mid_salary: 42.5,
-      max_salary: 50,
-      status: "active"
-    },
-    {
-      id: "POS-002",
-      code: "DEVOPS-SR",
-      title: "Senior DevOps / Cloud Architect",
-      department: "Công Nghệ Thông Tin",
-      level: "Level 5 (Lead/Architect)",
-      min_salary: 40,
-      mid_salary: 50,
-      max_salary: 60,
-      status: "active"
-    },
-    {
-      id: "POS-003",
-      code: "BI-LEAD",
-      title: "Trưởng nhóm Data Analyst & BI Specialist",
-      department: "Khối Dữ Liệu",
-      level: "Level 5 (Manager/Lead)",
-      min_salary: 45,
-      mid_salary: 50,
-      max_salary: 55,
-      status: "active"
+  const { showSuccess, showError } = useToast();
+  const [items, setItems] = useState<JobTitle[]>([]);
+  const [depts, setDepts] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState(EMPTY);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const [t, d] = await Promise.all([masterDataService.jobTitles(), masterDataService.departments(false)]);
+      setItems(t); setDepts(d); setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Không tải được chức danh.');
+    } finally {
+      setLoading(false);
     }
-  ]);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await masterDataService.saveJobTitle({ ...form, description: form.description || undefined }, editing ?? undefined);
+      showSuccess('Đã lưu chức danh.');
+      setOpen(false); setEditing(null); setForm(EMPTY);
+      await load();
+    } catch (err) { showError(err instanceof ApiError ? err.message : 'Lưu thất bại.'); }
+  };
 
-  const filtered = positions.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.code.toLowerCase().includes(searchQuery.toLowerCase()));
+  const money = (n?: number) => (n == null ? '—' : n.toLocaleString('vi-VN'));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="border-b border-slate-200/80 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Chức Danh & Dải Lương Chuẩn (Salary Bands)</h1>
-            <span className="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200">
-              [S2-05] Standard Pay Bands
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">Quản lý danh mục chức danh chuẩn doanh nghiệp, khung cấp bậc & dải lương tối thiểu / trung vị / tối đa</p>
-        </div>
-
-        <button className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer">
-          <Plus className="w-4 h-4" />
-          <span>Thêm Chức Danh Mới</span>
-        </button>
-      </div>
-
-      {/* Search Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Tìm theo tên chức danh hoặc mã chức danh..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          />
-        </div>
-      </div>
-
-      {/* Table */}
+    <MasterDataFrame title="Chức danh & Dải lương" story="[S2-05]" loading={loading} error={error} empty={!items.length && !open}
+      description="Mỗi chức danh có cấp bậc và dải lương tối thiểu–tối đa; dải lương là hạn mức duyệt offer và chỉ Trưởng phòng Nhân sự xem được."
+      actions={<button onClick={() => { setOpen(true); setEditing(null); setForm(EMPTY); }} className={`${primaryBtn} inline-flex items-center gap-1.5`}><Plus className="w-4 h-4" />Thêm chức danh</button>}>
+      {open && (
+        <form onSubmit={save} className="bg-white rounded-2xl border border-slate-200 p-5 grid gap-3 md:grid-cols-3 mb-4">
+          <label className="text-xs font-semibold">Tên chức danh *<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={fieldClass} /></label>
+          <label className="text-xs font-semibold">Phòng ban
+            <select value={form.department_id ?? ''} onChange={(e) => setForm({ ...form, department_id: e.target.value ? Number(e.target.value) : null })} className={fieldClass}>
+              <option value="">— Dùng chung —</option>{depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select></label>
+          <label className="text-xs font-semibold">Cấp bậc *<input required value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} className={fieldClass} /></label>
+          <label className="text-xs font-semibold">Lương tối thiểu (VNĐ) *<input required type="number" min={0} value={form.min_salary} onChange={(e) => setForm({ ...form, min_salary: Number(e.target.value) })} className={fieldClass} /></label>
+          <label className="text-xs font-semibold">Lương tối đa (VNĐ) *<input required type="number" min={0} value={form.max_salary} onChange={(e) => setForm({ ...form, max_salary: Number(e.target.value) })} className={fieldClass} /></label>
+          <label className="text-xs font-semibold">Mô tả<input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={fieldClass} /></label>
+          <div className="md:col-span-3 flex justify-end gap-2"><button type="button" onClick={() => setOpen(false)} className={ghostBtn}>Huỷ</button><button className={primaryBtn}>Lưu</button></div>
+        </form>
+      )}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                <th className="p-4">Chức Danh & Mã Cấp Bậc</th>
-                <th className="p-4">Phòng Ban Hạn Định</th>
-                <th className="p-4">Khung Cấp Bậc (Level)</th>
-                <th className="p-4 text-center">Mức Lương Tối Thiểu (Min)</th>
-                <th className="p-4 text-center">Trung Vị (Mid)</th>
-                <th className="p-4 text-center">Mức Lương Tối Đa (Max)</th>
-                <th className="p-4 text-center">Trạng Thái</th>
+        <table className="w-full text-left text-xs">
+          <thead className="bg-slate-50 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider"><tr><th className="p-4">Chức danh</th><th className="p-4">Phòng ban</th><th className="p-4">Cấp bậc</th><th className="p-4 text-right">Dải lương (VNĐ)</th><th className="p-4 text-right">Thao tác</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {items.map((t) => (
+              <tr key={t.id} className={t.is_active ? '' : 'opacity-60'}>
+                <td className="p-4 font-bold text-slate-900">{t.name}</td>
+                <td className="p-4">{depts.find((d) => d.id === t.department_id)?.name || 'Dùng chung'}</td>
+                <td className="p-4">{t.level}</td>
+                <td className="p-4 text-right font-mono">{money(t.min_salary)} – {money(t.max_salary)}</td>
+                <td className="p-4 text-right whitespace-nowrap space-x-1.5">
+                  <button onClick={() => { setEditing(t.id); setForm({ name: t.name, department_id: t.department_id, level: t.level, min_salary: t.min_salary || 0, max_salary: t.max_salary || 0, description: t.description || '' }); setOpen(true); }} className={ghostBtn}>Sửa</button>
+                  {t.is_active && <button onClick={async () => { try { await masterDataService.deactivateJobTitle(t.id); showSuccess('Đã ngừng áp dụng.'); await load(); } catch (err) { showError(err instanceof ApiError ? err.message : 'Thất bại.'); } }} className={ghostBtn}>Ngừng áp dụng</button>}
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {filtered.map((pos) => (
-                <tr key={pos.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="p-4">
-                    <div className="font-bold text-slate-900">{pos.title}</div>
-                    <span className="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold">{pos.code}</span>
-                  </td>
-
-                  <td className="p-4 font-semibold text-slate-800">
-                    {pos.department}
-                  </td>
-
-                  <td className="p-4 text-blue-700 font-bold">
-                    {pos.level}
-                  </td>
-
-                  <td className="p-4 text-center font-mono font-bold text-slate-700">
-                    {pos.min_salary} TR VNĐ
-                  </td>
-
-                  <td className="p-4 text-center font-mono font-bold text-blue-700">
-                    {pos.mid_salary} TR VNĐ
-                  </td>
-
-                  <td className="p-4 text-center font-mono font-bold text-emerald-700">
-                    {pos.max_salary} TR VNĐ
-                  </td>
-
-                  <td className="p-4 text-center">
-                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
-                      Hoạt Động
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
-    </div>
+    </MasterDataFrame>
   );
 }

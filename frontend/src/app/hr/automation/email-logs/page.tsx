@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { apiRequest, ApiError } from "@/lib/api-client";
 import {
   Send,
   Search,
@@ -24,10 +25,11 @@ interface EmailLog {
   recipient_email: string;
   subject: string;
   body_html: string;
-  status: string; // sent, failed, pending
+  status: string; // queued, sent, failed, skipped
   error_message?: string;
   sent_at: string;
   retried_at?: string;
+  attempts?: number;
 }
 
 export default function EmailLogsPage() {
@@ -49,20 +51,13 @@ export default function EmailLogsPage() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      let url = "http://localhost:8000/api/v1/email-automation/logs";
       const params = new URLSearchParams();
       if (statusFilter !== "ALL") params.append("status", statusFilter.toLowerCase());
       if (search) params.append("search", search);
-
-      if (params.toString()) url += `?${params.toString()}`;
-
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setLogs(data);
-      }
+      const qs = params.toString();
+      setLogs(await apiRequest<EmailLog[]>(`/email-automation/logs${qs ? `?${qs}` : ""}`));
     } catch (err) {
-      console.error(err);
+      showToast(err instanceof ApiError ? err.message : "Không tải được nhật ký email.", "error");
     } finally {
       setLoading(false);
     }
@@ -70,30 +65,29 @@ export default function EmailLogsPage() {
 
   useEffect(() => {
     fetchLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, search]);
 
   const handleRetry = async (log: EmailLog) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/email-automation/logs/${log.id}/retry`, {
-        method: "POST"
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-        if (selectedLog?.id === updated.id) {
-          setSelectedLog(updated);
-        }
-        showToast(`Đã gửi lại thành công email tới ${log.recipient_email}!`);
+      const updated = await apiRequest<EmailLog>(`/email-automation/logs/${log.id}/retry`, { method: "POST" });
+      setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      if (selectedLog?.id === updated.id) {
+        setSelectedLog(updated);
       }
+      // Report the real delivery outcome returned by the server, never an optimistic "sent".
+      if (updated.status === "sent") showToast(`Đã gửi lại thành công email tới ${log.recipient_email}.`);
+      else if (updated.status === "skipped") showToast("Chưa cấu hình SMTP — email chưa được gửi (skipped).", "error");
+      else showToast(`Gửi lại thất bại: ${updated.error_message || updated.status}`, "error");
     } catch (err) {
-      showToast("Gửi lại email thất bại!", "error");
+      showToast(err instanceof ApiError ? err.message : "Gửi lại email thất bại!", "error");
     }
   };
 
   const sentCount = logs.filter((l) => l.status === "sent").length;
   const failedCount = logs.filter((l) => l.status === "failed").length;
-  const pendingCount = logs.filter((l) => l.status === "pending").length;
-  const successRate = logs.length > 0 ? Math.round((sentCount / logs.length) * 100) : 100;
+  const pendingCount = logs.filter((l) => l.status === "queued" || l.status === "pending").length;
+  const successRate = logs.length > 0 ? Math.round((sentCount / logs.length) * 100) : 0;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto p-6">
@@ -169,7 +163,7 @@ export default function EmailLogsPage() {
                     )}
                   </div>
                 )}
-                {selectedLog.status === "pending" && (
+                {(selectedLog.status === "queued" || selectedLog.status === "pending") && (
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold inline-flex items-center gap-1 mt-1">
                     <Clock className="w-3.5 h-3.5" /> Đang chờ
                   </span>
@@ -303,7 +297,8 @@ export default function EmailLogsPage() {
             <option value="ALL">Tất cả trạng thái</option>
             <option value="SENT">Gửi Thành Công</option>
             <option value="FAILED">Gửi Thất Bại</option>
-            <option value="PENDING">Đang Chờ</option>
+            <option value="QUEUED">Đang Chờ Gửi</option>
+            <option value="SKIPPED">Chưa Gửi (Chưa cấu hình SMTP)</option>
           </select>
         </div>
       </div>
@@ -372,7 +367,13 @@ export default function EmailLogsPage() {
                           <span>Thất bại</span>
                         </span>
                       )}
-                      {log.status === "pending" && (
+                      {log.status === "skipped" && (
+                        <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-bold inline-flex items-center gap-1" title={log.error_message || ""}>
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>Chưa gửi</span>
+                        </span>
+                      )}
+                      {(log.status === "queued" || log.status === "pending") && (
                         <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold inline-flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />
                           <span>Đang chờ</span>
@@ -382,7 +383,7 @@ export default function EmailLogsPage() {
 
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
-                        {log.status === "failed" && (
+                        {(log.status === "failed" || log.status === "skipped") && (
                           <button
                             type="button"
                             onClick={() => handleRetry(log)}

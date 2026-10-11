@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { authService } from '@/features/auth/services/auth.service';
 import {
   LayoutDashboard,
   ShieldCheck,
@@ -25,6 +26,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { getAggregatedMenuGroups, MenuGroup } from '@/lib/navigation/menu-config';
+import { useNotifications, unreadLabel } from '@/hooks/useNotifications';
 
 interface RoleObj {
   code: string;
@@ -64,6 +66,7 @@ export default function UnifiedAppShell({ children }: { children: React.ReactNod
   const router = useRouter();
   const [user, setUser] = useState<UserData | null>(null);
   const [mounted, setMounted] = useState(false);
+  const notifications = useNotifications();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -79,28 +82,32 @@ export default function UnifiedAppShell({ children }: { children: React.ReactNod
       }
     }
 
-    const token = localStorage.getItem('token') || localStorage.getItem('access_token');
-    if (token) {
-      fetch('http://localhost:8000/api/v1/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => (res.ok ? res.json() : null))
+    if (authService.getToken()) {
+      // Shared client: env-configured base URL, refresh-on-expiry and the 401/403 policy.
+      authService.getCurrentUser()
         .then((data) => {
-          if (data) {
-            setUser(data);
-            localStorage.setItem('user', JSON.stringify(data));
-            localStorage.setItem('user_info', JSON.stringify(data));
-          }
+          setUser(data as unknown as UserData);
+          localStorage.setItem('user', JSON.stringify(data));
+          localStorage.setItem('user_info', JSON.stringify(data));
         })
-        .catch(() => {});
+        .catch(() => undefined)
     }
+
+    const onAvatarUpdated = () => {
+      const u = authService.getUserInfo();
+      if (u) {
+        setUser((prev) => prev ? { ...prev, avatar_url: authService.getUserAvatar(u.id) || u.avatar_url } : null);
+      }
+    };
+    window.addEventListener('avatar_updated', onAvatarUpdated);
+    return () => window.removeEventListener('avatar_updated', onAvatarUpdated);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Revoke the server-side session too, not just the local copy of the token.
+    await authService.logout();
     localStorage.removeItem('token');
-    localStorage.removeItem('access_token');
     localStorage.removeItem('user');
-    localStorage.removeItem('user_info');
     router.push('/login');
   };
 
@@ -153,10 +160,14 @@ export default function UnifiedAppShell({ children }: { children: React.ReactNod
             </div>
 
             {/* Notification bell */}
-            <button className="p-2 text-[#64748B] hover:text-[#0F172A] rounded-full hover:bg-slate-100 relative transition-colors">
+            <Link href="/employee/notifications" className="p-2 text-[#64748B] hover:text-[#0F172A] rounded-full hover:bg-slate-100 relative transition-colors" aria-label="Thông báo">
               <Bell size={20} />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
+              {notifications.unread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {unreadLabel(notifications.unread)}
+                </span>
+              )}
+            </Link>
 
             {/* User Avatar Menu dropdown */}
             <div className="relative">

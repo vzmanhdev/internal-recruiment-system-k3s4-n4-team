@@ -2,55 +2,42 @@
 
 import React, { useState, useEffect } from "react";
 import { EmployeeAppShell } from "@/components/layout/EmployeeAppShell";
+import { jobService, type JobPostingItem } from "@/services/job.service";
+import { ApiError } from "@/lib/api-client";
 import { Search, Briefcase, MapPin, Building2, Clock, Star, Gift } from "lucide-react";
 import Link from "next/link";
+
+
+// Map a published posting from the API into the card shape used by this page.
+function toCard(j: JobPostingItem & { required_skills?: string[] }, myDepartment?: string, index = 0) {
+  const daysLeft = j.deadline ? Math.max(0, Math.ceil((new Date(j.deadline).getTime() - Date.now()) / 86400000)) : null;
+  return {
+    id: j.id,
+    slug: j.slug,
+    title: j.title,
+    department: j.department_name || j.department,
+    location: j.location,
+    type: j.type,
+    description: j.description,
+    tags: (j.required_skills && j.required_skills.length ? j.required_skills : [j.level]).filter(Boolean),
+    daysLeft,
+    isFeatured: index < 3,
+    isRecommended: !!myDepartment && (j.department_name || j.department) === myDepartment,
+  };
+}
 
 export default function EmployeeJobsPage() {
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
 
-  const [jobs, setJobs] = useState([
-    {
-      id: 1,
-      title: "Chuyên Viên Tuyển Dụng Cao Cấp (HR Specialist)",
-      department: "Phòng Nhân sự",
-      location: "Hà Nội",
-      type: "Toàn thời gian",
-      description: "Tham gia xây dựng chiến lược tuyển dụng, tìm kiếm và thu hút nhân tài cho các bộ phận.",
-      tags: ["Tuyển dụng", "HR", "Giao tiếp"],
-      daysLeft: 5,
-    },
-    {
-      id: 2,
-      title: "Senior Backend Engineer",
-      department: "Phòng Công nghệ",
-      location: "Hà Nội",
-      type: "Toàn thời gian",
-      description: "Phát triển và tối ưu hệ thống backend, tham gia thiết kế kiến trúc hệ thống quy mô lớn.",
-      tags: ["Python", "FastAPI", "Database"],
-      daysLeft: 10,
-    },
-    {
-      id: 3,
-      title: "Trưởng Nhóm Sản Phẩm",
-      department: "Phòng Sản phẩm",
-      location: "Hồ Chí Minh",
-      type: "Toàn thời gian",
-      description: "Dẫn dắt nhóm phát triển sản phẩm, định hướng chiến lược và triển khai các dự án quan trọng.",
-      tags: ["Product", "Quản lý", "Agile"],
-      daysLeft: 7,
-    },
-    {
-      id: 4,
-      title: "Chuyên Viên Marketing Internal",
-      department: "Phòng Marketing",
-      location: "Hà Nội",
-      type: "Toàn thời gian",
-      description: "Xây dựng và triển khai các hoạt động truyền thông nội bộ, thu hút nhân tài.",
-      tags: ["Truyền thông", "Content", "Sự kiện"],
-      daysLeft: 12,
-    },
-  ]);
+  const [jobs, setJobs] = useState<ReturnType<typeof toCard>[]>([]);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    jobService.getJobs()
+      .then((list) => setJobs(list.map((j, i) => toCard(j, undefined, i))))
+      .catch((err) => setJobsError(err instanceof ApiError ? err.message : "Không tải được tin tuyển dụng."));
+  }, []);
 
   const filteredJobs = jobs.filter((j) => {
     const matchesSearch =
@@ -114,7 +101,8 @@ export default function EmployeeJobsPage() {
 
         {/* Job Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredJobs.map((job) => (
+          {jobsError && <div className="col-span-full px-4 py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold">{jobsError}</div>}
+              {filteredJobs.map((job) => (
             <div
               key={job.id}
               className="bg-white rounded-2xl p-5 border border-gray-100 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
@@ -150,7 +138,7 @@ export default function EmployeeJobsPage() {
               <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
                 <span className="text-[11px] font-medium text-amber-600 flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />
-                  Còn {job.daysLeft} ngày
+                  {job.daysLeft == null ? "Không giới hạn" : `Còn ${job.daysLeft} ngày`}
                 </span>
 
                 <div className="flex items-center gap-2">

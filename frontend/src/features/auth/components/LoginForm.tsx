@@ -57,7 +57,9 @@ export function LoginForm() {
       }, 500);
     } catch (err: any) {
       if (err instanceof ApiError && err.status !== 503) {
-        setErrorMsg("Tài Khoản hoặc Mật khẩu không chính xác. Vui lòng thử lại.");
+        // Show the server's message: it is already generic for wrong credentials (no enumeration),
+        // and it carries the browser-session lock (429, minutes remaining) and admin-lock / pending notices.
+        setErrorMsg(err.message || "Tài Khoản hoặc Mật khẩu không chính xác. Vui lòng thử lại.");
       } else {
         setErrorMsg(err.message || "Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại dịch vụ Backend.");
       }

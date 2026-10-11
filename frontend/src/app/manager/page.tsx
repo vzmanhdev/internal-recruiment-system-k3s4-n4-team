@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Briefcase,
@@ -69,10 +69,17 @@ import { UserProfileModal } from "@/components/UserProfileModal";
 import { AvatarCropModal } from "@/components/AvatarCropModal";
 import { CroppedAvatarResult } from "@/lib/cropImage";
 import { authService } from "@/features/auth/services/auth.service";
+import { apiRequest, ApiError } from "@/lib/api-client";
+import { requisitionService, type RequisitionItem } from "@/services/requisition.service";
+import { applicationService, type ApplicationItem } from "@/services/application.service";
+import { interviewService, type InterviewItem } from "@/services/interview.service";
+import { referralService, type EvaluationItem } from "@/services/referral.service";
 
 // Types
 export interface JobRequisition {
   id: string;
+  backendId?: number;
+  backendStatus?: string;
   title: string;
   department: string;
   level: "Junior" | "Middle" | "Senior" | "Lead" | "Manager";
@@ -95,6 +102,7 @@ export interface JobRequisition {
 
 export interface ShortlistCandidate {
   id: string;
+  applicationId?: number;
   name: string;
   avatarColor: string;
   email: string;
@@ -151,617 +159,6 @@ export interface ApprovalWorkflowRecord {
   steps: ApprovalStep[];
 }
 
-// Initial Mock Data: Approval Workflows & Audit Trails
-const MOCK_APPROVAL_WORKFLOWS: Record<string, ApprovalWorkflowRecord> = {
-  "REQ-2026-001": {
-    id: "WF-REQ-001",
-    itemCode: "REQ-2026-001",
-    itemType: "REQUISITION",
-    itemTitle: "Lập trình viên Frontend (React/Next.js)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    creator: "Lê Trưởng Nhóm",
-    createdAt: "10/01/2026 - 09:15",
-    overallStatus: "APPROVED",
-    auditHash: "sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
-    lastAuditedAt: "12/01/2026 - 16:05",
-    steps: [
-      {
-        id: "STP-01",
-        stepNumber: 1,
-        stepName: "Cấp 1: Khởi tạo & Đề xuất Nhu cầu Tuyển dụng",
-        approverName: "Lê Trưởng Nhóm",
-        approverRole: "Trưởng Bộ Phận (Hiring Manager)",
-        department: "Khối Công Nghệ",
-        status: "APPROVED",
-        timestamp: "10/01/2026 - 09:15",
-        comment:
-          "Kế hoạch sprint 2026 mở rộng module Core Platform, cần bổ sung 5 nhân sự Senior FE có kinh nghiệm Next.js. Đã đính kèm bản mô tả công việc (JD) và chỉ tiêu tuyển dụng rõ ràng.",
-      },
-      {
-        id: "STP-02",
-        stepNumber: 2,
-        stepName: "Cấp 2: Thẩm định Định biên & Ngân sách Headcount",
-        approverName: "Nguyễn Thị Thu Hà",
-        approverRole: "Trưởng phòng Nhân sự",
-        department: "Phòng Quản Trị Nhân Sự (HR)",
-        status: "APPROVED",
-        timestamp: "10/01/2026 - 14:30",
-        comment:
-          "Đã kiểm tra ngân sách headcount, đồng ý tuyển. Mức lương 28 - 38 triệu nằm đúng khung dải lương quy chế ban hành của Khối Công nghệ.",
-      },
-      {
-        id: "STP-03",
-        stepNumber: 3,
-        stepName: "Cấp 3: Phê duyệt Tài chính & Quỹ lương Dự toán",
-        approverName: "Trần Đức Thắng",
-        approverRole: "Giám đốc Tài chính (CFO)",
-        department: "Khối Tài Chính - Kế Toán",
-        status: "APPROVED",
-        timestamp: "11/01/2026 - 11:20",
-        comment:
-          "Ngân sách quỹ lương Q1/2026 của Khối Công nghệ đáp ứng được định mức. Đã cấp mã ngân sách dự toán #BUD-IT-2026.",
-      },
-      {
-        id: "STP-04",
-        stepNumber: 4,
-        stepName: "Cấp 4: Phê duyệt Ký ban hành Đăng tuyển",
-        approverName: "Phạm Hoàng Nam",
-        approverRole: "Tổng Giám Đốc (CEO)",
-        department: "Ban Giám Đốc (BOD)",
-        status: "APPROVED",
-        timestamp: "12/01/2026 - 16:05",
-        comment:
-          "Phê duyệt triển khai đăng tuyển công khai nội bộ và đối ngoại. Ưu tiên tuyển dụng nguồn lực chất lượng cao, đúng tiến độ cam kết.",
-      },
-    ],
-  },
-  "REQ-2026-002": {
-    id: "WF-REQ-002",
-    itemCode: "REQ-2026-002",
-    itemType: "REQUISITION",
-    itemTitle: "Chuyên viên Marketing & Truyền thông Nội bộ",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    creator: "Lê Trưởng Nhóm",
-    createdAt: "08/01/2026 - 08:30",
-    overallStatus: "IN_PROGRESS",
-    auditHash: "sha256:3b9ac93e81f14a6e8b2a1a4574944b20a3a93a67710c228ec53298a0d92f58ab",
-    lastAuditedAt: "08/01/2026 - 08:30",
-    steps: [
-      {
-        id: "STP-21",
-        stepNumber: 1,
-        stepName: "Cấp 1: Khởi tạo & Đề xuất Nhu cầu Tuyển dụng",
-        approverName: "Lê Trưởng Nhóm",
-        approverRole: "Trưởng Bộ Phận (Hiring Manager)",
-        department: "Khối Công Nghệ",
-        status: "APPROVED",
-        timestamp: "08/01/2026 - 08:30",
-        comment:
-          "Đề xuất mở tuyển 2 chuyên viên truyền thông nội bộ hỗ trợ chuyển đổi số văn hóa doanh nghiệp và chiến dịch thu hút nhân tài.",
-      },
-      {
-        id: "STP-22",
-        stepNumber: 2,
-        stepName: "Cấp 2: Thẩm định Định biên & Ngân sách Headcount",
-        approverName: "Nguyễn Thị Thu Hà",
-        approverRole: "Trưởng phòng Nhân sự",
-        department: "Phòng Quản Trị Nhân Sự (HR)",
-        status: "PENDING",
-        timestamp: "Đang chờ xử lý...",
-        comment:
-          "Đang đối soát định biên nhân sự bộ phận truyền thông và rà soát lại KPI định lượng với Trưởng khối trước khi xác nhận.",
-      },
-      {
-        id: "STP-23",
-        stepNumber: 3,
-        stepName: "Cấp 3: Phê duyệt Tài chính & Quỹ lương Dự toán",
-        approverName: "Trần Đức Thắng",
-        approverRole: "Giám đốc Tài chính (CFO)",
-        department: "Khối Tài Chính - Kế Toán",
-        status: "NOT_REACHED",
-        timestamp: "Chưa đến lượt xử lý",
-        comment:
-          "Chờ phê duyệt từ Trưởng phòng Nhân sự trước khi thẩm định quỹ lương.",
-      },
-      {
-        id: "STP-24",
-        stepNumber: 4,
-        stepName: "Cấp 4: Phê duyệt Ký ban hành Đăng tuyển",
-        approverName: "Phạm Hoàng Nam",
-        approverRole: "Tổng Giám Đốc (CEO)",
-        department: "Ban Giám Đốc (BOD)",
-        status: "NOT_REACHED",
-        timestamp: "Chưa đến lượt xử lý",
-        comment:
-          "Chờ phê duyệt từ các cấp chuyên môn.",
-      },
-    ],
-  },
-  "REQ-2026-003": {
-    id: "WF-REQ-003",
-    itemCode: "REQ-2026-003",
-    itemType: "REQUISITION",
-    itemTitle: "Senior Backend Engineer (Golang/Python)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    creator: "Lê Trưởng Nhóm",
-    createdAt: "15/01/2026 - 10:00",
-    overallStatus: "APPROVED",
-    auditHash: "sha256:1a84f33b1e779ac9a8c1f045239a58432a93b4827018c18ec53298a0d92f5901",
-    lastAuditedAt: "17/01/2026 - 09:30",
-    steps: [
-      {
-        id: "STP-31",
-        stepNumber: 1,
-        stepName: "Cấp 1: Khởi tạo & Đề xuất Nhu cầu Tuyển dụng",
-        approverName: "Lê Trưởng Nhóm",
-        approverRole: "Trưởng Bộ Phận (Hiring Manager)",
-        department: "Khối Công Nghệ",
-        status: "APPROVED",
-        timestamp: "15/01/2026 - 10:00",
-        comment:
-          "Bổ sung 3 vị trí Senior Backend phục vụ kiến trúc Microservices và dự án Data Lake nội bộ. Yêu cầu chuyên môn cao về Golang.",
-      },
-      {
-        id: "STP-32",
-        stepNumber: 2,
-        stepName: "Cấp 2: Thẩm định Định biên & Ngân sách Headcount",
-        approverName: "Nguyễn Thị Thu Hà",
-        approverRole: "Trưởng phòng Nhân sự",
-        department: "Phòng Quản Trị Nhân Sự (HR)",
-        status: "APPROVED",
-        timestamp: "15/01/2026 - 16:20",
-        comment:
-          "Đồng ý chỉ tiêu và dải lương 30 - 45 triệu, đã phê duyệt mô tả công việc (JD) tiêu chuẩn.",
-      },
-      {
-        id: "STP-33",
-        stepNumber: 3,
-        stepName: "Cấp 3: Phê duyệt Tài chính & Quỹ lương Dự toán",
-        approverName: "Trần Đức Thắng",
-        approverRole: "Giám đốc Tài chính (CFO)",
-        department: "Khối Tài Chính - Kế Toán",
-        status: "APPROVED",
-        timestamp: "16/01/2026 - 14:10",
-        comment:
-          "Đã phê duyệt nguồn kinh phí tuyển dụng và dự phòng ngân sách lương.",
-      },
-      {
-        id: "STP-34",
-        stepNumber: 4,
-        stepName: "Cấp 4: Phê duyệt Ký ban hành Đăng tuyển",
-        approverName: "Phạm Hoàng Nam",
-        approverRole: "Tổng Giám Đốc (CEO)",
-        department: "Ban Giám Đốc (BOD)",
-        status: "APPROVED",
-        timestamp: "17/01/2026 - 09:30",
-        comment:
-          "Đã duyệt mở tuyển công khai.",
-      },
-    ],
-  },
-  "CAN-001": {
-    id: "WF-OFFER-001",
-    itemCode: "OFFER-CAN-001",
-    itemType: "OFFER",
-    itemTitle: "Đề xuất Tuyển dụng (Offer): Trần Minh Quang",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    creator: "Lê Trưởng Nhóm",
-    createdAt: "25/01/2026 - 10:15",
-    overallStatus: "IN_PROGRESS",
-    auditHash: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    lastAuditedAt: "25/01/2026 - 15:40",
-    steps: [
-      {
-        id: "STP-O1",
-        stepNumber: 1,
-        stepName: "Cấp 1: Đề xuất Quyết định Tuyển & Mức lương (Hiring Manager)",
-        approverName: "Lê Trưởng Nhóm",
-        approverRole: "Trưởng Bộ Phận (Hiring Manager)",
-        department: "Khối Công Nghệ",
-        status: "APPROVED",
-        timestamp: "25/01/2026 - 10:15",
-        comment:
-          "Ứng viên thể hiện xuất sắc ở vòng phỏng vấn chuyên môn (4.5/5 sao), tư duy giải quyết bài toán UI/UX tối ưu. Đề xuất tuyển với mức lương 34.000.000 VNĐ/tháng.",
-      },
-      {
-        id: "STP-O2",
-        stepNumber: 2,
-        stepName: "Cấp 2: Thẩm định Đãi ngộ & Khung chính sách Phúc lợi (C&B)",
-        approverName: "Vũ Thùy Linh",
-        approverRole: "Trưởng nhóm Đãi ngộ & Phúc lợi (C&B)",
-        department: "Phòng Quản Trị Nhân Sự (HR)",
-        status: "APPROVED",
-        timestamp: "25/01/2026 - 15:40",
-        comment:
-          "Mức lương 34 triệu hoàn toàn phù hợp với 4 năm kinh nghiệm và nằm trong ngân sách phê duyệt của vị trí REQ-2026-001. Đã soạn thảo dự thảo hợp đồng và các gói bảo hiểm sức khỏe cao cấp.",
-      },
-      {
-        id: "STP-O3",
-        stepNumber: 3,
-        stepName: "Cấp 3: Duyệt Thư mời Nhận việc (HR Director)",
-        approverName: "Nguyễn Thị Thu Hà",
-        approverRole: "Trưởng phòng Nhân sự",
-        department: "Phòng Quản Trị Nhân Sự (HR)",
-        status: "PENDING",
-        timestamp: "Đang chờ xử lý...",
-        comment:
-          "Đang kiểm tra lịch tiếp nhận bàn giao và đối chiếu tham chiếu (Reference Check) trước khi phát hành thư mời chính thức.",
-      },
-      {
-        id: "STP-O4",
-        stepNumber: 4,
-        stepName: "Cấp 4: Phê duyệt Ban Giám Đốc & Ký phát hành Thư mời (BOD)",
-        approverName: "Phạm Hoàng Nam",
-        approverRole: "Tổng Giám Đốc (CEO)",
-        department: "Ban Giám Đốc (BOD)",
-        status: "NOT_REACHED",
-        timestamp: "Chưa đến lượt xử lý",
-        comment:
-          "Chờ hoàn tất xác nhận từ Trưởng phòng Nhân sự để trình ký phát hành thư mời nhận việc (Offer Letter).",
-      },
-    ],
-  },
-  "CAN-004": {
-    id: "WF-OFFER-004",
-    itemCode: "OFFER-CAN-004",
-    itemType: "OFFER",
-    itemTitle: "Đề xuất Tuyển dụng (Offer): Lê Hoàng Long",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    creator: "Lê Trưởng Nhóm",
-    createdAt: "28/01/2026 - 09:00",
-    overallStatus: "IN_PROGRESS",
-    auditHash: "sha256:d41d8cd98f00b204e9800998ecf8427e02d4b1fa3d677284addd200126d9069",
-    lastAuditedAt: "28/01/2026 - 09:00",
-    steps: [
-      {
-        id: "STP-O41",
-        stepNumber: 1,
-        stepName: "Cấp 1: Đề xuất Quyết định Tuyển & Mức lương (Hiring Manager)",
-        approverName: "Lê Trưởng Nhóm",
-        approverRole: "Trưởng Bộ Phận (Hiring Manager)",
-        department: "Khối Công Nghệ",
-        status: "APPROVED",
-        timestamp: "28/01/2026 - 09:00",
-        comment:
-          "Ứng viên có kỹ năng Golang/Python vững, kinh nghiệm xử lý tải lớn 100k CCU. Đề xuất mức lương 42.000.000 VNĐ.",
-      },
-      {
-        id: "STP-O42",
-        stepNumber: 2,
-        stepName: "Cấp 2: Thẩm định Đãi ngộ & Khung chính sách Phúc lợi (C&B)",
-        approverName: "Vũ Thùy Linh",
-        approverRole: "Trưởng nhóm C&B",
-        department: "Phòng Quản Trị Nhân Sự (HR)",
-        status: "PENDING",
-        timestamp: "Đang chờ xử lý...",
-        comment:
-          "Mức lương 42 triệu vượt mức trần tiêu chuẩn (30 triệu), đang kiểm tra bản giải trình lương đặc cách đính kèm từ Hiring Manager.",
-      },
-      {
-        id: "STP-O43",
-        stepNumber: 3,
-        stepName: "Cấp 3: Duyệt Thư mời Nhận việc (HR Director)",
-        approverName: "Nguyễn Thị Thu Hà",
-        approverRole: "Trưởng phòng Nhân sự",
-        department: "Phòng Quản Trị Nhân Sự (HR)",
-        status: "NOT_REACHED",
-        timestamp: "Chưa đến lượt xử lý",
-        comment:
-          "Chờ ý kiến C&B về quỹ lương đặc cách.",
-      },
-      {
-        id: "STP-O44",
-        stepNumber: 4,
-        stepName: "Cấp 4: Phê duyệt Ban Giám Đốc & Ký phát hành Thư mời (BOD)",
-        approverName: "Phạm Hoàng Nam",
-        approverRole: "Tổng Giám Đốc (CEO)",
-        department: "Ban Giám Đốc (BOD)",
-        status: "NOT_REACHED",
-        timestamp: "Chưa đến lượt xử lý",
-        comment:
-          "Chờ thẩm định từ các bộ phận.",
-      },
-    ],
-  },
-};
-
-// Initial Mock Data: Requisitions
-const INITIAL_REQUISITIONS: JobRequisition[] = [
-  {
-    id: "REQ-2026-001",
-    title: "Lập trình viên Frontend (React/Next.js)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    level: "Senior",
-    targetCount: 5, // Chỉ tiêu: Cần tuyển 5
-    receivedCount: 20, // Đã nộp CV: 20
-    interviewingCount: 8, // Đang phỏng vấn: 8
-    hiredCount: 2, // Đã chốt: 2
-    status: "Active",
-    salaryRange: "28 - 38 triệu VNĐ",
-    createdAt: "10/01/2026",
-    deadline: "15/02/2026",
-    description: "Chịu trách nhiệm kiến trúc Frontend, xây dựng hệ thống UI Design System và tối ưu hiệu năng web nội bộ.",
-    requirements: "Tối thiểu 3 năm kinh nghiệm React, TypeScript, Tailwind CSS, có kinh nghiệm Next.js App Router.",
-  },
-  {
-    id: "REQ-2026-002",
-    title: "Chuyên viên Marketing & Truyền thông Nội bộ",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    level: "Middle",
-    targetCount: 2,
-    receivedCount: 14,
-    interviewingCount: 5,
-    hiredCount: 1,
-    status: "Active",
-    salaryRange: "18 - 25 triệu VNĐ",
-    createdAt: "15/01/2026",
-    deadline: "20/02/2026",
-    description: "Lên chiến dịch truyền thông tuyển dụng nội bộ, xây dựng thương hiệu tuyển dụng kỹ thuật (Tech Branding).",
-    requirements: "Tối thiểu 2 năm kinh nghiệm Tech Marketing, thành thạo content & tổ chức Tech Talk.",
-  },
-  {
-    id: "REQ-2026-003",
-    title: "Senior Backend Engineer (Golang/Python)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    level: "Senior",
-    targetCount: 4,
-    receivedCount: 28,
-    interviewingCount: 10,
-    hiredCount: 3,
-    status: "Active",
-    salaryRange: "35 - 50 triệu VNĐ",
-    createdAt: "18/01/2026",
-    deadline: "28/02/2026",
-    description: "Phát triển hệ thống microservices phục vụ tuyển dụng, xử lý dữ liệu lớn và bảo mật phân quyền.",
-    requirements: "Thành thạo Golang hoặc Python FastAPI, hiểu sâu SQL, Redis, Docker, Kubernetes.",
-  },
-  {
-    id: "REQ-2026-004",
-    title: "Chuyên viên Thiết Kế Trải Nghiệm (UI/UX Designer)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    level: "Middle",
-    targetCount: 1,
-    receivedCount: 6,
-    interviewingCount: 2,
-    hiredCount: 0,
-    status: "Pending",
-    salaryRange: "20 - 28 triệu VNĐ",
-    createdAt: "28/01/2026",
-    deadline: "05/03/2026",
-    description: "Thiết kế luồng trải nghiệm người dùng cho ứng dụng tuyển dụng nội bộ, chuẩn hóa Design System Figma.",
-    requirements: "Có Portfolio chỉn chu, thành thạo Figma, Design Tokens, thấu hiểu tư duy người dùng sản phẩm B2B.",
-  },
-  {
-    id: "REQ-2026-005",
-    title: "QA Automation Engineer Lead",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    level: "Lead",
-    targetCount: 1,
-    receivedCount: 8,
-    interviewingCount: 3,
-    hiredCount: 1,
-    status: "Closed",
-    salaryRange: "32 - 42 triệu VNĐ",
-    createdAt: "02/01/2026",
-    deadline: "25/01/2026",
-    description: "Xây dựng khung kiểm thử tự động toàn diện (CI/CD Test Automation Framework).",
-    requirements: "Kinh nghiệm Playwright, Cypress, Selenium, tích hợp kiểm thử vào GitLab CI.",
-    recruitmentReason: "Thay thế nhân sự nghỉ việc",
-  },
-  {
-    id: "REQ-2026-006",
-    title: "Kỹ sư Cầu nối Dự án Nhật Bản (BrSE)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    level: "Senior",
-    targetCount: 2,
-    receivedCount: 0,
-    interviewingCount: 0,
-    hiredCount: 0,
-    status: "Draft",
-    salaryRange: "38.000.000 VNĐ",
-    proposedSalary: 38000000,
-    salaryJustification: "Vị trí đặc thù yêu cầu tiếng Nhật N2 chuyên ngành kỹ thuật và có năng lực phân tích kiến trúc phần mềm với đối tác Tokyo, mức lương thị trường dao động 35 - 45 triệu VNĐ.",
-    workType: "Toàn thời gian (Full-time)",
-    createdAt: "29/01/2026",
-    deadline: "15/03/2026",
-    description: "Cầu nối kỹ thuật giữa khách hàng đối tác Nhật Bản và team kỹ thuật nội bộ, phân tích tài liệu thiết kế nghiệp vụ.",
-    requirements: "Tiếng Nhật N2 trở lên, tối thiểu 3 năm kinh nghiệm phát triển phần mềm và 1 năm kinh nghiệm BrSE.",
-    recruitmentReason: "Phục vụ dự án mới",
-    recruitmentReasonDetail: "Dự án chuyển đổi số ERP đối tác Tokyo ký kết Q1/2026",
-  },
-  {
-    id: "REQ-2026-007",
-    title: "Chuyên viên Kiểm Thử Hiệu Năng Hệ Thống (Performance QA)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    level: "Middle",
-    targetCount: 1,
-    receivedCount: 0,
-    interviewingCount: 0,
-    hiredCount: 0,
-    status: "Draft",
-    salaryRange: "24.000.000 VNĐ",
-    proposedSalary: 24000000,
-    salaryJustification: "",
-    workType: "Toàn thời gian (Full-time)",
-    createdAt: "30/01/2026",
-    deadline: "20/03/2026",
-    description: "Thực hiện kiểm thử tải (Load/Stress testing) cho các đợt phát hành lớn của hệ thống tuyển dụng nội bộ.",
-    requirements: "Sử dụng thành thạo JMeter hoặc k6, phân tích APM và phát hiện thắt cổ chai hệ thống.",
-    recruitmentReason: "Bổ sung định biên",
-    recruitmentReasonDetail: "Mở rộng team QA chịu tải dự án Q2/2026",
-  },
-];
-
-// Initial Mock Data: Shortlist Candidates
-const INITIAL_CANDIDATES: ShortlistCandidate[] = [
-  {
-    id: "CAN-001",
-    name: "Trần Minh Quang",
-    avatarColor: "bg-blue-600",
-    email: "quang.tran@gmail.com",
-    phone: "0903 112 334",
-    positionId: "REQ-2026-001",
-    positionTitle: "Lập trình viên Frontend (React/Next.js)",
-    experienceYears: 4,
-    appliedDate: "12/01/2026",
-    round1: {
-      interviewer: "Hoàng Long (Senior FE)",
-      score: 8.5,
-      comment: "Nắm vững React internals, tối ưu re-render và Component Life Cycle tốt. Code bài test thuật toán sáng sủa.",
-      status: "Passed",
-    },
-    round2: {
-      interviewer: "Lê Trưởng Nhóm",
-      score: 9.0,
-      stars: 4.5,
-      comment: "Tư duy sản phẩm sắc bén, giao tiếp tự tin, có kinh nghiệm lead nhóm nhỏ 3 người. Rất phù hợp văn hóa team.",
-      status: "Passed",
-    },
-    overallAssessment: "Ứng viên nổi bật nhất đợt tuyển này. Đề xuất mức lương 34 triệu/tháng, sẵn sàng onboard đầu tháng sau.",
-    proposedSalary: "34.000.000 VNĐ",
-    decision: "Pending",
-  },
-  {
-    id: "CAN-002",
-    name: "Nguyễn Hải Đăng",
-    avatarColor: "bg-emerald-600",
-    email: "haidang.dev@gmail.com",
-    phone: "0918 554 221",
-    positionId: "REQ-2026-001",
-    positionTitle: "Lập trình viên Frontend (React/Next.js)",
-    experienceYears: 3,
-    appliedDate: "14/01/2026",
-    round1: {
-      interviewer: "Hoàng Long (Senior FE)",
-      score: 8.0,
-      comment: "Thành thạo Tailwind CSS và Next.js App Router. Kinh nghiệm về State Management Redux/Zustand vững.",
-      status: "Passed",
-    },
-    round2: {
-      interviewer: "Lê Trưởng Nhóm",
-      score: 7.5,
-      stars: 3.8,
-      comment: "Kỹ năng mềm tốt, cầu tiến. Tuy nhiên chưa có nhiều kinh nghiệm xử lý bài toán Web Vitals quy mô lớn.",
-      status: "Passed",
-    },
-    overallAssessment: "Phù hợp vị trí Middle-Strong Frontend. Dự phòng tốt nếu ứng viên hàng đầu từ chối offer.",
-    proposedSalary: "29.000.000 VNĐ",
-    decision: "Pending",
-  },
-  {
-    id: "CAN-006",
-    name: "Bùi Thị Mai Anh",
-    avatarColor: "bg-teal-600",
-    email: "maianh.fe@gmail.com",
-    phone: "0938 776 543",
-    positionId: "REQ-2026-001",
-    positionTitle: "Lập trình viên Frontend (React/Next.js)",
-    experienceYears: 5,
-    appliedDate: "16/01/2026",
-    round1: {
-      interviewer: "Hoàng Long (Senior FE)",
-      score: 9.0,
-      comment: "Kiến trúc CSS vững vàng, am hiểu sâu Design System, Webpack, Turbopack và CI/CD.",
-      status: "Passed",
-    },
-    round2: {
-      interviewer: "Lê Trưởng Nhóm",
-      score: 9.5,
-      stars: 4.8,
-      comment: "Kỹ năng chuyên môn xuất sắc, tư duy kiến trúc hệ thống rõ ràng, nhiệt huyết và có tinh thần mentor tốt.",
-      status: "Passed",
-    },
-    overallAssessment: "Ứng viên Senior toàn diện, tư duy giải pháp thực tế và đóng góp tích cực cho chuẩn hóa quy trình kỹ thuật.",
-    proposedSalary: "36.000.000 VNĐ",
-    decision: "Pending",
-  },
-  {
-    id: "CAN-003",
-    name: "Phạm Thùy Linh",
-    avatarColor: "bg-purple-600",
-    email: "linh.pham@yahoo.com",
-    phone: "0977 443 219",
-    positionId: "REQ-2026-002",
-    positionTitle: "Chuyên viên Marketing & Truyền thông Nội bộ",
-    experienceYears: 3,
-    appliedDate: "18/01/2026",
-    round1: {
-      interviewer: "Thu Hà (HR Manager)",
-      score: 9.0,
-      comment: "Kỹ năng viết lách cuốn hút, có kinh nghiệm chạy chiến dịch tuyển dụng cho startup công nghệ kỳ lân.",
-      status: "Passed",
-    },
-    round2: {
-      interviewer: "Lê Trưởng Nhóm",
-      score: 8.5,
-      stars: 4.3,
-      comment: "Hiểu rõ insight của kỹ sư công nghệ, thuyết trình kế hoạch quý 1 rất thuyết phục và sáng tạo.",
-      status: "Passed",
-    },
-    overallAssessment: "Rất phù hợp để thúc đẩy phong trào Tech Branding cho phòng ban. Đề xuất tuyển ngay mức 22 triệu.",
-    proposedSalary: "22.000.000 VNĐ",
-    decision: "Hired",
-    decisionNote: "Đã chốt tuyển mức 22.500.000 VNĐ, bắt đầu nhận việc từ ngày 15/02/2026.",
-    decidedAt: "28/01/2026",
-  },
-  {
-    id: "CAN-004",
-    name: "Đỗ Quốc Bảo",
-    avatarColor: "bg-amber-600",
-    email: "baodo.cloud@gmail.com",
-    phone: "0934 887 990",
-    positionId: "REQ-2026-003",
-    positionTitle: "Senior Backend Engineer (Golang/Python)",
-    experienceYears: 5,
-    appliedDate: "20/01/2026",
-    round1: {
-      interviewer: "Minh Quân (Tech Lead)",
-      score: 8.5,
-      comment: "Chuyên sâu kiến trúc vi dịch vụ Golang, am hiểu distributed locking và PostgreSQL query optimization.",
-      status: "Passed",
-    },
-    round2: {
-      interviewer: "Lê Trưởng Nhóm",
-      score: 8.0,
-      stars: 4.0,
-      comment: "Thái độ làm việc chuyên nghiệp, chịu được áp lực cao. Đã từng làm việc với khối lượng tải 100k CCU.",
-      status: "Passed",
-    },
-    overallAssessment: "Đáp ứng đầy đủ yêu cầu cho vị trí Senior Backend trọng điểm. Kỳ vọng mức lương 42 triệu.",
-    proposedSalary: "42.000.000 VNĐ",
-    decision: "Pending",
-  },
-  {
-    id: "CAN-005",
-    name: "Vũ Đình Trọng",
-    avatarColor: "bg-rose-600",
-    email: "trongvu.tech@gmail.com",
-    phone: "0966 332 118",
-    positionId: "REQ-2026-003",
-    positionTitle: "Senior Backend Engineer (Golang/Python)",
-    experienceYears: 4,
-    appliedDate: "22/01/2026",
-    round1: {
-      interviewer: "Minh Quân (Tech Lead)",
-      score: 7.0,
-      comment: "Kỹ năng lập trình đạt chuẩn, tuy nhiên tư duy hệ thống phân tán còn hạn chế, chưa chủ động về CI/CD.",
-      status: "Passed",
-    },
-    round2: {
-      interviewer: "Lê Trưởng Nhóm",
-      score: 6.5,
-      stars: 3.3,
-      comment: "Mục tiêu nghề nghiệp chưa tương thích với định hướng dự án dài hạn của công ty. Yêu cầu mức lương quá cao so với năng lực.",
-      status: "Passed",
-    },
-    overallAssessment: "Chưa đạt kỳ vọng đối với cấp bậc Senior. Cần xem xét loại hoặc điều chỉnh sang ứng viên khác.",
-    proposedSalary: "45.000.000 VNĐ",
-    decision: "Rejected",
-    decisionNote: "Chưa đáp ứng tiêu chuẩn chuyên môn cấp Senior và định hướng phát triển chung của phòng ban.",
-    decidedAt: "27/01/2026",
-  },
-];
-
 // =============================================================================
 // INTERVIEW SCHEDULE TYPES & INITIAL MOCK DATA
 // =============================================================================
@@ -773,6 +170,8 @@ export interface InterviewPanelMember {
 }
 
 export interface InterviewSchedule {
+  backendId?: number;
+  applicationId?: number;
   id: string;
   candidateId: string;
   candidateName: string;
@@ -801,251 +200,151 @@ export interface InterviewSchedule {
   notes?: string;
 }
 
-const INITIAL_INTERVIEWS: InterviewSchedule[] = [
-  {
-    id: "INT-2026-001",
-    candidateId: "CAN-004",
-    candidateName: "Đỗ Quốc Bảo",
-    candidateEmail: "baodo.cloud@gmail.com",
-    candidatePhone: "0934 887 990",
-    candidateAvatarColor: "bg-amber-600",
-    candidateExperience: "5 năm kinh nghiệm High Concurrency Golang, PostgreSQL, Kafka",
-    candidateEducation: "Đại học Bách Khoa Hà Nội - Kỹ sư CNTT",
-    candidateSkills: ["Golang", "Python", "Microservices", "Docker", "PostgreSQL", "Kafka"],
-    positionId: "REQ-2026-003",
-    positionTitle: "Senior Backend Engineer (Golang/Python)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    round: "Vòng 2: Phỏng vấn Chuyên môn & Kiến trúc",
-    date: "2026-10-03",
-    dateLabel: "Hôm nay, 03/10/2026",
-    time: "09:00 - 10:00",
-    type: "ONLINE",
-    locationOrPlatform: "Microsoft Teams",
-    meetingLink: "https://teams.microsoft.com/l/meetup-join/int001",
-    interviewers: [
-      { name: "Lê Trưởng Nhóm", role: "Hiring Manager", avatarColor: "bg-blue-600", initials: "LT" },
-      { name: "Minh Quân", role: "Tech Lead", avatarColor: "bg-indigo-600", initials: "MQ" },
-      { name: "Thu Hà", role: "Trưởng phòng HR", avatarColor: "bg-purple-600", initials: "TH" },
-    ],
-    status: "UPCOMING",
-    feedbackStatus: "PENDING",
-    notes: "Tập trung đánh giá kiến trúc Microservices và xử lý High Concurrency 100k CCU.",
-  },
-  {
-    id: "INT-2026-002",
-    candidateId: "CAN-001",
-    candidateName: "Trần Minh Quang",
-    candidateEmail: "quang.tran@gmail.com",
-    candidatePhone: "0903 112 334",
-    candidateAvatarColor: "bg-blue-600",
-    candidateExperience: "4 năm kinh nghiệm Next.js, Redux, Tailwind CSS, TypeScript",
-    candidateEducation: "Đại học Công Nghệ - ĐHQGHN",
-    candidateSkills: ["React", "Next.js", "TypeScript", "Tailwind CSS", "Web Vitals"],
-    positionId: "REQ-2026-001",
-    positionTitle: "Lập trình viên Frontend (React/Next.js)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    round: "Vòng 2: Phỏng vấn Đánh giá Năng lực Kỹ thuật",
-    date: "2026-10-03",
-    dateLabel: "Hôm nay, 03/10/2026",
-    time: "14:30 - 15:30",
-    type: "OFFLINE",
-    locationOrPlatform: "Phòng họp Tokyo (Tầng 3)",
-    room: "Phòng họp Tokyo (Tầng 3)",
-    interviewers: [
-      { name: "Lê Trưởng Nhóm", role: "Hiring Manager", avatarColor: "bg-blue-600", initials: "LT" },
-      { name: "Hoàng Long", role: "Senior FE", avatarColor: "bg-emerald-600", initials: "HL" },
-    ],
-    status: "UPCOMING",
-    feedbackStatus: "PENDING",
-    notes: "Trao đổi về dự án thương mại điện tử trước đây và kiểm tra năng lực tối ưu hóa Core Web Vitals.",
-  },
-  {
-    id: "INT-2026-003",
-    candidateId: "CAN-006",
-    candidateName: "Bùi Thị Mai Anh",
-    candidateEmail: "maianh.bui@gmail.com",
-    candidatePhone: "0945 667 889",
-    candidateAvatarColor: "bg-rose-500",
-    candidateExperience: "3.5 năm BrSE dự án ERP đối tác Tokyo, Chứng chỉ N2 (145/180)",
-    candidateEducation: "Đại học Ngoại Ngữ & ĐH Bách Khoa",
-    candidateSkills: ["Japanese N2", "System Design", "Bridge SE", "Agile/Scrum"],
-    positionId: "REQ-2026-006",
-    positionTitle: "Kỹ sư Cầu nối Dự án Nhật Bản (BrSE)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    round: "Vòng 1: Đánh giá Ngoại ngữ N2 & Kỹ thuật",
-    date: "2026-10-04",
-    dateLabel: "Ngày mai, 04/10/2026",
-    time: "10:00 - 11:00",
-    type: "ONLINE",
-    locationOrPlatform: "Microsoft Teams",
-    meetingLink: "https://teams.microsoft.com/l/meetup-join/int003",
-    interviewers: [
-      { name: "Lê Trưởng Nhóm", role: "Hiring Manager", avatarColor: "bg-blue-600", initials: "LT" },
-      { name: "Kenji Sato", role: "Technical Advisor", avatarColor: "bg-cyan-600", initials: "KS" },
-      { name: "Mai Linh", role: "HR Tech Recruiter", avatarColor: "bg-pink-600", initials: "ML" },
-    ],
-    status: "UPCOMING",
-    feedbackStatus: "PENDING",
-    notes: "Phỏng vấn 50% thời lượng bằng tiếng Nhật chuyên ngành CNTT và kiểm tra năng lực dịch spec nghiệp vụ.",
-  },
-  {
-    id: "INT-2026-004",
-    candidateId: "CAN-007",
-    candidateName: "Phạm Hoàng Nam",
-    candidateEmail: "nam.pham.design@gmail.com",
-    candidatePhone: "0978 223 445",
-    candidateAvatarColor: "bg-teal-600",
-    candidateExperience: "3 năm thiết kế B2B Enterprise Apps, Figma Design System, Usability Testing",
-    candidateEducation: "Đại học Mỹ thuật Công nghiệp",
-    candidateSkills: ["Figma", "Design Tokens", "Wireframing", "User Research"],
-    positionId: "REQ-2026-004",
-    positionTitle: "Chuyên viên Thiết Kế Trải Nghiệm (UI/UX Designer)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    round: "Vòng 2: Thuyết trình Portfolio & Design Challenge",
-    date: "2026-10-06",
-    dateLabel: "Thứ Hai, 06/10/2026",
-    time: "15:00 - 16:00",
-    type: "OFFLINE",
-    locationOrPlatform: "Phòng họp Osaka (Tầng 3)",
-    room: "Phòng họp Osaka (Tầng 3)",
-    interviewers: [
-      { name: "Lê Trưởng Nhóm", role: "Hiring Manager", avatarColor: "bg-blue-600", initials: "LT" },
-      { name: "Thúy Hạnh", role: "Lead UI/UX", avatarColor: "bg-amber-600", initials: "TH" },
-    ],
-    status: "UPCOMING",
-    feedbackStatus: "PENDING",
-    notes: "Ứng viên chuẩn bị bài thuyết trình 20 phút về bài test thiết kế luồng onboarding.",
-  },
-  {
-    id: "INT-2026-005",
-    candidateId: "CAN-002",
-    candidateName: "Nguyễn Hải Đăng",
-    candidateEmail: "haidang.dev@gmail.com",
-    candidatePhone: "0918 554 221",
-    candidateAvatarColor: "bg-emerald-600",
-    candidateExperience: "3 năm kinh nghiệm React, Next.js, Redux Toolkit",
-    candidateEducation: "Học viện Công nghệ Bưu chính Viễn thông",
-    candidateSkills: ["React", "JavaScript", "TypeScript", "Tailwind CSS"],
-    positionId: "REQ-2026-001",
-    positionTitle: "Lập trình viên Frontend (React/Next.js)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    round: "Vòng 2: Phỏng vấn Chuyên môn Trưởng Bộ Phận",
-    date: "2026-10-01",
-    dateLabel: "Thứ Năm, 01/10/2026",
-    time: "14:00 - 15:00",
-    type: "ONLINE",
-    locationOrPlatform: "Microsoft Teams",
-    meetingLink: "https://teams.microsoft.com/l/meetup-join/int005",
-    interviewers: [
-      { name: "Lê Trưởng Nhóm", role: "Hiring Manager", avatarColor: "bg-blue-600", initials: "LT" },
-      { name: "Hoàng Long", role: "Senior FE", avatarColor: "bg-emerald-600", initials: "HL" },
-    ],
-    status: "COMPLETED",
-    feedbackStatus: "SUBMITTED",
-    score: 8.5,
-    evalComment: "Kỹ năng nền tảng vững, giải quyết tình huống mượt mà. Đề xuất chuẩn bị offer.",
-    notes: "Đã hoàn thành đánh giá xuất sắc.",
-  },
-  {
-    id: "INT-2026-006",
-    candidateId: "CAN-005",
-    candidateName: "Vũ Đình Trọng",
-    candidateEmail: "trongvu.tech@gmail.com",
-    candidatePhone: "0966 332 118",
-    candidateAvatarColor: "bg-rose-600",
-    candidateExperience: "4 năm kinh nghiệm Backend Golang, Docker, MySQL",
-    candidateEducation: "Đại học Bách Khoa Hà Nội",
-    candidateSkills: ["Golang", "Docker", "MySQL", "Redis"],
-    positionId: "REQ-2026-003",
-    positionTitle: "Senior Backend Engineer (Golang/Python)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    round: "Vòng 2: Phỏng vấn Kỹ thuật Chuyên sâu",
-    date: "2026-09-29",
-    dateLabel: "Thứ Ba, 29/09/2026",
-    time: "09:30 - 10:30",
-    type: "OFFLINE",
-    locationOrPlatform: "Phòng họp Hà Nội (Tầng 2)",
-    room: "Phòng họp Hà Nội (Tầng 2)",
-    interviewers: [
-      { name: "Lê Trưởng Nhóm", role: "Hiring Manager", avatarColor: "bg-blue-600", initials: "LT" },
-      { name: "Minh Quân", role: "Tech Lead", avatarColor: "bg-indigo-600", initials: "MQ" },
-    ],
-    status: "COMPLETED",
-    feedbackStatus: "SUBMITTED",
-    score: 6.5,
-    evalComment: "Chưa đạt kỳ vọng đối với cấp bậc Senior. Mục tiêu nghề nghiệp chưa tương thích định hướng dự án.",
-    notes: "Đã gửi phản hồi từ chối cho HR.",
-  },
-  {
-    id: "INT-2026-007",
-    candidateId: "CAN-008",
-    candidateName: "Lê Quốc Cường",
-    candidateEmail: "cuong.le.qa@gmail.com",
-    candidatePhone: "0908 776 554",
-    candidateAvatarColor: "bg-purple-600",
-    candidateExperience: "5 năm kinh nghiệm QA Automation Lead (Playwright, CI/CD)",
-    candidateEducation: "Đại học FPT",
-    candidateSkills: ["Playwright", "Cypress", "Selenium", "CI/CD", "Python"],
-    positionId: "REQ-2026-005",
-    positionTitle: "QA Automation Engineer Lead",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    round: "Vòng 1: Sơ loại Năng lực Tự động hóa",
-    date: "2026-09-28",
-    dateLabel: "Thứ Hai, 28/09/2026",
-    time: "16:00 - 17:00",
-    type: "ONLINE",
-    locationOrPlatform: "Microsoft Teams",
-    meetingLink: "https://teams.microsoft.com/l/meetup-join/int007",
-    interviewers: [
-      { name: "Lê Trưởng Nhóm", role: "Hiring Manager", avatarColor: "bg-blue-600", initials: "LT" },
-      { name: "Thu Hà", role: "Trưởng phòng HR", avatarColor: "bg-purple-600", initials: "TH" },
-    ],
-    status: "CANCELLED",
-    evalComment: "Ứng viên xin dời lịch vì lý do cá nhân đột xuất. HR đang sắp xếp lại lịch sau ngày 10/10.",
-    notes: "Lịch đã hủy và chờ HR sắp xếp lại.",
-  },
-];
 
 export default function HiringManagerDashboardPage() {
   const router = useRouter();
 
-  const [requisitions, setRequisitions] = useState<JobRequisition[]>(INITIAL_REQUISITIONS);
-  const [candidates, setCandidates] = useState<ShortlistCandidate[]>(INITIAL_CANDIDATES);
+  const [requisitions, setRequisitions] = useState<JobRequisition[]>([]);
+  const [candidates, setCandidates] = useState<ShortlistCandidate[]>([]);
+  const [interviews, setInterviews] = useState<InterviewSchedule[]>([]);
+  const [departments, setDepartments] = useState<Array<{ id: number; name: string }>>([]);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
-  // Synchronize Requisitions and Applications with Backend Database API
-  useEffect(() => {
-    let isMounted = true;
-    import("@/services/requisition.service").then(({ requisitionService }) => {
-      requisitionService.getRequisitions().then((dbReqs) => {
-        if (isMounted && dbReqs && dbReqs.length > 0) {
-          const mapped: JobRequisition[] = dbReqs.map((r) => ({
-            id: r.code || `REQ-${String(r.id).padStart(3, "0")}`,
-            title: r.title,
-            department: r.department_name || "Khối Công Nghệ",
-            level: "Middle",
-            targetCount: r.quantity || 1,
-            receivedCount: 0,
-            interviewingCount: 0,
-            hiredCount: 0,
-            status: r.status === "approved" ? "Active" : r.status === "rejected" ? "Closed" : r.status === "pending_manager" || r.status === "pending_hr" ? "Pending" : "Draft",
-            salaryRange: r.min_salary && r.max_salary ? `${r.min_salary/1000000} - ${r.max_salary/1000000} triệu VNĐ` : "Thỏa thuận",
-            createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : "Hôm nay",
-            deadline: r.target_onboard_date || "31/12/2026",
-            description: r.job_description || "",
-            requirements: r.requirements || "",
-            recruitmentReason: r.reason === "replacement" ? "Thay thế nhân sự" : "Mở rộng định biên",
-          }));
-          setRequisitions(mapped);
-        }
-      }).catch((err) => {
-        console.log("Lưu ý: Không thể tải danh sách tờ trình từ API, sử dụng danh sách khởi tạo:", err);
-      });
-    });
+  // ------------------------------------------------------------------ real data (backend is the source of truth)
+  const AVATAR_COLORS = ["bg-blue-600", "bg-indigo-600", "bg-emerald-600", "bg-amber-600", "bg-rose-600", "bg-purple-600", "bg-cyan-600"];
+  const colorFor = (n: number) => AVATAR_COLORS[Math.abs(n) % AVATAR_COLORS.length];
+  const initialsOf = (name: string) => name.split(" ").filter(Boolean).slice(-2).map((x) => x[0]).join("").toUpperCase();
+  const fmtDate = (iso?: string | null) => (iso ? new Date(iso.length <= 10 ? iso : iso + (iso.endsWith("Z") ? "" : "Z")).toLocaleDateString("vi-VN") : "");
+  const levelFrom = (title: string): JobRequisition["level"] =>
+    /lead|trưởng nhóm/i.test(title) ? "Lead" : /manager|quản lý/i.test(title) ? "Manager" : /senior/i.test(title) ? "Senior" : /junior|fresher/i.test(title) ? "Junior" : "Middle";
+  const reqStatusLabel = (st: string): JobRequisition["status"] =>
+    ["draft", "changes_requested"].includes(st) ? "Draft" : st.startsWith("pending_") ? "Pending" : st === "approved" ? "Active" : "Closed";
 
-    return () => {
-      isMounted = false;
+  type HmDashboardRow = { requisition_id: number; stage_counts: Record<string, number> };
+
+  const mapRequisition = (r: RequisitionItem, counts?: Record<string, number>): JobRequisition => {
+    const c = counts || {};
+    const raw = r as RequisitionItem & { salary_justification?: string; reason_detail?: string };
+    return {
+      id: r.code,
+      backendId: r.id,
+      backendStatus: r.status,
+      title: r.title,
+      department: r.department_name || "",
+      level: levelFrom(r.title),
+      targetCount: r.quantity || 1,
+      receivedCount: Object.values(c).reduce((x, y) => x + y, 0),
+      interviewingCount: c.interviewing || 0,
+      hiredCount: c.hired || 0,
+      status: reqStatusLabel(r.status),
+      salaryRange: r.max_salary ? new Intl.NumberFormat("vi-VN").format(r.max_salary) + " VNĐ" : "Thỏa thuận",
+      createdAt: fmtDate(r.created_at),
+      deadline: r.target_onboard_date ? fmtDate(r.target_onboard_date) : "Chưa xác định",
+      description: r.job_description || "",
+      requirements: r.requirements || "",
+      workType: r.employment_type,
+      proposedSalary: r.max_salary,
+      salaryJustification: raw.salary_justification || "",
+      recruitmentReason: r.reason === "replacement" ? "Thay thế nhân sự" : "Bổ sung định biên",
+      recruitmentReasonDetail: raw.reason_detail || "",
     };
+  };
+
+  const toRound = (e?: EvaluationItem) => ({
+    interviewer: e?.evaluator_name || "Chưa có phiếu",
+    score: e ? Math.round((e.weighted_score != null ? e.weighted_score / 10 : e.overall_score) * 10) / 10 : 0,
+    comment: e?.comments || e?.strengths || "",
+    status: (e && e.recommendation === "reject" ? "Failed" : "Passed") as "Passed" | "Failed",
+  });
+
+  const loadWorkspace = useCallback(async () => {
+    try {
+      const [reqs, apps, ints, dash, depts] = await Promise.all([
+        requisitionService.getRequisitions(),
+        applicationService.getApplications(),
+        interviewService.getInterviews(),
+        apiRequest<HmDashboardRow[]>("/analytics/hiring-manager").catch(() => [] as HmDashboardRow[]),
+        apiRequest<Array<{ id: number; name: string }>>("/hr/departments").catch(() => []),
+      ]);
+      const countsByReq = new Map(dash.map((d) => [d.requisition_id, d.stage_counts]));
+      setRequisitions(reqs.map((r) => mapRequisition(r, countsByReq.get(r.id))));
+      setDepartments(depts);
+
+      const appById = new Map<number, ApplicationItem>(apps.map((a) => [a.id, a]));
+      const shortlist = apps.filter((a) => ["interviewing", "offered", "hired", "onboarded", "rejected"].includes(a.status));
+      const evals = await Promise.all(shortlist.map((a) => referralService.listEvaluations(a.id).catch(() => [] as EvaluationItem[])));
+      setCandidates(shortlist.map((a, idx) => {
+        const list = evals[idx];
+        const decision: ShortlistCandidate["decision"] = ["offered", "hired", "onboarded"].includes(a.status) ? "Hired" : a.status === "rejected" ? "Rejected" : "Pending";
+        return {
+          id: `APP-${a.id}`,
+          applicationId: a.id,
+          name: a.full_name,
+          avatarColor: colorFor(a.id),
+          email: a.email,
+          phone: a.phone,
+          positionId: String(a.job_posting_id),
+          positionTitle: a.job_title || "",
+          experienceYears: a.years_of_experience || 0,
+          appliedDate: fmtDate(a.created_at),
+          round1: toRound(list[0]),
+          round2: toRound(list[1] ?? list[0]),
+          overallAssessment: list.map((e) => e.comments).filter(Boolean).join(" · "),
+          proposedSalary: "Thỏa thuận",
+          decision,
+          decisionNote: a.rejection_reason || undefined,
+          decidedAt: decision !== "Pending" && a.updated_at ? fmtDate(a.updated_at) : undefined,
+        };
+      }));
+
+      const pad = (n: number) => String(n).padStart(2, "0");
+      setInterviews(ints.map((i: InterviewItem & { my_evaluation_submitted?: boolean; department?: string }) => {
+        const start = new Date(i.scheduled_time);
+        const end = new Date(start.getTime() + (i.duration_minutes || 45) * 60000);
+        const app = appById.get(i.application_id);
+        const status: InterviewSchedule["status"] = i.status === "completed" ? "COMPLETED" : i.status === "cancelled" ? "CANCELLED" : "UPCOMING";
+        return {
+          id: `INT-${i.id}`,
+          backendId: i.id,
+          applicationId: i.application_id,
+          candidateId: `APP-${i.application_id}`,
+          candidateName: i.candidate_name || "",
+          candidateEmail: i.candidate_email || "",
+          candidatePhone: app?.phone || "",
+          candidateAvatarColor: colorFor(i.application_id),
+          candidateExperience: app ? `${app.years_of_experience} năm kinh nghiệm${app.current_position ? " · " + app.current_position : ""}` : "",
+          candidateEducation: "",
+          candidateSkills: [],
+          positionId: String(app?.job_posting_id ?? ""),
+          positionTitle: i.job_title || "",
+          department: app?.department || "",
+          round: i.round_name,
+          date: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
+          dateLabel: start.toLocaleDateString("vi-VN"),
+          time: `${pad(start.getHours())}:${pad(start.getMinutes())} - ${pad(end.getHours())}:${pad(end.getMinutes())}`,
+          type: i.meeting_link ? "ONLINE" : "OFFLINE",
+          locationOrPlatform: i.location,
+          room: i.meeting_link ? undefined : i.location,
+          meetingLink: i.meeting_link,
+          interviewers: (i.interviewers || []).map((v: { interviewer_name?: string; role_in_interview?: string; interviewer_id?: number }) => ({
+            name: v.interviewer_name || "", role: v.role_in_interview || "Người phỏng vấn",
+            avatarColor: colorFor(v.interviewer_id || 0), initials: initialsOf(v.interviewer_name || "?"),
+          })),
+          status,
+          feedbackStatus: i.my_evaluation_submitted ? "SUBMITTED" : "PENDING",
+          score: i.score,
+          evalComment: i.feedback_notes,
+        };
+      }));
+      setWorkspaceError(null);
+    } catch (err) {
+      setWorkspaceError(err instanceof ApiError ? err.message : "Không tải được dữ liệu từ máy chủ.");
+    }
   }, []);
+
+  useEffect(() => {
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
   // View modes
   const [reqViewMode, setReqViewMode] = useState<"cards" | "table">("cards");
@@ -1068,14 +367,17 @@ export default function HiringManagerDashboardPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Profile State
-  const [managerProfile, setManagerProfile] = useState({
-    name: "Lê Trưởng Nhóm",
-    email: "truongbophan@company.com",
-    phone: "0912 345 678",
-    role: "Trưởng Bộ Phận (Hiring Manager)",
-    department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-    avatarUrl: "",
-    bio: "Chịu trách nhiệm hoạch định nhu cầu tuyển dụng, phỏng vấn chuyên môn và ra quyết định nhân sự then chốt cho khối Công nghệ.",
+  const [managerProfile, setManagerProfile] = useState(() => {
+    const u = authService.getUserInfo();
+    return {
+      name: u?.full_name || "",
+      email: u?.email || "",
+      phone: u?.phone || "",
+      role: "Trưởng Bộ Phận (Hiring Manager)",
+      department: u?.department || "",
+      avatarUrl: u?.avatar_url || "",
+      bio: u?.bio || "",
+    };
   });
 
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -1095,7 +397,6 @@ export default function HiringManagerDashboardPage() {
   const [selectedReqForClone, setSelectedReqForClone] = useState<string>("");
 
   // Interview Management State
-  const [interviews, setInterviews] = useState<InterviewSchedule[]>(INITIAL_INTERVIEWS);
   const [interviewTab, setInterviewTab] = useState<"UPCOMING" | "COMPLETED" | "CANCELLED">("UPCOMING");
   const [interviewTimeFilter, setInterviewTimeFilter] = useState<"ALL" | "TODAY" | "WEEK" | "MONTH">("ALL");
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>("");
@@ -1119,7 +420,7 @@ export default function HiringManagerDashboardPage() {
   // Approval Workflow & Audit Trail Modal State
   const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
   const [selectedApprovalType, setSelectedApprovalType] = useState<"REQUISITION" | "OFFER">("REQUISITION");
-  const [selectedApprovalId, setSelectedApprovalId] = useState<string>("REQ-2026-001");
+  const [selectedApprovalId, setSelectedApprovalId] = useState<string>("");
 
   const handleOpenApprovalWorkflow = (type: "REQUISITION" | "OFFER", id: string) => {
     setSelectedApprovalType(type);
@@ -1127,155 +428,80 @@ export default function HiringManagerDashboardPage() {
     setIsApprovalModalOpen(true);
   };
 
-  // Get active approval workflow record with dynamic fallback
-  const currentWorkflowRecord: ApprovalWorkflowRecord = useMemo(() => {
-    if (MOCK_APPROVAL_WORKFLOWS[selectedApprovalId]) {
-      return MOCK_APPROVAL_WORKFLOWS[selectedApprovalId];
-    }
-    // Dynamic fallback for any other Requisition or Candidate
-    if (selectedApprovalType === "REQUISITION") {
-      const foundReq = requisitions.find((r) => r.id === selectedApprovalId);
-      const title = foundReq ? foundReq.title : "Yêu cầu tuyển dụng";
-      const dept = foundReq ? foundReq.department : "Khối Công Nghệ";
-      return {
-        id: `WF-${selectedApprovalId}`,
-        itemCode: selectedApprovalId,
-        itemType: "REQUISITION",
-        itemTitle: title,
-        department: dept,
-        creator: "Lê Trưởng Nhóm",
-        createdAt: "10/01/2026 - 09:15",
-        overallStatus: foundReq?.status === "Active" ? "APPROVED" : "IN_PROGRESS",
-        auditHash: `sha256:${selectedApprovalId.toLowerCase().replace(/-/g, "")}8f1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`,
-        lastAuditedAt: "12/01/2026 - 16:05",
-        steps: [
-          {
-            id: "STP-FB1",
-            stepNumber: 1,
-            stepName: "Cấp 1: Khởi tạo & Đề xuất Nhu cầu Tuyển dụng",
-            approverName: "Lê Trưởng Nhóm",
-            approverRole: "Trưởng Bộ Phận (Hiring Manager)",
-            department: dept,
-            status: "APPROVED",
-            timestamp: "10/01/2026 - 09:15",
-            comment: `Đề xuất phê duyệt mở tuyển vị trí ${title} nhằm đáp ứng khối lượng công việc của dự án.`,
-          },
-          {
-            id: "STP-FB2",
-            stepNumber: 2,
-            stepName: "Cấp 2: Thẩm định Định biên & Ngân sách Headcount",
-            approverName: "Nguyễn Thị Thu Hà",
-            approverRole: "Trưởng phòng Nhân sự",
-            department: "Phòng Quản Trị Nhân Sự (HR)",
-            status: foundReq?.status === "Active" ? "APPROVED" : "PENDING",
-            timestamp: foundReq?.status === "Active" ? "10/01/2026 - 14:30" : "Đang chờ xử lý...",
-            comment:
-              foundReq?.status === "Active"
-                ? "Đã kiểm tra ngân sách headcount, đồng ý tuyển."
-                : "Đang đối soát định biên nhân sự bộ phận trước khi phê duyệt.",
-          },
-          {
-            id: "STP-FB3",
-            stepNumber: 3,
-            stepName: "Cấp 3: Phê duyệt Tài chính & Quỹ lương Dự toán",
-            approverName: "Trần Đức Thắng",
-            approverRole: "Giám đốc Tài chính (CFO)",
-            department: "Khối Tài Chính - Kế Toán",
-            status: foundReq?.status === "Active" ? "APPROVED" : "NOT_REACHED",
-            timestamp: foundReq?.status === "Active" ? "11/01/2026 - 11:20" : "Chưa đến lượt xử lý",
-            comment:
-              foundReq?.status === "Active"
-                ? "Đã cấp mã ngân sách dự toán, đảm bảo chi phí nhân sự."
-                : "Chờ phê duyệt từ Trưởng phòng Nhân sự trước khi thẩm định quỹ lương.",
-          },
-          {
-            id: "STP-FB4",
-            stepNumber: 4,
-            stepName: "Cấp 4: Phê duyệt Ký ban hành Đăng tuyển",
-            approverName: "Phạm Hoàng Nam",
-            approverRole: "Tổng Giám Đốc (CEO)",
-            department: "Ban Giám Đốc (BOD)",
-            status: foundReq?.status === "Active" ? "APPROVED" : "NOT_REACHED",
-            timestamp: foundReq?.status === "Active" ? "12/01/2026 - 16:05" : "Chưa đến lượt xử lý",
-            comment:
-              foundReq?.status === "Active"
-                ? "Phê duyệt triển khai đăng tuyển công khai."
-                : "Chờ phê duyệt từ các cấp chuyên môn.",
-          },
-        ],
-      };
-    } else {
-      const foundCandidate = candidates.find((c) => c.id === selectedApprovalId);
-      const name = foundCandidate ? foundCandidate.name : "Ứng viên";
-      const posTitle = foundCandidate ? foundCandidate.positionTitle : "Vị trí tuyển dụng";
-      const salary = foundCandidate ? foundCandidate.proposedSalary : "Thỏa thuận";
-      const isHired = foundCandidate?.decision === "Hired";
-      return {
-        id: `WF-OFFER-${selectedApprovalId}`,
-        itemCode: `OFFER-${selectedApprovalId}`,
-        itemType: "OFFER",
-        itemTitle: `Đề xuất Tuyển dụng (Offer): ${name}`,
-        department: "Phòng Phát Triển Công Nghệ & Phần Mềm",
-        creator: "Lê Trưởng Nhóm",
-        createdAt: "25/01/2026 - 10:15",
-        overallStatus: isHired ? "APPROVED" : "IN_PROGRESS",
-        auditHash: `sha256:${selectedApprovalId.toLowerCase()}e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`,
-        lastAuditedAt: isHired ? "26/01/2026 - 15:00" : "25/01/2026 - 10:15",
-        steps: [
-          {
-            id: "STP-FBO1",
-            stepNumber: 1,
-            stepName: "Cấp 1: Đề xuất Quyết định Tuyển & Mức lương (Hiring Manager)",
-            approverName: "Lê Trưởng Nhóm",
-            approverRole: "Trưởng Bộ Phận (Hiring Manager)",
-            department: "Khối Công Nghệ",
-            status: "APPROVED",
-            timestamp: "25/01/2026 - 10:15",
-            comment: `Ứng viên ${name} đáp ứng tốt yêu cầu vị trí ${posTitle}. Đề xuất tuyển mức lương ${salary}.`,
-          },
-          {
-            id: "STP-FBO2",
-            stepNumber: 2,
-            stepName: "Cấp 2: Thẩm định Đãi ngộ & Khung chính sách Phúc lợi (C&B)",
-            approverName: "Vũ Thùy Linh",
-            approverRole: "Trưởng nhóm Đãi ngộ & Phúc lợi (C&B)",
-            department: "Phòng Quản Trị Nhân Sự (HR)",
-            status: isHired ? "APPROVED" : "PENDING",
-            timestamp: isHired ? "25/01/2026 - 15:40" : "Đang chờ xử lý...",
-            comment: isHired
-              ? "Mức đãi ngộ phù hợp quy chế công ty, đã chuẩn bị hợp đồng."
-              : "Đang rà soát khung dải lương và chế độ đãi ngộ.",
-          },
-          {
-            id: "STP-FBO3",
-            stepNumber: 3,
-            stepName: "Cấp 3: Duyệt Thư mời Nhận việc (HR Director)",
-            approverName: "Nguyễn Thị Thu Hà",
-            approverRole: "Trưởng phòng Nhân sự",
-            department: "Phòng Quản Trị Nhân Sự (HR)",
-            status: isHired ? "APPROVED" : "NOT_REACHED",
-            timestamp: isHired ? "26/01/2026 - 11:00" : "Chưa đến lượt xử lý",
-            comment: isHired
-              ? "Đã kiểm tra tham chiếu đạt yêu cầu, đồng ý gửi Offer."
-              : "Chờ ý kiến thẩm định từ nhóm C&B.",
-          },
-          {
-            id: "STP-FBO4",
-            stepNumber: 4,
-            stepName: "Cấp 4: Phê duyệt Ban Giám Đốc & Ký phát hành Thư mời (BOD)",
-            approverName: "Phạm Hoàng Nam",
-            approverRole: "Tổng Giám Đốc (CEO)",
-            department: "Ban Giám Đốc (BOD)",
-            status: isHired ? "APPROVED" : "NOT_REACHED",
-            timestamp: isHired ? "26/01/2026 - 15:00" : "Chưa đến lượt xử lý",
-            comment: isHired
-              ? "Phê duyệt ký phát hành thư mời nhận việc chính thức."
-              : "Chờ trình ký từ phòng Nhân sự.",
-          },
-        ],
-      };
-    }
-  }, [selectedApprovalId, selectedApprovalType, requisitions, candidates]);
+  // Approval history loaded from the server's append-only logs; the hash is a real SHA-256 of those log rows.
+  const emptyWorkflow: ApprovalWorkflowRecord = {
+    id: "", itemCode: selectedApprovalId, itemType: selectedApprovalType, itemTitle: "Đang tải...", department: "", creator: "",
+    createdAt: "", overallStatus: "IN_PROGRESS", auditHash: "", lastAuditedAt: "", steps: [],
+  };
+  const [currentWorkflowRecord, setCurrentWorkflowRecord] = useState<ApprovalWorkflowRecord>(emptyWorkflow);
+
+  useEffect(() => {
+    if (!isApprovalModalOpen) return;
+    let cancelled = false;
+    const STEP_NAMES: Record<string, string> = { manager: "Trưởng khối duyệt", hr: "Trưởng phòng Nhân sự duyệt", executive: "Ban Giám đốc duyệt" };
+    const fmt = (iso?: string) => (iso ? new Date(iso + (iso.endsWith("Z") ? "" : "Z")).toLocaleString("vi-VN") : "");
+    const digest = async (data: unknown) => {
+      const bytes = new TextEncoder().encode(JSON.stringify(data));
+      const hash = await crypto.subtle.digest("SHA-256", bytes);
+      return "sha256:" + Array.from(new Uint8Array(hash)).map((x) => x.toString(16).padStart(2, "0")).join("");
+    };
+    (async () => {
+      try {
+        if (selectedApprovalType === "REQUISITION") {
+          const id = requisitions.find((r) => r.id === selectedApprovalId)?.backendId;
+          if (!id) return;
+          const detail = (await requisitionService.getRequisitionById(id)) as RequisitionItem & { approval_chain?: string[] };
+          const logs = (detail.approval_logs || []) as Array<{ id: number; action: string; step_name: string; comment?: string; approver_name?: string; created_at?: string }>;
+          const decisions = logs.filter((l) => ["approved", "rejected", "changes_requested"].includes(l.action));
+          const chain = detail.approval_chain || ["manager", "hr"];
+          const currentStep = detail.status.startsWith("pending_") ? detail.status.replace("pending_", "") : null;
+          const steps = chain.map((code, idx) => {
+            const log = decisions[idx];
+            const status: ApprovalStep["status"] = log ? (log.action === "approved" ? "APPROVED" : "REJECTED") : code === currentStep ? "PENDING" : "NOT_REACHED";
+            return {
+              id: `STEP-${idx + 1}`, stepNumber: idx + 1, stepName: `Cấp ${idx + 1}: ${STEP_NAMES[code] || code}`,
+              approverName: log?.approver_name || (status === "PENDING" ? "Đang chờ xử lý" : "—"), approverRole: STEP_NAMES[code] || code,
+              department: detail.department_name || "", status,
+              timestamp: log ? fmt(log.created_at) : status === "PENDING" ? "Đang chờ xử lý..." : "Chưa đến lượt xử lý",
+              comment: log?.comment || "",
+            };
+          });
+          const record: ApprovalWorkflowRecord = {
+            id: `WF-${detail.id}`, itemCode: detail.code, itemType: "REQUISITION", itemTitle: detail.title, department: detail.department_name || "",
+            creator: detail.creator_name || "", createdAt: fmt(detail.created_at),
+            overallStatus: detail.status === "approved" ? "APPROVED" : detail.status === "rejected" ? "REJECTED" : ["draft", "changes_requested"].includes(detail.status) ? "DRAFT" : "IN_PROGRESS",
+            auditHash: await digest(logs), lastAuditedAt: fmt(logs[logs.length - 1]?.created_at), steps,
+          };
+          if (!cancelled) setCurrentWorkflowRecord(record);
+        } else {
+          const appId = candidates.find((c) => c.id === selectedApprovalId)?.applicationId;
+          if (!appId) return;
+          const { offerService } = await import("@/services/offer.service");
+          const offer = (await offerService.getOffers()).find((o) => o.application_id === appId);
+          if (!offer) {
+            if (!cancelled) setCurrentWorkflowRecord({ ...emptyWorkflow, itemTitle: "Chưa có offer cho ứng viên này", overallStatus: "DRAFT" });
+            return;
+          }
+          const logs = offer.approval_logs || [];
+          const steps = logs.map((l, idx) => ({
+            id: `OL-${l.id}`, stepNumber: idx + 1, stepName: l.action, approverName: l.actor_name || "", approverRole: l.level || "",
+            department: "", status: (l.action === "rejected" ? "REJECTED" : "APPROVED") as ApprovalStep["status"],
+            timestamp: fmt(l.created_at), comment: l.comment || "",
+          }));
+          const record: ApprovalWorkflowRecord = {
+            id: `WF-OFFER-${offer.id}`, itemCode: `OFFER-${offer.id}`, itemType: "OFFER", itemTitle: `Offer: ${offer.candidate_name}`,
+            department: offer.job_title || "", creator: "", createdAt: fmt(offer.created_at),
+            overallStatus: ["approved", "sent", "accepted"].includes(offer.status) ? "APPROVED" : offer.status === "rejected" || offer.status === "declined" ? "REJECTED" : "IN_PROGRESS",
+            auditHash: await digest(logs), lastAuditedAt: fmt(logs[logs.length - 1]?.created_at), steps,
+          };
+          if (!cancelled) setCurrentWorkflowRecord(record);
+        }
+      } catch (err) {
+        if (!cancelled) setCurrentWorkflowRecord({ ...emptyWorkflow, itemTitle: err instanceof ApiError ? err.message : "Không tải được lịch sử duyệt" });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isApprovalModalOpen, selectedApprovalId, selectedApprovalType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Decision Form Inputs
   const [hireNote, setHireNote] = useState("");
@@ -1513,15 +739,8 @@ III. QUYỀN LỢI ĐÃI NGỘ:
 
   // Logout Handler
   const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_info");
-      localStorage.removeItem("internal-recruitment-session");
-    }
-    showToast("Đã đăng xuất khỏi phiên làm việc!");
-    setTimeout(() => {
-      router.push("/login");
-    }, 600);
+    authService.logout(); // revokes the server-side session too
+    router.push("/login");
   };
 
   // Avatar Upload Handler: Đọc file và mở Modal Crop
@@ -1691,45 +910,24 @@ III. QUYỀN LỢI ĐÃI NGỘ:
     setIsEvalModalOpen(true);
   };
 
-  const handleSaveEvaluation = (e: React.FormEvent) => {
+  const handleSaveEvaluation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeInterviewForEval) return;
-
-    setInterviews((prev) =>
-      prev.map((i) =>
-        i.id === activeInterviewForEval.id
-          ? {
-              ...i,
-              score: evalScore,
-              evalComment: evalComment,
-              feedbackStatus: "SUBMITTED",
-              status: "COMPLETED",
-            }
-          : i
-      )
-    );
-
-    // Also update candidate in shortlist if applicable
-    if (activeInterviewForEval.candidateId) {
-      setCandidates((prev) =>
-        prev.map((c) =>
-          c.id === activeInterviewForEval.candidateId
-            ? {
-                ...c,
-                round2: {
-                  ...c.round2,
-                  score: evalScore,
-                  comment: evalComment || c.round2.comment,
-                  status: evalScore >= 7 ? "Passed" : "Failed",
-                },
-              }
-            : c
-        )
-      );
+    if (!activeInterviewForEval?.applicationId) return;
+    const recommendation = evalRecommendation === "HIRE" ? "hire" : evalRecommendation === "REJECT" ? "reject" : "hold";
+    try {
+      await referralService.submitEvaluation({
+        application_id: activeInterviewForEval.applicationId,
+        interview_id: activeInterviewForEval.backendId,
+        overall_score: Math.min(10, Math.max(1, Math.round(evalScore))),
+        recommendation,
+        comments: evalComment || undefined,
+      });
+      await loadWorkspace();
+      setIsEvalModalOpen(false);
+      showToast("Đã nộp phiếu đánh giá. Phiếu đã nộp không sửa được (trừ khi Recruiter mở lại trong 24 giờ).");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Nộp phiếu đánh giá thất bại.");
     }
-
-    setIsEvalModalOpen(false);
-    showToast(`Đã lưu kết quả đánh giá ứng viên ${activeInterviewForEval.candidateName} (${evalScore}/10) thành công!`);
   };
 
   // Helper: Format date for input YYYY-MM-DD
@@ -1800,49 +998,32 @@ III. QUYỀN LỢI ĐÃI NGỘ:
   };
 
   // Handler: Cập nhật bản nháp (Lưu lại nhưng vẫn giữ trạng thái Draft)
-  const handleUpdateDraft = (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    if (!editingDraftId) return;
+  const buildRequisitionPayload = (saveAsDraft: boolean) => {
+    const dept = departments.find((d) => d.name === reqFormData.department) || departments[0];
+    if (!dept) throw new ApiError(422, "Chưa có phòng ban nào được khai báo — liên hệ Trưởng phòng Nhân sự.");
+    return {
+      title: reqFormData.title.trim() || "Yêu cầu tuyển dụng (Bản nháp)",
+      department_id: dept.id,
+      quantity: Number(reqFormData.targetCount) || 1,
+      reason: /thay thế/i.test(reqFormData.recruitmentReason) ? "replacement" : "expansion",
+      reason_detail: reqFormData.recruitmentReasonDetail || undefined,
+      employment_type: reqFormData.workType,
+      max_salary: reqFormData.proposedSalary || undefined,
+      salary_justification: reqFormData.salaryJustification || undefined,
+      target_onboard_date: reqFormData.targetDate || undefined,
+      job_description: reqFormData.description,
+      requirements: reqFormData.requirements,
+      save_as_draft: saveAsDraft,
+    } as Partial<RequisitionItem> & { save_as_draft: boolean };
+  };
 
-    const draftTitle = reqFormData.title.trim() || "Yêu cầu tuyển dụng (Bản nháp)";
-    const formattedSalary = reqFormData.proposedSalary
-      ? new Intl.NumberFormat("vi-VN").format(reqFormData.proposedSalary) + " VNĐ"
-      : "Thỏa thuận";
-
-    setRequisitions((prev) =>
-      prev.map((r) =>
-        r.id === editingDraftId
-          ? {
-              ...r,
-              title: draftTitle,
-              department: reqFormData.department || managerProfile.department,
-              level: reqFormData.level,
-              targetCount: Number(reqFormData.targetCount) || 1,
-              status: "Draft", // Vẫn giữ nguyên trạng thái Bản nháp
-              salaryRange: formattedSalary,
-              deadline: reqFormData.targetDate
-                ? new Date(reqFormData.targetDate).toLocaleDateString("vi-VN")
-                : r.deadline,
-              description: reqFormData.description,
-              requirements: reqFormData.requirements,
-              workType: reqFormData.workType,
-              proposedSalary: reqFormData.proposedSalary,
-              salaryJustification: reqFormData.salaryJustification,
-              recruitmentReason: reqFormData.recruitmentReason,
-              recruitmentReasonDetail: reqFormData.recruitmentReasonDetail,
-            }
-          : r
-      )
-    );
-
+  const resetRequisitionForm = () => {
     setIsCreateReqOpen(false);
     setEditingDraftId(null);
     setReqFormErrors({});
-
-    // Reset Form to initial values
     setReqFormData({
       title: "",
-      department: managerProfile.department,
+      department: managerProfile.department || departments[0]?.name || "",
       level: "Senior",
       workType: "Toàn thời gian (Full-time)",
       targetCount: 1,
@@ -1854,20 +1035,40 @@ III. QUYỀN LỢI ĐÃI NGỘ:
       description: "",
       requirements: "",
     });
+  };
 
-    showToast(`Đã lưu các thay đổi cho bản nháp: "${draftTitle}"!`);
+  const backendIdOf = (code: string | null) => requisitions.find((r) => r.id === code)?.backendId;
+
+  const handleUpdateDraft = async (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    const id = backendIdOf(editingDraftId);
+    if (!id) return;
+    try {
+      const saved = await requisitionService.updateRequisition(id, buildRequisitionPayload(true));
+      await loadWorkspace();
+      resetRequisitionForm();
+      showToast(`Đã lưu các thay đổi cho bản nháp: "${saved.title}"!`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Lưu bản nháp thất bại.");
+    }
   };
 
   // Handler: Xóa bản nháp
-  const handleDeleteDraft = (draftId: string, title?: string) => {
-    if (window.confirm(`Bạn có chắc chắn muốn xóa bản nháp "${title || draftId}" không?`)) {
-      setRequisitions((prev) => prev.filter((r) => r.id !== draftId));
+  const handleDeleteDraft = async (draftId: string, title?: string) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa bản nháp "${title || draftId}" không?`)) return;
+    const id = backendIdOf(draftId);
+    if (!id) return;
+    try {
+      await requisitionService.deleteDraft(id);
+      await loadWorkspace();
       showToast(`Đã xóa bản nháp "${title || draftId}" thành công!`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Xóa bản nháp thất bại.");
     }
   };
 
   // Handlers: Gửi yêu cầu duyệt (Dùng cho cả Tạo mới và Gửi duyệt từ Bản nháp)
-  const handleCreateRequisition = (e: React.FormEvent) => {
+  const handleCreateRequisition = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: { [key: string]: string } = {};
 
@@ -1905,139 +1106,34 @@ III. QUYỀN LỢI ĐÃI NGỘ:
       return;
     }
 
-    const formattedSalary =
-      new Intl.NumberFormat("vi-VN").format(reqFormData.proposedSalary) + " VNĐ";
-
-    if (editingDraftId) {
-      // ĐỔI TRẠNG THÁI TỪ "NHÁP" THÀNH "CHỜ DUYỆT" & ĐƯA SANG DANH SÁCH CHÍNH
-      setRequisitions((prev) =>
-        prev.map((r) =>
-          r.id === editingDraftId
-            ? {
-                ...r,
-                title: reqFormData.title.trim(),
-                department: reqFormData.department || managerProfile.department,
-                level: reqFormData.level,
-                targetCount: Number(reqFormData.targetCount) || 1,
-                status: "Pending", // Chuyển từ Draft thành Pending
-                salaryRange: formattedSalary,
-                deadline: new Date(reqFormData.targetDate).toLocaleDateString("vi-VN"),
-                description: reqFormData.description,
-                requirements: reqFormData.requirements,
-                workType: reqFormData.workType,
-                proposedSalary: reqFormData.proposedSalary,
-                salaryJustification: reqFormData.salaryJustification,
-                recruitmentReason: reqFormData.recruitmentReason,
-                recruitmentReasonDetail: reqFormData.recruitmentReasonDetail,
-              }
-            : r
-        )
-      );
-
-      showToast(`Đã gửi duyệt yêu cầu: "${reqFormData.title}" thành công! Yêu cầu đã chuyển sang danh sách chính.`);
-    } else {
-      // TẠO YÊU CẦU MỚI (CHỜ DUYỆT)
-      const newReq: JobRequisition = {
-        id: `REQ-2026-00${requisitions.length + 1}`,
-        title: reqFormData.title.trim(),
-        department: reqFormData.department || managerProfile.department,
-        level: reqFormData.level,
-        targetCount: Number(reqFormData.targetCount) || 1,
-        receivedCount: 0,
-        interviewingCount: 0,
-        hiredCount: 0,
-        status: "Pending",
-        salaryRange: formattedSalary,
-        createdAt: new Date().toLocaleDateString("vi-VN"),
-        deadline: new Date(reqFormData.targetDate).toLocaleDateString("vi-VN"),
-        description: reqFormData.description,
-        requirements: reqFormData.requirements,
-        workType: reqFormData.workType,
-        proposedSalary: reqFormData.proposedSalary,
-        salaryJustification: reqFormData.salaryJustification,
-        recruitmentReason: reqFormData.recruitmentReason,
-        recruitmentReasonDetail: reqFormData.recruitmentReasonDetail,
-      };
-
-      setRequisitions([newReq, ...requisitions]);
-      showToast(`Đã gửi yêu cầu mở tuyển: "${newReq.title}" với ngân sách ${formattedSalary} (Đang chờ duyệt)!`);
+    try {
+      const draftId = backendIdOf(editingDraftId);
+      let saved: RequisitionItem;
+      if (draftId) {
+        await requisitionService.updateRequisition(draftId, buildRequisitionPayload(true));
+        saved = await requisitionService.submitRequisition(draftId);
+      } else {
+        saved = await requisitionService.createRequisition(buildRequisitionPayload(false));
+      }
+      await loadWorkspace();
+      resetRequisitionForm();
+      showToast(`Đã gửi duyệt yêu cầu "${saved.title}" (${saved.code}) — đang chờ phê duyệt.`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Gửi yêu cầu thất bại.");
     }
-
-    setIsCreateReqOpen(false);
-    setEditingDraftId(null);
-    setReqFormErrors({});
-
-    // Reset Form to initial values
-    setReqFormData({
-      title: "",
-      department: managerProfile.department,
-      level: "Senior",
-      workType: "Toàn thời gian (Full-time)",
-      targetCount: 1,
-      targetDate: defaultTargetDate,
-      proposedSalary: 35000000,
-      salaryJustification: "",
-      recruitmentReason: "Bổ sung định biên",
-      recruitmentReasonDetail: "",
-      description: "",
-      requirements: "",
-    });
   };
 
   // Handler: Lưu nháp yêu cầu tuyển dụng mới (Save Draft Requisition)
-  const handleSaveDraftRequisition = (e?: React.MouseEvent) => {
+  const handleSaveDraftRequisition = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
-    const draftTitle = reqFormData.title.trim() || "Yêu cầu tuyển dụng (Bản nháp)";
-    const formattedSalary = reqFormData.proposedSalary
-      ? new Intl.NumberFormat("vi-VN").format(reqFormData.proposedSalary) + " VNĐ"
-      : "Thỏa thuận";
-
-    const draftReq: JobRequisition = {
-      id: `REQ-2026-00${requisitions.length + 1}`,
-      title: draftTitle,
-      department: reqFormData.department || managerProfile.department,
-      level: reqFormData.level,
-      targetCount: Number(reqFormData.targetCount) || 1,
-      receivedCount: 0,
-      interviewingCount: 0,
-      hiredCount: 0,
-      status: "Draft",
-      salaryRange: formattedSalary,
-      createdAt: new Date().toLocaleDateString("vi-VN"),
-      deadline: reqFormData.targetDate
-        ? new Date(reqFormData.targetDate).toLocaleDateString("vi-VN")
-        : "Chưa xác định",
-      description: reqFormData.description,
-      requirements: reqFormData.requirements,
-      workType: reqFormData.workType,
-      proposedSalary: reqFormData.proposedSalary,
-      salaryJustification: reqFormData.salaryJustification,
-      recruitmentReason: reqFormData.recruitmentReason,
-      recruitmentReasonDetail: reqFormData.recruitmentReasonDetail,
-    };
-
-    setRequisitions([draftReq, ...requisitions]);
-    setIsCreateReqOpen(false);
-    setEditingDraftId(null);
-    setReqFormErrors({});
-
-    // Reset Form to initial values
-    setReqFormData({
-      title: "",
-      department: managerProfile.department,
-      level: "Senior",
-      workType: "Toàn thời gian (Full-time)",
-      targetCount: 1,
-      targetDate: defaultTargetDate,
-      proposedSalary: 35000000,
-      salaryJustification: "",
-      recruitmentReason: "Bổ sung định biên",
-      recruitmentReasonDetail: "",
-      description: "",
-      requirements: "",
-    });
-
-    showToast(`Đã lưu bản nháp: "${draftReq.title}" thành công!`);
+    try {
+      const saved = await requisitionService.createRequisition(buildRequisitionPayload(true));
+      await loadWorkspace();
+      resetRequisitionForm();
+      showToast(`Đã lưu bản nháp: "${saved.title}" thành công!`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Lưu bản nháp thất bại.");
+    }
   };
 
   // Handlers: Clone Requisition
@@ -2050,25 +1146,17 @@ III. QUYỀN LỢI ĐÃI NGỘ:
     setIsCloneReqOpen(true);
   };
 
-  const handleConfirmClone = () => {
-    const sourceReq = requisitions.find((r) => r.id === selectedReqForClone);
-    if (!sourceReq) return;
-
-    const clonedReq: JobRequisition = {
-      ...sourceReq,
-      id: `REQ-2026-00${requisitions.length + 1}`,
-      title: `${sourceReq.title} (Bổ sung)`,
-      status: "Pending",
-      receivedCount: 0,
-      interviewingCount: 0,
-      hiredCount: 0,
-      createdAt: new Date().toLocaleDateString("vi-VN"),
-      deadline: "20/03/2026",
-    };
-
-    setRequisitions([clonedReq, ...requisitions]);
-    setIsCloneReqOpen(false);
-    showToast(`Đã sao chép thành công yêu cầu: ${clonedReq.title}!`);
+  const handleConfirmClone = async () => {
+    const id = backendIdOf(selectedReqForClone);
+    if (!id) return;
+    try {
+      const copy = await requisitionService.copyRequisition(id);
+      await loadWorkspace();
+      setIsCloneReqOpen(false);
+      showToast(`Đã sao chép thành bản nháp mới: ${copy.code} — hãy cập nhật ngày cần người rồi gửi duyệt.`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Sao chép thất bại.");
+    }
   };
 
   // Handlers: Hire Candidate
@@ -2079,27 +1167,19 @@ III. QUYỀN LỢI ĐÃI NGỘ:
     setIsHireModalOpen(true);
   };
 
-  const handleConfirmHire = (e: React.FormEvent) => {
+  const handleConfirmHire = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCandidate) return;
-
-    setCandidates((prev) =>
-      prev.map((c) =>
-        c.id === activeCandidate.id
-          ? {
-              ...c,
-              decision: "Hired",
-              decisionNote: hireNote || "Đồng ý tuyển dụng theo đề xuất chuyên môn.",
-              proposedSalary: hireSalary || c.proposedSalary,
-              decidedAt: new Date().toLocaleDateString("vi-VN"),
-            }
-          : c
-      )
-    );
-
-    setIsHireModalOpen(false);
-    showToast(`Đã đưa ra quyết định TUYỂN DỤNG cho ứng viên ${activeCandidate.name}!`);
-    setActiveCandidate(null);
+    if (!activeCandidate?.applicationId) return;
+    try {
+      await applicationService.hiringDecision(activeCandidate.applicationId, "offer",
+        [hireNote, hireSalary ? `Lương đề xuất: ${hireSalary}` : ""].filter(Boolean).join(" · ") || undefined);
+      await loadWorkspace();
+      setIsHireModalOpen(false);
+      showToast(`Đã chuyển ${activeCandidate.name} sang Đề xuất offer — Recruiter sẽ soạn offer để duyệt.`);
+      setActiveCandidate(null);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Lưu quyết định thất bại.");
+    }
   };
 
   // Handlers: Reject Candidate
@@ -2109,44 +1189,39 @@ III. QUYỀN LỢI ĐÃI NGỘ:
     setIsRejectModalOpen(true);
   };
 
-  const handleConfirmReject = (e: React.FormEvent) => {
+  const handleConfirmReject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCandidate) return;
-
-    setCandidates((prev) =>
-      prev.map((c) =>
-        c.id === activeCandidate.id
-          ? {
-              ...c,
-              decision: "Rejected",
-              decisionNote: rejectReason || "Chưa phù hợp với yêu cầu hiện tại của dự án.",
-              decidedAt: new Date().toLocaleDateString("vi-VN"),
-            }
-          : c
-      )
-    );
-
-    setIsRejectModalOpen(false);
-    showToast(`Đã lưu kết quả KHÔNG CHỌN ứng viên ${activeCandidate.name}.`);
-    setActiveCandidate(null);
+    if (!activeCandidate?.applicationId) return;
+    try {
+      await applicationService.hiringDecision(activeCandidate.applicationId, "reject",
+        rejectReason.trim() || "Chưa phù hợp với yêu cầu hiện tại của vị trí.");
+      await loadWorkspace();
+      setIsRejectModalOpen(false);
+      showToast(`Đã lưu kết quả KHÔNG CHỌN ứng viên ${activeCandidate.name}.`);
+      setActiveCandidate(null);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Lưu quyết định thất bại.");
+    }
   };
 
   // Profile Save Handler
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setManagerProfile((prev) => ({
-      ...prev,
-      name: editProfileForm.name,
-      phone: editProfileForm.phone,
-      department: editProfileForm.department,
-      bio: editProfileForm.bio,
-    }));
-    setIsEditProfileModalOpen(false);
-    showToast("Đã cập nhật hồ sơ cá nhân thành công!");
+    try {
+      const saved = await authService.updateProfile({ full_name: editProfileForm.name, phone: editProfileForm.phone, bio: editProfileForm.bio });
+      setManagerProfile((prev) => ({ ...prev, name: saved.full_name, phone: saved.phone || "", bio: saved.bio || "" }));
+      setIsEditProfileModalOpen(false);
+      showToast("Đã cập nhật hồ sơ cá nhân thành công!");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Cập nhật hồ sơ thất bại.");
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#fafbfc] text-slate-800 font-sans flex flex-col antialiased">
+      {workspaceError && (
+        <div className="mx-4 mt-3 px-4 py-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold">{workspaceError}</div>
+      )}
       {/* Hidden File Input for Avatar Upload */}
       <input
         type="file"
@@ -5321,15 +4396,17 @@ III. QUYỀN LỢI ĐÃI NGỘ:
           gender: "Nam",
           dateOfBirth: "1990-08-15",
         }}
-        onSaveProfile={(updated) => {
-          setManagerProfile((prev) => ({
-            ...prev,
-            name: updated.name,
-            phone: updated.phone,
-            avatarUrl: updated.avatarUrl || prev.avatarUrl,
-            bio: updated.bio || prev.bio,
-          }));
-          showToast("Đã lưu thông tin hồ sơ thành công!");
+        onSaveProfile={async (updated) => {
+          try {
+            const saved = await authService.updateProfile({
+              full_name: updated.name, phone: updated.phone, bio: updated.bio,
+              ...(updated.avatarUrl && updated.avatarUrl !== managerProfile.avatarUrl ? { avatar_url: updated.avatarUrl } : {}),
+            });
+            setManagerProfile((prev) => ({ ...prev, name: saved.full_name, phone: saved.phone || "", bio: saved.bio || "", avatarUrl: saved.avatar_url || prev.avatarUrl }));
+            showToast("Đã lưu thông tin hồ sơ thành công!");
+          } catch (err) {
+            showToast(err instanceof ApiError ? err.message : "Lưu hồ sơ thất bại.");
+          }
         }}
         onChangePassword={async ({ currentPass, newPass }) => {
           await authService.changePassword({

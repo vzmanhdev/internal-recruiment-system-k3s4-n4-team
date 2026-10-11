@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
+from tests.conftest import session_token
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -102,7 +103,7 @@ def create_user_with_roles(email: str, roles_list: list, name: str = "Test User"
             db.add(UserRole(user_id=user.id, role_id=role_obj.id))
     db.commit()
 
-    token = create_access_token(subject=user.id, security_version=user.security_version)
+    token = session_token(db, user)
     db.close()
     return user.id, f"Bearer {token}"
 
@@ -403,8 +404,8 @@ def test_object_scope_enforced():
     db.commit()
     req_id = req.id
 
-    token1 = create_access_token(subject=m1.id, security_version=m1.security_version)
-    token2 = create_access_token(subject=m2.id, security_version=m2.security_version)
+    token1 = session_token(db, m1)
+    token2 = session_token(db, m2)
     db.close()
 
     # Manager A approves own pending requisition -> Should PASS
@@ -444,7 +445,7 @@ def test_business_guard_enforced():
     db.commit()
     req_id = req.id
 
-    token1 = create_access_token(subject=m1.id, security_version=m1.security_version)
+    token1 = session_token(db, m1)
     db.close()
 
     # Attempting to re-approve an already approved requisition must fail with 400 Business Guard rejection
@@ -482,7 +483,7 @@ def test_job_create_unapproved_requisition_rejected():
 
     dept_id = dept.id
     dept_name = dept.name
-    token = create_access_token(subject=adm.id, security_version=adm.security_version)
+    token = session_token(db, adm)
     db.close()
 
     # Attempting to create a job posting linked to unapproved requisition MUST fail with HTTP 400
@@ -522,15 +523,16 @@ def test_failed_login_5_times_locks_account_15_minutes():
         resp = client.post("/api/v1/auth/login", json={"email": "lockout_user@example.com", "password": "WrongPassword!"})
         assert resp.status_code == 400
         data = resp.json()
-        assert f"Còn {5 - i} lần thử" in data["detail"] or f"Còn {5 - i} lần thử" in str(data.get("field_errors", {}))
+        # S1-01 AC2: generic message, identical for unknown email and wrong password (no enumeration)
+        assert "không chính xác" in data["detail"] and "lần thử" not in data["detail"]
 
-    # 5th incorrect attempt triggers 15-minute lock
+    # 5th incorrect attempt locks this browser session for 15 minutes (429), not the account
     resp5 = client.post("/api/v1/auth/login", json={"email": "lockout_user@example.com", "password": "WrongPassword!"})
-    assert resp5.status_code == 400
+    assert resp5.status_code == 429
     assert "tạm khóa" in resp5.json()["detail"] or "tạm khóa" in str(resp5.json())
 
     # 6th attempt even with CORRECT password while locked must be REJECTED
     resp6 = client.post("/api/v1/auth/login", json={"email": "lockout_user@example.com", "password": "CorrectPass123!"})
-    assert resp6.status_code == 400
+    assert resp6.status_code == 429
     assert "đang bị tạm khóa" in resp6.json()["detail"] or "tạm khóa" in str(resp6.json())
 

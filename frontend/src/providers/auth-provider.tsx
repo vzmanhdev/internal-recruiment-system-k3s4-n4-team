@@ -85,9 +85,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (typeof window !== "undefined") {
         localStorage.setItem("user_info", JSON.stringify(next));
         if (next.avatar_url) {
-          localStorage.setItem("user_avatar_url", next.avatar_url);
-          window.dispatchEvent(new Event("avatar_updated"));
+          localStorage.setItem(`user_avatar_url_${next.id}`, next.avatar_url);
+        } else {
+          localStorage.removeItem(`user_avatar_url_${next.id}`);
         }
+        localStorage.removeItem("user_avatar_url");
+        window.dispatchEvent(new Event("avatar_updated"));
       }
       return next;
     });
@@ -99,6 +102,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setCurrentUser(user);
       if (typeof window !== "undefined") {
         localStorage.setItem("user_info", JSON.stringify(user));
+        if (user.avatar_url) {
+          localStorage.setItem(`user_avatar_url_${user.id}`, user.avatar_url);
+        }
+        localStorage.removeItem("user_avatar_url");
+        window.dispatchEvent(new Event("avatar_updated"));
       }
       return user;
     } catch {
@@ -120,9 +128,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+const defaultAuthContext: AuthContextType = {
+  currentUser: null,
+  isAuthenticated: false,
+  isAuthInitialized: false,
+  isRefreshing: false,
+  login: async () => { throw new Error("AuthProvider not available"); },
+  logout: () => {},
+  updateCurrentUser: () => {},
+  refetchProfile: async () => null,
+};
+
 export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
   if (!context) {
+    if (typeof window === "undefined") {
+      return defaultAuthContext;
+    }
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;

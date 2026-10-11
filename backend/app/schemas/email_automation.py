@@ -23,6 +23,7 @@ class EmailTemplatePreviewRequest(BaseModel):
     body_html: Optional[str] = None
     subject: Optional[str] = None
     sample_data: Optional[dict] = None
+    application_id: Optional[int] = None
 
 class EmailTemplateResponse(BaseModel):
     id: int
@@ -50,6 +51,7 @@ class EmailLogResponse(BaseModel):
     error_message: Optional[str] = None
     sent_at: Optional[str] = None
     retried_at: Optional[str] = None
+    attempts: Optional[int] = None
 
     class Config:
         from_attributes = True

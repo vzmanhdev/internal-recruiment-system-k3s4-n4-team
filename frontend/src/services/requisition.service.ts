@@ -46,10 +46,40 @@ export const requisitionService = {
     });
   },
 
-  async approveRequisition(id: number, action: "approved" | "rejected", comment?: string): Promise<RequisitionItem> {
+  async approveRequisition(id: number, action: "approved" | "rejected" | "changes_requested", comment?: string): Promise<RequisitionItem> {
     return apiRequest<RequisitionItem>(`/requisitions/${id}/approve`, {
       method: "POST",
       body: JSON.stringify({ action, comment }),
     });
-  }
+  },
+
+  async updateRequisition(id: number, data: Partial<RequisitionItem>): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  },
+
+  async submitRequisition(id: number): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}/submit`, { method: "POST" });
+  },
+
+  async closeRequisition(id: number, status: "filled" | "paused" | "cancelled", reason: string, confirm_active_candidates = false): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}/close`, {
+      method: "POST",
+      body: JSON.stringify({ status, reason, confirm_active_candidates }),
+    });
+  },
+
+  async assignRecruiter(id: number, recruiter_id: number, assignment_type: "primary" | "secondary" = "primary"): Promise<{ success: boolean; message: string }> {
+    return apiRequest(`/requisitions/${id}/assign-recruiters`, {
+      method: "POST",
+      body: JSON.stringify({ recruiter_id, assignment_type }),
+    });
+  },
+
+  async copyRequisition(id: number): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}/copy`, { method: "POST" });
+  },
+
+  async deleteDraft(id: number): Promise<{ success: boolean }> {
+    return apiRequest(`/requisitions/${id}`, { method: "DELETE" });
+  },
 };

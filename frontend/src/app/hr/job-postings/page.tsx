@@ -1,223 +1,206 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { 
-  Briefcase, Eye, CheckCircle2, Globe, MapPin, DollarSign, Calendar, 
-  Building2, ArrowUpRight, Search, Filter, ShieldCheck
-} from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Briefcase, Eye, Loader2, Plus, RefreshCw, Send, XCircle } from 'lucide-react';
+import { jobService, type JobPostingItem } from '@/services/job.service';
+import { requisitionService, type RequisitionItem } from '@/services/requisition.service';
+import { useAuth } from '@/providers/auth-provider';
+import { useToast } from '@/components/ui/Toast';
+import { ApiError } from '@/lib/api-client';
 
-interface JobPostingItem {
-  id: string;
-  code: string;
-  title: string;
-  department: string;
-  location: string;
-  type: string;
-  salary_range: string;
-  status: 'draft' | 'pending_review' | 'published' | 'closed';
-  description: string;
-  requirements: string[];
-  benefits: string[];
-  created_at: string;
-}
+const STATUS: Record<string, { label: string; cls: string }> = {
+  draft: { label: 'Nháp', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
+  pending_review: { label: 'Chờ HR duyệt', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
+  published: { label: 'Đang đăng công khai', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+  closed: { label: 'Đã đóng', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
 
 export default function HRJobPostingsPage() {
-  const [jobs, setJobs] = useState<JobPostingItem[]>([
-    {
-      id: "JOB-001",
-      code: "JOB-2026-001",
-      title: "Senior Backend Engineer (Python / FastAPI / PostgreSQL)",
-      department: "Công Nghệ Thông Tin",
-      location: "Hà Nội (Hybrid)",
-      type: "Full-time",
-      salary_range: "35 - 50 Triệu VNĐ",
-      status: "pending_review",
-      description: "Chúng tôi tìm kiếm Senior Backend Engineer có kinh nghiệm thiết kế hệ thống Microservices, tối ưu CSDL PostgreSQL và làm việc với Docker/K8s.",
-      requirements: [
-        "Tối thiểu 4+ năm kinh nghiệm Python/FastAPI hoặc Django",
-        "Thành thạo PostgreSQL, Redis, RabbitMQ/Kafka",
-        "Có tư duy thiết kế Clean Architecture và SOLID"
-      ],
-      benefits: [
-        "Lương thưởng tháng 13 + thưởng hiệu quả dự án",
-        "Bảo hiểm sức khỏe cao cấp Healthcare PVI",
-        "Trang bị Macbook Pro M-series mới nhất"
-      ],
-      created_at: "02/10/2026"
-    },
-    {
-      id: "JOB-002",
-      code: "JOB-2026-002",
-      title: "Trưởng nhóm Data Analyst & BI Specialist",
-      department: "Khối Dữ Liệu",
-      location: "Hồ Chí Minh",
-      type: "Full-time",
-      salary_range: "45 - 55 Triệu VNĐ",
-      status: "published",
-      description: "Xây dựng dashboard báo cáo BI toàn công ty, phân tích xu hướng tuyển dụng và tối ưu phễu chuyển đổi dữ liệu.",
-      requirements: [
-        "5+ năm kinh nghiệm trong lĩnh vực Data Analysis / Power BI / Tableau",
-        "Thành thạo SQL nâng cao, Python data stack (Pandas, Numpy)",
-        "Kỹ năng thuyết trình và làm việc với Executive Management"
-      ],
-      benefits: [
-        "Chế độ đãi ngộ cạnh tranh top đầu thị trường",
-        "Du lịch nghỉ dưỡng 5 sao hàng năm"
-      ],
-      created_at: "28/09/2026"
+  const { currentUser } = useAuth();
+  const { showSuccess, showError } = useToast();
+  const rawRoles = (currentUser?.roles ?? []) as Array<string | { code: string }>;
+  const roleCodes = new Set<string>(rawRoles.map((r) => (typeof r === 'string' ? r : r.code)));
+  const canPublish = roleCodes.has('admin') || roleCodes.has('hr_manager');
+
+  const [jobs, setJobs] = useState<JobPostingItem[]>([]);
+  const [approvedReqs, setApprovedReqs] = useState<RequisitionItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ requisition_id: 0, title: '', location: 'Hà Nội', type: 'Full-time', level: 'Mid-Level', salary_range: 'Thỏa thuận', deadline: '', description: '', requirements: '' });
+
+  const load = useCallback(async () => {
+    try {
+      const [jobList, reqs] = await Promise.all([jobService.getAdminJobs(), requisitionService.getRequisitions('approved')]);
+      setJobs(jobList);
+      setApprovedReqs(reqs);
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : 'Không tải được danh sách tin tuyển dụng.');
+    } finally {
+      setLoading(false);
     }
-  ]);
+  }, []);
 
-  const [previewJob, setPreviewJob] = useState<JobPostingItem | null>(null);
+  useEffect(() => { void load(); }, [load]);
 
-  const handlePublish = (jobId: string) => {
-    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'published' } : j));
-    alert("Đã duyệt & xuất bản tin tuyển dụng lên Cổng Sự Nghiệp Công Khai!");
-    setPreviewJob(null);
+  const reload = () => {
+    setLoading(true);
+    setLoadError(null);
+    void load();
   };
+
+  const pickRequisition = (id: number) => {
+    const req = approvedReqs.find((r) => r.id === id);
+    setForm((f) => ({
+      ...f,
+      requisition_id: id,
+      title: req?.title || '',
+      location: req?.work_location || f.location,
+      type: req?.employment_type || f.type,
+      description: req?.job_description || '',
+      requirements: req?.requirements || '',
+    }));
+  };
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const req = approvedReqs.find((r) => r.id === form.requisition_id);
+    if (!req) {
+      showError('Chỉ tạo được tin từ yêu cầu tuyển dụng đã được duyệt.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await jobService.createJob({
+        ...form,
+        deadline: form.deadline || undefined,
+        department_id: req.department_id,
+        department_name: req.department_name || '',
+        status: 'pending_review',
+      });
+      setJobs((prev) => [created, ...prev]);
+      setShowForm(false);
+      showSuccess(created.status === 'published' ? 'Đã đăng tin.' : 'Đã tạo tin, đang chờ Trưởng phòng Nhân sự duyệt.');
+    } catch (err) {
+      showError(err instanceof ApiError ? err.message : 'Tạo tin thất bại.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const act = async (job: JobPostingItem, fn: () => Promise<JobPostingItem>, ok: string) => {
+    setBusyId(job.id);
+    try {
+      const updated = await fn();
+      setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
+      showSuccess(ok);
+    } catch (err) {
+      showError(err instanceof ApiError ? err.message : 'Thao tác thất bại.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const input = 'w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30';
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="border-b border-slate-200/80 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Thẩm Định & Xem Trước Tin Tuyển Dụng</h1>
-            <span className="bg-indigo-50 text-indigo-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-indigo-200">
-              [S3-10] Candidate Preview
-            </span>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Quản Lý Tin Tuyển Dụng</h1>
+            <span className="bg-blue-50 text-blue-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-blue-200">[S3-09 / S3-10]</span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Duyệt tin tuyển dụng do Recruiter tạo và xem trước (Preview) giao diện Public Career trước khi bấm Xuất bản</p>
+          <p className="text-xs text-slate-500 mt-1">Tin chỉ được tạo từ yêu cầu đã duyệt và phải được Trưởng phòng Nhân sự duyệt trước khi hiển thị công khai.</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={reload} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold cursor-pointer">
+            <RefreshCw className="w-4 h-4" /> Tải lại
+          </button>
+          <button onClick={() => setShowForm((v) => !v)} className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer">
+            <Plus className="w-4 h-4" /> Soạn tin mới
+          </button>
         </div>
       </div>
 
-      {/* Main List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {jobs.map((job) => (
-          <div key={job.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-4 hover:shadow-md transition-all">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <span className="font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold">{job.code}</span>
-                <h2 className="text-base font-bold text-slate-900 mt-1">{job.title}</h2>
-                <div className="text-xs text-slate-500 mt-0.5">{job.department}</div>
-              </div>
-
-              {job.status === 'pending_review' ? (
-                <span className="bg-amber-50 text-amber-700 font-extrabold text-[10px] px-2.5 py-1 rounded-full border border-amber-200">
-                  Chờ Duyệt Tin
-                </span>
-              ) : (
-                <span className="bg-emerald-50 text-emerald-700 font-extrabold text-[10px] px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
-                  <Globe className="w-3 h-3" />
-                  <span>Đã Xuất Bản</span>
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 pt-2 border-t border-slate-100">
-              <div className="flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                <span>{job.location}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="font-bold text-slate-900">{job.salary_range}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button 
-                onClick={() => setPreviewJob(job)}
-                className="px-3 py-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <Eye className="w-4 h-4 text-blue-600" />
-                <span>Xem Trước (Preview)</span>
-              </button>
-
-              {job.status === 'pending_review' && (
-                <button 
-                  onClick={() => handlePublish(job.id)}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1"
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>Duyệt & Xuất Bản</span>
-                </button>
-              )}
-            </div>
+      {showForm && (
+        <form onSubmit={create} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 grid gap-3 md:grid-cols-2">
+          <label className="text-xs font-semibold text-slate-700 md:col-span-2">Yêu cầu tuyển dụng đã duyệt *
+            <select required value={form.requisition_id || ''} onChange={(e) => pickRequisition(Number(e.target.value))} className={input}>
+              <option value="">— Chọn yêu cầu —</option>
+              {approvedReqs.map((r) => <option key={r.id} value={r.id}>{r.code} · {r.title}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-slate-700">Tiêu đề tin *<input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={input} /></label>
+          <label className="text-xs font-semibold text-slate-700">Hạn nhận hồ sơ<input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} className={input} /></label>
+          <label className="text-xs font-semibold text-slate-700">Địa điểm<input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className={input} /></label>
+          <label className="text-xs font-semibold text-slate-700">Mức lương hiển thị<input value={form.salary_range} onChange={(e) => setForm({ ...form, salary_range: e.target.value })} className={input} /></label>
+          <label className="text-xs font-semibold text-slate-700 md:col-span-2">Mô tả công việc *<textarea required rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={input} /></label>
+          <label className="text-xs font-semibold text-slate-700 md:col-span-2">Yêu cầu ứng viên<textarea rows={3} value={form.requirements} onChange={(e) => setForm({ ...form, requirements: e.target.value })} className={input} /></label>
+          <div className="md:col-span-2 flex justify-end gap-2">
+            <button type="button" onClick={() => setShowForm(false)} className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer">Huỷ</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer inline-flex items-center gap-1.5">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />} Gửi duyệt
+            </button>
           </div>
-        ))}
-      </div>
-
-      {/* Candidate Public Layout Preview Modal [S3-10] */}
-      {previewJob && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-3xl w-full p-8 space-y-6 my-8">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2">
-                <Globe className="w-5 h-5 text-blue-600" />
-                <span className="text-xs font-extrabold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                  Public Candidate Site Preview Mode [S3-10]
-                </span>
-              </div>
-              <button onClick={() => setPreviewJob(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕ Đóng</button>
-            </div>
-
-            {/* Public Card Design */}
-            <div className="space-y-5 bg-[#fafbfc] p-6 rounded-2xl border border-slate-200/80">
-              <div>
-                <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">{previewJob.department}</span>
-                <h1 className="text-2xl font-black text-slate-900 mt-1">{previewJob.title}</h1>
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 mt-3">
-                  <span className="bg-white border border-slate-200 px-3 py-1 rounded-lg font-semibold">{previewJob.location}</span>
-                  <span className="bg-white border border-slate-200 px-3 py-1 rounded-lg font-semibold">{previewJob.type}</span>
-                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-lg font-bold">{previewJob.salary_range}</span>
-                </div>
-              </div>
-
-              <div className="space-y-3 text-xs text-slate-700 leading-relaxed">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm mb-1">Mô tả công việc</h3>
-                  <p>{previewJob.description}</p>
-                </div>
-
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm mb-1">Yêu cầu ứng viên</h3>
-                  <ul className="list-disc list-inside space-y-1">
-                    {previewJob.requirements.map((req, idx) => (
-                      <li key={idx}>{req}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm mb-1">Quyền lợi được hưởng</h3>
-                  <ul className="list-disc list-inside space-y-1">
-                    {previewJob.benefits.map((b, idx) => (
-                      <li key={idx}>{b}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
-                <span className="text-xs text-slate-400">Nút ứng tuyển giao diện ứng viên:</span>
-                <button className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 cursor-not-allowed opacity-90">
-                  Nộp Hồ Sơ Ứng Tuyển Ngay
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button onClick={() => setPreviewJob(null)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Chỉnh Sửa Thêm</button>
-              {previewJob.status === 'pending_review' && (
-                <button onClick={() => handlePublish(previewJob.id)} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20">Duyệt & Xuất Bản Lên Career Site</button>
-              )}
-            </div>
-          </div>
-        </div>
+        </form>
       )}
 
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="p-10 flex items-center justify-center gap-2 text-xs text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Đang tải...</div>
+        ) : loadError ? (
+          <div className="p-10 text-center text-xs text-rose-600">{loadError}</div>
+        ) : jobs.length === 0 ? (
+          <div className="p-10 text-center text-xs text-slate-500">Chưa có tin tuyển dụng nào.</div>
+        ) : (
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                <th className="p-4">Tin tuyển dụng</th>
+                <th className="p-4">Phòng ban</th>
+                <th className="p-4 text-center">Lượt xem / Hồ sơ</th>
+                <th className="p-4 text-center">Trạng thái</th>
+                <th className="p-4 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
+              {jobs.map((job) => {
+                const st = STATUS[job.status] || { label: job.status, cls: 'bg-slate-50 text-slate-600 border-slate-200' };
+                return (
+                  <tr key={job.id} className="hover:bg-slate-50/70">
+                    <td className="p-4">
+                      <div className="font-bold text-slate-900 flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5 text-blue-600" />{job.title}</div>
+                      <div className="text-[11px] text-slate-400">{job.location} · {job.type}{job.deadline ? ` · hạn ${job.deadline}` : ''}</div>
+                      {job.published_at && <div className="text-[10px] text-slate-400">Xuất bản: {new Date(job.published_at + 'Z').toLocaleString('vi-VN')}</div>}
+                    </td>
+                    <td className="p-4">{job.department_name || job.department}</td>
+                    <td className="p-4 text-center font-mono">{job.views_count ?? 0} / {job.applications_count ?? 0}</td>
+                    <td className="p-4 text-center"><span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${st.cls}`}>{st.label}</span></td>
+                    <td className="p-4 text-right whitespace-nowrap">
+                      {busyId === job.id ? <Loader2 className="w-4 h-4 animate-spin inline text-slate-400" /> : (
+                        <div className="inline-flex gap-1.5">
+                          {job.status === 'published' && (
+                            <a href={`/jobs/${job.slug}`} target="_blank" rel="noreferrer" className="px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-bold text-slate-600 inline-flex items-center gap-1"><Eye className="w-3 h-3" />Xem</a>
+                          )}
+                          {canPublish && (job.status === 'pending_review' || job.status === 'draft') && (
+                            <button onClick={() => act(job, () => jobService.publishJob(job.id), 'Đã xuất bản tin.')} className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"><Send className="w-3 h-3" />Duyệt & đăng</button>
+                          )}
+                          {job.status !== 'closed' && (
+                            <button onClick={() => act(job, () => jobService.closeJob(job.id), 'Đã đóng tin.')} className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"><XCircle className="w-3 h-3" />Đóng</button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

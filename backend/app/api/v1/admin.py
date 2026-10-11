@@ -54,6 +54,37 @@ def record_audit_log(
 
 
 
+def revoke_all_sessions(db: Session, user: User, reason: str) -> int:
+    """Revoke every active server-side session and bump security_version (kill-switch for issued JWTs)."""
+    from datetime import datetime
+    from app.models.auth_session import AuthSession
+    user.security_version = (user.security_version or 1) + 1
+    return db.query(AuthSession).filter(
+        AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)
+    ).update({AuthSession.revoked_at: datetime.utcnow(), AuthSession.revoke_reason: reason}, synchronize_session=False)
+
+
+def replace_user_roles(db: Session, user: User, role_codes: list) -> None:
+    """Replace role assignments atomically (caller commits). Unknown role codes are rejected."""
+    from app.models.rbac import Role, UserRole
+    from app.services.rbac_service import DEFAULT_ROLES_MAP
+    codes = list(dict.fromkeys(r.strip().lower() for r in role_codes if r and r.strip()))
+    matched = db.query(Role).filter(Role.code.in_(codes)).all() if codes else []
+    for code in set(codes) - {r.code for r in matched}:
+        if code in DEFAULT_ROLES_MAP:  # system role not seeded yet on this database
+            role = Role(code=code, name=DEFAULT_ROLES_MAP[code], is_active=True)
+            db.add(role)
+            db.flush()
+            matched.append(role)
+    unknown = sorted(set(codes) - {r.code for r in matched})
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Vai trò không tồn tại: {', '.join(unknown)}")
+    db.query(UserRole).filter(UserRole.user_id == user.id).delete(synchronize_session=False)
+    for role in matched:
+        db.add(UserRole(user_id=user.id, role_id=role.id))
+    user.role = ",".join(codes)
+
+
 @router.get("/roles")
 def list_system_roles(
     authorization: Optional[str] = Header(None),
@@ -121,11 +152,14 @@ def list_users(
     query = db.query(User)
     if search.strip():
         term = f"%{search.strip()}%"
-        query = query.filter(or_(User.full_name.ilike(term), User.email.ilike(term)))
+        query = query.filter(or_(User.full_name.ilike(term), User.email.ilike(term), User.department.ilike(term)))  # S1-08 AC3
     if account_status != "all":
         query = query.filter(User.account_status == account_status)
     if role != "all":
-        query = query.filter(User.role.ilike(f"%{role}%"))
+        # filter by the normalized role assignments, not the legacy comma-separated string
+        from app.models.rbac import Role, UserRole
+        query = query.filter(User.id.in_(
+            db.query(UserRole.user_id).join(Role, Role.id == UserRole.role_id).filter(Role.code == role)))
 
     total = query.count()
     pages = max(1, ceil(total / page_size))
@@ -155,6 +189,8 @@ def create_user(
         account_status="active",
     )
     db.add(user)
+    db.flush()
+    replace_user_roles(db, user, payload.roles)
     db.commit()
     db.refresh(user)
     record_audit_log(db, admin.email, "CREATE_USER", "User", str(user.id), f"Khởi tạo tài khoản người dùng {user.email} với vai trò {user.role}")
@@ -194,17 +230,8 @@ def update_roles(
             headers={"X-Error-Code": "SELF_ADMIN_ROLE_REMOVE_DENIED"}
         )
 
-    user.role = ",".join(new_roles)
-
-    # Sync user_roles join table
-    from app.models.rbac import Role, UserRole
-    db.query(UserRole).filter(UserRole.user_id == user.id).delete()
-    db.commit()
-
-    matched_roles = db.query(Role).filter(Role.code.in_(new_roles)).all()
-    for r_obj in matched_roles:
-        db.add(UserRole(user_id=user.id, role_id=r_obj.id))
-
+    # Replace the normalized user_roles rows and the legacy string in ONE transaction
+    replace_user_roles(db, user, new_roles)
     db.commit()
     db.refresh(user)
 
@@ -238,6 +265,7 @@ def reset_user_password(
 
     new_pwd = payload.new_password if payload.new_password else generate_secure_random_password(16)
     user.hashed_password = hash_password(new_pwd)
+    revoke_all_sessions(db, user, "ADMIN_PASSWORD_RESET")
     db.commit()
     db.refresh(user)
     record_audit_log(db, admin.email, "ADMIN_RESET_PASSWORD", "User", str(user.id), f"Quản trị viên đặt lại mật khẩu cho tài khoản {user.email}")
@@ -256,6 +284,20 @@ def reset_user_password(
     }
 
 
+@router.get("/users/{user_id}/handover-check")
+def handover_check(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """S1-10 AC3: positions owned or recruited by this user must be handed over before/after locking."""
+    require_admin(authorization, db)
+    from app.models.requisition import JobRequisition
+    from app.models.hr import RecruiterAssignment
+    open_states = ["draft", "changes_requested", "pending_manager", "pending_hr", "pending_executive", "approved", "paused"]
+    owned = db.query(JobRequisition).filter(JobRequisition.created_by_id == user_id, JobRequisition.status.in_(open_states)).all()
+    assigned_ids = [r[0] for r in db.query(RecruiterAssignment.requisition_id).filter(RecruiterAssignment.recruiter_id == user_id).all()]
+    recruiting = db.query(JobRequisition).filter(JobRequisition.id.in_(assigned_ids or [-1]), JobRequisition.status.in_(open_states)).all()
+    items = [{"requisition_id": r.id, "code": r.code, "title": r.title, "relation": "owner"} for r in owned] +             [{"requisition_id": r.id, "code": r.code, "title": r.title, "relation": "recruiter"} for r in recruiting]
+    return {"user_id": user_id, "needs_handover": bool(items), "positions": items}
+
+
 @router.post("/users/{user_id}/lock", response_model=UserResponse)
 def lock_user(
     user_id: int,
@@ -272,9 +314,10 @@ def lock_user(
     user.is_active = False
     user.account_status = "locked"
     user.lock_reason = payload.reason.strip()
+    revoked = revoke_all_sessions(db, user, f"ACCOUNT_LOCKED: {user.lock_reason}")
     db.commit()
     db.refresh(user)
-    record_audit_log(db, admin.email, "LOCK_ACCOUNT", "User", str(user.id), f"Khóa tài khoản {user.email}. Lý do: {user.lock_reason}")
+    record_audit_log(db, admin.email, "LOCK_ACCOUNT", "User", str(user.id), f"Khóa tài khoản {user.email}. Lý do: {user.lock_reason}. Đã thu hồi {revoked} phiên.")
 
     # Trigger email notification for account lock
     try:
@@ -299,6 +342,8 @@ def unlock_user(
     user.is_active = True
     user.account_status = "active"
     user.lock_reason = None
+    user.failed_login_attempts = 0
+    user.locked_until = None
     db.commit()
     db.refresh(user)
     record_audit_log(db, admin.email, "UNLOCK_ACCOUNT", "User", str(user.id), f"Mở khóa tài khoản {user.email}")
@@ -359,7 +404,7 @@ async def import_users_from_excel(
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Không thể đọc file Excel: {str(e)}",
+                detail="Không thể đọc file Excel. Vui lòng kiểm tra tệp có đúng định dạng .xlsx và không bị hỏng.",
             )
 
     # Validate Template Structure Headers
@@ -473,7 +518,8 @@ async def import_users_from_excel(
         except Exception as err:
             db.rollback()
             failed += 1
-            errors.append({"row": idx, "email": email if "email" in locals() else "", "reason": f"Lỗi xử lý dòng: {str(err)}"})
+            errors.append({"row": idx, "email": email if "email" in locals() else "",
+                           "reason": "Dữ liệu dòng không hợp lệ (trùng mã nhân viên hoặc vi phạm ràng buộc)."})
 
     return {
         "message": f"Nhập dữ liệu thành công {imported}/{total} người dùng.",

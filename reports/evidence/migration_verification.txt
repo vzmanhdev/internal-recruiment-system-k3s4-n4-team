@@ -1,0 +1,27 @@
+== fresh.db  (row counts before: {})
+INFO  [alembic.runtime.migration] Running upgrade  -> 7dc31a5048b6, initial_recruitment_schema
+INFO  [alembic.runtime.migration] Running upgrade 7dc31a5048b6 -> 8f12a94519bc, password_reset_sessions
+INFO  [alembic.runtime.migration] Running upgrade 8f12a94519bc -> b7e4c1d9a0f2, baseline full schema + offer/onboarding/publishing workflow columns
+-- second run (idempotency):
+(no migrations pending)
+{"db": "fresh.db", "alembic_version": [["b7e4c1d9a0f2"]], "missing_tables": [], "missing_columns": [], "row_counts": {"users": 0, "user_roles": 0, "job_requisitions": 0, "job_postings": 0, "job_applications": 0, "job_offers": 0, "audit_logs": 0, "auth_sessions": 0}, "changed_counts_vs_before": {}}
+
+== dev_backend.db  (row counts before: {"users": 17, "user_roles": 23, "job_requisitions": 2, "job_postings": 2, "job_applications": 2, "job_offers": 0, "audit_logs": 117, "auth_sessions": 17})
+INFO  [alembic.runtime.migration] Running upgrade  -> 7dc31a5048b6, initial_recruitment_schema
+INFO  [alembic.runtime.migration] Running upgrade 7dc31a5048b6 -> 8f12a94519bc, password_reset_sessions
+INFO  [alembic.runtime.migration] Running upgrade 8f12a94519bc -> b7e4c1d9a0f2, baseline full schema + offer/onboarding/publishing workflow columns
+-- second run (idempotency):
+(no migrations pending)
+{"db": "dev_backend.db", "alembic_version": [["b7e4c1d9a0f2"]], "missing_tables": [], "missing_columns": [], "row_counts": {"users": 17, "user_roles": 23, "job_requisitions": 2, "job_postings": 2, "job_applications": 2, "job_offers": 0, "audit_logs": 117, "auth_sessions": 17}, "changed_counts_vs_before": {}}
+
+== dev_fallback.db  (row counts before: {"users": 0, "user_roles": 12, "job_requisitions": 0, "job_postings": 0, "job_applications": 0, "job_offers": 0, "audit_logs": 0, "auth_sessions": 0})
+INFO  [alembic.runtime.migration] Running upgrade  -> 7dc31a5048b6, initial_recruitment_schema
+INFO  [alembic.runtime.migration] Running upgrade 7dc31a5048b6 -> 8f12a94519bc, password_reset_sessions
+INFO  [alembic.runtime.migration] Running upgrade 8f12a94519bc -> b7e4c1d9a0f2, baseline full schema + offer/onboarding/publishing workflow columns
+-- second run (idempotency):
+(no migrations pending)
+{"db": "dev_fallback.db", "alembic_version": [["b7e4c1d9a0f2"]], "missing_tables": [], "missing_columns": [], "row_counts": {"users": 0, "user_roles": 12, "job_requisitions": 0, "job_postings": 0, "job_applications": 0, "job_offers": 0, "audit_logs": 0, "auth_sessions": 0}, "changed_counts_vs_before": {}}
+
+== originals unchanged:
+recruitment.db: OK
+recruitment_fallback.db: OK

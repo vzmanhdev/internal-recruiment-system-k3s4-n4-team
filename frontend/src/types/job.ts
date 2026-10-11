@@ -13,4 +13,6 @@ export interface Job {
   deadline: string;
   responsibilities: string[];
   requirements: string[];
+  benefits?: string[];
+  isExpired?: boolean;
 }

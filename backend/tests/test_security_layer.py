@@ -141,10 +141,45 @@ def test_account_lockout_after_5_failed_attempts():
     for _ in range(5):
         client.post("/api/v1/auth/login", json={"email": user.email, "password": "WrongPassword"})
 
-    # 6th attempt should return temporary lockout error
+    # 6th attempt from the same browser session is throttled (S1-01 AC3: per browser session, 429)
     lock_resp = client.post("/api/v1/auth/login", json={"email": user.email, "password": "WrongPassword"})
-    assert lock_resp.status_code == 400
+    assert lock_resp.status_code == 429
     assert "tạm khóa" in lock_resp.json()["detail"].lower()
+    assert int(lock_resp.headers["Retry-After"]) > 0
+
+
+def test_lockout_is_per_browser_session_not_per_account():
+    user = create_test_user()
+    browser_a = TestClient(fastapi_app)
+    for _ in range(5):
+        browser_a.post("/api/v1/auth/login", json={"email": user.email, "password": "WrongPassword"})
+    # even the correct password is refused in the locked browser session
+    assert browser_a.post("/api/v1/auth/login", json={"email": user.email, "password": "Password123"}).status_code == 429
+    # a new browser / incognito window (no cookies) can still sign in: the account itself is not locked
+    incognito = TestClient(fastapi_app)
+    ok = incognito.post("/api/v1/auth/login", json={"email": user.email, "password": "Password123"})
+    assert ok.status_code == 200, ok.text
+    db = TestingSessionLocal()
+    assert db.query(User).filter(User.id == user.id).first().locked_until is None
+    db.close()
+
+
+def test_failures_on_unknown_emails_also_lock_the_browser_session():
+    browser = TestClient(fastapi_app)
+    for i in range(5):
+        r = browser.post("/api/v1/auth/login", json={"email": f"ghost{i}@example.com", "password": "x"})
+    assert r.status_code == 429  # lock does not depend on whether the account exists (no enumeration)
+
+
+def test_cookieless_clients_hit_the_ip_and_email_ceiling():
+    from app.services import login_guard
+    user = create_test_user()
+    codes = []
+    for _ in range(login_guard.IPMAIL_MAX_FAILURES + 1):
+        fresh = TestClient(fastapi_app)  # drops cookies every time, like a script
+        codes.append(fresh.post("/api/v1/auth/login", json={"email": user.email, "password": "WrongPassword"}).status_code)
+    assert codes[:login_guard.IPMAIL_MAX_FAILURES - 1] == [400] * (login_guard.IPMAIL_MAX_FAILURES - 1)
+    assert codes[-1] == 429
 
 def test_admin_lock_revokes_user_sessions():
     user = create_test_user()
@@ -181,4 +216,68 @@ def test_change_password_increments_security_version():
     db = TestingSessionLocal()
     u = db.query(User).filter(User.id == user.id).first()
     assert u.security_version == 2
+    db.close()
+
+
+def test_refresh_rotates_in_place_without_extending_absolute_expiry():
+    user = create_test_user()
+    login = client.post("/api/v1/auth/login", json={"email": user.email, "password": "Password123"}).json()
+    db = TestingSessionLocal()
+    original = db.query(AuthSession).filter(AuthSession.user_id == user.id).one()
+    sid, expires = original.id, original.expires_at
+    db.close()
+    assert expires - datetime.utcnow() <= timedelta(hours=12, minutes=1)
+
+    refreshed = client.post("/api/v1/auth/refresh", json={"refresh_token": login["refresh_token"]})
+    assert refreshed.status_code == 200
+    db = TestingSessionLocal()
+    rows = db.query(AuthSession).filter(AuthSession.user_id == user.id).all()
+    assert len(rows) == 1 and rows[0].id == sid and rows[0].expires_at == expires and rows[0].revoked_at is None
+    db.close()
+    # The access token held by another tab (same session) keeps working after rotation.
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {login['access_token']}"}).status_code == 200
+
+
+def test_replayed_refresh_token_revokes_the_session():
+    user = create_test_user()
+    login = client.post("/api/v1/auth/login", json={"email": user.email, "password": "Password123"}).json()
+    client.post("/api/v1/auth/refresh", json={"refresh_token": login["refresh_token"]})
+    replay = client.post("/api/v1/auth/refresh", json={"refresh_token": login["refresh_token"]})
+    assert replay.status_code == 401 and replay.json()["detail"]["code"] == "REFRESH_TOKEN_REUSED"
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {login['access_token']}"}).status_code == 401
+
+
+def test_logout_device_a_keeps_device_b_and_logout_all_revokes_both():
+    user = create_test_user()
+    a = client.post("/api/v1/auth/login", json={"email": user.email, "password": "Password123"}, headers={"User-Agent": "DeviceA"}).json()
+    b = client.post("/api/v1/auth/login", json={"email": user.email, "password": "Password123"}, headers={"User-Agent": "DeviceB"}).json()
+    ha, hb = {"Authorization": f"Bearer {a['access_token']}"}, {"Authorization": f"Bearer {b['access_token']}"}
+    assert client.post("/api/v1/auth/logout", headers=ha).status_code == 200
+    assert client.get("/api/v1/auth/me", headers=ha).status_code == 401
+    assert client.get("/api/v1/auth/me", headers=hb).status_code == 200
+    assert client.post("/api/v1/auth/logout-all", headers=hb).status_code == 200
+    assert client.get("/api/v1/auth/me", headers=hb).status_code == 401
+
+
+def test_login_failure_does_not_reveal_whether_email_exists():
+    create_test_user()
+    c1 = TestClient(fastapi_app)
+    c2 = TestClient(fastapi_app)
+    unknown = c1.post("/api/v1/auth/login", json={"email": "nobody@example.com", "password": "Password123"})
+    wrong = c2.post("/api/v1/auth/login", json={"email": "security_test@example.com", "password": "WrongPassword1"})
+    assert unknown.status_code == wrong.status_code == 400
+    assert unknown.json()["detail"] == wrong.json()["detail"]
+    assert unknown.json().get("field_errors") == wrong.json().get("field_errors")
+
+
+def test_profile_update_cannot_change_protected_fields():
+    user = create_test_user()
+    token = client.post("/api/v1/auth/login", json={"email": user.email, "password": "Password123"}).json()["access_token"]
+    resp = client.put("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"},
+                      json={"full_name": "Tên Mới", "department": "Ban Giám đốc", "email": "hijack@example.com", "role": "admin"})
+    assert resp.status_code == 200
+    db = TestingSessionLocal()
+    fresh = db.query(User).filter(User.id == user.id).one()
+    assert fresh.full_name == "Tên Mới"
+    assert fresh.department != "Ban Giám đốc" and fresh.email == user.email and fresh.role == "employee"
     db.close()

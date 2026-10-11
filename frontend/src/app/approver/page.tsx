@@ -1,132 +1,137 @@
 'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { ShieldCheck, CheckCircle2, XCircle, AlertTriangle, FileText, Clock, LogOut } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ShieldCheck, CheckCircle2, XCircle, AlertTriangle, Loader2, MessageSquareWarning, RefreshCw } from 'lucide-react';
+import { RoleWorkspaceShell } from '@/components/layout/RoleWorkspaceShell';
+import { requisitionService, type RequisitionItem } from '@/services/requisition.service';
+import { offerService, type OfferItem } from '@/services/offer.service';
+import { useToast } from '@/components/ui/Toast';
+import { ApiError } from '@/lib/api-client';
+
+type Action = 'approved' | 'rejected' | 'changes_requested';
+type Pending = { kind: 'REQ'; item: RequisitionItem } | { kind: 'OFFER'; item: OfferItem };
+
+const money = (n?: number | null) => (n ? n.toLocaleString('vi-VN') + ' VNĐ' : 'Thỏa thuận');
 
 export default function ApproverWorkspacePage() {
-  const [selectedReq, setSelectedReq] = useState<any>(null);
-  const [rejectReason, setRejectReason] = useState('');
+  const { showSuccess, showError } = useToast();
+  const [items, setItems] = useState<Pending[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [commentFor, setCommentFor] = useState<{ key: string; action: Action } | null>(null);
+  const [comment, setComment] = useState('');
 
-  const pendingApprovals = [
-    { id: 'REQ-2026-001', title: 'Kỹ sư Backend Senior (Python/FastAPI)', department: 'Công Nghệ Thông Tin', quantity: 2, salary: '25tr - 35tr VNĐ', type: 'Tờ Trình Tuyển Dụng', priority: 'Cao', status: 'Chờ duyệt' },
-    { id: 'OFFER-2026-088', title: 'Đề xuất Offer: Đỗ Hoàng Long', department: 'Phân Tích Dữ Liệu', quantity: 1, salary: '45tr VNĐ (Vượt dải 12%)', type: 'Offer Thư Mời Nhận Việc', priority: 'Vượt hạn mức', status: 'Chờ duyệt' },
-  ];
+  const load = useCallback(async () => {
+    try {
+      const [step1, exec, offers] = await Promise.all([
+        requisitionService.getRequisitions('pending_manager'),
+        requisitionService.getRequisitions('pending_executive'),
+        offerService.getOffers('pending_approval'),
+      ]);
+      setItems([
+        ...[...step1, ...exec].map((item) => ({ kind: 'REQ' as const, item })),
+        ...offers.filter((o) => o.approval_level === 'approver').map((item) => ({ kind: 'OFFER' as const, item })),
+      ]);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(err instanceof ApiError ? err.message : 'Không tải được danh sách chờ duyệt.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const keyOf = (p: Pending) => `${p.kind}-${p.item.id}`;
+
+  const decide = async (p: Pending, action: Action, text?: string) => {
+    setBusy(keyOf(p));
+    try {
+      if (p.kind === 'REQ') await requisitionService.approveRequisition(p.item.id, action, text);
+      else await offerService.decide(p.item.id, action, text);
+      showSuccess(action === 'approved' ? 'Đã phê duyệt.' : action === 'rejected' ? 'Đã từ chối.' : 'Đã yêu cầu bổ sung.');
+      await load(); // reflect the persisted state
+    } catch (err) {
+      showError(err instanceof ApiError ? err.message : 'Thao tác thất bại.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const confirmComment = () => {
+    const target = items.find((p) => keyOf(p) === commentFor?.key);
+    if (!commentFor || !target) return;
+    if (!comment.trim()) {
+      showError('Từ chối hoặc Yêu cầu bổ sung bắt buộc phải nhập ý kiến.');
+      return;
+    }
+    const { action } = commentFor;
+    setCommentFor(null);
+    void decide(target, action, comment.trim());
+  };
 
   return (
-    <div className="min-h-screen bg-[#fafbfc] text-slate-800 font-sans flex flex-col antialiased">
-      {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
-        <div className="w-full max-w-full px-6 sm:px-8 lg:px-10 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shadow-md">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-slate-900">Approver Workspace</span>
-                <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                  Ban Giám Đốc / Người Duyệt
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">Phê duyệt Yêu cầu tuyển dụng REQ & Offer vượt hạn mức lương</p>
-            </div>
+    <RoleWorkspaceShell title="Approver Workspace" badge="Người duyệt" subtitle="Phê duyệt yêu cầu tuyển dụng và offer vượt hạn mức lương"
+      icon={<ShieldCheck className="w-6 h-6" />} accent="from-amber-500 to-orange-500">
+      <div className="bg-white rounded-[24px] border border-gray-100 p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Hồ sơ chờ bạn duyệt ({items.length})</h2>
+            <p className="text-xs text-slate-500">Tờ trình đang ở cấp duyệt của bạn và offer vượt dải lương chuẩn đã qua Trưởng phòng Nhân sự.</p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-3 bg-slate-50 border border-gray-100 px-3.5 py-1.5 rounded-full">
-              <div className="w-8 h-8 rounded-full bg-amber-500 text-white font-bold flex items-center justify-center text-xs">
-                BD
-              </div>
-              <div className="text-xs">
-                <span className="font-bold text-slate-800 block leading-none">Phạm Văn Hùng (Ban Giám Đốc)</span>
-                <span className="text-slate-400 text-[10px]">approver@company.com</span>
-              </div>
-            </div>
-            <Link href="/login" className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-gray-200 text-slate-600 hover:text-rose-600 hover:bg-rose-50 text-xs font-semibold">
-              <LogOut className="w-4 h-4" />
-              <span>Đăng xuất</span>
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="flex-1 w-full max-w-full px-6 sm:px-8 lg:px-10 py-6 flex flex-col lg:flex-row gap-6">
-        <div className="flex-1 space-y-6">
-          <div className="bg-white rounded-[24px] border border-gray-100 p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-slate-900 mb-1">Danh Sách Hồ Sơ Chờ Bạn Duyệt (2)</h2>
-            <p className="text-xs text-slate-500 mb-6">Thẩm định tờ trình tuyển dụng và đề xuất mức lương vượt hạn mức dải chuẩn</p>
-
-            <div className="space-y-4">
-              {pendingApprovals.map((req) => (
-                <div key={req.id} className="border border-amber-200/60 bg-amber-50/20 hover:bg-amber-50/40 rounded-2xl p-5 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900 text-base">{req.id}: {req.title}</span>
-                      <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">{req.type}</span>
-                    </div>
-                    <p className="text-xs text-slate-600">Phòng ban: <strong>{req.department}</strong> | Dải lương: <strong>{req.salary}</strong></p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => setSelectedReq(req)}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-                    >
-                      Thẩm Định & Duyệt
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <button onClick={() => { setLoading(true); void load(); }} className="p-2 rounded-xl border border-gray-200 hover:bg-slate-50 cursor-pointer" title="Tải lại">
+            <RefreshCw className="w-4 h-4 text-slate-600" />
+          </button>
         </div>
 
-        {/* Modal Thẩm Định & Duyệt */}
-        {selectedReq && (
-          <div className="w-full lg:w-96 bg-white rounded-[24px] border border-gray-100 p-6 shadow-xl h-fit space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm">Thẩm Định Hồ Sơ</h3>
-              <button onClick={() => setSelectedReq(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer">Đóng ✕</button>
-            </div>
-
-            <div className="text-xs space-y-3">
-              <div className="p-3 bg-slate-50 rounded-xl border border-gray-100">
-                <span className="font-bold block text-slate-900">{selectedReq.id}</span>
-                <span className="text-slate-600">{selectedReq.title}</span>
-                <span className="block text-slate-500 mt-1">Dải lương: {selectedReq.salary}</span>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block font-bold text-slate-700">Ý kiến phê duyệt / Lý do từ chối:</label>
-                <textarea 
-                  rows={3} 
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Nhập ý kiến chỉ đạo hoặc lý do từ chối..." 
-                  className="w-full p-2.5 border border-gray-200 rounded-xl bg-slate-50 text-xs" 
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-2">
-                <button 
-                  onClick={() => { alert('Đã từ chối hồ sơ thành công!'); setSelectedReq(null); }}
-                  className="py-2.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold rounded-xl text-xs hover:bg-rose-100 transition-all cursor-pointer"
-                >
-                  ✕ Từ Chối
-                </button>
-                <button 
-                  onClick={() => { alert('Đã phê duyệt hồ sơ thành công!'); setSelectedReq(null); }}
-                  className="py-2.5 bg-emerald-600 text-white font-bold rounded-xl text-xs hover:bg-emerald-700 transition-all cursor-pointer shadow-md shadow-emerald-500/20"
-                >
-                  ✓ Phê Duyệt
-                </button>
-              </div>
+        {commentFor && (
+          <div className="rounded-2xl border border-amber-200 p-4 space-y-3 bg-amber-50/40">
+            <div className="text-xs font-bold text-slate-800 flex items-center gap-2"><MessageSquareWarning className="w-4 h-4 text-amber-600" />Ý kiến (bắt buộc)</div>
+            <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={3} className="w-full border border-slate-200 rounded-xl p-3 text-xs bg-white" />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setCommentFor(null)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer">Huỷ</button>
+              <button onClick={confirmComment} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white cursor-pointer">Xác nhận</button>
             </div>
           </div>
         )}
+
+        {loading ? (
+          <div className="py-10 flex justify-center gap-2 text-xs text-slate-500"><Loader2 className="w-4 h-4 animate-spin" />Đang tải...</div>
+        ) : loadError ? (
+          <div className="py-10 text-center text-xs text-rose-600">{loadError}</div>
+        ) : items.length === 0 ? (
+          <div className="py-10 text-center text-xs text-slate-500">Không có hồ sơ nào đang chờ bạn duyệt.</div>
+        ) : (
+          <div className="space-y-3">
+            {items.map((p) => {
+              const k = keyOf(p);
+              const isReq = p.kind === 'REQ';
+              const title = isReq ? `${p.item.code} · ${p.item.title}` : `Offer: ${p.item.candidate_name} — ${p.item.job_title}`;
+              const detail = isReq
+                ? `${p.item.department_name || ''} · SL ${p.item.quantity} · ${money(p.item.max_salary)} · Cấp: ${p.item.status === 'pending_executive' ? 'Ban Giám đốc' : 'Trưởng khối'}`
+                : `${money(p.item.offered_salary)} · Giải trình: ${p.item.salary_justification || '—'}`;
+              return (
+                <div key={k} className="border border-gray-100 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      {!isReq && <AlertTriangle className="w-4 h-4 text-rose-500" />}{title}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-0.5">{detail}</div>
+                  </div>
+                  {busy === k ? <Loader2 className="w-4 h-4 animate-spin text-slate-400" /> : (
+                    <div className="flex gap-1.5">
+                      <button onClick={() => decide(p, 'approved')} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold inline-flex items-center gap-1 cursor-pointer"><CheckCircle2 className="w-3.5 h-3.5" />Duyệt</button>
+                      <button onClick={() => { setCommentFor({ key: k, action: 'changes_requested' }); setComment(''); }} className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold cursor-pointer">Yêu cầu bổ sung</button>
+                      <button onClick={() => { setCommentFor({ key: k, action: 'rejected' }); setComment(''); }} className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold inline-flex items-center gap-1 cursor-pointer"><XCircle className="w-3.5 h-3.5" />Từ chối</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
-    </div>
+    </RoleWorkspaceShell>
   );
 }

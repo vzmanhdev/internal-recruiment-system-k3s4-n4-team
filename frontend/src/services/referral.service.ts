@@ -14,6 +14,21 @@ export interface ReferralItem {
   bonus_amount: number;
   status: string;
   payout_status: string;
+  candidate_status?: string | null;
+  created_at?: string;
+}
+
+export interface EvaluationItem {
+  id: number;
+  application_id: number;
+  interview_id?: number | null;
+  evaluator_id: number;
+  evaluator_name?: string | null;
+  overall_score: number;
+  weighted_score?: number | null;
+  recommendation: "hire" | "hold" | "reject";
+  comments?: string | null;
+  strengths?: string | null;
   created_at?: string;
 }
 
@@ -27,5 +42,20 @@ export const referralService = {
       method: "POST",
       body: JSON.stringify(data),
     });
-  }
+  },
+
+  async listEvaluations(applicationId: number): Promise<EvaluationItem[]> {
+    return apiRequest<EvaluationItem[]>(`/referrals/evaluations?application_id=${applicationId}`);
+  },
+
+  async submitEvaluation(data: {
+    application_id: number;
+    interview_id?: number;
+    overall_score?: number;
+    recommendation: "hire" | "hold" | "reject";
+    comments?: string;
+    ratings?: Array<{ criterion_id: string; score: number; comment?: string }>;
+  }): Promise<EvaluationItem> {
+    return apiRequest<EvaluationItem>("/referrals/evaluations", { method: "POST", body: JSON.stringify(data) });
+  },
 };

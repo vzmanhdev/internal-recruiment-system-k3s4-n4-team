@@ -27,6 +27,8 @@ class AuthSession(Base):
     revoke_reason = Column(String(255), nullable=True)
 
     refresh_rotated_at = Column(DateTime, nullable=True)
+    # Hash of the refresh token that was rotated out last; presenting it again = token replay.
+    previous_refresh_token_hash = Column(String(255), nullable=True, index=True)
 
     user = relationship("User", back_populates="auth_sessions")
 

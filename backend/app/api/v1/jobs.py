@@ -1,4 +1,7 @@
+import json
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from pydantic import BaseModel, Field
@@ -9,10 +12,15 @@ from app.models.user import User
 from app.models.job import JobPosting
 from app.models.requisition import JobRequisition
 from app.models.hr import Department
-from app.api.deps import get_current_user_obj, require_permission
-from app.services.rbac_service import get_user_roles, get_effective_permissions
+from app.api.deps import get_current_user_obj, authenticate_bearer
+from app.services.rbac_service import get_user_roles
 
 router = APIRouter()
+
+STAFF_ROLES = {"admin", "hr_manager", "recruiter"}
+PUBLISHER_ROLES = {"admin", "hr_manager"}
+JOB_STATES = {"draft", "pending_review", "published", "closed"}
+
 
 def slugify(text: str) -> str:
     text = text.lower()
@@ -27,9 +35,10 @@ def slugify(text: str) -> str:
     text = re.sub(r'[\s-]+', '-', text).strip('-')
     return text
 
+
 class JobPostingCreate(BaseModel):
-    title: str = Field(..., example="Chuyên Viên Tuyển Dụng Nội Bộ")
-    requisition_id: Optional[int] = None
+    title: str = Field(..., min_length=1, example="Chuyên Viên Tuyển Dụng Nội Bộ")
+    requisition_id: int
     department_id: int
     department_name: str
     location: str = "Hà Nội"
@@ -38,10 +47,63 @@ class JobPostingCreate(BaseModel):
     salary_range: str = "20 - 30 Triệu"
     experience_level: Optional[str] = "2-3 năm kinh nghiệm"
     deadline: Optional[str] = None
-    description: str
+    description: str = Field(..., min_length=1)
     requirements: Optional[str] = None
     benefits: Optional[str] = None
-    status: str = "published"
+    status: str = "pending_review"
+    min_years_experience: Optional[int] = Field(default=None, ge=0, le=50)
+    required_skills: List[str] = Field(default_factory=list)
+
+
+def _roles(db: Session, user: User) -> set:
+    return {r["code"] for r in get_user_roles(db, user)}
+
+
+def _require_staff(db: Session, user: User) -> set:
+    roles = _roles(db, user)
+    if not roles & STAFF_ROLES:
+        raise HTTPException(status_code=403, detail="Chỉ Admin, HR Manager hoặc Recruiter mới được quản lý tin tuyển dụng.")
+    return roles
+
+
+def _optional_staff(authorization: Optional[str], db: Session) -> bool:
+    if not authorization:
+        return False
+    try:
+        user, _ = authenticate_bearer(authorization, db)
+    except FastAPIHTTPException:
+        return False
+    return bool(_roles(db, user) & STAFF_ROLES)
+
+
+def _is_expired(job: JobPosting) -> bool:
+    if not job.deadline:
+        return False
+    try:
+        return date.fromisoformat(job.deadline[:10]) < date.today()
+    except ValueError:
+        return False
+
+
+def _out(job: JobPosting) -> dict:
+    data = job.to_dict()
+    try:
+        skills = json.loads(job.required_skills_json) if job.required_skills_json else []
+    except ValueError:
+        skills = []
+    data.update({"is_expired": _is_expired(job), "min_years_experience": job.min_years_experience, "required_skills": skills,
+                 "openings": job.requisition.quantity if job.requisition else None})
+    return data
+
+
+def _requested_status(roles: set, requested: str) -> str:
+    if requested not in JOB_STATES:
+        raise HTTPException(status_code=422, detail=f"Trạng thái tin '{requested}' không hợp lệ.")
+    # S3-10: postings must be reviewed by the HR Manager before going public.
+    if requested == "published" and not roles & PUBLISHER_ROLES:
+        return "pending_review"
+    return requested
+
 
 @router.get("")
 def list_jobs(
@@ -49,15 +111,10 @@ def list_jobs(
     location: Optional[str] = None,
     type: Optional[str] = None,
     search: Optional[str] = None,
-    status_filter: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    query = db.query(JobPosting)
-    if status_filter:
-        query = query.filter(JobPosting.status == status_filter)
-    else:
-        # Default to published for public portal
-        query = query.filter(JobPosting.status == "published")
+    """Public job portal: only published postings are ever listed here."""
+    query = db.query(JobPosting).filter(JobPosting.status == "published")
     if department and department != "Tất cả":
         query = query.filter(JobPosting.department_name == department)
     if location and location != "Tất cả":
@@ -65,44 +122,46 @@ def list_jobs(
     if type and type != "Tất cả":
         query = query.filter(JobPosting.type == type)
     if search:
-        query = query.filter(JobPosting.title.ilike(f"%{search}%"))
+        like = f"%{search}%"
+        query = query.filter(JobPosting.title.ilike(like) | JobPosting.description.ilike(like))  # S4-01 AC3
 
     jobs = query.order_by(JobPosting.created_at.desc()).all()
-    return [j.to_dict() for j in jobs]
+    return [_out(j) for j in jobs if not _is_expired(j)]  # S4-01 AC4: published AND not expired
+
 
 @router.get("/admin-list")
 def list_all_jobs_for_admin(
+    status_filter: Optional[str] = None,
     current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    roles = get_user_roles(db, current_user)
-    role_codes = {r["code"] for r in roles}
-    effective_perms = set(get_effective_permissions(db, current_user))
+    _require_staff(db, current_user)
+    query = db.query(JobPosting)
+    if status_filter:
+        query = query.filter(JobPosting.status == status_filter)
+    jobs = query.order_by(JobPosting.created_at.desc()).all()
+    return [_out(j) for j in jobs]
 
-    is_allowed = "admin" in role_codes or "hr_manager" in role_codes or "recruiter" in role_codes or "candidate:create" in effective_perms
-    if not is_allowed:
-        raise HTTPException(status_code=403, detail="Bạn không có quyền truy cập danh sách tin tuyển dụng admin.")
-    jobs = db.query(JobPosting).order_by(JobPosting.created_at.desc()).all()
-    return [j.to_dict() for j in jobs]
 
 @router.get("/{job_id_or_slug}")
-def get_job(job_id_or_slug: str, db: Session = Depends(get_db)):
+def get_job(job_id_or_slug: str, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     if job_id_or_slug.isdigit():
         job = db.query(JobPosting).filter(JobPosting.id == int(job_id_or_slug)).first()
     else:
         job = db.query(JobPosting).filter(JobPosting.slug == job_id_or_slug).first()
 
-    if not job:
+    # Unpublished postings are only visible to recruitment staff.
+    if not job or (job.status != "published" and not _optional_staff(authorization, db)):
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
 
-    # Increment view count safely
-    try:
-        job.views_count += 1
+    if job.status == "published":
+        db.query(JobPosting).filter(JobPosting.id == job.id).update(
+            {JobPosting.views_count: JobPosting.views_count + 1}, synchronize_session=False
+        )
         db.commit()
-    except Exception:
-        db.rollback()
+        db.refresh(job)
+    return _out(job)  # is_expired → the page shows a notice instead of the form (S4-02 AC3)
 
-    return job.to_dict()
 
 @router.post("", status_code=201)
 def create_job(
@@ -110,24 +169,19 @@ def create_job(
     current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    roles = get_user_roles(db, current_user)
-    role_codes = {r["code"] for r in roles}
-    effective_perms = set(get_effective_permissions(db, current_user))
+    roles = _require_staff(db, current_user)
 
-    is_allowed = "admin" in role_codes or "hr_manager" in role_codes or "recruiter" in role_codes or "candidate:create" in effective_perms
-    if not is_allowed:
-        raise HTTPException(status_code=403, detail="Chỉ Admin, HR Manager hoặc Recruiter mới được tạo tin tuyển dụng.")
-
-    # Business Guard: Requisition must be approved before creating a job posting
-    if payload.requisition_id:
-        req = db.query(JobRequisition).filter(JobRequisition.id == payload.requisition_id).first()
-        if not req:
-            raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình tuyển dụng được chỉ định.")
-        if req.status != "approved":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Tờ trình #{req.code} đang ở trạng thái '{req.status}', chưa được phê duyệt chính thức (approved) nên không thể đăng tin tuyển dụng."
-            )
+    # Business Guard (S3-09): a posting can only be created from an approved requisition
+    req = db.query(JobRequisition).filter(JobRequisition.id == payload.requisition_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình tuyển dụng được chỉ định.")
+    if req.status != "approved":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tờ trình #{req.code} đang ở trạng thái '{req.status}', chưa được phê duyệt chính thức (approved) nên không thể đăng tin tuyển dụng."
+        )
+    if not db.query(Department.id).filter(Department.id == payload.department_id).first():
+        raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
 
     base_slug = slugify(payload.title)
     slug = base_slug
@@ -136,32 +190,21 @@ def create_job(
         slug = f"{base_slug}-{idx}"
         idx += 1
 
-    try:
-        job = JobPosting(
-            slug=slug,
-            title=payload.title,
-            requisition_id=payload.requisition_id,
-            department_id=payload.department_id,
-            department_name=payload.department_name,
-            location=payload.location,
-            type=payload.type,
-            level=payload.level,
-            salary_range=payload.salary_range,
-            experience_level=payload.experience_level,
-            deadline=payload.deadline,
-            description=payload.description,
-            requirements=payload.requirements,
-            benefits=payload.benefits,
-            status=payload.status,
-            created_by_id=current_user.id
-        )
-        db.add(job)
-        db.commit()
-        db.refresh(job)
-        return job.to_dict()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Lỗi khi đăng tin tuyển dụng: {str(e)}")
+    job_status = _requested_status(roles, payload.status)
+    job = JobPosting(
+        slug=slug,
+        **payload.model_dump(exclude={"status", "required_skills"}),
+        required_skills_json=json.dumps(payload.required_skills, ensure_ascii=False),
+        status=job_status,
+        created_by_id=current_user.id,
+        published_by_id=current_user.id if job_status == "published" else None,
+        published_at=datetime.utcnow() if job_status == "published" else None,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return _out(job)
+
 
 @router.put("/{job_id}")
 def update_job(
@@ -170,36 +213,66 @@ def update_job(
     current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    roles = get_user_roles(db, current_user)
-    role_codes = {r["code"] for r in roles}
-    effective_perms = set(get_effective_permissions(db, current_user))
-
-    is_allowed = "admin" in role_codes or "hr_manager" in role_codes or "recruiter" in role_codes or "candidate:create" in effective_perms
-    if not is_allowed:
-        raise HTTPException(status_code=403, detail="Chỉ Admin hoặc HR Manager mới được cập nhật tin tuyển dụng.")
-
+    roles = _require_staff(db, current_user)
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
+    if job.status == "closed":
+        raise HTTPException(status_code=409, detail="Tin tuyển dụng đã đóng, không thể chỉnh sửa.")
 
-    try:
-        job.title = payload.title
-        job.department_id = payload.department_id
-        job.department_name = payload.department_name
-        job.location = payload.location
-        job.type = payload.type
-        job.level = payload.level
-        job.salary_range = payload.salary_range
-        job.experience_level = payload.experience_level
-        job.deadline = payload.deadline
-        job.description = payload.description
-        job.requirements = payload.requirements
-        job.benefits = payload.benefits
-        job.status = payload.status
+    for field in ("title", "department_id", "department_name", "location", "type", "level", "salary_range",
+                  "experience_level", "deadline", "description", "requirements", "benefits", "min_years_experience"):
+        setattr(job, field, getattr(payload, field))
+    job.required_skills_json = json.dumps(payload.required_skills, ensure_ascii=False)
 
-        db.commit()
-        db.refresh(job)
-        return job.to_dict()
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Lỗi khi cập nhật tin tuyển dụng: {str(e)}")
+    new_status = _requested_status(roles, payload.status)
+    if job.status == "published" and not roles & PUBLISHER_ROLES:
+        new_status = "pending_review"  # content changed by a recruiter must be re-reviewed
+    if new_status == "published" and job.status != "published":
+        job.published_by_id = current_user.id
+        job.published_at = datetime.utcnow()
+    job.status = new_status
+    db.commit()
+    db.refresh(job)
+    return _out(job)
+
+
+@router.post("/{job_id}/publish")
+def publish_job(
+    job_id: int,
+    current_user: User = Depends(get_current_user_obj),
+    db: Session = Depends(get_db)
+):
+    """S3-10: HR Manager reviews and publishes; publisher and timestamp are recorded."""
+    if not _roles(db, current_user) & PUBLISHER_ROLES:
+        raise HTTPException(status_code=403, detail="Chỉ Trưởng phòng Nhân sự mới được duyệt và xuất bản tin tuyển dụng.")
+    job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
+    if job.status not in {"draft", "pending_review"}:
+        raise HTTPException(status_code=409, detail=f"Không thể xuất bản tin ở trạng thái '{job.status}'.")
+    req = db.query(JobRequisition).filter(JobRequisition.id == job.requisition_id).first()
+    if not req or req.status != "approved":
+        raise HTTPException(status_code=409, detail="Tờ trình gốc không còn ở trạng thái Đã duyệt.")
+    job.status = "published"
+    job.published_by_id = current_user.id
+    job.published_at = datetime.utcnow()
+    db.commit()
+    db.refresh(job)
+    return _out(job)
+
+
+@router.post("/{job_id}/close")
+def close_job(
+    job_id: int,
+    current_user: User = Depends(get_current_user_obj),
+    db: Session = Depends(get_db)
+):
+    _require_staff(db, current_user)
+    job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
+    job.status = "closed"
+    db.commit()
+    db.refresh(job)
+    return _out(job)
