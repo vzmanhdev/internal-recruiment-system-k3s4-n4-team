@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import require_roles
 from app.core.security import decode_access_token
 from app.db.session import get_db
-from app.models.application import JobApplication, ApplicationLog
+from app.models.application import JobApplication, ApplicationLog, SavedCandidateFilter
 from app.models.job import JobPosting
 from app.models.user import User
 from app.schemas.application import (
@@ -20,6 +20,9 @@ from app.schemas.application import (
     CandidateProfileUpdate,
     ApplicationResponse,
     ApplicationStageUpdate,
+    CandidateNoteCreate,
+    CandidateMergeRequest,
+    SavedFilterCreate,
     PaginatedApplicationsResponse,
 )
 from app.services.audit import write_audit_log
@@ -85,7 +88,7 @@ def submit_application(
         raise HTTPException(status_code=409, detail=f"Bạn đã nộp hồ sơ cho vị trí này. Mã tra cứu: {duplicate.code}")
 
     client_ip = request.client.host if request.client else "unknown"
-    spam_key = f"{client_ip}:{normalized_email}"
+    spam_key = f"{client_ip}:{normalized_email}:{payload.job_id}"
     previous = _recent_submissions.get(spam_key)
     if previous and datetime.utcnow() - previous < timedelta(seconds=30):
         raise HTTPException(status_code=429, detail="Bạn vừa gửi một hồ sơ. Vui lòng đợi 30 giây trước khi thử lại.")
@@ -117,6 +120,7 @@ def submit_application(
         current_department=payload.current_department,
         referral_code=payload.referral_code,
         status="applied",
+        sla_due_at=datetime.utcnow() + timedelta(days=3),
     )
 
     db.add(app_record)
@@ -125,9 +129,11 @@ def submit_application(
     _recent_submissions[spam_key] = datetime.utcnow()
 
     # Initial Log
+    first_user = db.query(User.id).order_by(User.id).first()
+    log_user_id = candidate_id or (first_user[0] if first_user else None)
     log = ApplicationLog(
         application_id=app_record.id,
-        user_id=candidate_id,
+        user_id=log_user_id,
         from_status="none",
         to_status="applied",
         note="Ứng viên nộp hồ sơ thành công",
@@ -222,19 +228,37 @@ def list_manage_applications(
     search: str = "",
     job_id: Optional[int] = None,
     status_filter: str = Query("all", alias="status"),
+    tag: str = "",
+    min_rating: int = Query(0, ge=0, le=5),
+    screening_result: str = "all",
+    sla_overdue: bool = False,
+    talent_pool: bool = False,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
     get_hr_user(authorization, db)
-    query = db.query(JobApplication)
+    query = db.query(JobApplication).filter(JobApplication.status != "merged")
 
     if job_id:
         query = query.filter(JobApplication.job_id == job_id)
 
     if status_filter != "all":
         query = query.filter(JobApplication.status == status_filter)
+    if tag.strip():
+        query = query.filter(JobApplication.tags.ilike(f'%"{tag.strip()}"%'))
+    if min_rating:
+        query = query.filter(JobApplication.rating >= min_rating)
+    if screening_result != "all":
+        query = query.filter(JobApplication.screening_result == screening_result)
+    if talent_pool:
+        query = query.filter(JobApplication.is_talent_pool.is_(True))
+    if sla_overdue:
+        query = query.filter(
+            JobApplication.sla_due_at < datetime.utcnow(),
+            JobApplication.status.notin_(["hired", "rejected", "withdrawn", "merged"]),
+        )
 
     if search.strip():
         term = f"%{search.strip()}%"
@@ -263,6 +287,73 @@ def list_manage_applications(
         "page_size": page_size,
         "pages": pages,
     }
+
+
+@router.get("/duplicates")
+def list_duplicate_candidates(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    get_hr_user(authorization, db)
+    records = db.query(JobApplication).filter(JobApplication.status != "merged").order_by(JobApplication.id).all()
+    pairs = []
+    for index, left in enumerate(records):
+        for right in records[index + 1:]:
+            same_email = left.email.strip().lower() == right.email.strip().lower()
+            same_phone = "".join(filter(str.isdigit, left.phone or "")) == "".join(filter(str.isdigit, right.phone or ""))
+            if same_email or (same_phone and len("".join(filter(str.isdigit, left.phone or ""))) >= 8):
+                pairs.append({"primary": left.to_dict(), "duplicate": right.to_dict(), "matched_by": "email" if same_email else "phone"})
+    return pairs
+
+
+@router.get("/talent-pool", response_model=PaginatedApplicationsResponse)
+def list_talent_pool(
+    search: str = "",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    get_hr_user(authorization, db)
+    query = db.query(JobApplication).filter(
+        JobApplication.status != "merged",
+        or_(
+            JobApplication.is_talent_pool.is_(True),
+            JobApplication.rating >= 4,
+            JobApplication.fit_score >= 70,
+            JobApplication.screening_result == "passed",
+        ),
+    )
+    if search.strip():
+        term = f"%{search.strip()}%"
+        query = query.filter(or_(JobApplication.full_name.ilike(term), JobApplication.email.ilike(term), JobApplication.tags.ilike(term)))
+    total = query.count()
+    pages = max(1, ceil(total / page_size))
+    items = query.order_by(JobApplication.is_talent_pool.desc(), JobApplication.fit_score.desc(), JobApplication.rating.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"items": [item.to_dict() for item in items], "total": total, "page": page, "page_size": page_size, "pages": pages}
+
+
+@router.get("/filters")
+def list_saved_candidate_filters(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_hr_user(authorization, db)
+    return [item.to_dict() for item in db.query(SavedCandidateFilter).filter_by(user_id=user.id).order_by(SavedCandidateFilter.created_at.desc()).all()]
+
+
+@router.post("/filters", status_code=status.HTTP_201_CREATED)
+def save_candidate_filter(payload: SavedFilterCreate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_hr_user(authorization, db)
+    item = SavedCandidateFilter(user_id=user.id, name=payload.name.strip(), criteria=json.dumps(payload.criteria, ensure_ascii=False))
+    db.add(item); db.commit(); db.refresh(item)
+    return item.to_dict()
+
+
+@router.delete("/filters/{filter_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_candidate_filter(filter_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_hr_user(authorization, db)
+    item = db.query(SavedCandidateFilter).filter_by(id=filter_id, user_id=user.id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bộ lọc đã lưu")
+    db.delete(item); db.commit()
 
 @router.get("/{application_id}", response_model=ApplicationResponse)
 def get_application_detail(
@@ -310,6 +401,56 @@ def update_candidate_profile(
     db.refresh(app_record)
     return app_record.to_dict()
 
+
+@router.post("/{application_id}/notes", response_model=ApplicationResponse)
+def add_candidate_note(
+    application_id: int,
+    payload: CandidateNoteCreate,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    user = get_hr_user(authorization, db)
+    app_record = db.query(JobApplication).filter_by(id=application_id).first()
+    if not app_record:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng viên")
+    note = payload.note.strip()
+    app_record.recruiter_notes = "\n".join(filter(None, [app_record.recruiter_notes, note]))
+    app_record.updated_at = datetime.utcnow()
+    db.add(ApplicationLog(application_id=app_record.id, user_id=user.id, from_status=app_record.status, to_status=app_record.status, note=f"Ghi chú nội bộ: {note}"))
+    db.commit(); db.refresh(app_record)
+    return app_record.to_dict()
+
+
+@router.post("/{application_id}/merge", response_model=ApplicationResponse)
+def merge_duplicate_candidate(
+    application_id: int,
+    payload: CandidateMergeRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    user = get_hr_user(authorization, db)
+    primary = db.query(JobApplication).filter_by(id=application_id).first()
+    duplicate = db.query(JobApplication).filter_by(id=payload.duplicate_id).first()
+    if not primary or not duplicate or primary.id == duplicate.id:
+        raise HTTPException(status_code=400, detail="Cặp hồ sơ gộp không hợp lệ")
+    same_email = primary.email.strip().lower() == duplicate.email.strip().lower()
+    primary_phone = "".join(filter(str.isdigit, primary.phone or ""))
+    duplicate_phone = "".join(filter(str.isdigit, duplicate.phone or ""))
+    if not same_email and not (len(primary_phone) >= 8 and primary_phone == duplicate_phone):
+        raise HTTPException(status_code=409, detail="Hai hồ sơ không có email hoặc số điện thoại trùng khớp")
+    primary_tags = list(dict.fromkeys(json.loads(primary.tags or "[]") + json.loads(duplicate.tags or "[]")))
+    primary.tags = json.dumps(primary_tags, ensure_ascii=False)
+    primary.rating = max(primary.rating or 0, duplicate.rating or 0)
+    primary.fit_score = max(primary.fit_score or 0, duplicate.fit_score or 0)
+    primary.is_talent_pool = bool(primary.is_talent_pool or duplicate.is_talent_pool)
+    primary.recruiter_notes = "\n".join(filter(None, [primary.recruiter_notes, duplicate.recruiter_notes]))
+    duplicate.status = "merged"
+    duplicate.merged_into_id = primary.id
+    duplicate.updated_at = datetime.utcnow()
+    db.add(ApplicationLog(application_id=primary.id, user_id=user.id, from_status=primary.status, to_status=primary.status, note=f"Đã gộp hồ sơ trùng {duplicate.code} vào hồ sơ này"))
+    db.commit(); db.refresh(primary)
+    return primary.to_dict()
+
 @router.post("/{application_id}/stage", response_model=ApplicationResponse)
 def update_application_stage(
     application_id: int,
@@ -325,9 +466,12 @@ def update_application_stage(
     valid_statuses = {"applied", "screening", "interviewing", "offered", "hired", "rejected"}
     if payload.to_status not in valid_statuses:
         raise HTTPException(status_code=400, detail="Trạng thái phễu không hợp lệ")
+    if payload.to_status == "rejected" and (not payload.note or len(payload.note.strip()) < 5):
+        raise HTTPException(status_code=422, detail="Vui lòng chọn hoặc nhập lý do loại ứng viên")
 
     from_status = app_record.status
     app_record.status = payload.to_status
+    app_record.sla_due_at = None if payload.to_status in {"hired", "rejected"} else datetime.utcnow() + timedelta(days=2)
     app_record.updated_at = datetime.utcnow()
 
     log = ApplicationLog(

@@ -31,6 +31,13 @@ export interface ApplicationItem {
   current_company?: string;
   current_position?: string;
   years_of_experience?: number;
+  rating: number;
+  fit_score: number;
+  screening_result: "pending" | "passed" | "failed";
+  sla_due_at?: string;
+  sla_overdue: boolean;
+  is_talent_pool: boolean;
+  merged_into_id?: number;
   cover_letter?: string;
   current_department?: string;
   referral_code?: string;
@@ -61,6 +68,19 @@ export interface SubmitApplicationPayload {
   cv_content_type?: string;
   website?: string;
   started_at?: string;
+}
+
+export interface DuplicateCandidatePair {
+  primary: ApplicationItem;
+  duplicate: ApplicationItem;
+  matched_by: "email" | "phone";
+}
+
+export interface SavedCandidateFilter {
+  id: number;
+  name: string;
+  criteria: Record<string, string | number | boolean>;
+  created_at: string;
 }
 
 export interface CvUploadResult {
@@ -117,6 +137,11 @@ export async function fetchManageApplications(params?: {
   status?: string;
   page?: number;
   page_size?: number;
+  tag?: string;
+  min_rating?: number;
+  screening_result?: string;
+  sla_overdue?: boolean;
+  talent_pool?: boolean;
 }): Promise<PaginatedApplications> {
   const query = new URLSearchParams();
   if (params?.search) query.append("search", params.search);
@@ -124,6 +149,11 @@ export async function fetchManageApplications(params?: {
   if (params?.status) query.append("status", params.status);
   if (params?.page) query.append("page", String(params.page));
   if (params?.page_size) query.append("page_size", String(params.page_size));
+  if (params?.tag) query.append("tag", params.tag);
+  if (params?.min_rating) query.append("min_rating", String(params.min_rating));
+  if (params?.screening_result && params.screening_result !== "all") query.append("screening_result", params.screening_result);
+  if (params?.sla_overdue) query.append("sla_overdue", "true");
+  if (params?.talent_pool) query.append("talent_pool", "true");
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
   return apiRequest<PaginatedApplications>(`/applications/manage/all${queryString}`);
@@ -135,7 +165,7 @@ export async function fetchApplicationDetail(id: number): Promise<ApplicationIte
 
 export async function updateCandidateProfile(
   id: number,
-  payload: Partial<Pick<ApplicationItem, "full_name" | "email" | "phone" | "current_company" | "current_position" | "years_of_experience" | "cv_extracted_data" | "tags" | "recruiter_notes">>,
+  payload: Partial<Pick<ApplicationItem, "full_name" | "email" | "phone" | "current_company" | "current_position" | "years_of_experience" | "cv_extracted_data" | "tags" | "recruiter_notes" | "rating" | "fit_score" | "screening_result" | "is_talent_pool">>,
 ): Promise<ApplicationItem> {
   return apiRequest<ApplicationItem>(`/applications/${id}/profile`, {
     method: "PUT",
@@ -152,4 +182,35 @@ export async function updateApplicationStage(id: number, to_status: string, note
 
 export async function withdrawApplication(id: number): Promise<ApplicationItem> {
   return apiRequest<ApplicationItem>(`/applications/${id}/withdraw`, { method: "POST" });
+}
+
+export async function addCandidateNote(id: number, note: string): Promise<ApplicationItem> {
+  return apiRequest<ApplicationItem>(`/applications/${id}/notes`, { method: "POST", body: JSON.stringify({ note }) });
+}
+
+export async function fetchDuplicateCandidates(): Promise<DuplicateCandidatePair[]> {
+  return apiRequest<DuplicateCandidatePair[]>("/applications/duplicates");
+}
+
+export async function mergeDuplicateCandidate(primaryId: number, duplicateId: number): Promise<ApplicationItem> {
+  return apiRequest<ApplicationItem>(`/applications/${primaryId}/merge`, { method: "POST", body: JSON.stringify({ duplicate_id: duplicateId }) });
+}
+
+export async function fetchTalentPool(search = ""): Promise<PaginatedApplications> {
+  const query = new URLSearchParams();
+  if (search) query.set("search", search);
+  query.set("page_size", "100");
+  return apiRequest<PaginatedApplications>(`/applications/talent-pool?${query.toString()}`);
+}
+
+export async function fetchSavedCandidateFilters(): Promise<SavedCandidateFilter[]> {
+  return apiRequest<SavedCandidateFilter[]>("/applications/filters");
+}
+
+export async function saveCandidateFilter(name: string, criteria: SavedCandidateFilter["criteria"]): Promise<SavedCandidateFilter> {
+  return apiRequest<SavedCandidateFilter>("/applications/filters", { method: "POST", body: JSON.stringify({ name, criteria }) });
+}
+
+export async function deleteCandidateFilter(id: number): Promise<void> {
+  return apiRequest<void>(`/applications/filters/${id}`, { method: "DELETE" });
 }

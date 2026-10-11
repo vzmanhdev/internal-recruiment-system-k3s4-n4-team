@@ -78,6 +78,7 @@ def validate_linked_job(db: Session, job, publishing: bool = False):
         from datetime import datetime
         if job.deadline and job.deadline.date() < datetime.utcnow().date():
             raise HTTPException(400, "Không thể xuất bản tin có hạn tuyển dụng ở quá khứ.")
-        if not (job.job_description or "").strip() or not (job.requirements or "").strip():
+        description = job.job_description or getattr(job, "description", None)
+        if not (description or "").strip() or not (job.requirements or "").strip():
             raise HTTPException(400, "Bổ sung mô tả công việc và yêu cầu ứng viên trước khi xuất bản.")
         reserve_budget(db, req)

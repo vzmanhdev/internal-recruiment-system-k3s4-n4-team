@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String
-from sqlalchemy.orm import relationship, synonym
+from sqlalchemy.orm import relationship
 from app.db.session import Base
 
 
@@ -12,9 +12,11 @@ class HeadcountBudget(Base):
     monthly_salary_limit = Column(Numeric(18, 2), nullable=False, default=10**12)
     year = Column(Integer, nullable=False, default=lambda: datetime.now().year)
     status = Column(String(50), nullable=False, default="active")
-    budget_quantity = synonym("headcount_limit")
-    used_quantity = synonym("reserved_headcount")
-    created_at = synonym("updated_at")
+    # Kept as physical compatibility columns for databases created by the
+    # first headcount implementation. New code reads the normalized fields.
+    budget_quantity = Column(Integer, nullable=False, default=10)
+    used_quantity = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     reserved_headcount = Column(Integer, nullable=False, default=0)
     reserved_monthly_salary = Column(Numeric(18, 2), nullable=False, default=0)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

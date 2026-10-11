@@ -29,10 +29,24 @@ class CandidateProfileUpdate(BaseModel):
     cv_extracted_data: Optional[dict[str, Any]] = None
     tags: Optional[list[str]] = None
     recruiter_notes: Optional[str] = Field(None, max_length=5000)
+    rating: Optional[int] = Field(None, ge=0, le=5)
+    fit_score: Optional[int] = Field(None, ge=0, le=100)
+    screening_result: Optional[str] = Field(None, pattern="^(pending|passed|failed)$")
+    is_talent_pool: Optional[bool] = None
 
 class ApplicationStageUpdate(BaseModel):
     to_status: str = Field(..., description="Trạng thái phễu mới: applied, screening, interviewing, offered, hired, rejected")
     note: Optional[str] = Field(None, max_length=1000, description="Ghi chú nhận xét của HR")
+
+class CandidateNoteCreate(BaseModel):
+    note: str = Field(..., min_length=2, max_length=2000)
+
+class CandidateMergeRequest(BaseModel):
+    duplicate_id: int = Field(..., gt=0)
+
+class SavedFilterCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    criteria: dict[str, Any]
 
 class ApplicationLogResponse(BaseModel):
     id: int
@@ -61,6 +75,9 @@ class ApplicationResponse(BaseModel):
     cv_extracted_data: dict[str, Any] = Field(default_factory=dict)
     tags: List[str] = Field(default_factory=list)
     recruiter_notes: Optional[str] = None
+    current_company: Optional[str] = None
+    current_position: Optional[str] = None
+    years_of_experience: Optional[int] = None
     cover_letter: Optional[str] = None
     current_department: Optional[str] = None
     referral_code: Optional[str] = None
@@ -68,6 +85,13 @@ class ApplicationResponse(BaseModel):
     created_at: str
     updated_at: str
     logs: List[ApplicationLogResponse] = Field(default_factory=list)
+    rating: int = 0
+    fit_score: int = 0
+    screening_result: str = "pending"
+    sla_due_at: Optional[str] = None
+    sla_overdue: bool = False
+    is_talent_pool: bool = False
+    merged_into_id: Optional[int] = None
 
 class PaginatedApplicationsResponse(BaseModel):
     items: List[ApplicationResponse]

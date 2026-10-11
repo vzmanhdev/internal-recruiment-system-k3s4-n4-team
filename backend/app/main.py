@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 from typing import Dict
 
 from fastapi import FastAPI, Request, status
@@ -22,7 +23,7 @@ from app.api.v1.requisition import router as requisition_router
 from app.core.config import settings
 from app.core.security import hash_password
 from app.db.session import Base, SessionLocal, engine
-from app.models.application import ApplicationLog, JobApplication
+from app.models.application import ApplicationLog, JobApplication, SavedCandidateFilter
 from app.models.hr import Competency, Department, JobTitle, SharedCategory
 from app.models.headcount import HeadcountBudget, RequisitionPublication
 from app.models.interview import InterviewInterviewer, InterviewSchedule
@@ -39,7 +40,15 @@ Base.metadata.create_all(bind=engine)
 
 with engine.begin() as connection:
     requisition_columns = {column["name"] for column in inspect(engine).get_columns("job_requisitions")}
-    for name, definition in {"recruiter_id": "INTEGER REFERENCES users(id)", "support_recruiter_id": "INTEGER REFERENCES users(id)", "headcount_budget_id": "INTEGER REFERENCES headcount_budgets(id)", "reserved_monthly_salary": "NUMERIC(18, 2)"}.items():
+    for name, definition in {
+        "recruiter_id": "INTEGER REFERENCES users(id)",
+        "support_recruiter_id": "INTEGER REFERENCES users(id)",
+        "headcount_budget_id": "INTEGER REFERENCES headcount_budgets(id)",
+        "reserved_monthly_salary": "NUMERIC(18, 2)",
+        "replacement_for": "VARCHAR(255)",
+        "experience_years": "VARCHAR(50) NOT NULL DEFAULT '1-3 năm'",
+        "deadline": "TIMESTAMP" if engine.dialect.name == "postgresql" else "DATETIME",
+    }.items():
         if name not in requisition_columns:
             connection.execute(text(f"ALTER TABLE job_requisitions ADD COLUMN {name} {definition}"))
     user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
@@ -70,14 +79,102 @@ with engine.begin() as connection:
         connection.execute(text(f"ALTER TABLE interview_schedules ADD COLUMN candidate_response_at {timestamp_type}"))
     application_columns = {column["name"] for column in inspect(engine).get_columns("job_applications")}
     for name, definition in {
+        "code": "VARCHAR(50)",
+        "job_id": "INTEGER REFERENCES job_postings(id)",
+        "job_posting_id": "INTEGER REFERENCES job_postings(id)",
+        "current_department": "VARCHAR(255)",
         "cv_filename": "VARCHAR(255)",
         "cv_content_type": "VARCHAR(120)",
         "cv_extracted_data": "TEXT",
         "tags": "TEXT",
         "recruiter_notes": "TEXT",
+        "rating": "INTEGER NOT NULL DEFAULT 0",
+        "fit_score": "INTEGER NOT NULL DEFAULT 0",
+        "screening_result": "VARCHAR(30) NOT NULL DEFAULT 'pending'",
+        "sla_due_at": "TIMESTAMP" if engine.dialect.name == "postgresql" else "DATETIME",
+        "is_talent_pool": "BOOLEAN NOT NULL DEFAULT false" if engine.dialect.name == "postgresql" else "BOOLEAN NOT NULL DEFAULT 0",
+        "merged_into_id": "INTEGER REFERENCES job_applications(id)",
     }.items():
         if name not in application_columns:
             connection.execute(text(f"ALTER TABLE job_applications ADD COLUMN {name} {definition}"))
+    refreshed_application_columns = {column["name"] for column in inspect(engine).get_columns("job_applications")}
+    if {"job_id", "job_posting_id"}.issubset(refreshed_application_columns):
+        connection.execute(text("UPDATE job_applications SET job_id = job_posting_id WHERE job_id IS NULL"))
+        connection.execute(text("UPDATE job_applications SET job_posting_id = job_id WHERE job_posting_id IS NULL"))
+    for row in connection.execute(text("SELECT id FROM job_applications WHERE code IS NULL OR code = ''")):
+        connection.execute(
+            text("UPDATE job_applications SET code = :code WHERE id = :id"),
+            {"code": f"APP-{row.id}", "id": row.id},
+        )
+    log_columns = {column["name"] for column in inspect(engine).get_columns("application_logs")}
+    for name, definition in {
+        "user_id": "INTEGER REFERENCES users(id)",
+        "changed_by_id": "INTEGER REFERENCES users(id)",
+        "note": "TEXT",
+        "comment": "TEXT",
+    }.items():
+        if name not in log_columns:
+            connection.execute(text(f"ALTER TABLE application_logs ADD COLUMN {name} {definition}"))
+    refreshed_log_columns = {column["name"] for column in inspect(engine).get_columns("application_logs")}
+    if {"user_id", "changed_by_id"}.issubset(refreshed_log_columns):
+        connection.execute(text("UPDATE application_logs SET user_id = changed_by_id WHERE user_id IS NULL"))
+        connection.execute(text("UPDATE application_logs SET changed_by_id = user_id WHERE changed_by_id IS NULL"))
+    if {"note", "comment"}.issubset(refreshed_log_columns):
+        connection.execute(text("UPDATE application_logs SET note = comment WHERE note IS NULL"))
+        connection.execute(text("UPDATE application_logs SET comment = note WHERE comment IS NULL"))
+    headcount_columns = {column["name"] for column in inspect(engine).get_columns("headcount_budgets")}
+    for name, definition in {
+        "budget_quantity": "INTEGER NOT NULL DEFAULT 10",
+        "used_quantity": "INTEGER NOT NULL DEFAULT 0",
+        "created_at": "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP" if engine.dialect.name == "postgresql" else "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "headcount_limit": "INTEGER NOT NULL DEFAULT 10",
+        "monthly_salary_limit": "NUMERIC(18, 2) NOT NULL DEFAULT 1000000000000",
+        "year": f"INTEGER NOT NULL DEFAULT {datetime.now().year}",
+        "status": "VARCHAR(50) NOT NULL DEFAULT 'active'",
+        "reserved_headcount": "INTEGER NOT NULL DEFAULT 0",
+        "reserved_monthly_salary": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "updated_at": "TIMESTAMP" if engine.dialect.name == "postgresql" else "DATETIME",
+    }.items():
+        if name not in headcount_columns:
+            connection.execute(text(f"ALTER TABLE headcount_budgets ADD COLUMN {name} {definition}"))
+    if "budget_quantity" in headcount_columns:
+        connection.execute(text("UPDATE headcount_budgets SET headcount_limit = budget_quantity WHERE budget_quantity IS NOT NULL"))
+    if "used_quantity" in headcount_columns:
+        connection.execute(text("UPDATE headcount_budgets SET reserved_headcount = used_quantity WHERE used_quantity IS NOT NULL"))
+    job_columns = {column["name"] for column in inspect(engine).get_columns("job_postings")}
+    for name, definition in {
+        "code": "VARCHAR(50)",
+        "job_title_id": "INTEGER REFERENCES job_titles(id)",
+        "quantity": "INTEGER NOT NULL DEFAULT 1",
+        "min_salary": "FLOAT",
+        "max_salary": "FLOAT",
+        "is_salary_negotiable": "BOOLEAN NOT NULL DEFAULT false" if engine.dialect.name == "postgresql" else "BOOLEAN NOT NULL DEFAULT 0",
+        "work_location": "VARCHAR(255) NOT NULL DEFAULT 'Trụ sở chính'",
+        "employment_type": "VARCHAR(50) NOT NULL DEFAULT 'full_time'",
+        "experience_years": "VARCHAR(50) NOT NULL DEFAULT '1-3 năm'",
+        "is_featured": "BOOLEAN NOT NULL DEFAULT false" if engine.dialect.name == "postgresql" else "BOOLEAN NOT NULL DEFAULT 0",
+        "job_description": "TEXT",
+        "location": "VARCHAR(255) NOT NULL DEFAULT 'Trụ sở chính'",
+        "type": "VARCHAR(50) NOT NULL DEFAULT 'full_time'",
+        "experience_level": "VARCHAR(50) NOT NULL DEFAULT '1-3 năm'",
+        "description": "TEXT",
+    }.items():
+        if name not in job_columns:
+            connection.execute(text(f"ALTER TABLE job_postings ADD COLUMN {name} {definition}"))
+    refreshed_job_columns = {column["name"] for column in inspect(engine).get_columns("job_postings")}
+    if {"work_location", "location"}.issubset(refreshed_job_columns):
+        connection.execute(text("UPDATE job_postings SET work_location = location WHERE location IS NOT NULL"))
+    if {"employment_type", "type"}.issubset(refreshed_job_columns):
+        connection.execute(text("UPDATE job_postings SET employment_type = type WHERE type IS NOT NULL"))
+    if {"experience_years", "experience_level"}.issubset(refreshed_job_columns):
+        connection.execute(text("UPDATE job_postings SET experience_years = experience_level WHERE experience_level IS NOT NULL"))
+    if {"job_description", "description"}.issubset(refreshed_job_columns):
+        connection.execute(text("UPDATE job_postings SET job_description = description WHERE description IS NOT NULL"))
+    for row in connection.execute(text("SELECT id FROM job_postings WHERE code IS NULL OR code = ''")):
+        connection.execute(
+            text("UPDATE job_postings SET code = :code WHERE id = :id"),
+            {"code": f"JOB-{row.id}", "id": row.id},
+        )
 
 if settings.APP_ENV != "production":
     db = SessionLocal()
