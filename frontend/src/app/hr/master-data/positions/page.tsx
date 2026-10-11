@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 import { 
   Award, Plus, Search, Filter, DollarSign, Building2, CheckCircle2, 
-  Edit2, Trash2, ShieldCheck
+  Edit2, Trash2, ShieldCheck, Check
 } from 'lucide-react';
+import { CreateJobTitleModal, JobTitleFormData } from '@/features/hr/components/CreateJobTitleModal';
 
 interface PositionItem {
   id: string;
@@ -19,6 +20,9 @@ interface PositionItem {
 }
 
 export default function HRPositionsPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const [positions, setPositions] = useState<PositionItem[]>([
     {
       id: "POS-001",
@@ -46,7 +50,7 @@ export default function HRPositionsPage() {
       id: "POS-003",
       code: "BI-LEAD",
       title: "Trưởng nhóm Data Analyst & BI Specialist",
-      department: "Khối Dữ Liệu",
+      department: "Khối Dữ Liệu & Phân Tích (Data & BI)",
       level: "Level 5 (Manager/Lead)",
       min_salary: 45,
       mid_salary: 50,
@@ -57,10 +61,52 @@ export default function HRPositionsPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filtered = positions.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.code.toLowerCase().includes(searchQuery.toLowerCase()));
+  const handleCreatePosition = (data: JobTitleFormData) => {
+    const newPos: PositionItem = {
+      id: `POS-00${positions.length + 1}`,
+      code: data.code,
+      title: data.title,
+      department: data.department,
+      level: data.level,
+      min_salary: data.minSalary,
+      mid_salary: data.midSalary,
+      max_salary: data.maxSalary,
+      status: data.status,
+    };
+
+    setPositions([newPos, ...positions]);
+    setIsModalOpen(false);
+
+    setToastMessage(`Đã thêm chức danh "${data.title} (${data.code})" với dải lương ${data.minSalary} - ${data.maxSalary} TR VNĐ thành công!`);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
+
+  const filtered = positions.filter(
+    p => p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+         p.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+         p.department.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center justify-between shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button 
+            onClick={() => setToastMessage(null)}
+            className="text-xs text-emerald-600 hover:text-emerald-800 underline font-medium cursor-pointer"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-slate-200/80 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -73,7 +119,10 @@ export default function HRPositionsPage() {
           <p className="text-xs text-slate-500 mt-1">Quản lý danh mục chức danh chuẩn doanh nghiệp, khung cấp bậc & dải lương tối thiểu / trung vị / tối đa</p>
         </div>
 
-        <button className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer">
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+        >
           <Plus className="w-4 h-4" />
           <span>Thêm Chức Danh Mới</span>
         </button>
@@ -85,11 +134,14 @@ export default function HRPositionsPage() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input 
             type="text" 
-            placeholder="Tìm theo tên chức danh hoặc mã chức danh..."
+            placeholder="Tìm theo tên chức danh, mã chức danh, phòng ban..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition-all font-medium"
           />
+        </div>
+        <div className="text-xs text-slate-500 font-medium">
+          Tổng cộng: <strong className="text-slate-800 font-bold">{filtered.length}</strong> chức danh
         </div>
       </div>
 
@@ -109,44 +161,65 @@ export default function HRPositionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {filtered.map((pos) => (
-                <tr key={pos.id} className="hover:bg-slate-50/70 transition-colors">
-                  <td className="p-4">
-                    <div className="font-bold text-slate-900">{pos.title}</div>
-                    <span className="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold">{pos.code}</span>
-                  </td>
-
-                  <td className="p-4 font-semibold text-slate-800">
-                    {pos.department}
-                  </td>
-
-                  <td className="p-4 text-blue-700 font-bold">
-                    {pos.level}
-                  </td>
-
-                  <td className="p-4 text-center font-mono font-bold text-slate-700">
-                    {pos.min_salary} TR VNĐ
-                  </td>
-
-                  <td className="p-4 text-center font-mono font-bold text-blue-700">
-                    {pos.mid_salary} TR VNĐ
-                  </td>
-
-                  <td className="p-4 text-center font-mono font-bold text-emerald-700">
-                    {pos.max_salary} TR VNĐ
-                  </td>
-
-                  <td className="p-4 text-center">
-                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
-                      Hoạt Động
-                    </span>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-8 text-center text-slate-400">
+                    Không tìm thấy chức danh nào phù hợp.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filtered.map((pos) => (
+                  <tr key={pos.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="p-4">
+                      <div className="font-bold text-slate-900">{pos.title}</div>
+                      <span className="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold">{pos.code}</span>
+                    </td>
+
+                    <td className="p-4 font-semibold text-slate-800">
+                      {pos.department}
+                    </td>
+
+                    <td className="p-4 text-blue-700 font-bold">
+                      {pos.level}
+                    </td>
+
+                    <td className="p-4 text-center font-mono font-bold text-slate-700">
+                      {pos.min_salary} TR VNĐ
+                    </td>
+
+                    <td className="p-4 text-center font-mono font-bold text-blue-700">
+                      {pos.mid_salary} TR VNĐ
+                    </td>
+
+                    <td className="p-4 text-center font-mono font-bold text-emerald-700">
+                      {pos.max_salary} TR VNĐ
+                    </td>
+
+                    <td className="p-4 text-center">
+                      {pos.status === 'active' ? (
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold">
+                          Hoạt Động
+                        </span>
+                      ) : (
+                        <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold">
+                          Đang Khóa
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Modal Thêm Chức Danh Mới */}
+      <CreateJobTitleModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleCreatePosition}
+      />
     </div>
   );
 }

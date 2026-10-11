@@ -1,451 +1,1121 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { 
-  FileCheck, Search, Filter, Plus, AlertTriangle, Clock, Users, UserPlus, 
-  PauseCircle, XCircle, CheckCircle2, Eye, MoreVertical, ShieldAlert, ArrowLeft, 
-  ChevronRight, Building2, AlertCircle, RefreshCw
-} from 'lucide-react';
+import React, { useState, useMemo } from "react";
+import Link from "next/link";
+import {
+  FileCheck,
+  Search,
+  Filter,
+  Plus,
+  AlertTriangle,
+  Clock,
+  Users,
+  UserPlus,
+  PauseCircle,
+  PlayCircle,
+  XCircle,
+  CheckCircle2,
+  Eye,
+  ShieldAlert,
+  ArrowRight,
+  ChevronRight,
+  Building2,
+  AlertCircle,
+  RefreshCw,
+  Sliders,
+  DollarSign,
+  TrendingUp,
+  GitBranch,
+  Layers,
+  Sparkles,
+  Check,
+  X,
+  UserCheck,
+  ShieldCheck,
+  Briefcase,
+  HelpCircle,
+  ArrowUpRight,
+} from "lucide-react";
 
-interface Requisition {
+// =============================================================================
+// TYPES & DATA STRUCTURES
+// =============================================================================
+
+export interface Requisition {
   id: string;
   code: string;
   title: string;
   department: string;
   headcount: number;
-  salary_range: string;
-  target_date: string;
-  status: 'pending_approval' | 'approved' | 'in_progress' | 'completed' | 'paused' | 'cancelled';
-  sla_status: 'normal' | 'warning' | 'overdue';
-  delay_days: number;
-  primary_recruiter?: string;
-  supporting_recruiters?: string[];
-  created_at: string;
+  salaryMin: number;
+  salaryMax: number;
+  salaryRangeDisplay: string;
+  targetDate: string;
+  status: "pending_approval" | "in_progress" | "paused" | "cancelled" | "completed";
+  slaStatus: "normal" | "warning" | "overdue";
+  delayDays: number;
+  pendingSinceDays: number; // Số ngày bị kẹt chờ duyệt
+  primaryRecruiter: string;
+  createdAt: string;
+  urgency: "Bình thường" | "Khẩn cấp" | "Chiến lược";
 }
 
+export interface DepartmentBudget {
+  id: string;
+  departmentName: string;
+  code: string;
+  managerName: string;
+  allocatedHeadcount: number; // Định biên được duyệt
+  currentStaff: number; // Nhân sự hiện tại
+  openRequisitionsCount: number; // Số nhân sự đang tuyển trong các REQ
+  monthlyBudgetVND: number;
+  currentSalaryUsedVND: number;
+}
+
+export interface WorkflowRule {
+  id: string;
+  name: string;
+  conditionDescription: string;
+  salaryThresholdMax?: number;
+  isHeadcountExceededTrigger: boolean;
+  steps: {
+    stepNumber: number;
+    approverRole: string;
+    approverName: string;
+    slaHours: number;
+  }[];
+}
+
+// =============================================================================
+// INITIAL MOCK DATA
+// =============================================================================
+
+const INITIAL_REQUISITIONS: Requisition[] = [
+  {
+    id: "REQ-001",
+    code: "REQ-2026-001",
+    title: "Senior Backend Developer (Python/Go)",
+    department: "Khối Công Nghệ (Tech Hub)",
+    headcount: 3,
+    salaryMin: 35000000,
+    salaryMax: 50000000,
+    salaryRangeDisplay: "35 - 50 Triệu VNĐ",
+    targetDate: "15/10/2026",
+    status: "in_progress",
+    slaStatus: "normal",
+    delayDays: 0,
+    pendingSinceDays: 1,
+    primaryRecruiter: "Nguyễn Văn Hùng",
+    createdAt: "01/10/2026",
+    urgency: "Chiến lược",
+  },
+  {
+    id: "REQ-002",
+    code: "REQ-2026-002",
+    title: "Senior DevOps / Cloud Infrastructure",
+    department: "Khối Công Nghệ (Tech Hub)",
+    headcount: 2,
+    salaryMin: 40000000,
+    salaryMax: 60000000,
+    salaryRangeDisplay: "40 - 60 Triệu VNĐ",
+    targetDate: "30/09/2026",
+    status: "pending_approval",
+    slaStatus: "overdue",
+    delayDays: 5,
+    pendingSinceDays: 5, // Kẹt quá 3 ngày chưa duyệt
+    primaryRecruiter: "Chưa phân công",
+    createdAt: "15/09/2026",
+    urgency: "Khẩn cấp",
+  },
+  {
+    id: "REQ-003",
+    code: "REQ-2026-003",
+    title: "Trưởng nhóm Data Analyst & BI Lead",
+    department: "Khối Dữ Liệu & Phân Tích",
+    headcount: 1,
+    salaryMin: 30000000,
+    salaryMax: 45000000,
+    salaryRangeDisplay: "30 - 45 Triệu VNĐ",
+    targetDate: "02/10/2026",
+    status: "pending_approval",
+    slaStatus: "overdue",
+    delayDays: 4,
+    pendingSinceDays: 4, // Kẹt 4 ngày
+    primaryRecruiter: "Lê Thị Mai",
+    createdAt: "18/09/2026",
+    urgency: "Khẩn cấp",
+  },
+  {
+    id: "REQ-004",
+    code: "REQ-2026-004",
+    title: "Chuyên viên Digital Growth Marketing",
+    department: "Khối Kinh Doanh & Tăng Trưởng",
+    headcount: 2,
+    salaryMin: 18000000,
+    salaryMax: 25000000,
+    salaryRangeDisplay: "18 - 25 Triệu VNĐ",
+    targetDate: "20/10/2026",
+    status: "in_progress",
+    slaStatus: "normal",
+    delayDays: 0,
+    pendingSinceDays: 0,
+    primaryRecruiter: "Trần Hoàng Nam",
+    createdAt: "03/10/2026",
+    urgency: "Bình thường",
+  },
+  {
+    id: "REQ-005",
+    code: "REQ-2026-005",
+    title: "Chuyên viên Tuyển Dụng Nội Bộ (TA Specialist)",
+    department: "Khối Quản Trị Nhân Sự (HR Hub)",
+    headcount: 1,
+    salaryMin: 16000000,
+    salaryMax: 22000000,
+    salaryRangeDisplay: "16 - 22 Triệu VNĐ",
+    targetDate: "25/10/2026",
+    status: "paused",
+    slaStatus: "normal",
+    delayDays: 0,
+    pendingSinceDays: 0,
+    primaryRecruiter: "Đặng Thanh Vân",
+    createdAt: "05/10/2026",
+    urgency: "Bình thường",
+  },
+  {
+    id: "REQ-006",
+    code: "REQ-2026-006",
+    title: "Product Manager (Enterprise Solutions)",
+    department: "Khối Kinh Doanh & Tăng Trưởng",
+    headcount: 1,
+    salaryMin: 45000000,
+    salaryMax: 65000000,
+    salaryRangeDisplay: "45 - 65 Triệu VNĐ",
+    targetDate: "05/11/2026",
+    status: "pending_approval",
+    slaStatus: "warning",
+    delayDays: 2,
+    pendingSinceDays: 2,
+    primaryRecruiter: "Nguyễn Văn Hùng",
+    createdAt: "08/10/2026",
+    urgency: "Chiến lược",
+  },
+];
+
+const INITIAL_DEPARTMENT_BUDGETS: DepartmentBudget[] = [
+  {
+    id: "bgt-1",
+    departmentName: "Khối Công Nghệ (Tech Hub)",
+    code: "TECH-HUB",
+    managerName: "Vũ Hải Đăng (CTO)",
+    allocatedHeadcount: 15,
+    currentStaff: 11,
+    openRequisitionsCount: 6, // 11 + 6 = 17 -> VƯỢT ĐỊNH BIÊN 2 NGƯỜI
+    monthlyBudgetVND: 650000000,
+    currentSalaryUsedVND: 510000000,
+  },
+  {
+    id: "bgt-2",
+    departmentName: "Khối Dữ Liệu & Phân Tích",
+    code: "DATA-HUB",
+    managerName: "Lê Hoàng Cường (Data Lead)",
+    allocatedHeadcount: 8,
+    currentStaff: 6,
+    openRequisitionsCount: 2, // 6 + 2 = 8 -> ĐẠT 100% ĐỊNH BIÊN
+    monthlyBudgetVND: 320000000,
+    currentSalaryUsedVND: 250000000,
+  },
+  {
+    id: "bgt-3",
+    departmentName: "Khối Kinh Doanh & Tăng Trưởng",
+    code: "BIZ-HUB",
+    managerName: "Bùi Quốc Đạt (CCO)",
+    allocatedHeadcount: 12,
+    currentStaff: 7,
+    openRequisitionsCount: 3, // 7 + 3 = 10 -> CÒN TRỐNG 2
+    monthlyBudgetVND: 400000000,
+    currentSalaryUsedVND: 245000000,
+  },
+  {
+    id: "bgt-4",
+    departmentName: "Khối Quản Trị Nhân Sự (HR Hub)",
+    code: "HR-HUB",
+    managerName: "Trần Thị Bích (HR Director)",
+    allocatedHeadcount: 6,
+    currentStaff: 5,
+    openRequisitionsCount: 1, // 5 + 1 = 6 -> ĐẠT CHỈ TIÊU
+    monthlyBudgetVND: 180000000,
+    currentSalaryUsedVND: 150000000,
+  },
+];
+
+const RECRUITER_LIST = [
+  "Nguyễn Văn Hùng",
+  "Lê Thị Mai",
+  "Trần Hoàng Nam",
+  "Đặng Thanh Vân",
+  "Chưa phân công",
+];
+
+const INITIAL_WORKFLOW_RULES: WorkflowRule[] = [
+  {
+    id: "rule-1",
+    name: "Luồng Duyệt Chuẩn (Lương ≤ 20 Triệu & Trong định biên)",
+    conditionDescription: "Áp dụng khi Mức lương đề xuất ≤ 20 Triệu VNĐ VÀ Không vượt định biên Headcount",
+    salaryThresholdMax: 20000000,
+    isHeadcountExceededTrigger: false,
+    steps: [
+      {
+        stepNumber: 1,
+        approverRole: "Trưởng phòng Chuyên môn (Hiring Manager)",
+        approverName: "Manager tương ứng",
+        slaHours: 24,
+      },
+      {
+        stepNumber: 2,
+        approverRole: "Trưởng phòng Nhân sự (HR Manager)",
+        approverName: "Trần Thị Bích",
+        slaHours: 24,
+      },
+    ],
+  },
+  {
+    id: "rule-2",
+    name: "Luồng Duyệt Nâng Cao (Lương > 20 Triệu HOẶC Vượt định biên)",
+    conditionDescription: "Áp dụng khi Mức lương đề xuất > 20 Triệu VNĐ HOẶC Yêu cầu tuyển vượt định biên quỹ lương",
+    salaryThresholdMax: 999000000,
+    isHeadcountExceededTrigger: true,
+    steps: [
+      {
+        stepNumber: 1,
+        approverRole: "Trưởng phòng Chuyên môn (Hiring Manager)",
+        approverName: "Manager tương ứng",
+        slaHours: 24,
+      },
+      {
+        stepNumber: 2,
+        approverRole: "Trưởng phòng Nhân sự (HR Manager)",
+        approverName: "Trần Thị Bích",
+        slaHours: 24,
+      },
+      {
+        stepNumber: 3,
+        approverRole: "Giám đốc Tài chính (CFO) - Thẩm định ngân sách",
+        approverName: "Phạm Hải Long (CFO)",
+        slaHours: 48,
+      },
+      {
+        stepNumber: 4,
+        approverRole: "Tổng Giám Đốc (CEO) - Phê duyệt cuối cùng",
+        approverName: "Nguyễn Thế Hùng (CEO)",
+        slaHours: 48,
+      },
+    ],
+  },
+];
+
+function formatVND(amount: number) {
+  return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(amount);
+}
+
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
+
 export default function HRRequisitionsPage() {
-  const [requisitions, setRequisitions] = useState<Requisition[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedDept, setSelectedDept] = useState<string>('all');
-  
-  // Modal states
-  const [activeModal, setActiveModal] = useState<'assign' | 'cancel' | 'detail' | null>(null);
-  const [selectedReq, setSelectedReq] = useState<Requisition | null>(null);
-  const [actionReason, setActionReason] = useState('');
-  const [actionType, setActionType] = useState<'paused' | 'cancelled' | 'completed'>('paused');
-  const [assignedRecruiter, setAssignedRecruiter] = useState('');
+  const [activeTab, setActiveTab] = useState<"requisitions" | "headcount">("requisitions");
 
-  useEffect(() => {
-    fetchRequisitions();
-  }, []);
+  // Requisitions data
+  const [requisitions, setRequisitions] = useState<Requisition[]>(INITIAL_REQUISITIONS);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedDept, setSelectedDept] = useState<string>("all");
+  const [selectedRecruiter, setSelectedRecruiter] = useState<string>("all");
 
-  const fetchRequisitions = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch('http://localhost:8000/api/v1/requisitions');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setRequisitions(data);
-          return;
-        }
-      }
-      // Fallback structured data
-      setRequisitions(initialRequisitions);
-    } catch (err) {
-      setRequisitions(initialRequisitions);
-    } finally {
-      setLoading(false);
+  // Headcount data
+  const [budgets, setBudgets] = useState<DepartmentBudget[]>(INITIAL_DEPARTMENT_BUDGETS);
+
+  // Workflow data & modal
+  const [workflowRules, setWorkflowRules] = useState<WorkflowRule[]>(INITIAL_WORKFLOW_RULES);
+  const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false);
+
+  // Status Change Modal (Tạm dừng / Hủy / Đổi trạng thái)
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [selectedReqForStatus, setSelectedReqForStatus] = useState<Requisition | null>(null);
+  const [targetStatus, setTargetStatus] = useState<Requisition["status"]>("paused");
+  const [statusReason, setStatusReason] = useState("");
+
+  // Toast feedback
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // Handle assign recruiter dropdown change
+  const handleAssignRecruiter = (reqId: string, newRecruiter: string) => {
+    setRequisitions((prev) =>
+      prev.map((r) =>
+        r.id === reqId ? { ...r, primaryRecruiter: newRecruiter } : r
+      )
+    );
+    showToast(`Đã phân công Recruiter "${newRecruiter}" cho yêu cầu!`, "success");
+  };
+
+  // Handle immediate status change
+  const handleQuickStatusChange = (req: Requisition, newStatus: Requisition["status"]) => {
+    if (newStatus === "paused" || newStatus === "cancelled") {
+      setSelectedReqForStatus(req);
+      setTargetStatus(newStatus);
+      setStatusReason("");
+      setIsStatusModalOpen(true);
+    } else {
+      setRequisitions((prev) =>
+        prev.map((r) => (r.id === req.id ? { ...r, status: newStatus } : r))
+      );
+      showToast(`Đã chuyển trạng thái REQ sang: "${newStatus === "in_progress" ? "Đang tuyển dụng" : "Hoàn thành"}"!`, "success");
     }
   };
 
-  const initialRequisitions: Requisition[] = [
-    {
-      id: "REQ-001",
-      code: "REQ-2026-001",
-      title: "Kỹ sư Backend Senior (Python/FastAPI)",
-      department: "Công Nghệ Thông Tin",
-      headcount: 3,
-      salary_range: "35 - 50 Triệu VNĐ",
-      target_date: "15/10/2026",
-      status: "in_progress",
-      sla_status: "normal",
-      delay_days: 0,
-      primary_recruiter: "Nguyễn Văn Hùng",
-      supporting_recruiters: ["Lê Thị Mai"],
-      created_at: "01/10/2026"
-    },
-    {
-      id: "REQ-004",
-      code: "REQ-2026-004",
-      title: "Chuyên viên Senior DevOps / Cloud Architect",
-      department: "Công Nghệ Thông Tin",
-      headcount: 2,
-      salary_range: "40 - 60 Triệu VNĐ",
-      target_date: "30/09/2026",
-      status: "in_progress",
-      sla_status: "overdue",
-      delay_days: 5,
-      primary_recruiter: "Nguyễn Văn Hùng",
-      created_at: "15/09/2026"
-    },
-    {
-      id: "REQ-008",
-      code: "REQ-2026-008",
-      title: "Trưởng nhóm Data Analyst & BI",
-      department: "Khối Dữ Liệu",
-      headcount: 1,
-      salary_range: "45 - 55 Triệu VNĐ",
-      target_date: "02/10/2026",
-      status: "in_progress",
-      sla_status: "overdue",
-      delay_days: 3,
-      primary_recruiter: "Lê Thị Mai",
-      created_at: "10/09/2026"
-    },
-    {
-      id: "REQ-012",
-      code: "REQ-2026-012",
-      title: "Chuyên viên Digital Marketing Lead",
-      department: "Marketing & Growth",
-      headcount: 2,
-      salary_range: "25 - 35 Triệu VNĐ",
-      target_date: "20/10/2026",
-      status: "pending_approval",
-      sla_status: "warning",
-      delay_days: 0,
-      created_at: "03/10/2026"
-    }
-  ];
+  // Submit status modal change with reason
+  const handleSubmitStatusModal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedReqForStatus) return;
 
-  const handleCancelPauseSubmit = () => {
-    if (!selectedReq || !actionReason.trim()) {
-      alert("Vui lòng nhập lý do bắt buộc!");
+    if (!statusReason.trim()) {
+      showToast("Vui lòng nhập lý do thay đổi trạng thái!", "error");
       return;
     }
 
-    setRequisitions(prev => prev.map(item => {
-      if (item.id === selectedReq.id) {
-        return { ...item, status: actionType };
-      }
-      return item;
-    }));
+    setRequisitions((prev) =>
+      prev.map((r) =>
+        r.id === selectedReqForStatus.id ? { ...r, status: targetStatus } : r
+      )
+    );
 
-    alert(`Đã cập nhật trạng thái tờ trình ${selectedReq.code} thành "${actionType === 'paused' ? 'Tạm dừng' : actionType === 'cancelled' ? 'Hủy' : 'Đã tuyển đủ'}" với lý do: ${actionReason}`);
-    setActiveModal(null);
-    setActionReason('');
+    const actionText =
+      targetStatus === "paused"
+        ? "Tạm dừng tuyển dụng"
+        : targetStatus === "cancelled"
+        ? "Hủy yêu cầu tuyển dụng"
+        : "Đã tuyển đủ";
+
+    showToast(`Đã ${actionText} cho tờ trình ${selectedReqForStatus.code}! Lý do: ${statusReason}`, "success");
+    setIsStatusModalOpen(false);
   };
 
-  const handleAssignSubmit = () => {
-    if (!selectedReq || !assignedRecruiter) {
-      alert("Vui lòng chọn Recruiter chính!");
-      return;
-    }
+  // Filtered requisitions list
+  const filteredRequisitions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return requisitions.filter((r) => {
+      const matchSearch =
+        !q ||
+        r.title.toLowerCase().includes(q) ||
+        r.code.toLowerCase().includes(q) ||
+        r.department.toLowerCase().includes(q);
 
-    setRequisitions(prev => prev.map(item => {
-      if (item.id === selectedReq.id) {
-        return { ...item, primary_recruiter: assignedRecruiter, status: 'in_progress' };
-      }
-      return item;
-    }));
+      const matchStatus =
+        selectedStatus === "all" ||
+        (selectedStatus === "overdue" ? r.pendingSinceDays >= 3 || r.slaStatus === "overdue" : r.status === selectedStatus);
 
-    alert(`Đã phân công ${assignedRecruiter} phụ trách chính vị trí ${selectedReq.code}`);
-    setActiveModal(null);
-  };
+      const matchDept = selectedDept === "all" || r.department === selectedDept;
+      const matchRecruiter = selectedRecruiter === "all" || r.primaryRecruiter === selectedRecruiter;
 
-  const filtered = requisitions.filter(item => {
-    const matchesQuery = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.code.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = selectedStatus === 'all' || item.status === selectedStatus || (selectedStatus === 'overdue' && item.sla_status === 'overdue');
-    const matchesDept = selectedDept === 'all' || item.department === selectedDept;
-    return matchesQuery && matchesStatus && matchesDept;
-  });
+      return matchSearch && matchStatus && matchDept && matchRecruiter;
+    });
+  }, [requisitions, searchQuery, selectedStatus, selectedDept, selectedRecruiter]);
+
+  // Statistics
+  const totalOpenHeadcount = useMemo(() => {
+    return requisitions
+      .filter((r) => r.status === "in_progress" || r.status === "pending_approval")
+      .reduce((sum, r) => sum + r.headcount, 0);
+  }, [requisitions]);
+
+  const overdueCount = useMemo(() => {
+    return requisitions.filter(
+      (r) => (r.status === "pending_approval" && r.pendingSinceDays >= 3) || r.slaStatus === "overdue"
+    ).length;
+  }, [requisitions]);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Quản Lý Yêu Cầu Tuyển Dụng (REQ)</h1>
-            <span className="bg-blue-50 text-blue-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-blue-200">
-              [S3-06] [S3-07] [S3-08]
-            </span>
+    <div className="w-full space-y-6">
+      {/* Toast Alert */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-3 duration-200 ${
+            toast.type === "success"
+              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+              : "bg-rose-50 text-rose-800 border-rose-200"
+          }`}
+        >
+          {toast.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Main Container Card: bg-white rounded-2xl shadow-sm border border-slate-100 */}
+      <div className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8 space-y-6">
+        {/* Header Tiêu đề phân hệ */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px] tracking-wider uppercase border border-blue-100">
+                HR Requisitions & Approvals
+              </span>
+              <span className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                Kiểm soát định biên & SLA phê duyệt
+              </span>
+            </div>
+            <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1 tracking-tight">
+              Quản Lý Yêu Cầu Tuyển Dụng (Requisitions)
+            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Giám sát tiến độ phê duyệt tờ trình, cảnh báo quá hạn SLA 3 ngày, phân công Recruiter và kiểm soát trần quỹ định biên.
+            </p>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Theo dõi tiến độ tờ trình, gán Recruiter phụ trách & giám sát cảnh báo quá hạn SLA</p>
+
+          <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+            {/* Nút Cấu hình Luồng phê duyệt (Modal) */}
+            <button
+              type="button"
+              onClick={() => setIsWorkflowModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-md shadow-slate-900/15 transition-all cursor-pointer"
+            >
+              <GitBranch className="w-4 h-4 text-emerald-400" />
+              <span>Cấu hình Luồng phê duyệt</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={fetchRequisitions}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 shadow-sm cursor-pointer"
+        {/* 2 TABS SWITCHER: DANH SÁCH YC vs NGÂN SÁCH HEADCOUNT */}
+        <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/60 max-w-fit">
+          <button
+            type="button"
+            onClick={() => setActiveTab("requisitions")}
+            className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "requisitions"
+                ? "bg-white text-blue-600 shadow-sm shadow-slate-200"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+            }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Tải lại</span>
+            <FileCheck className="w-4 h-4" />
+            <span>Danh sách Yêu cầu ({requisitions.length})</span>
+            {overdueCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-50 text-rose-700 font-extrabold border border-rose-200 animate-pulse">
+                {overdueCount} trễ SLA
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("headcount")}
+            className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "headcount"
+                ? "bg-white text-blue-600 shadow-sm shadow-slate-200"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Ngân sách Headcount các phòng ban</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-50 text-blue-700 font-extrabold border border-blue-100">
+              Quỹ nhân sự
+            </span>
           </button>
         </div>
-      </div>
 
-      {/* Filter Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        
-        {/* Search Input */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Tìm theo mã REQ hoặc tên vị trí tuyển dụng..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-          />
-        </div>
+        {/* =================================================================== */}
+        {/* TAB 1: BẢNG DANH SÁCH YÊU CẦU TUYỂN DỤNG (REQUISITIONS LIST) */}
+        {/* =================================================================== */}
+        {activeTab === "requisitions" && (
+          <div className="space-y-4">
+            {/* Filter Bar */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="flex flex-wrap items-center gap-2.5 flex-1">
+                {/* Search */}
+                <div className="relative flex-1 min-w-[220px] max-w-sm">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Tìm theo mã REQ, tên chức danh tuyển..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-blue-500 focus:outline-hidden font-medium"
+                  />
+                </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-            <Filter className="w-3.5 h-3.5" />
-            <span className="font-semibold">Bộ lọc:</span>
+                {/* Filter Trạng thái */}
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-700 focus:outline-hidden"
+                  >
+                    <option value="all">Tất cả trạng thái</option>
+                    <option value="overdue">🔴 Quá hạn SLA (&gt;3 ngày)</option>
+                    <option value="in_progress">🟢 Đang tuyển dụng</option>
+                    <option value="pending_approval">🟡 Chờ phê duyệt</option>
+                    <option value="paused">⏸ Tạm dừng tuyển</option>
+                    <option value="cancelled">❌ Đã hủy bỏ</option>
+                  </select>
+                </div>
+
+                {/* Filter Phòng ban */}
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={selectedDept}
+                    onChange={(e) => setSelectedDept(e.target.value)}
+                    className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-700 focus:outline-hidden"
+                  >
+                    <option value="all">Tất cả phòng ban</option>
+                    <option value="Khối Công Nghệ (Tech Hub)">Khối Công Nghệ (Tech Hub)</option>
+                    <option value="Khối Dữ Liệu & Phân Tích">Khối Dữ Liệu & Phân Tích</option>
+                    <option value="Khối Kinh Doanh & Tăng Trưởng">Khối Kinh Doanh & Tăng Trưởng</option>
+                    <option value="Khối Quản Trị Nhân Sự (HR Hub)">Khối Quản Trị Nhân Sự (HR Hub)</option>
+                  </select>
+                </div>
+
+                {/* Filter Recruiter */}
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={selectedRecruiter}
+                    onChange={(e) => setSelectedRecruiter(e.target.value)}
+                    className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-700 focus:outline-hidden"
+                  >
+                    <option value="all">Tất cả Recruiter</option>
+                    {RECRUITER_LIST.map((r, i) => (
+                      <option key={i} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="text-xs text-slate-500 font-bold flex items-center gap-2">
+                <span>
+                  Hiển thị <strong className="text-slate-900">{filteredRequisitions.length}</strong> yêu cầu
+                </span>
+                <span>•</span>
+                <span>
+                  Đang mở tuyển: <strong className="text-blue-700">{totalOpenHeadcount}</strong> chỉ tiêu
+                </span>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+                      <th className="py-3.5 px-4 w-3/12">Mã REQ & Chức danh</th>
+                      <th className="py-3.5 px-3">Phòng ban</th>
+                      <th className="py-3.5 px-3 text-center">Chỉ tiêu</th>
+                      <th className="py-3.5 px-3">Cảnh báo SLA phê duyệt</th>
+                      <th className="py-3.5 px-4">Phân công (Assign) Recruiter</th>
+                      <th className="py-3.5 px-3 text-center">Trạng thái REQ</th>
+                      <th className="py-3.5 px-4 text-right">Thao tác dừng/mở</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white font-medium">
+                    {filteredRequisitions.map((req) => {
+                      const isStuckOverdue =
+                        req.status === "pending_approval" && req.pendingSinceDays >= 3;
+
+                      return (
+                        <tr key={req.id} className="hover:bg-blue-50/20 transition-colors">
+                          {/* Mã & Chức danh */}
+                          <td className="py-3.5 px-4">
+                            <div className="font-extrabold text-slate-900 text-xs">
+                              {req.title}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-400">
+                              <span className="font-mono bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold text-[10px]">
+                                {req.code}
+                              </span>
+                              <span>• Lương: {req.salaryRangeDisplay}</span>
+                            </div>
+                          </td>
+
+                          {/* Phòng ban */}
+                          <td className="py-3.5 px-3 text-slate-700 text-xs">
+                            {req.department}
+                          </td>
+
+                          {/* Headcount */}
+                          <td className="py-3.5 px-3 text-center">
+                            <span className="font-black text-blue-700 text-xs bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                              {req.headcount} nhân sự
+                            </span>
+                          </td>
+
+                          {/* Badge Cảnh báo SLA trễ hạn */}
+                          <td className="py-3.5 px-3">
+                            {isStuckOverdue || req.slaStatus === "overdue" ? (
+                              /* Cảnh báo đỏ nhấp nháy nếu YC kẹt quá 3 ngày */
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 animate-pulse shadow-xs">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                <span>Kẹt duyệt {req.pendingSinceDays} ngày (&gt;3d)</span>
+                              </div>
+                            ) : req.slaStatus === "warning" ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>Chờ duyệt {req.pendingSinceDays} ngày</span>
+                              </div>
+                            ) : (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>Trong hạn SLA</span>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Cột Phân công (Assign) Dropdown */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={req.primaryRecruiter}
+                                onChange={(e) =>
+                                  handleAssignRecruiter(req.id, e.target.value)
+                                }
+                                className={`text-xs px-2.5 py-1.5 rounded-xl border font-bold transition-all focus:outline-hidden ${
+                                  req.primaryRecruiter === "Chưa phân công"
+                                    ? "bg-amber-50 text-amber-800 border-amber-200"
+                                    : "bg-white text-slate-800 border-slate-200 hover:border-blue-300"
+                                }`}
+                              >
+                                {RECRUITER_LIST.map((name, i) => (
+                                  <option key={i} value={name}>
+                                    {name === "Chưa phân công"
+                                      ? "⚠️ Chưa phân công"
+                                      : `👤 ${name}`}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </td>
+
+                          {/* Trạng thái REQ */}
+                          <td className="py-3.5 px-3 text-center">
+                            {req.status === "in_progress" && (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
+                                Đang tuyển
+                              </span>
+                            )}
+                            {req.status === "pending_approval" && (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200">
+                                Chờ duyệt
+                              </span>
+                            )}
+                            {req.status === "paused" && (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
+                                Tạm dừng
+                              </span>
+                            )}
+                            {req.status === "cancelled" && (
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                                Đã hủy
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Actions: Nút đổi trạng thái để dừng đăng tin lập tức */}
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {req.status === "in_progress" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickStatusChange(req, "paused")}
+                                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors cursor-pointer"
+                                  title="Dừng đăng tin lập tức để rà soát"
+                                >
+                                  <PauseCircle className="w-3.5 h-3.5" />
+                                  <span>Tạm dừng</span>
+                                </button>
+                              ) : req.status === "paused" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickStatusChange(req, "in_progress")}
+                                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                                  title="Kích hoạt lại tin tuyển dụng"
+                                >
+                                  <PlayCircle className="w-3.5 h-3.5" />
+                                  <span>Mở lại</span>
+                                </button>
+                              ) : null}
+
+                              {req.status !== "cancelled" && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickStatusChange(req, "cancelled")}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Hủy bỏ yêu cầu này"
+                                >
+                                  <XCircle className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
+        )}
 
-          <select 
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none"
-          >
-            <option value="all">Tất cả trạng thái</option>
-            <option value="overdue">🔴 Quá hạn SLA</option>
-            <option value="in_progress">Đang tuyển dụng</option>
-            <option value="pending_approval">Chờ duyệt</option>
-            <option value="paused">Tạm dừng</option>
-            <option value="cancelled">Đã hủy</option>
-          </select>
-
-          <select 
-            value={selectedDept}
-            onChange={(e) => setSelectedDept(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 focus:outline-none"
-          >
-            <option value="all">Tất cả phòng ban</option>
-            <option value="Công Nghệ Thông Tin">Công Nghệ Thông Tin</option>
-            <option value="Khối Dữ Liệu">Khối Dữ Liệu</option>
-            <option value="Marketing & Growth">Marketing & Growth</option>
-          </select>
-        </div>
-
-      </div>
-
-      {/* Main Data Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                <th className="p-4">Mã REQ & Chức Danh</th>
-                <th className="p-4">Phòng Ban</th>
-                <th className="p-4 text-center">Chỉ Tiêu</th>
-                <th className="p-4">Hạn SLA Target</th>
-                <th className="p-4">Trạng Thái SLA</th>
-                <th className="p-4">Recruiter Phụ Trách</th>
-                <th className="p-4 text-center">Trạng Thái REQ</th>
-                <th className="p-4 text-right">Thao Tác HR</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {filtered.map((req) => (
-                <tr key={req.id} className="hover:bg-slate-50/70 transition-colors">
-                  
-                  {/* Code & Title */}
-                  <td className="p-4">
-                    <div className="font-bold text-slate-900">{req.title}</div>
-                    <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                      <span className="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px]">{req.code}</span>
-                      <span>• Dải lương: {req.salary_range}</span>
-                    </div>
-                  </td>
-
-                  {/* Dept */}
-                  <td className="p-4">
-                    <span className="text-slate-800 font-semibold">{req.department}</span>
-                  </td>
-
-                  {/* Headcount */}
-                  <td className="p-4 text-center font-bold text-blue-700">
-                    {req.headcount} người
-                  </td>
-
-                  {/* Target Date */}
-                  <td className="p-4 text-slate-600">
-                    {req.target_date}
-                  </td>
-
-                  {/* SLA Badge */}
-                  <td className="p-4">
-                    {req.sla_status === 'overdue' ? (
-                      <span className="bg-rose-50 text-rose-600 border border-rose-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold flex items-center gap-1 w-max animate-pulse">
-                        <AlertTriangle className="w-3 h-3" />
-                        <span>Quá hạn {req.delay_days} ngày</span>
-                      </span>
-                    ) : req.sla_status === 'warning' ? (
-                      <span className="bg-amber-50 text-amber-600 border border-amber-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold flex items-center gap-1 w-max">
-                        <Clock className="w-3 h-3" />
-                        <span>Sắp hết hạn SLA</span>
-                      </span>
-                    ) : (
-                      <span className="bg-emerald-50 text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-full text-[10px] font-extrabold flex items-center gap-1 w-max">
-                        <CheckCircle2 className="w-3 h-3" />
-                        <span>Trong tiến độ</span>
-                      </span>
-                    )}
-                  </td>
-
-                  {/* Assigned Recruiter */}
-                  <td className="p-4">
-                    {req.primary_recruiter ? (
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center">
-                          {req.primary_recruiter.charAt(0)}
-                        </div>
-                        <span className="font-bold text-slate-900">{req.primary_recruiter}</span>
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => { setSelectedReq(req); setActiveModal('assign'); }}
-                        className="text-blue-600 hover:underline font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        <span>Phân công Recruiter</span>
-                      </button>
-                    )}
-                  </td>
-
-                  {/* Status */}
-                  <td className="p-4 text-center">
-                    {req.status === 'in_progress' && <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md text-[10px] font-extrabold border border-blue-100">Đang tuyển dụng</span>}
-                    {req.status === 'pending_approval' && <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md text-[10px] font-extrabold border border-amber-100">Chờ duyệt</span>}
-                    {req.status === 'paused' && <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md text-[10px] font-extrabold">Tạm dừng</span>}
-                    {req.status === 'cancelled' && <span className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded-md text-[10px] font-extrabold">Đã hủy</span>}
-                  </td>
-
-                  {/* Action Buttons */}
-                  <td className="p-4 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <button 
-                        onClick={() => { setSelectedReq(req); setActiveModal('assign'); }}
-                        title="Đổi Recruiter"
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer"
-                      >
-                        <UserPlus className="w-4 h-4" />
-                      </button>
-
-                      <button 
-                        onClick={() => { setSelectedReq(req); setActiveModal('cancel'); }}
-                        title="Tạm dừng / Hủy REQ"
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
-                      >
-                        <PauseCircle className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* MODAL 1: Phân Công Recruiter [S3-06] */}
-      {activeModal === 'assign' && selectedReq && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Phân Công Recruiter Phụ Trách</h3>
-              <button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
-                <div className="font-bold text-slate-900">{selectedReq.title}</div>
-                <div className="text-slate-500">Mã REQ: {selectedReq.code} | Phòng ban: {selectedReq.department}</div>
-              </div>
-
+        {/* =================================================================== */}
+        {/* TAB 2: NGÂN SÁCH HEADCOUNT & THEO DÕI QUỸ NHÂN SỰ TỪNG PHÒNG BAN */}
+        {/* =================================================================== */}
+        {activeTab === "headcount" && (
+          <div className="space-y-6">
+            <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Recruiter Chính Phụ Trách *</label>
-                <select 
-                  value={assignedRecruiter}
-                  onChange={(e) => setAssignedRecruiter(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800"
-                >
-                  <option value="">-- Chọn chuyên viên tuyển dụng --</option>
-                  <option value="Nguyễn Văn Hùng">Nguyễn Văn Hùng (Senior Recruiter)</option>
-                  <option value="Lê Thị Mai">Lê Thị Mai (Tech Recruiter)</option>
-                  <option value="Trần Hoàng Nam">Trần Hoàng Nam (HR Specialist)</option>
-                </select>
+                <h3 className="text-sm font-extrabold text-blue-900">
+                  Bảng Điều Khiển Quỹ Định Biên & Ngân Sách Tuyển Dụng
+                </h3>
+                <p className="text-xs text-blue-700 mt-0.5">
+                  Tự động so khớp số lượng nhân sự đang mở tuyển trong các YC với hạn mức định biên đã được BOD phê duyệt hàng năm.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-blue-200 shadow-2xs">
+                  Tổng định biên toàn công ty: <strong>41 nhân sự</strong>
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button onClick={() => setActiveModal(null)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-semibold hover:bg-slate-50">Hủy</button>
-              <button onClick={handleAssignSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold">Xác Nhận Phân Công</button>
+            {/* Grid các phòng ban với Progress Bar */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {budgets.map((b) => {
+                const totalCommitted = b.currentStaff + b.openRequisitionsCount;
+                const isExceeded = totalCommitted > b.allocatedHeadcount;
+                const percentUsed = Math.round((totalCommitted / b.allocatedHeadcount) * 100);
+
+                return (
+                  <div
+                    key={b.id}
+                    className={`p-5 rounded-2xl border transition-all space-y-4 shadow-2xs ${
+                      isExceeded
+                        ? "bg-rose-50/30 border-rose-300 ring-2 ring-rose-500/20"
+                        : "bg-white border-slate-200/90 hover:border-slate-300"
+                    }`}
+                  >
+                    {/* Header Card Phòng ban */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-sm text-slate-900">
+                            {b.departmentName}
+                          </span>
+                          <span className="font-mono text-[10px] px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded font-bold">
+                            {b.code}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Trưởng khối: <strong className="text-slate-700 font-semibold">{b.managerName}</strong>
+                        </p>
+                      </div>
+
+                      {/* Badge cảnh báo vượt định biên */}
+                      {isExceeded ? (
+                        <div className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 animate-pulse flex items-center gap-1 shrink-0">
+                          <AlertTriangle className="w-3 h-3 text-rose-600" />
+                          <span>VƯỢT ĐỊNH BIÊN (+{totalCommitted - b.allocatedHeadcount})</span>
+                        </div>
+                      ) : (
+                        <div className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 shrink-0">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Trong hạn mức</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Chỉ số Headcount */}
+                    <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50/80 rounded-xl border border-slate-100 text-center text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 block font-medium">Hiện có:</span>
+                        <strong className="text-slate-800 text-sm">{b.currentStaff}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-blue-600 block font-medium">Đang mở tuyển:</span>
+                        <strong className="text-blue-700 text-sm font-black">+{b.openRequisitionsCount}</strong>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block font-medium">Hạn mức duyệt:</span>
+                        <strong className="text-slate-800 text-sm">{b.allocatedHeadcount}</strong>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar quỹ nhân sự */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-600">
+                          Tiến độ lấp đầy định biên:
+                        </span>
+                        <span
+                          className={`font-mono font-black ${
+                            isExceeded ? "text-rose-600" : "text-slate-900"
+                          }`}
+                        >
+                          {totalCommitted} / {b.allocatedHeadcount} ({percentUsed}%)
+                        </span>
+                      </div>
+
+                      <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden flex">
+                        {/* Phần nhân sự hiện có */}
+                        <div
+                          className="bg-blue-600 h-full"
+                          style={{
+                            width: `${Math.min(
+                              Math.round((b.currentStaff / b.allocatedHeadcount) * 100),
+                              100
+                            )}%`,
+                          }}
+                          title={`Hiện có: ${b.currentStaff}`}
+                        />
+                        {/* Phần đang tuyển thêm */}
+                        <div
+                          className={`h-full ${
+                            isExceeded ? "bg-rose-500 animate-pulse" : "bg-emerald-500"
+                          }`}
+                          style={{
+                            width: `${Math.min(
+                              Math.round((b.openRequisitionsCount / b.allocatedHeadcount) * 100),
+                              100
+                            )}%`,
+                          }}
+                          title={`Đang tuyển: ${b.openRequisitionsCount}`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Ngân sách lương tháng */}
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Ngân sách lương tháng:</span>
+                      <span className="font-mono font-extrabold text-slate-800">
+                        {formatVND(b.currentSalaryUsedVND)} / {formatVND(b.monthlyBudgetVND)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* =================================================================== */}
+      {/* MODAL 1: CẤU HÌNH LUỒNG PHÊ DUYỆT (APPROVAL WORKFLOW BUILDER) */}
+      {/* =================================================================== */}
+      {isWorkflowModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center border border-white/20">
+                  <GitBranch className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      Approval Engine Rule
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      Cấu hình tự động định tuyến tờ trình
+                    </span>
+                  </div>
+                  <h3 className="text-base font-extrabold tracking-tight mt-0.5">
+                    Cấu Hình Luồng Phê Duyệt Yêu Cầu Tuyển Dụng
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsWorkflowModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              <div className="p-3.5 bg-blue-50/60 rounded-2xl border border-blue-100 text-xs text-blue-900 leading-relaxed">
+                Hệ thống tự động kiểm tra điều kiện (Mức lương đề xuất và Quỹ định biên Headcount) khi Hiring Manager tạo tờ trình để gán chính xác các cấp duyệt theo ma trận phân quyền.
+              </div>
+
+              {/* Các khối điều kiện (If/Then) */}
+              <div className="space-y-6">
+                {workflowRules.map((rule, index) => (
+                  <div
+                    key={rule.id}
+                    className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-4 shadow-2xs"
+                  >
+                    {/* Header Khối quy tắc */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-xs">
+                            {index + 1}
+                          </span>
+                          <span className="font-extrabold text-sm text-slate-900">
+                            {rule.name}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">
+                          {rule.conditionDescription}
+                        </p>
+                      </div>
+
+                      <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 self-start sm:self-auto">
+                        Đang kích hoạt
+                      </span>
+                    </div>
+
+                    {/* Chuỗi các bước phê duyệt nối tiếp (Workflow Steps Visual) */}
+                    <div className="space-y-2">
+                      <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
+                        Trình tự các bước duyệt (Sequential Chain):
+                      </span>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                        {rule.steps.map((step, stepIdx) => (
+                          <div
+                            key={stepIdx}
+                            className="relative p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                                BƯỚC {step.stepNumber}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> SLA: {step.slaHours}h
+                              </span>
+                            </div>
+
+                            <div className="space-y-0.5">
+                              <div className="font-extrabold text-xs text-slate-900 leading-snug">
+                                {step.approverRole}
+                              </div>
+                              <div className="text-[11px] text-slate-500">
+                                {step.approverName}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-xs text-slate-400">
+                Thay đổi sẽ áp dụng cho tất cả các tờ trình tạo mới từ thời điểm lưu.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  showToast("Đã lưu ma trận luồng phê duyệt thành công!");
+                  setIsWorkflowModalOpen(false);
+                }}
+                className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+              >
+                Lưu cấu hình luồng duyệt
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: Tạm Dừng / Hủy REQ Bắt Buộc Nhập Lý Do [S3-07] */}
-      {activeModal === 'cancel' && selectedReq && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <ShieldAlert className="w-5 h-5 text-rose-600" />
-                <h3 className="text-base font-bold text-slate-900">Thay Đổi Trạng Thái Tờ Trình [S3-07]</h3>
+      {/* =================================================================== */}
+      {/* MODAL 2: TẠM DỪNG / HỦY YÊU CẦU (BẮT BUỘC NHẬP LÝ DO) */}
+      {/* =================================================================== */}
+      {isStatusModalOpen && selectedReqForStatus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    {targetStatus === "paused"
+                      ? "Tạm dừng đăng tin tuyển dụng"
+                      : "Hủy bỏ yêu cầu tuyển dụng"}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Bắt buộc nhập lý do để lưu vết kiểm toán (Audit Trail)
+                  </p>
+                </div>
               </div>
-              <button onClick={() => setActiveModal(null)} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
+              <button
+                type="button"
+                onClick={() => setIsStatusModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-rose-50/50 rounded-xl border border-rose-100 text-slate-700 space-y-1">
-                <div className="font-bold text-slate-900">{selectedReq.title} ({selectedReq.code})</div>
-                <p className="text-[11px] text-rose-700">Lưu ý: Thay đổi trạng thái sang Tạm dừng/Hủy sẽ tự động ẩn tin tuyển dụng công khai & thông báo tới ứng viên đang ứng tuyển.</p>
+            <form onSubmit={handleSubmitStatusModal} className="p-6 space-y-4">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+                <div className="font-bold text-slate-900">
+                  {selectedReqForStatus.title} ({selectedReqForStatus.code})
+                </div>
+                <div className="text-slate-500">
+                  Phòng ban: {selectedReqForStatus.department}
+                </div>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Trạng Thái Mới *</label>
-                <select 
-                  value={actionType}
-                  onChange={(e) => setActionType(e.target.value as any)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800"
-                >
-                  <option value="paused">⏸ Tạm dừng tuyển dụng</option>
-                  <option value="cancelled">❌ Hủy bỏ yêu cầu tuyển dụng</option>
-                  <option value="completed">✅ Đã tuyển đủ nhân sự</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Lý Do Chi Tiết (Bắt Buộc Nhập) *</label>
-                <textarea 
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Lý do chi tiết <span className="text-rose-500">*</span>
+                </label>
+                <textarea
                   rows={3}
-                  placeholder="Nhập chi tiết lý do thay đổi trạng thái (Ví dụ: Thay đổi kế hoạch kinh doanh, Tái cấu trúc phòng ban...)"
-                  value={actionReason}
-                  onChange={(e) => setActionReason(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  required
+                  placeholder="Nhập lý do chi tiết (VD: Tạm dừng do phòng ban điều chỉnh kế hoạch kinh doanh Q4...)"
+                  value={statusReason}
+                  onChange={(e) => setStatusReason(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:border-blue-500 focus:outline-hidden font-medium"
                 />
               </div>
-            </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button onClick={() => setActiveModal(null)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-semibold hover:bg-slate-50">Bỏ Qua</button>
-              <button onClick={handleCancelPauseSubmit} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold">Xác Nhận Cập Nhật</button>
-            </div>
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsStatusModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-500/20 transition-all cursor-pointer"
+                >
+                  Xác nhận thay đổi
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-
     </div>
   );
 }

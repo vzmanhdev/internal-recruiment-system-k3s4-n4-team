@@ -67,6 +67,7 @@ export default function HRDepartmentsPage() {
   const [newDeptName, setNewDeptName] = useState('');
   const [newDeptCode, setNewDeptCode] = useState('');
   const [newDeptManager, setNewDeptManager] = useState('');
+  const [newDeptParentId, setNewDeptParentId] = useState('');
 
   const toggleNode = (id: string) => {
     setExpandedNodes(prev => ({ ...prev, [id]: !prev[id] }));
@@ -87,11 +88,27 @@ export default function HRDepartmentsPage() {
       open_positions: 0
     };
 
-    setDepartments(prev => [...prev, newDept]);
+    if (newDeptParentId) {
+      setDepartments(prev => prev.map(d => {
+        if (d.id === newDeptParentId) {
+          return {
+            ...d,
+            sub_departments: [...(d.sub_departments || []), newDept]
+          };
+        }
+        return d;
+      }));
+      setExpandedNodes(prev => ({ ...prev, [newDeptParentId]: true }));
+    } else {
+      setDepartments(prev => [...prev, newDept]);
+    }
+
     alert(`Đã thêm phòng ban "${newDeptName}" thành công!`);
     setModalOpen(false);
     setNewDeptName('');
     setNewDeptCode('');
+    setNewDeptManager('');
+    setNewDeptParentId('');
   };
 
   return (
@@ -176,51 +193,118 @@ export default function HRDepartmentsPage() {
 
       {/* Modal Add Department */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Thêm Phòng Ban Mới</h3>
-              <button onClick={() => setModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-sm">✕</button>
+        <div 
+          className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 transition-all"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setModalOpen(false);
+          }}
+        >
+          {/* 1. Nới rộng Modal Wrapper: w-full max-w-2xl kèm p-6 md:p-8 */}
+          <div 
+            className="bg-white rounded-2xl border border-slate-100 shadow-2xl w-full max-w-2xl p-6 md:p-8 transform transition-all max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header Modal */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Thêm Phòng Ban Mới</h3>
+                  <p className="text-xs text-slate-500 font-medium">Thiết lập cơ cấu tổ chức và phân cấp quản lý đơn vị</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setModalOpen(false)} 
+                className="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors cursor-pointer text-base"
+              >
+                ✕
+              </button>
             </div>
 
-            <div className="space-y-3 text-xs">
+            {/* 2. Chia lại bố cục các trường nhập liệu (Grid Layout) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs">
+              {/* Tên Phòng Ban: Chiếm 1 cột (mặc định) */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Tên Phòng Ban *</label>
+                <label className="block font-bold text-slate-700 mb-1.5 uppercase tracking-wider text-[11px]">
+                  Tên Phòng Ban <span className="text-rose-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   placeholder="Ví dụ: Phòng Quản Lý Chất Lượng QA/QC"
                   value={newDeptName}
                   onChange={(e) => setNewDeptName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
+              {/* Mã Phòng Ban (Code): Chiếm 1 cột (mặc định) */}
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Mã Phòng Ban (Code) *</label>
+                <label className="block font-bold text-slate-700 mb-1.5 uppercase tracking-wider text-[11px]">
+                  Mã Phòng Ban (Code) <span className="text-rose-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   placeholder="Ví dụ: QAQC"
                   value={newDeptCode}
                   onChange={(e) => setNewDeptCode(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-mono font-bold uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Trưởng Phòng Phụ Trách</label>
+              {/* Trưởng Phòng Phụ Trách: Cho chiếm toàn bộ chiều ngang bằng class col-span-1 md:col-span-2 */}
+              <div className="col-span-1 md:col-span-2">
+                <label className="block font-bold text-slate-700 mb-1.5 uppercase tracking-wider text-[11px]">
+                  Trưởng Phòng Phụ Trách
+                </label>
                 <input 
                   type="text" 
-                  placeholder="Tên nhân sự quản lý..."
+                  placeholder="Ví dụ: Trần Thị Thu Hà (HR Manager) hoặc Tên nhân sự quản lý..."
                   value={newDeptManager}
                   onChange={(e) => setNewDeptManager(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                 />
+              </div>
+
+              {/* Phòng ban cha (Thuộc phòng ban nào - nếu có): Cho chiếm toàn bộ chiều ngang md:col-span-2 */}
+              <div className="col-span-1 md:col-span-2">
+                <label className="block font-bold text-slate-700 mb-1.5 uppercase tracking-wider text-[11px]">
+                  Phòng Ban Cha (Thuộc phòng ban nào - nếu có)
+                </label>
+                <select
+                  value={newDeptParentId}
+                  onChange={(e) => setNewDeptParentId(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                >
+                  <option value="">-- Trực thuộc Công ty (Phòng ban gốc cấp 1) --</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.code})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">Để trống nếu đây là Khối hoặc Phòng ban cấp cao trực thuộc Ban Giám Đốc</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Hủy</button>
-              <button onClick={handleAddDept} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold">Lưu Phòng Ban</button>
+            {/* 3. Footer: Nút bấm căn phải */}
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+              <button 
+                type="button"
+                onClick={() => setModalOpen(false)} 
+                className="px-5 py-2.5 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button 
+                type="button"
+                onClick={handleAddDept} 
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer active:scale-95"
+              >
+                Lưu Phòng Ban
+              </button>
             </div>
           </div>
         </div>

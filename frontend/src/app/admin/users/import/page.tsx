@@ -286,9 +286,9 @@ export default function ImportUsersPage() {
 
   return (
     <AdminAppShell activeTab="import">
-      <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="w-full space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+        <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
               <FileSpreadsheet className="w-7 h-7 text-emerald-600" />
@@ -300,39 +300,39 @@ export default function ImportUsersPage() {
           </div>
           <Link
             href="/admin/users"
-            className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Quay lại danh sách người dùng</span>
           </Link>
         </div>
 
-        {/* Step Indicator */}
-        <div className="grid grid-cols-4 gap-3 bg-white p-4 rounded-2xl border border-gray-100 shadow-xs text-xs font-bold">
+        {/* Step Indicator (Full Width Stepper Card) */}
+        <div className="w-full grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-4 md:p-5 rounded-2xl border border-gray-100 shadow-xs text-xs font-bold">
           <div className={`flex items-center gap-2 ${step >= 1 ? "text-[#4285F4]" : "text-slate-400"}`}>
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold ${step >= 1 ? "bg-blue-100 text-[#4285F4]" : "bg-slate-100"}`}>1</span>
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${step >= 1 ? "bg-blue-100 text-[#4285F4]" : "bg-slate-100"}`}>1</span>
             <span>1. Chọn file Excel</span>
           </div>
           <div className={`flex items-center gap-2 ${step >= 2 ? "text-[#4285F4]" : "text-slate-400"}`}>
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold ${step >= 2 ? "bg-blue-100 text-[#4285F4]" : "bg-slate-100"}`}>2</span>
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${step >= 2 ? "bg-blue-100 text-[#4285F4]" : "bg-slate-100"}`}>2</span>
             <span>2. Kiểm tra dữ liệu</span>
           </div>
           <div className={`flex items-center gap-2 ${step >= 3 ? "text-[#4285F4]" : "text-slate-400"}`}>
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold ${step >= 3 ? "bg-blue-100 text-[#4285F4]" : "bg-slate-100"}`}>3</span>
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${step >= 3 ? "bg-blue-100 text-[#4285F4]" : "bg-slate-100"}`}>3</span>
             <span>3. Xử lý Import</span>
           </div>
           <div className={`flex items-center gap-2 ${step >= 4 ? "text-emerald-600" : "text-slate-400"}`}>
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold ${step >= 4 ? "bg-emerald-100 text-emerald-700" : "bg-slate-100"}`}>4</span>
+            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${step >= 4 ? "bg-emerald-100 text-emerald-700" : "bg-slate-100"}`}>4</span>
             <span>4. Báo cáo kết quả</span>
           </div>
         </div>
 
         {/* STEP 1: DOWNLOAD & UPLOAD */}
         {step === 1 && (
-          <div className="space-y-6">
+          <div className="w-full space-y-6">
             {/* File Structure Error Banner */}
             {fileError && (
-              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-3 animate-in fade-in duration-200 shadow-xs">
+              <div className="w-full p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-3 animate-in fade-in duration-200 shadow-xs">
                 <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <div className="font-extrabold text-sm text-rose-900">Lỗi Cấu Trúc File Excel!</div>
@@ -342,7 +342,7 @@ export default function ImportUsersPage() {
             )}
 
             {/* Download Template Box */}
-            <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="w-full bg-blue-50/50 border border-blue-100 rounded-2xl p-5 md:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-100 text-[#4285F4] flex items-center justify-center shrink-0">
                   <Download className="w-5 h-5" />
@@ -362,7 +362,7 @@ export default function ImportUsersPage() {
             </div>
 
             {/* Upload Zone */}
-            <div className="bg-white rounded-3xl border-2 border-dashed border-gray-200 p-10 text-center hover:border-blue-400 transition-colors shadow-xs">
+            <div className="w-full bg-white rounded-3xl border-2 border-dashed border-gray-200 p-8 md:p-12 text-center hover:border-blue-400 transition-colors shadow-xs">
               <input
                 type="file"
                 id="excel-file-input"
@@ -370,7 +370,7 @@ export default function ImportUsersPage() {
                 onChange={handleFileChange}
                 className="hidden"
               />
-              <label htmlFor="excel-file-input" className="cursor-pointer space-y-3 block">
+              <label htmlFor="excel-file-input" className="cursor-pointer space-y-3 block w-full">
                 <div className="w-16 h-16 rounded-2xl bg-blue-50 text-[#4285F4] mx-auto flex items-center justify-center border border-blue-100">
                   <UploadCloud className="w-8 h-8" />
                 </div>
@@ -382,7 +382,7 @@ export default function ImportUsersPage() {
             </div>
 
             {/* Excel Structure Guidelines Card */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4 shadow-xs">
+            <div className="w-full bg-white rounded-2xl border border-gray-100 p-5 md:p-6 space-y-4 shadow-xs">
               <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm border-b border-gray-100 pb-3">
                 <HelpCircle className="w-5 h-5 text-[#4285F4]" />
                 <span>Hướng Dẫn Cấu Trúc Cột File Excel Chuẩn</span>
@@ -393,7 +393,7 @@ export default function ImportUsersPage() {
               </p>
 
               {/* Sample Excel Preview Mockup */}
-              <div className="border border-gray-200 rounded-xl overflow-hidden text-xs">
+              <div className="w-full border border-gray-200 rounded-xl overflow-x-auto text-xs">
                 <table className="w-full text-left">
                   <thead className="bg-slate-100 text-slate-700 font-bold border-b border-gray-200">
                     <tr>
@@ -427,7 +427,7 @@ export default function ImportUsersPage() {
               </div>
 
               {/* Field Requirements List */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-2">
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-2">
                 <div className="bg-slate-50 p-3 rounded-xl border border-gray-100 space-y-1">
                   <span className="font-bold text-slate-800 block">📌 Danh Sách Mã Vai Trò Cho Phép (Cột E):</span>
                   <div className="text-[11px] text-slate-600 space-y-0.5">
@@ -456,8 +456,8 @@ export default function ImportUsersPage() {
 
         {/* STEP 2: PREVIEW & VALIDATION TABLE */}
         {step === 2 && (
-          <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-5 shadow-xs">
-            <div className="flex items-center justify-between">
+          <div className="w-full bg-white rounded-2xl border border-gray-100 p-5 md:p-6 space-y-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="font-extrabold text-slate-900 text-sm">Xem Trước & Kiểm Tra Tính Hợp Lệ Dữ Liệu</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -466,14 +466,14 @@ export default function ImportUsersPage() {
               </div>
               <button
                 onClick={() => setStep(1)}
-                className="text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+                className="text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer self-start sm:self-auto shrink-0"
               >
                 Tải lại file khác
               </button>
             </div>
 
             {/* Preview Table */}
-            <div className="border border-gray-100 rounded-xl overflow-hidden">
+            <div className="w-full border border-gray-100 rounded-xl overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 border-b border-gray-100 font-extrabold text-slate-500 uppercase text-[10px]">
                   <tr>
@@ -531,7 +531,7 @@ export default function ImportUsersPage() {
 
         {/* STEP 3: PROCESSING */}
         {step === 3 && (
-          <div className="bg-white rounded-3xl p-12 text-center space-y-4 border border-gray-100 shadow-xs">
+          <div className="w-full bg-white rounded-3xl p-12 text-center space-y-4 border border-gray-100 shadow-xs">
             <RefreshCw className="w-10 h-10 animate-spin text-[#4285F4] mx-auto" />
             <h3 className="font-extrabold text-slate-900 text-base">Đang Tạo Tài Khoản Dữ Liệu Thật Sự Vào Hệ Thống...</h3>
             <p className="text-xs text-slate-400">Vui lòng chờ trong giây lát trong khi hệ thống đăng ký tài khoản và kích hoạt người dùng.</p>
@@ -540,7 +540,7 @@ export default function ImportUsersPage() {
 
         {/* STEP 4: SUMMARY REPORT */}
         {step === 4 && (
-          <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-xs space-y-6 text-center">
+          <div className="w-full bg-white rounded-3xl p-8 md:p-12 border border-gray-100 shadow-xs space-y-6 text-center">
             <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center">
               <CheckCircle2 className="w-8 h-8" />
             </div>
@@ -550,7 +550,7 @@ export default function ImportUsersPage() {
               <p className="text-xs text-slate-400 mt-1">Các tài khoản hợp lệ đã được lưu trữ thực sự vào hệ thống.</p>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 max-w-md mx-auto text-xs font-bold">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-2xl mx-auto text-xs font-bold">
               <div className="bg-slate-50 p-4 rounded-2xl border border-gray-100">
                 <div className="text-slate-400 text-[10px] uppercase">Tổng số dòng</div>
                 <div className="text-xl font-extrabold text-slate-900 mt-1">{importSummary.total}</div>

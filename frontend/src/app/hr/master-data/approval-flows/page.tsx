@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 import { 
   Layers, Plus, ShieldCheck, CheckCircle2, ArrowRight, Building2, 
-  DollarSign, Edit2, History
+  DollarSign, Edit2, History, Check
 } from 'lucide-react';
+import { CreateApprovalFlowModal, ApprovalFlowFormData } from '@/features/hr/components/CreateApprovalFlowModal';
 
 interface ApprovalFlowRule {
   id: string;
@@ -22,6 +23,9 @@ interface ApprovalFlowRule {
 }
 
 export default function HRApprovalFlowsPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const [flows, setFlows] = useState<ApprovalFlowRule[]>([
     {
       id: "FLOW-001",
@@ -53,8 +57,45 @@ export default function HRApprovalFlowsPage() {
     }
   ]);
 
+  const handleCreateFlow = (data: ApprovalFlowFormData) => {
+    const newFlow: ApprovalFlowRule = {
+      id: `FLOW-00${flows.length + 1}`,
+      name: data.name,
+      department: data.department,
+      min_salary_threshold: data.minSalary,
+      max_salary_threshold: data.maxSalary,
+      version: `v1.0`,
+      steps: data.steps,
+      status: "active",
+    };
+
+    setFlows([newFlow, ...flows]);
+    setIsModalOpen(false);
+
+    setToastMessage(`Đã thiết lập luồng phê duyệt "${data.name}" (${data.steps.length} cấp duyệt) thành công!`);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-sm font-semibold flex items-center justify-between shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-purple-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button 
+            onClick={() => setToastMessage(null)}
+            className="text-xs text-purple-600 hover:text-purple-800 underline font-medium cursor-pointer"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-slate-200/80 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -67,7 +108,10 @@ export default function HRApprovalFlowsPage() {
           <p className="text-xs text-slate-500 mt-1">Định nghĩa quy trình duyệt 2–3 cấp theo phòng ban & dải lương. Thay đổi luồng mới không ảnh hưởng luồng đang chạy</p>
         </div>
 
-        <button className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer">
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+        >
           <Plus className="w-4 h-4" />
           <span>Tạo Luồng Duyệt Mới</span>
         </button>
@@ -110,6 +154,13 @@ export default function HRApprovalFlowsPage() {
           </div>
         ))}
       </div>
+
+      {/* Modal Tạo Luồng Duyệt Mới */}
+      <CreateApprovalFlowModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleCreateFlow}
+      />
     </div>
   );
 }

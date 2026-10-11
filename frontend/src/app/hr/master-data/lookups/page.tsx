@@ -2,8 +2,12 @@
 
 import React, { useState } from 'react';
 import { 
-  Layers, Plus, Tag, MapPin, Share2, HelpCircle, CheckCircle2, Search
+  Layers, Plus, Tag, MapPin, Share2, HelpCircle, CheckCircle2, Search, Check
 } from 'lucide-react';
+import { 
+  CreateLookupCategoryModal, 
+  NewLookupCategoryData 
+} from '@/features/hr/components/CreateLookupCategoryModal';
 
 interface LookupCategory {
   id: string;
@@ -12,9 +16,13 @@ interface LookupCategory {
   description: string;
   items_count: number;
   sample_items: string[];
+  status?: 'active' | 'inactive';
 }
 
 export default function HRLookupsPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   const [categories, setCategories] = useState<LookupCategory[]>([
     {
       id: "CAT-01",
@@ -22,7 +30,8 @@ export default function HRLookupsPage() {
       code: "SKILLS",
       description: "Các kỹ năng chuyên môn chuẩn phục vụ tìm kiếm & lọc hồ sơ",
       items_count: 42,
-      sample_items: ["Python", "FastAPI", "React.js", "Docker", "K8s", "SQL"]
+      sample_items: ["Python", "FastAPI", "React.js", "Docker", "K8s", "SQL"],
+      status: "active"
     },
     {
       id: "CAT-02",
@@ -30,7 +39,8 @@ export default function HRLookupsPage() {
       code: "SOURCES",
       description: "Các kênh thu hút hồ sơ ứng viên",
       items_count: 8,
-      sample_items: ["Website Công Khai", "Giới Thiệu Nội Bộ", "LinkedIn", "TopCV", "Headhunter"]
+      sample_items: ["Website Công Khai", "Giới Thiệu Nội Bộ", "LinkedIn", "TopCV", "Headhunter"],
+      status: "active"
     },
     {
       id: "CAT-03",
@@ -38,12 +48,39 @@ export default function HRLookupsPage() {
       code: "REASONS",
       description: "Lý do trượt ứng viên hoặc dừng tờ trình",
       items_count: 12,
-      sample_items: ["Không Đạt Chuyên Môn", "Kỳ Vọng Lương Vượt Band", "Từ Chối Offer", "Đã Tuyển Đủ"]
+      sample_items: ["Không Đạt Chuyên Môn", "Kỳ Vọng Lương Vượt Band", "Từ Chối Offer", "Đã Tuyển Đủ"],
+      status: "active"
     }
   ]);
 
+  const handleCreateCategory = (data: NewLookupCategoryData) => {
+    const newCategory: LookupCategory = {
+      id: `CAT-0${categories.length + 1}`,
+      name: data.name,
+      code: data.code,
+      description: data.description || 'Chưa có mô tả chi tiết',
+      items_count: 0,
+      sample_items: ["(Chưa có phần tử con)"],
+      status: data.status,
+    };
+
+    setCategories([newCategory, ...categories]);
+    setSuccessMessage(`Đã tạo thành công danh mục "${data.name}" (${data.code})`);
+    setTimeout(() => {
+      setSuccessMessage(null);
+    }, 4000);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Toast thông báo thành công */}
+      {successMessage && (
+        <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+          <span>{successMessage}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-slate-200/80 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -56,7 +93,10 @@ export default function HRLookupsPage() {
           <p className="text-xs text-slate-500 mt-1">Quản lý thẻ kỹ năng, nguồn ứng viên, danh mục địa điểm & lý do từ chối dùng chung toàn hệ thống</p>
         </div>
 
-        <button className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer">
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer"
+        >
           <Plus className="w-4 h-4" />
           <span>Thêm Danh Mục Mới</span>
         </button>
@@ -65,7 +105,12 @@ export default function HRLookupsPage() {
       {/* Main List */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {categories.map((cat) => (
-          <div key={cat.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-3 hover:shadow-md transition-all">
+          <div key={cat.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm space-y-3 hover:shadow-md transition-all relative overflow-hidden group">
+            {cat.status === 'inactive' && (
+              <div className="absolute top-0 right-0 bg-slate-200 text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded-bl-lg">
+                Đã Khóa
+              </div>
+            )}
             <div className="flex items-start justify-between">
               <div>
                 <span className="font-mono bg-slate-100 text-slate-700 text-[10px] font-extrabold px-2 py-0.5 rounded">{cat.code}</span>
@@ -76,7 +121,7 @@ export default function HRLookupsPage() {
               </span>
             </div>
 
-            <p className="text-xs text-slate-500 leading-relaxed">{cat.description}</p>
+            <p className="text-xs text-slate-500 leading-relaxed min-h-[32px]">{cat.description}</p>
 
             <div className="pt-2 border-t border-slate-100">
               <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1.5">Mẫu Giá Trị</div>
@@ -91,6 +136,13 @@ export default function HRLookupsPage() {
           </div>
         ))}
       </div>
+
+      {/* Modal Component Form Thêm Danh Mục Mới */}
+      <CreateLookupCategoryModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleCreateCategory}
+      />
     </div>
   );
 }
