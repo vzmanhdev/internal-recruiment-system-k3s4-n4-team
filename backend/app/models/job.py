@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, event, inspect as sa_inspect
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -56,3 +56,25 @@ class JobPosting(Base):
         employment_type = self.employment_type or self.type
         experience = self.experience_years or self.experience_level
         return {'id': self.id, 'code': self.code, 'requisition_id': self.requisition_id, 'requisition_code': self.requisition.code if self.requisition else None, 'title': self.title, 'department_id': self.department_id, 'department_name': self.department.name if self.department else self.department_name, 'job_title_id': self.job_title_id, 'job_title_name': self.job_title.name if self.job_title else None, 'quantity': self.quantity, 'min_salary': self.min_salary, 'max_salary': self.max_salary, 'is_salary_negotiable': self.is_salary_negotiable, 'work_location': location, 'employment_type': employment_type, 'experience_years': experience, 'deadline': self.deadline.isoformat() if self.deadline else None, 'is_featured': self.is_featured, 'job_description': description, 'requirements': self.requirements, 'benefits': self.benefits, 'status': self.status, 'views_count': self.views_count, 'created_by_id': self.created_by_id, 'creator_name': self.creator.full_name if self.creator else None, 'created_at': self.created_at.isoformat() if self.created_at else None, 'updated_at': self.updated_at.isoformat() if self.updated_at else None, 'slug': self.slug, 'department': self.department.name if self.department else self.department_name, 'location': location, 'type': employment_type, 'level': self.level, 'salary_range': self.salary_range, 'salaryRange': self.salary_range, 'experience_level': experience, 'description': description, 'applications_count': len(self.applications) if self.applications else self.applications_count}
+
+
+@event.listens_for(JobPosting, 'before_insert')
+@event.listens_for(JobPosting, 'before_update')
+def sync_job_posting_compatibility(_mapper, _connection, target):
+    state = sa_inspect(target)
+    for current_name, legacy_name in (
+        ('work_location', 'location'),
+        ('employment_type', 'type'),
+        ('experience_years', 'experience_level'),
+        ('job_description', 'description'),
+    ):
+        current_value = getattr(target, current_name)
+        legacy_value = getattr(target, legacy_name)
+        if state.attrs[current_name].history.has_changes() and current_value is not None:
+            value = current_value
+        elif state.attrs[legacy_name].history.has_changes() and legacy_value is not None:
+            value = legacy_value
+        else:
+            value = current_value if current_value is not None else legacy_value
+        setattr(target, current_name, value)
+        setattr(target, legacy_name, value)

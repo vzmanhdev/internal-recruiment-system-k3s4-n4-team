@@ -163,13 +163,13 @@ with engine.begin() as connection:
             connection.execute(text(f"ALTER TABLE job_postings ADD COLUMN {name} {definition}"))
     refreshed_job_columns = {column["name"] for column in inspect(engine).get_columns("job_postings")}
     if {"work_location", "location"}.issubset(refreshed_job_columns):
-        connection.execute(text("UPDATE job_postings SET work_location = location WHERE location IS NOT NULL"))
+        connection.execute(text("UPDATE job_postings SET work_location = location WHERE location IS NOT NULL AND (work_location IS NULL OR work_location = 'Trụ sở chính')"))
     if {"employment_type", "type"}.issubset(refreshed_job_columns):
-        connection.execute(text("UPDATE job_postings SET employment_type = type WHERE type IS NOT NULL"))
+        connection.execute(text("UPDATE job_postings SET employment_type = type WHERE type IS NOT NULL AND (employment_type IS NULL OR employment_type = 'full_time')"))
     if {"experience_years", "experience_level"}.issubset(refreshed_job_columns):
-        connection.execute(text("UPDATE job_postings SET experience_years = experience_level WHERE experience_level IS NOT NULL"))
+        connection.execute(text("UPDATE job_postings SET experience_years = experience_level WHERE experience_level IS NOT NULL AND (experience_years IS NULL OR experience_years = '1-3 năm')"))
     if {"job_description", "description"}.issubset(refreshed_job_columns):
-        connection.execute(text("UPDATE job_postings SET job_description = description WHERE description IS NOT NULL"))
+        connection.execute(text("UPDATE job_postings SET job_description = description WHERE description IS NOT NULL AND (job_description IS NULL OR job_description = '')"))
     for row in connection.execute(text("SELECT id FROM job_postings WHERE code IS NULL OR code = ''")):
         connection.execute(
             text("UPDATE job_postings SET code = :code WHERE id = :id"),
