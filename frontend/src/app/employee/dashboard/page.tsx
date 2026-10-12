@@ -210,10 +210,10 @@ export default function EmployeeDashboardPage() {
               </div>
               <div className="text-2xl font-extrabold text-slate-900">2</div>
               <div className="text-xs font-medium text-slate-500">Lịch phỏng vấn sắp tới</div>
-              <a href="#upcoming-interviews" className="text-[11px] font-bold text-[#4285F4] hover:underline flex items-center gap-1 pt-1">
+              <Link href="/employee/interviews" className="text-[11px] font-bold text-[#4285F4] hover:underline flex items-center gap-1 pt-1">
                 <span>Xem lịch</span>
                 <ArrowRight className="w-3 h-3" />
-              </a>
+              </Link>
             </div>
           </div>
         </div>
