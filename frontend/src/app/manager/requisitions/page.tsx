@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ManagerAppShell } from '@/components/layout/ManagerAppShell';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   FileCheck,
   Search,
@@ -114,6 +115,306 @@ const INITIAL_REQUISITIONS: ManagerRequisitionItem[] = [
       'Có trên 5 năm kinh nghiệm QA/QC, thành thạo Playwright, Cypress, Selenium, CI/CD pipeline.',
     reason: 'Thay thế nhân sự nghỉ việc',
   },
+  {
+    id: 'REQ-2026-006',
+    title: 'DevOps / Platform Engineer (Kubernetes & AWS)',
+    department: 'Phòng Hạ Tầng & An Ninh Mạng',
+    level: 'Senior',
+    targetCount: 2,
+    hiredCount: 1,
+    salaryRange: '35.000.000 - 48.000.000 VNĐ',
+    createdAt: '03/01/2026',
+    targetDate: '15/02/2026',
+    status: 'Active',
+    description: 'Vận hành cụm EKS, tối ưu hóa chi phí đám mây và thiết lập quy trình tự động hóa Terraform.',
+    requirements: 'Kinh nghiệm 4+ năm với Kubernetes, Terraform, Docker, AWS services.',
+    reason: 'Dự án mở rộng hạ tầng Cloud Native',
+  },
+  {
+    id: 'REQ-2026-007',
+    title: 'Data Engineer (Apache Spark & BigQuery)',
+    department: 'Phòng Phân Tích Dữ Liệu & BI',
+    level: 'Middle',
+    targetCount: 2,
+    hiredCount: 0,
+    salaryRange: '26.000.000 - 36.000.000 VNĐ',
+    createdAt: '05/01/2026',
+    targetDate: '28/02/2026',
+    status: 'Active',
+    description: 'Xây dựng pipeline ETL/ELT xử lý hàng triệu bản ghi phân tích hành vi tuyển dụng và nguồn ứng viên.',
+    requirements: 'Thành thạo Python, SQL, Spark, BigQuery, Airflow.',
+    reason: 'Dự án BI Dashboard tuyển dụng Q1/2026',
+  },
+  {
+    id: 'REQ-2026-008',
+    title: 'Mobile Engineer (Flutter / Dart)',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Middle',
+    targetCount: 2,
+    hiredCount: 1,
+    salaryRange: '24.000.000 - 34.000.000 VNĐ',
+    createdAt: '08/01/2026',
+    targetDate: '10/03/2026',
+    status: 'Active',
+    description: 'Phát triển ứng dụng Employee Referral & Job Portal cho nhân viên nội bộ trên iOS và Android.',
+    requirements: 'Kinh nghiệm 2+ năm Flutter, State Management (Bloc/Riverpod), REST API.',
+    reason: 'Mở rộng kênh mobile app cho nhân viên',
+  },
+  {
+    id: 'REQ-2026-009',
+    title: 'Product Owner / Technical PO',
+    department: 'Khối Quản Trị Sản Phẩm',
+    level: 'Lead',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '38.000.000 - 55.000.000 VNĐ',
+    createdAt: '12/01/2026',
+    targetDate: '15/03/2026',
+    status: 'Pending',
+    description: 'Định hình lộ trình phát triển sản phẩm HRM/ATS, thu thập yêu cầu từ các phòng ban và ưu tiên Backlog.',
+    requirements: 'Hiểu biết sâu sắc quy trình tuyển dụng nhân sự B2B, có chứng chỉ Scrum PO.',
+    reason: 'Thay thế PO chuyển công tác nội bộ',
+  },
+  {
+    id: 'REQ-2026-010',
+    title: 'AI / Machine Learning Engineer (CV Parsing)',
+    department: 'Phòng Nghiên Cứu & Đổi Mới Sáng Tạo',
+    level: 'Senior',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '40.000.000 - 60.000.000 VNĐ',
+    createdAt: '14/01/2026',
+    targetDate: '20/03/2026',
+    status: 'Active',
+    description: 'Huấn luyện và tích hợp mô hình LLM trích xuất kỹ năng ứng viên và gợi ý việc làm tự động.',
+    requirements: 'Thành thạo PyTorch, HuggingFace, FastAPI, kinh nghiệm NLP & Vector Database.',
+    reason: 'Tính năng Matching CV thông minh',
+  },
+  {
+    id: 'REQ-2026-011',
+    title: 'Security Specialist / DevSecOps',
+    department: 'Phòng Hạ Tầng & An Ninh Mạng',
+    level: 'Senior',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '35.000.000 - 48.000.000 VNĐ',
+    createdAt: '16/01/2026',
+    targetDate: '25/03/2026',
+    status: 'Pending',
+    description: 'Kiểm thử bảo mật định kỳ, rà quét lỗ hổng OWASP và chuẩn hóa chính sách bảo mật dữ liệu nhân sự.',
+    requirements: 'Có chứng chỉ CEH, CISSP hoặc tương đương. Kinh nghiệm bảo mật cloud và SAST/DAST.',
+    reason: 'Đạt chuẩn kiểm toán an ninh thông tin ISO 27001',
+  },
+  {
+    id: 'REQ-2026-012',
+    title: 'Solution Architect (Enterprise Systems)',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Principal',
+    targetCount: 1,
+    hiredCount: 1,
+    salaryRange: '55.000.000 - 75.000.000 VNĐ',
+    createdAt: '18/01/2026',
+    targetDate: '10/02/2026',
+    status: 'Closed',
+    description: 'Thiết kế kiến trúc tích hợp hệ thống Core ERP với cổng tuyển dụng nội bộ.',
+    requirements: 'Trên 8 năm kinh nghiệm kiến trúc phần mềm doanh nghiệp, TOGAF certified.',
+    reason: 'Hoàn thiện kiến trúc tổng thể toàn công ty',
+  },
+  {
+    id: 'REQ-2026-013',
+    title: 'Scrum Master / Agile Coach',
+    department: 'Khối Quản Trị Dự Án (PMO)',
+    level: 'Senior',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '30.000.000 - 42.000.000 VNĐ',
+    createdAt: '20/01/2026',
+    targetDate: '15/03/2026',
+    status: 'Active',
+    description: 'Điều phối các nghi thức Scrum, giải quyết trở ngại cho các squad phát triển phần mềm.',
+    requirements: 'Có chứng chỉ PSM II/CSM, trên 3 năm kinh nghiệm Scrum Master trong môi trường Tech.',
+    reason: 'Mở thêm 2 squad sản phẩm mới',
+  },
+  {
+    id: 'REQ-2026-014',
+    title: 'Fullstack Engineer (Node.js & React)',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Middle',
+    targetCount: 3,
+    hiredCount: 2,
+    salaryRange: '25.000.000 - 35.000.000 VNĐ',
+    createdAt: '22/01/2026',
+    targetDate: '25/02/2026',
+    status: 'Active',
+    description: 'Phát triển các microservice xử lý thông báo real-time và hệ thống phỏng vấn trực tuyến.',
+    requirements: 'Thành thạo TypeScript, Node.js NestJS, React, WebSocket và PostgreSQL.',
+    reason: 'Tăng tốc tiến độ dự án Live Interview',
+  },
+  {
+    id: 'REQ-2026-015',
+    title: 'Business Analyst (HR Tech & ATS)',
+    department: 'Khối Quản Trị Sản Phẩm',
+    level: 'Middle',
+    targetCount: 2,
+    hiredCount: 1,
+    salaryRange: '22.000.000 - 30.000.000 VNĐ',
+    createdAt: '24/01/2026',
+    targetDate: '10/03/2026',
+    status: 'Active',
+    description: 'Phân tích quy trình tuyển dụng và đánh giá phỏng vấn, lập tài liệu BRD và User Stories.',
+    requirements: 'Kinh nghiệm BA 2+ năm, vẽ UML/BPMN tốt, am hiểu nghiệp vụ tuyển dụng.',
+    reason: 'Bổ sung BA cho phân hệ Đánh giá & Offer',
+  },
+  {
+    id: 'REQ-2026-016',
+    title: 'Database Administrator (PostgreSQL DBA)',
+    department: 'Phòng Hạ Tầng & An Ninh Mạng',
+    level: 'Senior',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '32.000.000 - 45.000.000 VNĐ',
+    createdAt: '25/01/2026',
+    targetDate: '28/03/2026',
+    status: 'Pending',
+    description: 'Tối ưu hóa Index, Replication, High Availability và Backup Disaster Recovery cho CSDL PostgreSQL.',
+    requirements: 'Thành thạo PostgreSQL tuning, pg_stat_statements, Patroni/PgBouncer.',
+    reason: 'Tăng tải hệ thống gấp 3 lần vào mùa tuyển sinh',
+  },
+  {
+    id: 'REQ-2026-017',
+    title: 'Technical Writer / Documentation Specialist',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Junior',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '14.000.000 - 18.000.000 VNĐ',
+    createdAt: '26/01/2026',
+    targetDate: '30/03/2026',
+    status: 'Active',
+    description: 'Soạn thảo tài liệu API Swagger, hướng dẫn sử dụng hệ thống cho Hiring Manager và Recruiter.',
+    requirements: 'Kỹ năng viết văn bản rõ ràng, đọc hiểu code cơ bản, tiếng Anh tốt.',
+    reason: 'Chuẩn hóa kho tài liệu nội bộ',
+  },
+  {
+    id: 'REQ-2026-018',
+    title: 'Senior Manual QC / Test Lead',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Senior',
+    targetCount: 2,
+    hiredCount: 1,
+    salaryRange: '24.000.000 - 32.000.000 VNĐ',
+    createdAt: '27/01/2026',
+    targetDate: '15/03/2026',
+    status: 'Active',
+    description: 'Lập Test Plan, Test Cases kiểm thử chức năng phân quyền bảo mật nhiều cấp và tính lương offer.',
+    requirements: 'Kinh nghiệm 4+ năm kiểm thử web application, tư duy logic phản biện sắc sảo.',
+    reason: 'Đảm bảo chất lượng trước kỳ Go-live',
+  },
+  {
+    id: 'REQ-2026-019',
+    title: 'Cloud Architect (GCP / AWS Multi-Cloud)',
+    department: 'Phòng Hạ Tầng & An Ninh Mạng',
+    level: 'Lead',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '45.000.000 - 65.000.000 VNĐ',
+    createdAt: '28/01/2026',
+    targetDate: '31/03/2026',
+    status: 'Pending',
+    description: 'Quy hoạch kiến trúc đám mây Multi-cloud, tối ưu hóa độ trễ kết nối giữa các chi nhánh.',
+    requirements: 'Chứng chỉ GCP Professional Cloud Architect hoặc AWS Certified Solutions Architect Pro.',
+    reason: 'Mở rộng hạ tầng chi nhánh Đà Nẵng và Cần Thơ',
+  },
+  {
+    id: 'REQ-2026-020',
+    title: 'Frontend Intern / Fresher Web Developer',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Fresher',
+    targetCount: 4,
+    hiredCount: 2,
+    salaryRange: '8.000.000 - 12.000.000 VNĐ',
+    createdAt: '29/01/2026',
+    targetDate: '20/02/2026',
+    status: 'Active',
+    description: 'Hỗ trợ cắt HTML/Tailwind CSS cho các trang landing page tuyển dụng chiến dịch mùa xuân.',
+    requirements: 'Nắm vững JavaScript ES6, HTML5/CSS3, có tinh thần cầu tiến học hỏi.',
+    reason: 'Chương trình đào tạo tài năng trẻ',
+  },
+  {
+    id: 'REQ-2026-021',
+    title: 'Backend Fresher (Golang & RESTful API)',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Fresher',
+    targetCount: 3,
+    hiredCount: 1,
+    salaryRange: '10.000.000 - 14.000.000 VNĐ',
+    createdAt: '30/01/2026',
+    targetDate: '28/02/2026',
+    status: 'Active',
+    description: 'Tham gia phát triển các API phụ trợ, viết unit test và kiểm tra hiệu năng truy vấn.',
+    requirements: 'Tốt nghiệp CNTT, nắm vững cấu trúc dữ liệu giải thuật, biết Go hoặc C++.',
+    reason: 'Dự bị nhân lực cho dự án dài hạn',
+  },
+  {
+    id: 'REQ-2026-022',
+    title: 'System Administrator (Linux & Networking)',
+    department: 'Phòng Hạ Tầng & An Ninh Mạng',
+    level: 'Middle',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '20.000.000 - 28.000.000 VNĐ',
+    createdAt: '31/01/2026',
+    targetDate: '20/03/2026',
+    status: 'Active',
+    description: 'Quản trị hệ thống máy chủ Linux nội bộ, cấu hình VPN, Firewall và giám sát Zabbix/Prometheus.',
+    requirements: 'Kinh nghiệm 2+ năm Linux CentOS/Ubuntu, LPIC-1/2, CCNA.',
+    reason: 'Bổ sung ca trực vận hành hạ tầng văn phòng',
+  },
+  {
+    id: 'REQ-2026-023',
+    title: 'Tech Lead / Chuyên Gia Kỹ Thuật Microservices',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Lead',
+    targetCount: 1,
+    hiredCount: 1,
+    salaryRange: '45.000.000 - 60.000.000 VNĐ',
+    createdAt: '01/01/2026',
+    targetDate: '15/01/2026',
+    status: 'Closed',
+    description: 'Dẫn dắt kỹ thuật cho squad 8 thành viên, review code, thiết kế giải pháp caching phân tán.',
+    requirements: 'Tối thiểu 6 năm kinh nghiệm phát triển phần mềm, am hiểu Domain-Driven Design (DDD).',
+    reason: 'Thăng chức nội bộ tạo khoảng trống',
+  },
+  {
+    id: 'REQ-2026-024',
+    title: 'Senior Data Analyst (HR Metrics & Retention)',
+    department: 'Phòng Phân Tích Dữ Liệu & BI',
+    level: 'Senior',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '30.000.000 - 40.000.000 VNĐ',
+    createdAt: '01/02/2026',
+    targetDate: '25/03/2026',
+    status: 'Pending',
+    description: 'Phân tích các chỉ số giữ chân nhân tài, thời gian tuyển dụng (Time-to-Hire) và chi phí theo kênh.',
+    requirements: 'Thành thạo SQL, Tableau/PowerBI, Python (Pandas), thống kê toán ứng dụng.',
+    reason: 'Phục vụ báo cáo chiến lược ban điều hành',
+  },
+  {
+    id: 'REQ-2026-025',
+    title: 'QA Performance Tester (JMeter & k6)',
+    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
+    level: 'Middle',
+    targetCount: 1,
+    hiredCount: 0,
+    salaryRange: '22.000.000 - 30.000.000 VNĐ',
+    createdAt: '02/02/2026',
+    targetDate: '30/03/2026',
+    status: 'Active',
+    description: 'Thiết kế kịch bản tải mô phỏng 100.000 ứng viên truy cập đồng thời kiểm tra sức chịu tải.',
+    requirements: 'Kinh nghiệm 2+ năm Performance Testing với JMeter, k6, Grafana, đọc hiểu log APM.',
+    reason: 'Chuẩn bị cho ngày hội tuyển dụng lớn',
+  },
 ];
 
 function RequisitionsContent() {
@@ -214,6 +515,22 @@ function RequisitionsContent() {
       return matchSearch && matchStatus;
     });
   }, [requisitions, search, statusFilter]);
+
+  // Pagination Configuration (20 items per page)
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredList.length / ITEMS_PER_PAGE));
+
+  const paginatedList = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredList.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredList, currentPage]);
 
   // Counts
   const totalCount = requisitions.length;
@@ -322,93 +639,113 @@ function RequisitionsContent() {
               </tr>
             </thead>
             <tbody className="text-xs divide-y divide-slate-100">
-              {filteredList.map((req) => (
-                <tr key={req.id} className="hover:bg-slate-50/60 transition-colors">
-                  {/* Title & Code */}
-                  <td className="py-4 px-6">
-                    <Link
-                      href={`/manager/requisitions/${req.id}`}
-                      className="group font-bold text-slate-900 hover:text-blue-600 transition-colors block"
-                    >
-                      <div className="text-sm font-extrabold group-hover:underline">{req.title}</div>
-                      <div className="text-[11px] text-slate-400 font-medium">{req.id} • {req.department}</div>
-                    </Link>
-                  </td>
-
-                  {/* Level */}
-                  <td className="py-4 px-6">
-                    <span className="font-bold text-slate-700">{req.level}</span>
-                  </td>
-
-                  {/* Progress: Hired / Target */}
-                  <td className="py-4 px-6 text-center">
-                    <div className="inline-flex flex-col items-center">
-                      <span className="font-extrabold text-slate-900">
-                        {req.hiredCount}/{req.targetCount} vị trí
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        {Math.round((req.hiredCount / req.targetCount) * 100)}% chỉ tiêu
-                      </span>
-                    </div>
-                  </td>
-
-                  {/* Salary */}
-                  <td className="py-4 px-6 text-slate-700 font-semibold">
-                    {req.salaryRange}
-                  </td>
-
-                  {/* Deadline */}
-                  <td className="py-4 px-6 text-slate-600 font-medium">
-                    {req.targetDate}
-                  </td>
-
-                  {/* Status Badges */}
-                  <td className="py-4 px-6">
-                    {req.status === 'Active' && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        Đang mở tuyển
-                      </span>
-                    )}
-                    {req.status === 'Pending' && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        Chờ phê duyệt
-                      </span>
-                    )}
-                    {req.status === 'Closed' && (
-                      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                        Đã đóng
-                      </span>
-                    )}
-                  </td>
-
-                  {/* Action Column with COPY & VIEW */}
-                  <td className="py-4 px-6 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {/* View Detail Link */}
-                      <Link
-                        href={`/manager/requisitions/${req.id}`}
-                        className="p-2 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                        title="Xem chi tiết & Lịch sử duyệt"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Link>
-
-                      {/* FEATURE 1: SAO CHÉP (COPY) ACTION BUTTON */}
-                      <button
-                        onClick={() => handleOpenDuplicateModal(req)}
-                        className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer group"
-                        title="Sao chép yêu cầu (Duplicate)"
-                      >
-                        <Copy className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                      </button>
-                    </div>
+              {paginatedList.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                    Không tìm thấy yêu cầu tuyển dụng nào phù hợp với bộ lọc tìm kiếm.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                paginatedList.map((req) => (
+                  <tr key={req.id} className="hover:bg-slate-50/60 transition-colors">
+                    {/* Title & Code */}
+                    <td className="py-4 px-6">
+                      <Link
+                        href={`/manager/requisitions/${req.id}`}
+                        className="group font-bold text-slate-900 hover:text-blue-600 transition-colors block"
+                      >
+                        <div className="text-sm font-extrabold group-hover:underline">{req.title}</div>
+                        <div className="text-[11px] text-slate-400 font-medium">{req.id} • {req.department}</div>
+                      </Link>
+                    </td>
+
+                    {/* Level */}
+                    <td className="py-4 px-6">
+                      <span className="font-bold text-slate-700">{req.level}</span>
+                    </td>
+
+                    {/* Progress: Hired / Target */}
+                    <td className="py-4 px-6 text-center">
+                      <div className="inline-flex flex-col items-center">
+                        <span className="font-extrabold text-slate-900">
+                          {req.hiredCount}/{req.targetCount} vị trí
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {Math.round((req.hiredCount / req.targetCount) * 100)}% chỉ tiêu
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Salary */}
+                    <td className="py-4 px-6 text-slate-700 font-semibold">
+                      {req.salaryRange}
+                    </td>
+
+                    {/* Deadline */}
+                    <td className="py-4 px-6 text-slate-600 font-medium">
+                      {req.targetDate}
+                    </td>
+
+                    {/* Status Badges */}
+                    <td className="py-4 px-6">
+                      {req.status === 'Active' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Đang mở tuyển
+                        </span>
+                      )}
+                      {req.status === 'Pending' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                          Chờ phê duyệt
+                        </span>
+                      )}
+                      {req.status === 'Closed' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                          Đã đóng
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Action Column with COPY & VIEW */}
+                    <td className="py-4 px-6 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {/* View Detail Link */}
+                        <Link
+                          href={`/manager/requisitions/${req.id}`}
+                          className="p-2 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                          title="Xem chi tiết & Lịch sử duyệt"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Link>
+
+                        {/* FEATURE 1: SAO CHÉP (COPY) ACTION BUTTON */}
+                        <button
+                          onClick={() => handleOpenDuplicateModal(req)}
+                          className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer group"
+                          title="Sao chép yêu cầu (Duplicate)"
+                        >
+                          <Copy className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
+        </div>
+
+        {/* Thanh Phân Trang (Pagination) */}
+        <div className="px-6 pb-6">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredList.length}
+            itemsPerPage={ITEMS_PER_PAGE}
+            onPageChange={(page) => setCurrentPage(page)}
+            itemLabel="yêu cầu tuyển dụng"
+          />
         </div>
       </div>
 
@@ -417,7 +754,7 @@ function RequisitionsContent() {
       {/* ========================================================================= */}
       {isDuplicateModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-5xl p-6 md:p-8 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-5 max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
@@ -467,7 +804,7 @@ function RequisitionsContent() {
               </div>
 
               {/* Two Column Grid for Key Inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Level */}
                 <div className="space-y-1.5">
                   <label className="block font-bold text-slate-700">Cấp bậc</label>
@@ -498,7 +835,7 @@ function RequisitionsContent() {
                   <span>Các thông số cần xác nhận điều chỉnh:</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Target Count (Số lượng cần tuyển) */}
                   <div className="space-y-1">
                     <label className="block font-bold text-slate-800">
@@ -528,41 +865,47 @@ function RequisitionsContent() {
                       className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                     />
                   </div>
-                </div>
 
-                {/* Reason */}
-                <div className="space-y-1 pt-1">
-                  <label className="block font-bold text-slate-800">Lý do tuyển dụng bổ sung *</label>
-                  <input
-                    type="text"
-                    required
-                    value={duplicateForm.reason}
-                    onChange={(e) => setDuplicateForm({ ...duplicateForm, reason: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-white border border-amber-300 rounded-xl font-medium text-slate-900 focus:outline-none"
+                  {/* Reason (Lý do tuyển dụng bổ sung - col-span-2) */}
+                  <div className="space-y-1 col-span-1 md:col-span-2">
+                    <label className="block font-bold text-slate-800">Lý do tuyển dụng bổ sung *</label>
+                    <input
+                      type="text"
+                      required
+                      value={duplicateForm.reason}
+                      onChange={(e) => setDuplicateForm({ ...duplicateForm, reason: e.target.value })}
+                      placeholder="Ví dụ: Dự án mở rộng, bổ sung nhân sự thay thế..."
+                      className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Description & Requirements (Pre-filled) - 2 Column Grid for optimal screen usage */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                {/* Description (Pre-filled) */}
+                <div className="space-y-1.5">
+                  <label className="block font-bold text-slate-700">Mô tả công việc (JD)</label>
+                  <textarea
+                    rows={5}
+                    value={duplicateForm.description}
+                    onChange={(e) => setDuplicateForm({ ...duplicateForm, description: e.target.value })}
+                    placeholder="Mô tả công việc và trách nhiệm chính..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600 focus:bg-white transition-all resize-y"
                   />
                 </div>
-              </div>
 
-              {/* Description (Pre-filled) */}
-              <div className="space-y-1.5">
-                <label className="block font-bold text-slate-700">Mô tả công việc (JD)</label>
-                <textarea
-                  rows={3}
-                  value={duplicateForm.description}
-                  onChange={(e) => setDuplicateForm({ ...duplicateForm, description: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              {/* Requirements (Pre-filled) */}
-              <div className="space-y-1.5">
-                <label className="block font-bold text-slate-700">Yêu cầu chuyên môn</label>
-                <textarea
-                  rows={3}
-                  value={duplicateForm.requirements}
-                  onChange={(e) => setDuplicateForm({ ...duplicateForm, requirements: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600"
-                />
+                {/* Requirements (Pre-filled) */}
+                <div className="space-y-1.5">
+                  <label className="block font-bold text-slate-700">Yêu cầu chuyên môn</label>
+                  <textarea
+                    rows={5}
+                    value={duplicateForm.requirements}
+                    onChange={(e) => setDuplicateForm({ ...duplicateForm, requirements: e.target.value })}
+                    placeholder="Yêu cầu kinh nghiệm, kỹ năng và học vấn..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600 focus:bg-white transition-all resize-y"
+                  />
+                </div>
               </div>
 
               {/* Modal Actions */}

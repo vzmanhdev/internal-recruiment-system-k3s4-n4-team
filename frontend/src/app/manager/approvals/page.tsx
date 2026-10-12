@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   GitMerge,
   CheckCircle2,
@@ -240,6 +241,22 @@ export default function ApprovalsPage() {
     return true;
   });
 
+  // Pagination State (20 items per page)
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedType, selectedStatus]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / ITEMS_PER_PAGE));
+
+  const paginatedApprovals = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredItems.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredItems, currentPage]);
+
   const activeItem = MOCK_APPROVALS.find((i) => i.id === activeItemId) || MOCK_APPROVALS[0];
 
   const handleSendReminder = (approverName: string) => {
@@ -350,66 +367,84 @@ export default function ApprovalsPage() {
           </h2>
 
           <div className="space-y-3">
-            {filteredItems.map((item) => {
-              const isSelected = item.id === activeItemId;
-              return (
-                <div
-                  key={item.id}
-                  onClick={() => setActiveItemId(item.id)}
-                  className={clsx(
-                    'p-5 rounded-2xl transition-all cursor-pointer border text-left',
-                    isSelected
-                      ? 'bg-white border-blue-500 ring-2 ring-blue-500/10 shadow-md'
-                      : 'bg-white border-slate-100 hover:border-slate-200 shadow-xs hover:shadow-sm'
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="font-mono text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
-                      {item.code}
-                    </span>
-                    <span
-                      className={clsx(
-                        'text-[10px] font-extrabold px-2 py-0.5 rounded-full',
-                        item.overallStatus === 'APPROVED'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            {paginatedApprovals.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 bg-white rounded-2xl border border-slate-100 shadow-xs">
+                Không tìm thấy hồ sơ nào phù hợp.
+              </div>
+            ) : (
+              paginatedApprovals.map((item) => {
+                const isSelected = item.id === activeItemId;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => setActiveItemId(item.id)}
+                    className={clsx(
+                      'p-5 rounded-2xl transition-all cursor-pointer border text-left',
+                      isSelected
+                        ? 'bg-white border-blue-500 ring-2 ring-blue-500/10 shadow-md'
+                        : 'bg-white border-slate-100 hover:border-slate-200 shadow-xs hover:shadow-sm'
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="font-mono text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
+                        {item.code}
+                      </span>
+                      <span
+                        className={clsx(
+                          'text-[10px] font-extrabold px-2 py-0.5 rounded-full',
+                          item.overallStatus === 'APPROVED'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : item.slaStatus === 'OVERDUE'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        )}
+                      >
+                        {item.overallStatus === 'APPROVED'
+                          ? 'Đã Duyệt Xong'
                           : item.slaStatus === 'OVERDUE'
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      )}
-                    >
-                      {item.overallStatus === 'APPROVED'
-                        ? 'Đã Duyệt Xong'
-                        : item.slaStatus === 'OVERDUE'
-                        ? 'Quá SLA'
-                        : 'Đang Duyệt'}
-                    </span>
-                  </div>
-
-                  <h3 className="text-sm font-bold text-slate-900 leading-snug line-clamp-1">
-                    {item.title}
-                  </h3>
-
-                  <div className="mt-2 text-xs text-slate-500 flex items-center justify-between">
-                    <span>{item.department}</span>
-                    <span>{item.createdAt}</span>
-                  </div>
-
-                  {/* Current Approver Highlight */}
-                  <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                    <div className="text-[11px] text-slate-600 truncate max-w-[220px]">
-                      <span className="text-slate-400">Đang ở bàn: </span>
-                      <strong className="text-slate-800">{item.currentApprover}</strong>
+                          ? 'Quá SLA'
+                          : 'Đang Duyệt'}
+                      </span>
                     </div>
-                    <ChevronRight
-                      className={clsx(
-                        'w-4 h-4 transition-transform shrink-0',
-                        isSelected ? 'text-blue-600 translate-x-0.5' : 'text-slate-300'
-                      )}
-                    />
+
+                    <h3 className="text-sm font-bold text-slate-900 leading-snug line-clamp-1">
+                      {item.title}
+                    </h3>
+
+                    <div className="mt-2 text-xs text-slate-500 flex items-center justify-between">
+                      <span>{item.department}</span>
+                      <span>{item.createdAt}</span>
+                    </div>
+
+                    {/* Current Approver Highlight */}
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <div className="text-[11px] text-slate-600 truncate max-w-[220px]">
+                        <span className="text-slate-400">Đang ở bàn: </span>
+                        <strong className="text-slate-800">{item.currentApprover}</strong>
+                      </div>
+                      <ChevronRight
+                        className={clsx(
+                          'w-4 h-4 transition-transform shrink-0',
+                          isSelected ? 'text-blue-600 translate-x-0.5' : 'text-slate-300'
+                        )}
+                      />
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
+          </div>
+
+          {/* Thanh Phân Trang (Pagination) */}
+          <div className="bg-white rounded-2xl p-3 border border-slate-100 shadow-xs">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredItems.length}
+              itemsPerPage={ITEMS_PER_PAGE}
+              onPageChange={(page) => setCurrentPage(page)}
+              itemLabel="hồ sơ"
+            />
           </div>
         </div>
 

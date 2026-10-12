@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   Star,
   Users,
@@ -146,6 +147,22 @@ export default function EvaluationsPage() {
     return true;
   });
 
+  // Pagination State (20 items per page)
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset page when filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, searchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / ITEMS_PER_PAGE));
+
+  const paginatedCandidates = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredCandidates.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredCandidates, currentPage]);
+
   const pendingCount = candidates.filter((c) => c.status === 'PENDING_EVAL').length;
   const evaluatedCount = candidates.filter((c) => c.status === 'EVALUATED').length;
 
@@ -279,105 +296,123 @@ export default function EvaluationsPage() {
 
       {/* CANDIDATE SCORECARD CARDS GRID (3 Columns) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredCandidates.map((candidate) => {
-          const isPending = candidate.status === 'PENDING_EVAL';
+        {paginatedCandidates.length === 0 ? (
+          <div className="col-span-1 md:col-span-2 lg:col-span-3 bg-white rounded-2xl p-12 text-center text-slate-400 border border-slate-100 shadow-xs">
+            Không tìm thấy ứng viên nào phù hợp với bộ lọc tìm kiếm.
+          </div>
+        ) : (
+          paginatedCandidates.map((candidate) => {
+            const isPending = candidate.status === 'PENDING_EVAL';
 
-          return (
-            <div
-              key={candidate.id}
-              className={clsx(
-                'bg-white rounded-2xl border p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4',
-                isPending && candidate.isOverdue
-                  ? 'border-amber-300 ring-2 ring-amber-100'
-                  : 'border-slate-100 hover:border-slate-200'
-              )}
-            >
-              <div className="space-y-3">
-                {/* Card Header: Avatar + Status Badge */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
-                      {candidate.initials}
+            return (
+              <div
+                key={candidate.id}
+                className={clsx(
+                  'bg-white rounded-2xl border p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4',
+                  isPending && candidate.isOverdue
+                    ? 'border-amber-300 ring-2 ring-amber-100'
+                    : 'border-slate-100 hover:border-slate-200'
+                )}
+              >
+                <div className="space-y-3">
+                  {/* Card Header: Avatar + Status Badge */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+                        {candidate.initials}
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 leading-tight">
+                          {candidate.name}
+                        </h3>
+                        <p className="text-[11px] text-slate-400">{candidate.email}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 leading-tight">
-                        {candidate.name}
-                      </h3>
-                      <p className="text-[11px] text-slate-400">{candidate.email}</p>
+
+                    <span
+                      className={clsx(
+                        'text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shrink-0',
+                        isPending
+                          ? candidate.isOverdue
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200 animate-pulse'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      )}
+                    >
+                      {isPending
+                        ? candidate.isOverdue
+                          ? 'Quá SLA 24h'
+                          : 'Chờ đánh giá'
+                        : `Đạt ${candidate.score}★`}
+                    </span>
+                  </div>
+
+                  {/* Position & Round */}
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs space-y-1">
+                    <div className="font-bold text-slate-800 line-clamp-1">
+                      {candidate.positionTitle}
+                    </div>
+                    <div className="text-[11px] text-blue-600 font-semibold flex items-center gap-1">
+                      <Award className="w-3.5 h-3.5 shrink-0" />
+                      <span className="line-clamp-1">{candidate.interviewRound}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 shrink-0" />
+                      <span>{candidate.interviewDate}</span>
                     </div>
                   </div>
 
-                  <span
+                  {/* Skills tags */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {candidate.skills.map((skill, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-semibold"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Comment summary if evaluated */}
+                  {candidate.comment && (
+                    <p className="text-xs text-slate-600 italic bg-slate-50/50 p-2.5 rounded-xl border border-slate-100 line-clamp-2">
+                      "{candidate.comment}"
+                    </p>
+                  )}
+                </div>
+
+                {/* Card Action Button */}
+                <div className="pt-3 border-t border-slate-100">
+                  <button
+                    onClick={() => handleOpenScorecard(candidate)}
                     className={clsx(
-                      'text-[10px] font-extrabold px-2.5 py-0.5 rounded-full shrink-0',
+                      'w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs',
                       isPending
-                        ? candidate.isOverdue
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200 animate-pulse'
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20 active:scale-98'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                     )}
                   >
-                    {isPending
-                      ? candidate.isOverdue
-                        ? 'Quá SLA 24h'
-                        : 'Chờ đánh giá'
-                      : `Đạt ${candidate.score}★`}
-                  </span>
+                    <Star className="w-3.5 h-3.5 text-amber-300" />
+                    <span>{isPending ? 'Mở Phiếu Chấm Điểm' : 'Xem & Chỉnh Sửa Đánh Giá'}</span>
+                  </button>
                 </div>
-
-                {/* Position & Round */}
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs space-y-1">
-                  <div className="font-bold text-slate-800 line-clamp-1">
-                    {candidate.positionTitle}
-                  </div>
-                  <div className="text-[11px] text-blue-600 font-semibold flex items-center gap-1">
-                    <Award className="w-3.5 h-3.5 shrink-0" />
-                    <span className="line-clamp-1">{candidate.interviewRound}</span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 shrink-0" />
-                    <span>{candidate.interviewDate}</span>
-                  </div>
-                </div>
-
-                {/* Skills tags */}
-                <div className="flex flex-wrap gap-1.5">
-                  {candidate.skills.map((skill, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-semibold"
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-
-                {/* Comment summary if evaluated */}
-                {candidate.comment && (
-                  <p className="text-xs text-slate-600 italic bg-slate-50/50 p-2.5 rounded-xl border border-slate-100 line-clamp-2">
-                    "{candidate.comment}"
-                  </p>
-                )}
               </div>
+            );
+          })
+        )}
+      </div>
 
-              {/* Card Action Button */}
-              <div className="pt-3 border-t border-slate-100">
-                <button
-                  onClick={() => handleOpenScorecard(candidate)}
-                  className={clsx(
-                    'w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs',
-                    isPending
-                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/20 active:scale-98'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  )}
-                >
-                  <Star className="w-3.5 h-3.5 text-amber-300" />
-                  <span>{isPending ? 'Mở Phiếu Chấm Điểm' : 'Xem & Chỉnh Sửa Đánh Giá'}</span>
-                </button>
-              </div>
-            </div>
-          );
-        })}
+      {/* Thanh Phân Trang (Pagination) */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredCandidates.length}
+          itemsPerPage={ITEMS_PER_PAGE}
+          onPageChange={(page) => setCurrentPage(page)}
+          itemLabel="ứng viên"
+        />
       </div>
 
       {/* SCORECARD MODAL POPUP */}

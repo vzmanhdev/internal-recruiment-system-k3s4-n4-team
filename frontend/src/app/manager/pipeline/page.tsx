@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   Filter,
   Users,
@@ -150,6 +151,16 @@ export default function PipelinePage() {
   const totalTarget = POSITION_PIPELINES.reduce((acc, p) => acc + p.targetCount, 0);
   const totalHired = POSITION_PIPELINES.reduce((acc, p) => acc + p.hiredCount, 0);
   const overallPercentage = Math.round((totalHired / totalTarget) * 100);
+
+  // Pagination State (20 items per page)
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(POSITION_PIPELINES.length / ITEMS_PER_PAGE));
+
+  const paginatedPositions = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return POSITION_PIPELINES.slice(start, start + ITEMS_PER_PAGE);
+  }, [currentPage]);
 
   const handleCopyReport = () => {
     const reportText = `[BÁO CÁO TIẾN ĐỘ TUYỂN DỤNG KHỐI CÔNG NGHỆ]\n• Tổng chỉ tiêu: ${totalTarget} nhân sự\n• Đã tuyển đạt: ${totalHired}/${totalTarget} (${overallPercentage}%)\n• Phễu ứng viên: 240 CV Nộp -> 45 Sàng lọc -> 18 Phỏng vấn -> 6 Offer -> 4 Onboard.\n• Chi tiết xem tại hệ thống Enterprise ATS.`;
@@ -323,58 +334,78 @@ export default function PipelinePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {POSITION_PIPELINES.map((pos) => {
-                const percent = Math.round((pos.hiredCount / pos.targetCount) * 100);
+              {paginatedPositions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
+                    Không tìm thấy vị trí tuyển dụng nào.
+                  </td>
+                </tr>
+              ) : (
+                paginatedPositions.map((pos) => {
+                  const percent = Math.round((pos.hiredCount / pos.targetCount) * 100);
 
-                return (
-                  <tr key={pos.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-900">{pos.title}</div>
-                      <div className="font-mono text-[10px] text-blue-600 font-semibold">{pos.id}</div>
-                    </td>
-                    <td className="py-3.5 px-4 text-center font-bold text-slate-700">
-                      {pos.appliedCount}
-                    </td>
-                    <td className="py-3.5 px-4 text-center font-bold text-amber-600">
-                      {pos.interviewingCount}
-                    </td>
-                    <td className="py-3.5 px-4 text-center font-bold text-purple-600">
-                      {pos.offeredCount}
-                    </td>
-                    <td className="py-3.5 px-4 text-center font-bold text-slate-800">
-                      {pos.hiredCount} / {pos.targetCount}
-                    </td>
-                    <td className="py-3.5 px-4 text-center min-w-[120px]">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={clsx(
-                              'h-full rounded-full',
-                              percent === 100 ? 'bg-emerald-500' : 'bg-blue-600'
-                            )}
-                            style={{ width: `${percent}%` }}
-                          />
+                  return (
+                    <tr key={pos.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-900">{pos.title}</div>
+                        <div className="font-mono text-[10px] text-blue-600 font-semibold">{pos.id}</div>
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-700">
+                        {pos.appliedCount}
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-amber-600">
+                        {pos.interviewingCount}
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-purple-600">
+                        {pos.offeredCount}
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">
+                        {pos.hiredCount} / {pos.targetCount}
+                      </td>
+                      <td className="py-3.5 px-4 text-center min-w-[120px]">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className={clsx(
+                                'h-full rounded-full',
+                                percent === 100 ? 'bg-emerald-500' : 'bg-blue-600'
+                              )}
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                          <span className="font-bold text-[11px] text-slate-700">{percent}%</span>
                         </div>
-                        <span className="font-bold text-[11px] text-slate-700">{percent}%</span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <span
-                        className={clsx(
-                          'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold',
-                          pos.status === 'FULL'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        )}
-                      >
-                        {pos.status === 'FULL' ? 'Đủ người' : 'Đang tuyển'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span
+                          className={clsx(
+                            'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold',
+                            pos.status === 'FULL'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          )}
+                        >
+                          {pos.status === 'FULL' ? 'Đủ người' : 'Đang tuyển'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
+        </div>
+
+        {/* Thanh Phân Trang (Pagination) */}
+        <div className="pt-2">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={POSITION_PIPELINES.length}
+            itemsPerPage={ITEMS_PER_PAGE}
+            onPageChange={(page) => setCurrentPage(page)}
+            itemLabel="vị trí tuyển dụng"
+          />
         </div>
       </div>
     </div>
