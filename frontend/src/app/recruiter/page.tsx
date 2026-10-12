@@ -251,7 +251,7 @@ export default function RecruiterOverviewPage() {
 
                   <Link
                     href={`/recruiter/pipeline?candidate=${cand.id}`}
-                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all"
+                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors"
                   >
                     Xử lý
                   </Link>
@@ -305,7 +305,7 @@ export default function RecruiterOverviewPage() {
           </div>
 
           {/* Pipeline Conversion Widget */}
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-md p-6 text-white space-y-3">
+          <div className="bg-gradient-to-br from-blue-600 to-blue-800 rounded-2xl shadow-md p-6 text-white space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-blue-100 uppercase tracking-wider">
                 Hiệu suất tuần

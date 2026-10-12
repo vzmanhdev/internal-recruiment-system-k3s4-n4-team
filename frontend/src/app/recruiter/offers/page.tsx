@@ -690,62 +690,62 @@ export default function RecruiterOffersPage() {
           </div>
 
           {/* KHỐI PHÂN TÍCH: DỮ LIỆU ĐIỀU CHỈNH LƯƠNG (SALARY ADJUSTMENT INSIGHTS - User Story 1) */}
-          <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-lg space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/80 pb-3">
+          <div className="bg-blue-50/50 border border-blue-100 rounded-2xl shadow-sm p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-100 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400">
+                <div className="p-2 rounded-xl bg-blue-100 text-blue-600">
                   <TrendingUp className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm sm:text-base tracking-tight">
-                    Căn Cứ Điều Chỉnh Mức Lương Tuyển Dụng (Salary Market Data)
+                  <h3 className="text-slate-800 font-bold text-sm sm:text-base tracking-tight">
+                    Cảnh Báo Điều Chỉnh Mức Lương Tuyển Dụng (Salary Market Data)
                   </h3>
-                  <p className="text-[11px] text-slate-300">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Dữ liệu tổng hợp từ các trường hợp ứng viên từ chối hoặc yêu cầu thương lượng lại.
                   </p>
                 </div>
               </div>
-              <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-extrabold border border-blue-400/30">
+              <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-extrabold border border-blue-200">
                 Data-Driven Recruitment
               </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
-              <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
-                <div className="text-[11px] text-slate-300 font-bold flex items-center justify-between">
-                  <span>Lương thấp hơn kỳ vọng</span>
-                  <span className="text-rose-400 font-extrabold">Chiếm ~50%</span>
+              <div className="bg-white border border-slate-100 shadow-sm rounded-xl p-4 space-y-2">
+                <div className="text-xs font-semibold flex items-center justify-between">
+                  <span className="text-slate-700 font-semibold">Lương thấp hơn kỳ vọng</span>
+                  <span className="text-rose-600 font-extrabold">Chiếm ~50%</span>
                 </div>
-                <div className="w-full bg-slate-700 rounded-full h-2">
+                <div className="w-full bg-slate-100 rounded-full h-2">
                   <div className="bg-rose-500 h-2 rounded-full w-1/2"></div>
                 </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
+                <p className="text-slate-500 text-sm leading-relaxed">
                   Ứng viên Senior Backend thường có offer cạnh tranh ở mức 48M - 52M net.
                 </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
-                <div className="text-[11px] text-slate-300 font-bold flex items-center justify-between">
-                  <span>Địa điểm xa / Không Hybrid</span>
-                  <span className="text-amber-400 font-extrabold">Chiếm ~25%</span>
+              <div className="bg-white border border-slate-100 shadow-sm rounded-xl p-4 space-y-2">
+                <div className="text-xs font-semibold flex items-center justify-between">
+                  <span className="text-slate-700 font-semibold">Địa điểm xa / Không Hybrid</span>
+                  <span className="text-amber-600 font-extrabold">Chiếm ~25%</span>
                 </div>
-                <div className="w-full bg-slate-700 rounded-full h-2">
+                <div className="w-full bg-slate-100 rounded-full h-2">
                   <div className="bg-amber-500 h-2 rounded-full w-1/4"></div>
                 </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
+                <p className="text-slate-500 text-sm leading-relaxed">
                   Đề xuất áp dụng cơ chế 2 ngày WFH/tuần cho các vị trí Tech/Product.
                 </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
-                <div className="text-[11px] text-slate-300 font-bold flex items-center justify-between">
-                  <span>Offer đối thủ cạnh tranh</span>
-                  <span className="text-purple-400 font-extrabold">Chiếm ~25%</span>
+              <div className="bg-white border border-slate-100 shadow-sm rounded-xl p-4 space-y-2">
+                <div className="text-xs font-semibold flex items-center justify-between">
+                  <span className="text-slate-700 font-semibold">Offer đối thủ cạnh tranh</span>
+                  <span className="text-purple-600 font-extrabold">Chiếm ~25%</span>
                 </div>
-                <div className="w-full bg-slate-700 rounded-full h-2">
+                <div className="w-full bg-slate-100 rounded-full h-2">
                   <div className="bg-purple-500 h-2 rounded-full w-1/4"></div>
                 </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
+                <p className="text-slate-500 text-sm leading-relaxed">
                   Đối thủ có gói thưởng chào mừng (Sign-on Bonus) và bảo hiểm cho gia đình.
                 </p>
               </div>

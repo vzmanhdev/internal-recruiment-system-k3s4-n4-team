@@ -958,7 +958,7 @@ export default function RecruiterJobsPage() {
                         <div className="flex items-center justify-end gap-2 relative">
                           <Link
                             href="/recruiter/pipeline"
-                            className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] inline-flex items-center gap-1 transition-all"
+                            className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] inline-flex items-center gap-1 transition-colors"
                           >
                             <span>Pipeline</span>
                             <ChevronRight className="w-3.5 h-3.5" />
@@ -1174,7 +1174,7 @@ export default function RecruiterJobsPage() {
 
                   <Link
                     href="/recruiter/pipeline"
-                    className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs inline-flex items-center gap-1 transition-colors"
+                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs inline-flex items-center gap-1 transition-colors"
                   >
                     <span>Pipeline</span>
                     <ChevronRight className="w-3.5 h-3.5" />

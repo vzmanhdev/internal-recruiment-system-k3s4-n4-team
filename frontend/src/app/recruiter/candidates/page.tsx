@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   Users,
   Search,
@@ -284,6 +285,30 @@ export default function RecruiterCandidatesPage() {
     return Array.from(set);
   }, [candidates]);
 
+  // ==========================================
+  // PHÂN TRANG (PAGINATION: 20 DÒNG / TRANG)
+  // ==========================================
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+  const tableTopRef = useRef<HTMLDivElement>(null);
+
+  // Tự động trở về trang 1 khi thay đổi điều kiện lọc hoặc tìm kiếm
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedTag, selectedStatus, selectedSource, selectedSalaryRange, selectedSkill]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredCandidates.length / ITEMS_PER_PAGE));
+
+  const currentCandidates = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredCandidates.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredCandidates, currentPage]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    tableTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <div className="space-y-6 antialiased font-sans">
       {/* Toast Notification */}
@@ -517,7 +542,7 @@ export default function RecruiterCandidatesPage() {
       </div>
 
       {/* 4. DATA TABLE: TOÀN BỘ LỊCH SỬ ỨNG VIÊN (User Story 1) */}
-      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+      <div ref={tableTopRef} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -531,7 +556,7 @@ export default function RecruiterCandidatesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
-              {filteredCandidates.length === 0 ? (
+              {currentCandidates.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-slate-400">
                     <div className="space-y-2">
@@ -544,7 +569,7 @@ export default function RecruiterCandidatesPage() {
                   </td>
                 </tr>
               ) : (
-                filteredCandidates.map((cand) => (
+                currentCandidates.map((cand) => (
                   <tr key={cand.id} className="hover:bg-slate-50/80 transition-colors group">
                     {/* Cột 1: Thông tin ứng viên */}
                     <td className="py-4 px-6">
@@ -669,7 +694,7 @@ export default function RecruiterCandidatesPage() {
                     <td className="py-4 px-6 text-right">
                       <Link
                         href={`/recruiter/candidates/${cand.id}`}
-                        className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs inline-flex items-center gap-1.5 shadow-sm transition-all"
+                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs inline-flex items-center gap-1.5 shadow-sm transition-colors"
                       >
                         <span>Hồ sơ hợp nhất</span>
                         <ChevronRight className="w-3.5 h-3.5" />
@@ -680,6 +705,18 @@ export default function RecruiterCandidatesPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Thanh Phân Trang (Pagination) */}
+        <div className="px-6 pb-6">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={filteredCandidates.length}
+            itemsPerPage={ITEMS_PER_PAGE}
+            onPageChange={handlePageChange}
+            itemLabel="hồ sơ"
+          />
         </div>
       </div>
 
