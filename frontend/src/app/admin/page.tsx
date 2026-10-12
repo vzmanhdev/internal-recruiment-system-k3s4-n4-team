@@ -1,5 +1,7 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import AdminDashboardControlCenter from "./dashboard/page";
 
 export default function AdminPage() {
-  redirect("/admin/dashboard");
+  return <AdminDashboardControlCenter />;
 }

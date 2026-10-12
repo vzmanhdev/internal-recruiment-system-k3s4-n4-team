@@ -1,0 +1,12 @@
+%% Fictional physical schema example; not project evidence.
+erDiagram
+    MEMBER ||..o{ BOOKING : makes
+    MEMBER {
+        int id PK
+        string email UK
+    }
+    BOOKING {
+        int id PK
+        int member_id FK
+        string status
+    }

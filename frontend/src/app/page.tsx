@@ -15,7 +15,7 @@ import { FinalCTASection } from "@/features/landing/components/FinalCTASection";
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen flex flex-col bg-white">
+    <div className="public-site min-h-screen flex flex-col">
       <Header />
       <main className="flex-1">
         <HeroSection />

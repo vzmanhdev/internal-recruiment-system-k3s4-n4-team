@@ -9,9 +9,11 @@ export interface AuthSession {
   id: number;
   email: string;
   full_name: string;
+  phone?: string;
   role: string;
   roles?: string[];
   is_active: boolean;
+  avatar_url?: string;
 }
 
 function readSession(): string { return window.localStorage.getItem(SESSION_KEY) ?? ""; }

@@ -1,14 +1,35 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
+from typing import Optional
+from app.db.session import get_db
+from app.models.user import User
+from app.core.config import settings
+from app.core.security import hash_password, verify_password, create_access_token, decode_access_token
+from app.schemas.auth import (
+    ChangePasswordRequest, ProfileUpdateRequest, RegistrationResponse, UserRegister, UserLogin,
+    Token, UserResponse, ErrorResponse,
+    PasswordResetInitRequest, PasswordResetInitResponse,
+    PasswordResetVerifyRequest, PasswordResetVerifyResponse,
+    PasswordResetResendRequest, PasswordResetResendResponse,
+    ForgotPasswordRequest, ForgotPasswordResponse
+)
+from app.services.password_reset_service import PasswordResetService
+from datetime import timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.db.session import get_db
 from app.models.user import User
+from app.models.system import SystemSetting
 from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_access_token, decode_access_token, create_password_reset_token, decode_password_reset_token, get_password_reset_subject
-from app.schemas.auth import ChangePasswordRequest, ForgotPasswordResponse, RegistrationResponse, ResetPasswordRequest, UserRegister, UserLogin, ForgotPasswordRequest, Token, UserResponse, ErrorResponse
+from app.schemas.auth import ChangePasswordRequest, ForgotPasswordResponse, ProfileUpdateRequest, RegistrationResponse, ResetPasswordRequest, UserRegister, UserLogin, ForgotPasswordRequest, Token, UserResponse, ErrorResponse
 from app.services.email import send_password_reset_email
+from app.services.audit import write_audit_log
 
 router = APIRouter()
 
@@ -21,7 +42,10 @@ router = APIRouter()
         422: {"model": ErrorResponse, "description": "Sai định dạng dữ liệu"}
     }
 )
-def register(user_in: UserRegister, db: Session = Depends(get_db)):
+def register(user_in: UserRegister, request: Request, db: Session = Depends(get_db)):
+    system_settings = db.query(SystemSetting).filter(SystemSetting.id == 1).first()
+    if system_settings and not system_settings.allow_registration:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Hệ thống đang tạm dừng đăng ký tài khoản mới")
     # Check if email exists
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
@@ -36,6 +60,8 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         )
 
     # Create new user
+    requested_role = user_in.role if user_in.role in {"employee", "candidate"} else "employee"
+    requires_approval = requested_role == "employee" and (system_settings.require_approval if system_settings else True)
     hashed_pwd = hash_password(user_in.password)
     new_user = User(
         email=user_in.email,
@@ -44,16 +70,17 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         phone=user_in.phone,
         # Public registration always creates a normal employee account.
         # Elevated roles must be assigned separately by an administrator.
-        role="employee",
-        is_active=False,
-        account_status="pending"
+        role=requested_role,
+        is_active=not requires_approval,
+        account_status="pending" if requires_approval else "active"
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
+    write_audit_log(db, action="Đăng ký tài khoản", module="Xác thực (Auth)", request=request, user=new_user, details="Tài khoản chờ phê duyệt" if requires_approval else "Tài khoản được kích hoạt tự động")
     return {
-        "message": "Yêu cầu đăng ký đã được gửi. Tài khoản sẽ sử dụng được sau khi Quản trị viên phê duyệt.",
+        "message": "Yêu cầu đăng ký đã được gửi. Tài khoản sẽ sử dụng được sau khi Quản trị viên phê duyệt." if requires_approval else "Đăng ký thành công. Bạn có thể đăng nhập ngay.",
         "user": new_user.to_dict()
     }
 
@@ -64,10 +91,11 @@ def register(user_in: UserRegister, db: Session = Depends(get_db)):
         400: {"model": ErrorResponse, "description": "Email không tồn tại hoặc sai mật khẩu"}
     }
 )
-def login(user_in: UserLogin, db: Session = Depends(get_db)):
+def login(user_in: UserLogin, request: Request, db: Session = Depends(get_db)):
     # Find user by email
     user = db.query(User).filter(User.email == user_in.email).first()
     if not user:
+        write_audit_log(db, action="Đăng nhập thất bại", module="Xác thực (Auth)", request=request, email=user_in.email, status="warning", details="Email không tồn tại")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -91,6 +119,7 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
 
     # Verify password
     if not verify_password(user_in.password, user.hashed_password):
+        write_audit_log(db, action="Đăng nhập thất bại", module="Xác thực (Auth)", request=request, user=user, status="warning", details="Mật khẩu không chính xác")
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
@@ -101,20 +130,31 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
             }
         )
 
-    if not user.is_active or user.account_status == "pending":
+    if not user.is_active or user.account_status in ("pending", "locked"):
+        if user.account_status == "locked":
+            message = f"Tài khoản đã bị khóa. {user.lock_reason or 'Vui lòng liên hệ Quản trị viên để được hỗ trợ.'}"
+            err_code = "ACCOUNT_LOCKED"
+        else:
+            message = "Tài khoản đang chờ Quản trị viên phê duyệt. Vui lòng thử lại sau khi yêu cầu được chấp nhận."
+            err_code = "ACCOUNT_PENDING"
+        write_audit_log(db, action="Đăng nhập bị từ chối", module="Xác thực (Auth)", request=request, user=user, status="warning", details=message)
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
             content={
-                "detail": "Tài khoản đang chờ Quản trị viên phê duyệt. Vui lòng thử lại sau khi yêu cầu được chấp nhận.",
-                "error_code": "ACCOUNT_PENDING"
+                "detail": message,
+                "error_code": err_code
             }
         )
 
     # Generate JWT token
-    access_token = create_access_token(subject=user.id)
+    system_settings = db.query(SystemSetting).filter(SystemSetting.id == 1).first()
+    timeout_minutes = system_settings.session_timeout if system_settings else settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    access_token = create_access_token(subject=user.id, expires_delta=timedelta(minutes=timeout_minutes))
+    write_audit_log(db, action="Đăng nhập hệ thống", module="Xác thực (Auth)", request=request, user=user, details="Đăng nhập thành công")
     
     return {
         "access_token": access_token,
+        "redirect_url": user.get_redirect_url(),
         "token_type": "bearer",
         "user": user.to_dict()
     }
@@ -209,13 +249,25 @@ def require_admin(authorization: Optional[str], db: Session) -> User:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ Quản trị viên mới có quyền phê duyệt tài khoản")
     return admin
 
+def require_roles(authorization: Optional[str], db: Session, allowed_roles: set[str]) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Vui lòng đăng nhập để tiếp tục")
+    user_id = decode_access_token(authorization.split(" ", 1)[1])
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    roles = set(user.role.split(",")) if user else set()
+    if not user or not user.is_active or not roles.intersection(allowed_roles):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền quản lý dữ liệu nhân sự")
+    return user
+
 @router.get("/pending-users", response_model=list[UserResponse])
 def list_pending_users(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     require_admin(authorization, db)
     return [user.to_dict() for user in db.query(User).filter(User.account_status == "pending").order_by(User.created_at.desc()).all()]
 
 @router.post("/users/{user_id}/approve", response_model=UserResponse)
-def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+def approve_user(user_id: int, request: Request, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     admin = require_admin(authorization, db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -225,22 +277,7 @@ def approve_user(user_id: int, authorization: Optional[str] = Header(None), db: 
     user.lock_reason = None
     db.commit()
     db.refresh(user)
-
-    from app.models.audit import AuditLog
-    try:
-        log = AuditLog(
-            actor_name=admin.full_name,
-            actor_email=admin.email,
-            action="Phê duyệt tài khoản",
-            target=f"{user.full_name} ({user.email})",
-            details="Phê duyệt kích hoạt tài khoản đăng ký mới",
-            ip_address="127.0.0.1",
-        )
-        db.add(log)
-        db.commit()
-    except Exception as e:
-        print(f"[AUDIT LOG ERROR] Failed to record audit log: {e}")
-
+    write_audit_log(db, action="Phê duyệt tài khoản", module="Quản lý tài khoản", request=request, user=admin, details=user.email)
     return user.to_dict()
 
 @router.get(
@@ -272,4 +309,127 @@ def get_me(authorization: Optional[str] = Header(None), db: Session = Depends(ge
             detail="Không tìm thấy người dùng"
         )
 
+    return user.to_dict()
+
+@router.put("/me", response_model=UserResponse)
+def update_me(payload: ProfileUpdateRequest, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
+    user_id = decode_access_token(authorization.split(" ", 1)[1])
+    user = db.query(User).filter(User.id == int(user_id)).first() if user_id else None
+    if not user:
+        raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
+    changes = payload.model_dump(exclude_unset=True)
+    if "full_name" in changes and payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+    if "phone" in changes:
+        user.phone = payload.phone.replace(" ", "") if payload.phone else None
+    if "avatar_url" in changes:
+        user.avatar_url = payload.avatar_url
+    db.commit(); db.refresh(user)
+    return user.to_dict()
+
+
+def get_role_redirect_url(role: str) -> str:
+    normalized = (role or "").lower().strip()
+    if "admin" in normalized:
+        return "/admin"
+    elif "hr_manager" in normalized or "hr" in normalized:
+        return "/hr"
+    elif "recruiter" in normalized:
+        return "/recruiter"
+    elif "hiring_manager" in normalized or "manager" in normalized or "department_manager" in normalized:
+        return "/manager"
+    elif "interviewer" in normalized:
+        return "/interviewer"
+    elif "approver" in normalized:
+        return "/approver"
+    return "/jobs"
+
+@router.post(
+    "/password-reset/request",
+    response_model=PasswordResetInitResponse,
+    status_code=status.HTTP_202_ACCEPTED
+)
+def request_password_reset(
+    payload: PasswordResetInitRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.request_reset(db=db, email=payload.email, client_ip=client_ip)
+
+@router.post(
+    "/password-reset/verify",
+    response_model=PasswordResetVerifyResponse,
+    status_code=status.HTTP_200_OK
+)
+def verify_password_reset_otp(
+    payload: PasswordResetVerifyRequest,
+    db: Session = Depends(get_db)
+):
+    return PasswordResetService.verify_otp_and_reset_password(
+        db=db,
+        reset_session_id=payload.reset_session_id,
+        otp=payload.otp
+    )
+
+@router.post(
+    "/password-reset/resend",
+    response_model=PasswordResetResendResponse,
+    status_code=status.HTTP_200_OK
+)
+def resend_password_reset_otp(
+    payload: PasswordResetResendRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.resend_otp(
+        db=db,
+        reset_session_id=payload.reset_session_id,
+        client_ip=client_ip
+    )
+
+@router.post(
+    "/forgot-password",
+    status_code=status.HTTP_202_ACCEPTED
+)
+def forgot_password_legacy(
+    req: ForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.request_reset(db=db, email=req.email, client_ip=client_ip)
+
+@router.get("/users", response_model=list[UserResponse])
+def list_all_users(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    require_roles(authorization, db, allowed_roles={"admin", "hr_manager", "hr"})
+    return [user.to_dict() for user in db.query(User).order_by(User.created_at.desc()).all()]
+
+@router.post("/users/{user_id}/lock", response_model=UserResponse)
+def lock_user(user_id: int, reason: Optional[str] = None, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    require_roles(authorization, db, allowed_roles={"admin", "hr_manager", "hr"})
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
+    user.is_active = False
+    user.account_status = "locked"
+    user.lock_reason = reason or "Bị khóa bởi Quản trị viên"
+    db.commit()
+    db.refresh(user)
+    return user.to_dict()
+
+@router.post("/users/{user_id}/unlock", response_model=UserResponse)
+def unlock_user(user_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    require_roles(authorization, db, allowed_roles={"admin", "hr_manager", "hr"})
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
+    user.is_active = True
+    user.account_status = "active"
+    user.lock_reason = None
+    db.commit()
+    db.refresh(user)
     return user.to_dict()

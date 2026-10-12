@@ -1,19 +1,29 @@
-﻿import json
+import json
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, status
 from sqlalchemy.orm import Session
 
+from app.api.v1.auth import require_roles
 from app.db.session import get_db
 from app.models.user import User
 from app.models.competency import CompetencyFramework, CompetencyCriteria
-from app.models.recruitment import JobPosting, JobRequisition
+from app.models.hr import Competency, Department, JobTitle, SharedCategory, HeadcountBudget, ApprovalFlow
+from app.models.job import JobPosting
+from app.models.requisition import JobRequisition
+from app.models.system import SystemSetting
 from app.schemas.competency import FrameworkCreate, FrameworkUpdate, CriteriaItemCreate
+from app.schemas.hr import CategoryCreate, CompanyContentUpdate, CompetencyCreate, DepartmentCreate, JobTitleCreate, ReorderCategories
+from app.services.audit import write_audit_log
 from app.core.security import decode_access_token
 
 logger = logging.getLogger("uvicorn")
 router = APIRouter()
+HR_ROLES = {"hr_manager", "admin"}
+
+def authorize(authorization: Optional[str], db: Session):
+    return require_roles(authorization, db, HR_ROLES)
 
 def get_current_hr_user(
     authorization: Optional[str] = Header(None),
@@ -58,6 +68,80 @@ def require_hr_or_admin(
         )
     return user
 
+def get_or_create_settings(db: Session) -> SystemSetting:
+    settings = db.query(SystemSetting).filter(SystemSetting.id == 1).first()
+    if not settings:
+        settings = SystemSetting(id=1)
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
+def content_dict(settings: SystemSetting):
+    return {"title": settings.landing_title, "body": settings.landing_body, "image": settings.landing_image}
+
+# ----------------------------------------------------------------------
+# 1. Company Content Endpoints (Landing Page)
+# ----------------------------------------------------------------------
+@router.get("/company-content/public")
+def get_public_company_content(db: Session = Depends(get_db)):
+    return content_dict(get_or_create_settings(db))
+
+@router.get("/company-content")
+def get_company_content(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    return content_dict(get_or_create_settings(db))
+
+@router.put("/company-content")
+def update_company_content(payload: CompanyContentUpdate, request: Request, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    current_user = authorize(authorization, db)
+    settings = get_or_create_settings(db)
+    settings.landing_title = payload.title.strip()
+    settings.landing_body = payload.body.strip()
+    settings.landing_image = payload.image
+    db.commit()
+    db.refresh(settings)
+    write_audit_log(db, action="Cập nhật nội dung tuyển dụng", module="Nội dung", request=request, user=current_user, details=settings.landing_title)
+    return content_dict(settings)
+
+# ----------------------------------------------------------------------
+# 2. Departments Endpoints
+# ----------------------------------------------------------------------
+@router.get("/departments")
+def list_departments(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    return [item.to_dict() for item in db.query(Department).order_by(Department.sort_order, Department.name).all()]
+
+@router.post("/departments", status_code=status.HTTP_201_CREATED)
+def create_department(payload: DepartmentCreate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    if db.query(Department).filter(Department.code == payload.code).first():
+        raise HTTPException(status_code=400, detail="Mã phòng ban đã tồn tại", headers={"X-Field-Error": "code"})
+    if payload.parent_id and not db.query(Department).filter(Department.id == payload.parent_id).first():
+        raise HTTPException(status_code=400, detail="Phòng ban cha không tồn tại")
+    item = Department(**payload.model_dump())
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item.to_dict()
+
+@router.put("/departments/{department_id}")
+def update_department(department_id: int, payload: DepartmentCreate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    item = db.query(Department).filter(Department.id == department_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
+    if payload.parent_id == department_id:
+        raise HTTPException(status_code=400, detail="Phòng ban không thể là cha của chính nó")
+    for key, value in payload.model_dump().items():
+        setattr(item, key, value)
+    db.commit()
+    db.refresh(item)
+    return item.to_dict()
+
+# ----------------------------------------------------------------------
+# 3. Job Titles Endpoints
+# ----------------------------------------------------------------------
 STANDARD_JOB_TITLES = [
     "Backend Developer",
     "Frontend Developer",
@@ -76,6 +160,79 @@ STANDARD_JOB_TITLES = [
     "Data Engineer"
 ]
 
+@router.get("/job-titles")
+def list_job_titles(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    db_items = db.query(JobTitle).order_by(JobTitle.name).all()
+    if db_items:
+        return [item.to_dict() for item in db_items]
+    
+    # Fallback/dynamic standard list if DB hasn't been seeded yet
+    db_titles = set()
+    try:
+        postings = db.query(JobPosting.title).all()
+        for p in postings:
+            if p[0]:
+                db_titles.add(p[0].strip())
+    except Exception:
+        pass
+    all_titles = sorted(list(db_titles.union(set(STANDARD_JOB_TITLES))))
+    return [{"id": idx + 1, "name": title} for idx, title in enumerate(all_titles)]
+
+@router.post("/job-titles", status_code=status.HTTP_201_CREATED)
+def create_job_title(payload: JobTitleCreate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    if payload.department_id and not db.query(Department).filter(Department.id == payload.department_id).first():
+        raise HTTPException(status_code=400, detail="Phòng ban không tồn tại")
+    item = JobTitle(**payload.model_dump())
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item.to_dict()
+
+# ----------------------------------------------------------------------
+# 4. Shared Categories Endpoints
+# ----------------------------------------------------------------------
+@router.get("/categories")
+def list_categories(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    return [item.to_dict() for item in db.query(SharedCategory).order_by(SharedCategory.category_type, SharedCategory.sort_order).all()]
+
+@router.post("/categories", status_code=status.HTTP_201_CREATED)
+def create_category(payload: CategoryCreate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    item = SharedCategory(**payload.model_dump())
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item.to_dict()
+
+@router.put("/categories/reorder")
+def reorder_categories(payload: ReorderCategories, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    items = db.query(SharedCategory).filter(SharedCategory.id.in_(payload.ids)).all()
+    by_id = {item.id: item for item in items}
+    for index, item_id in enumerate(payload.ids):
+        if item_id in by_id:
+            by_id[item_id].sort_order = index
+    db.commit()
+    return [item.to_dict() for item in db.query(SharedCategory).order_by(SharedCategory.category_type, SharedCategory.sort_order).all()]
+
+# ----------------------------------------------------------------------
+# 5. Headcount Budgets & Approval Flows APIs
+# ----------------------------------------------------------------------
+@router.get("/headcounts")
+def list_headcount_budgets(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    return [item.to_dict() for item in db.query(HeadcountBudget).order_by(HeadcountBudget.year.desc()).all()]
+
+@router.get("/approval-flows")
+def list_approval_flows(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    return [item.to_dict() for item in db.query(ApprovalFlow).order_by(ApprovalFlow.id.asc()).all()]
+
+# ----------------------------------------------------------------------
+# 6. Competency Frameworks & Scorecards (Sprint 6)
+# ----------------------------------------------------------------------
 def ensure_seed_competencies(db: Session):
     existing_count = db.query(CompetencyFramework).count()
     if existing_count > 0:
@@ -285,34 +442,11 @@ def ensure_seed_competencies(db: Session):
     db.commit()
     logger.info("Successfully seeded initial Competency Frameworks (S2-06)!")
 
-@router.get("/job-titles")
-def list_job_titles(
-    db: Session = Depends(get_db)
-):
-    db_titles = set()
-    try:
-        postings = db.query(JobPosting.title).all()
-        for p in postings:
-            if p[0]:
-                db_titles.add(p[0].strip())
-    except Exception:
-        pass
-    
-    try:
-        reqs = db.query(JobRequisition.title).all()
-        for r in reqs:
-            if r[0]:
-                db_titles.add(r[0].strip())
-    except Exception:
-        pass
-
-    all_titles = sorted(list(db_titles.union(set(STANDARD_JOB_TITLES))))
-    return [{"id": idx + 1, "name": title} for idx, title in enumerate(all_titles)]
-
 @router.get("/competencies")
-def list_competency_frameworks(
+def list_competencies(
     search: Optional[str] = None,
     job_title: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
     ensure_seed_competencies(db)
@@ -332,7 +466,14 @@ def list_competency_frameworks(
     if job_title:
         results = [f for f in results if job_title.lower() in [jt.lower() for jt in f.get("job_titles", [])]]
 
-    return results
+    if results:
+        return results
+
+    # Fallback to simple Competency table if any exist
+    simple_competencies = db.query(Competency).order_by(Competency.category, Competency.sort_order).all()
+    if simple_competencies:
+        return [item.to_dict() for item in simple_competencies]
+    return []
 
 @router.get("/competencies/{framework_id}")
 def get_competency_framework(
@@ -348,59 +489,66 @@ def get_competency_framework(
     return fw.to_dict()
 
 @router.post("/competencies", status_code=status.HTTP_201_CREATED)
-def create_competency_framework(
-    payload: FrameworkCreate,
-    current_user: Optional[User] = Depends(get_current_hr_user),
+def create_competency_endpoint(
+    payload: dict,
+    authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
-    if not payload.code:
-        import uuid
-        payload.code = f"COMP-{uuid.uuid4().hex[:6].upper()}"
-    else:
-        existing = db.query(CompetencyFramework).filter(CompetencyFramework.code == payload.code.strip()).first()
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Mã khung năng lực '{payload.code}' đã tồn tại trên hệ thống. Vui lòng chọn mã khác."
+    current_user = get_current_hr_user(authorization, db)
+    
+    # Check if this is a FrameworkCreate payload (has criteria or job_titles)
+    if "criteria" in payload or "job_titles" in payload:
+        data = FrameworkCreate(**payload)
+        if not data.code:
+            import uuid
+            data.code = f"COMP-{uuid.uuid4().hex[:6].upper()}"
+        else:
+            existing = db.query(CompetencyFramework).filter(CompetencyFramework.code == data.code.strip()).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Mã khung năng lực '{data.code}' đã tồn tại trên hệ thống. Vui lòng chọn mã khác."
+                )
+
+        fw = CompetencyFramework(
+            code=data.code.strip(),
+            name=data.name.strip(),
+            category=data.category or "Chuyên môn kỹ thuật",
+            description=data.description or "",
+            job_titles=json.dumps(data.job_titles, ensure_ascii=False),
+            status="active"
+        )
+        db.add(fw)
+        db.flush()
+
+        for idx, crit in enumerate(data.criteria):
+            c_code = crit.code or f"{fw.code}-C{idx+1}"
+            c = CompetencyCriteria(
+                framework_id=fw.id,
+                code=c_code,
+                name=crit.name.strip(),
+                category=crit.category or "Chuyên môn",
+                weight=crit.weight,
+                required_level=crit.required_level,
+                description=crit.description or "",
+                rubric_scale=json.dumps(crit.rubric_scale or {}, ensure_ascii=False),
+                interview_questions=json.dumps(crit.interview_questions or [], ensure_ascii=False),
+                sort_order=crit.sort_order if crit.sort_order is not None else idx
             )
+            db.add(c)
 
-    total_weight = round(sum(c.weight for c in payload.criteria), 2)
-    if total_weight != 100.0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Tổng trọng số của khung năng lực phải bằng chính xác 100% (Hiện tại là {total_weight}%). Vui lòng điều chỉnh lại trọng số của các tiêu chí."
-        )
+        db.commit()
+        db.refresh(fw)
+        return fw.to_dict()
 
-    fw = CompetencyFramework(
-        code=payload.code.strip(),
-        name=payload.name.strip(),
-        category=payload.category or "Chuyên môn kỹ thuật",
-        description=payload.description or "",
-        job_titles=json.dumps(payload.job_titles, ensure_ascii=False),
-        status="active"
-    )
-    db.add(fw)
-    db.flush()
-
-    for idx, crit in enumerate(payload.criteria):
-        c_code = crit.code or f"{fw.code}-C{idx+1}"
-        c = CompetencyCriteria(
-            framework_id=fw.id,
-            code=c_code,
-            name=crit.name.strip(),
-            category=crit.category or "Chuyên môn",
-            weight=crit.weight,
-            required_level=crit.required_level,
-            description=crit.description or "",
-            rubric_scale=json.dumps(crit.rubric_scale or {}, ensure_ascii=False),
-            interview_questions=json.dumps(crit.interview_questions or [], ensure_ascii=False),
-            sort_order=crit.sort_order if crit.sort_order is not None else idx
-        )
-        db.add(c)
-
+    # Otherwise, simple CompetencyCreate
+    authorize(authorization, db)
+    simple_data = CompetencyCreate(**payload)
+    item = Competency(**simple_data.model_dump())
+    db.add(item)
     db.commit()
-    db.refresh(fw)
-    return fw.to_dict()
+    db.refresh(item)
+    return item.to_dict()
 
 @router.put("/competencies/{framework_id}")
 def update_competency_framework(
@@ -415,14 +563,6 @@ def update_competency_framework(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Không tìm thấy khung năng lực có ID {framework_id}."
         )
-
-    if payload.criteria is not None:
-        total_weight = round(sum(c.weight for c in payload.criteria), 2)
-        if total_weight != 100.0:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Tổng trọng số của khung năng lực phải bằng chính xác 100% (Hiện tại là {total_weight}%). Vui lòng điều chỉnh lại trọng số của các tiêu chí."
-            )
 
     if payload.name is not None:
         fw.name = payload.name.strip()

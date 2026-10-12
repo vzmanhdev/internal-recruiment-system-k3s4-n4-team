@@ -19,7 +19,7 @@ Hệ thống Tuyển dụng Nội bộ (Internal Recruitment System) — Giải 
 
 Trước khi bắt đầu, đảm bảo máy tính của bạn đã cài đặt:
 - **Git** (Phiên bản `>= 2.30`)
-- **Node.js** (Phiên bản `>= 18.x` hoặc `20.x`) & `npm`
+- **Node.js** (Phiên bản `>= 20.9.0`; Next.js 16 không hỗ trợ Node.js 18) & `npm`
 - **Python** (Phiên bản `>= 3.10` hoặc `3.11`)
 - *(Tùy chọn)* **Docker Desktop** (Phiên bản mới nhất)
 
@@ -59,7 +59,7 @@ internal-recruiment-system-k3s4-n4-team/
 
 Sau khi clone dự án về máy:
 ```bash
-git clone <URL-REPO-CUA-TEAM>
+git clone --branch feature/develop_test https://github.com/vzmanhdev/internal-recruiment-system-k3s4-n4-team.git
 cd internal-recruiment-system-k3s4-n4-team
 ```
 
@@ -69,7 +69,7 @@ Tự động copy file môi trường (`.env`), tạo virtual environment cho Py
 
 - **Trên Windows (Cmd / PowerShell)**:
   ```cmd
-  setup.bat
+  .\setup.bat
   ```
 
 - **Trên Linux / macOS**:
@@ -82,7 +82,7 @@ Tự động copy file môi trường (`.env`), tạo virtual environment cho Py
 
 - **Trên Windows**:
   ```cmd
-  run-dev.bat
+  .\run-dev.bat
   ```
 
 - **Trên Linux / macOS**:

@@ -55,9 +55,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             ...props.style,
           }}
           className={cn(
-            "w-full h-12 bg-white border border-[#E2E8F0] rounded-xl text-sm text-[var(--color-heading)]",
+            "w-full h-12 bg-white border border-[var(--color-border)] rounded-xl text-sm text-[var(--color-heading)]",
             "placeholder:text-slate-400 transition-all duration-200",
-            "focus:outline-none focus:border-[#3B82F6] focus:ring-[3px] focus:ring-blue-500/12",
+            "focus:outline-none focus:border-[var(--color-primary)] focus:ring-[3px] focus:ring-blue-500/12",
             "disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed",
             error && "border-[#EF4444] focus:border-[#EF4444] focus:ring-red-100",
             leftIcon && "!pl-[44px]",
