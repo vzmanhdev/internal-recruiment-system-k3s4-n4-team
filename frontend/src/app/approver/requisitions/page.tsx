@@ -535,7 +535,7 @@ export default function ApproverRequisitionsPage() {
                     <Clock className="w-4 h-4 text-blue-600" />
                     <span>Tiến Trình Thẩm Định Hồ Sơ</span>
                   </h4>
-                  <ApprovalTimeline timeline={selectedReq.timeline} />
+                  <ApprovalTimeline items={selectedReq.timeline} />
                 </div>
 
                 {/* Action Box */}
