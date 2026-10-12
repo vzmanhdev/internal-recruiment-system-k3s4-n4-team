@@ -278,7 +278,7 @@ export default function EmployeeInterviewsPage() {
             <div className="flex flex-wrap items-center gap-3 shrink-0">
               <Link
                 href="/employee/referrals"
-                className="px-4 py-2.5 rounded-xl bg-white text-blue-700 hover:bg-blue-50 text-xs font-bold transition-all shadow-md flex items-center gap-2"
+                className="px-4 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all border border-white/30 flex items-center gap-2 backdrop-blur-sm"
               >
                 <Users className="w-4 h-4" />
                 <span>Ứng viên giới thiệu</span>
