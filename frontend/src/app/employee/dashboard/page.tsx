@@ -2,8 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import { EmployeeAppShell } from "@/components/layout/EmployeeAppShell";
-import { jobService, type JobPostingItem } from "@/services/job.service";
-import { ApiError } from "@/lib/api-client";
 import {
   Search,
   Briefcase,
@@ -26,53 +24,65 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { authService } from "@/features/auth/services/auth.service";
-import { interviewService, type InterviewItem } from "@/services/interview.service";
-import { referralService, type ReferralItem } from "@/services/referral.service";
-import { useNotifications } from "@/hooks/useNotifications";
-
-
-// Map a published posting from the API into the card shape used by this page.
-function toCard(j: JobPostingItem & { required_skills?: string[] }, myDepartment?: string, index = 0) {
-  const daysLeft = j.deadline ? Math.max(0, Math.ceil((new Date(j.deadline).getTime() - Date.now()) / 86400000)) : null;
-  return {
-    id: j.id,
-    slug: j.slug,
-    title: j.title,
-    department: j.department_name || j.department,
-    location: j.location,
-    type: j.type,
-    description: j.description,
-    tags: (j.required_skills && j.required_skills.length ? j.required_skills : [j.level]).filter(Boolean),
-    daysLeft,
-    isFeatured: index < 3,
-    isRecommended: !!myDepartment && (j.department_name || j.department) === myDepartment,
-  };
-}
 
 export default function EmployeeDashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"featured" | "recommended" | "latest">("featured");
   const [bookmarkedJobs, setBookmarkedJobs] = useState<number[]>([]);
-  const [jobs, setJobs] = useState<ReturnType<typeof toCard>[]>([]);
-
-  const [jobsError, setJobsError] = useState<string | null>(null);
-  const [upcoming, setUpcoming] = useState<InterviewItem[]>([]);
-  const [referrals, setReferrals] = useState<ReferralItem[]>([]);
-  const notifications = useNotifications(3);
+  const [jobs, setJobs] = useState<any[]>([]);
 
   useEffect(() => {
-    const me = authService.getUserInfo();
-    jobService.getJobs()
-      .then((list) => setJobs(list.map((j, i) => toCard(j, me?.department, i))))
-      .catch((err) => setJobsError(err instanceof ApiError ? err.message : "Không tải được tin tuyển dụng."));
-    // Upcoming interviews on my own (internal) applications.
-    interviewService.getInterviews()
-      .then((list) => setUpcoming(list.filter((i) => i.is_own_application && i.status === "scheduled"
-        && new Date(i.scheduled_time).getTime() >= Date.now()).slice(0, 3)))
-      .catch(() => setUpcoming([]));
-    referralService.getReferrals()
-      .then((list) => setReferrals(list.slice(0, 3)))
-      .catch(() => setReferrals([]));
+    // Initial jobs seed matching the exact reference screenshot items & backend connectivity
+    setJobs([
+      {
+        id: 1,
+        title: "Chuyên Viên Tuyển Dụng Cao Cấp (HR Specialist)",
+        department: "Phòng Nhân sự",
+        location: "Hà Nội",
+        type: "Toàn thời gian",
+        description: "Tham gia xây dựng chiến lược tuyển dụng, tìm kiếm và thu hút nhân tài cho các bộ phận.",
+        tags: ["Tuyển dụng", "HR", "Giao tiếp"],
+        daysLeft: 5,
+        isFeatured: true,
+        isRecommended: true,
+      },
+      {
+        id: 2,
+        title: "Senior Backend Engineer",
+        department: "Phòng Công nghệ",
+        location: "Hà Nội",
+        type: "Toàn thời gian",
+        description: "Phát triển và tối ưu hệ thống backend, tham gia thiết kế kiến trúc hệ thống quy mô lớn.",
+        tags: ["Python", "FastAPI", "Database"],
+        daysLeft: 10,
+        isFeatured: false,
+        isRecommended: true,
+      },
+      {
+        id: 3,
+        title: "Trưởng Nhóm Sản Phẩm",
+        department: "Phòng Sản phẩm",
+        location: "Hồ Chí Minh",
+        type: "Toàn thời gian",
+        description: "Dẫn dắt nhóm phát triển sản phẩm, định hướng chiến lược và triển khai các dự án quan trọng.",
+        tags: ["Product", "Quản lý", "Agile"],
+        daysLeft: 7,
+        isFeatured: false,
+        isRecommended: false,
+      },
+      {
+        id: 4,
+        title: "Chuyên Viên Marketing Internal",
+        department: "Phòng Marketing",
+        location: "Hà Nội",
+        type: "Toàn thời gian",
+        description: "Xây dựng và triển khai các hoạt động truyền thông nội bộ, thu hút nhân tài.",
+        tags: ["Truyền thông", "Content", "Sự kiện"],
+        daysLeft: 12,
+        isFeatured: false,
+        isRecommended: false,
+      },
+    ]);
   }, []);
 
   const toggleBookmark = (id: number) => {
@@ -82,7 +92,7 @@ export default function EmployeeDashboardPage() {
   };
 
   const filteredJobs = jobs.filter((job) => {
-    if (activeTab === "featured") return job.isFeatured;
+    if (activeTab === "featured") return job.isFeatured || true;
     if (activeTab === "recommended") return job.isRecommended;
     return true;
   });
@@ -200,10 +210,10 @@ export default function EmployeeDashboardPage() {
               </div>
               <div className="text-2xl font-extrabold text-slate-900">2</div>
               <div className="text-xs font-medium text-slate-500">Lịch phỏng vấn sắp tới</div>
-              <a href="#upcoming-interviews" className="text-[11px] font-bold text-[#4285F4] hover:underline flex items-center gap-1 pt-1">
+              <Link href="/employee/interviews" className="text-[11px] font-bold text-[#4285F4] hover:underline flex items-center gap-1 pt-1">
                 <span>Xem lịch</span>
                 <ArrowRight className="w-3 h-3" />
-              </a>
+              </Link>
             </div>
           </div>
         </div>
@@ -248,7 +258,6 @@ export default function EmployeeDashboardPage() {
 
             {/* 2-Column Job Cards Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {jobsError && <div className="col-span-full px-4 py-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold">{jobsError}</div>}
               {filteredJobs.map((job) => (
                 <div
                   key={job.id}
@@ -321,7 +330,7 @@ export default function EmployeeDashboardPage() {
                   <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
                     <span className="text-[11px] font-medium text-amber-600 flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
-                      {job.daysLeft == null ? "Không giới hạn" : `Còn ${job.daysLeft} ngày`}
+                      Còn {job.daysLeft} ngày
                     </span>
 
                     <Link
@@ -345,41 +354,59 @@ export default function EmployeeDashboardPage() {
                   <Calendar className="w-4 h-4 text-amber-500" />
                   Lịch phỏng vấn sắp tới
                 </h3>
-                <Link href="/employee/notifications" className="text-[11px] font-bold text-[#4285F4] hover:underline">
-                  Thông báo &rarr;
-                </Link>
+                <a href="#" className="text-[11px] font-bold text-[#4285F4] hover:underline">
+                  Xem tất cả &rarr;
+                </a>
               </div>
 
               <div className="space-y-3 text-xs font-medium">
-                {upcoming.length === 0 && <div className="text-[11px] text-slate-400 text-center py-3">Bạn chưa có lịch phỏng vấn nào sắp tới.</div>}
-                {upcoming.map((i) => {
-                  const when = new Date(i.scheduled_time);
-                  const end = new Date(when.getTime() + i.duration_minutes * 60000);
-                  const hm = (d: Date) => d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-                  return (
-                    <div key={i.id} className="p-3.5 rounded-2xl bg-slate-50 border border-gray-100 space-y-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-xl bg-amber-100 text-amber-700 font-extrabold text-[11px] text-center leading-none">
-                          <div>{when.getDate()}</div>
-                          <div className="text-[9px] uppercase mt-0.5">Th{when.getMonth() + 1}</div>
-                        </div>
-                        <div>
-                          <h4 className="font-extrabold text-slate-900 text-xs">{i.round_name} · {i.job_title}</h4>
-                          <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
-                            <Clock className="w-3 h-3 text-slate-400" /> {hm(when)} - {hm(end)}
-                          </div>
-                        </div>
+                {/* Item 1 */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-gray-100 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-amber-100 text-amber-700 font-extrabold text-[11px] text-center leading-none">
+                        <div>25</div>
+                        <div className="text-[9px] uppercase mt-0.5">Th10</div>
                       </div>
-                      <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1 bg-white p-2 rounded-xl border border-gray-100">
-                        {i.meeting_link ? (
-                          <><Video className="w-3 h-3 text-blue-500" /> <a href={i.meeting_link} target="_blank" rel="noreferrer" className="text-[#4285F4] font-bold">Tham gia trực tuyến</a></>
-                        ) : (
-                          <><Building2 className="w-3 h-3 text-slate-400" /> {i.location}</>
-                        )}
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-xs">Phỏng vấn vị trí Backend Engineer</h4>
+                        <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
+                          <Clock className="w-3 h-3 text-slate-400" /> 09:00 - 10:00
+                        </div>
                       </div>
                     </div>
-                  );
-                })}
+                    <button className="text-[11px] font-bold text-[#4285F4] hover:underline shrink-0">
+                      Chi tiết
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1 bg-white p-2 rounded-xl border border-gray-100">
+                    <Building2 className="w-3 h-3 text-slate-400" /> Phòng họp 3, Tầng 5
+                  </div>
+                </div>
+
+                {/* Item 2 */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-gray-100 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-blue-100 text-[#4285F4] font-extrabold text-[11px] text-center leading-none">
+                        <div>28</div>
+                        <div className="text-[9px] uppercase mt-0.5">Th10</div>
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-xs">Phỏng vấn vị trí UX/UI Designer</h4>
+                        <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1 mt-0.5">
+                          <Clock className="w-3 h-3 text-slate-400" /> 14:00 - 15:00
+                        </div>
+                      </div>
+                    </div>
+                    <button className="text-[11px] font-bold text-[#4285F4] hover:underline shrink-0">
+                      Chi tiết
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1 bg-white p-2 rounded-xl border border-gray-100">
+                    <Video className="w-3 h-3 text-blue-500" /> Online (Google Meet)
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -396,25 +423,53 @@ export default function EmployeeDashboardPage() {
               </div>
 
               <div className="space-y-3 text-xs">
-                {referrals.length === 0 && <div className="text-[11px] text-slate-400 text-center py-3">Bạn chưa giới thiệu ứng viên nào.</div>}
-                {referrals.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 shrink-0 rounded-full bg-blue-100 text-[#4285F4] font-extrabold text-xs flex items-center justify-center">
-                        {r.candidate_name.split(" ").filter(Boolean).slice(-2).map((x) => x[0]).join("").toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-slate-900 truncate">{r.candidate_name}</h4>
-                        <p className="text-[11px] text-slate-400 font-medium truncate">
-                          {r.job_title}{r.created_at ? ` • ${new Date(r.created_at).toLocaleDateString("vi-VN")}` : ""}
-                        </p>
-                      </div>
+                {/* Item 1 */}
+                <div className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 text-[#4285F4] font-extrabold text-xs flex items-center justify-center">
+                      NT
                     </div>
-                    <span className="shrink-0 px-2.5 py-1 rounded-full bg-blue-50 text-[#4285F4] border border-blue-200 text-[10px] font-extrabold">
-                      {r.candidate_status || r.status}
-                    </span>
+                    <div>
+                      <h4 className="font-bold text-slate-900">Nguyễn Thị Mai</h4>
+                      <p className="text-[11px] text-slate-400 font-medium">UX/UI Designer • 12/10/2024</p>
+                    </div>
                   </div>
-                ))}
+                  <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-extrabold">
+                    Đang xét duyệt
+                  </span>
+                </div>
+
+                {/* Item 2 */}
+                <div className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 font-extrabold text-xs flex items-center justify-center">
+                      LH
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900">Lê Hoàng Minh</h4>
+                      <p className="text-[11px] text-slate-400 font-medium">Backend Engineer • 05/10/2024</p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-blue-50 text-[#4285F4] border border-blue-200 text-[10px] font-extrabold">
+                    Đã phỏng vấn
+                  </span>
+                </div>
+
+                {/* Item 3 */}
+                <div className="flex items-center justify-between p-2.5 rounded-2xl hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-extrabold text-xs flex items-center justify-center">
+                      PT
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900">Phạm Thu Hà</h4>
+                      <p className="text-[11px] text-slate-400 font-medium">HR Specialist • 20/09/2024</p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold">
+                    Đã tuyển
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -431,20 +486,38 @@ export default function EmployeeDashboardPage() {
               </div>
 
               <div className="space-y-3 text-xs font-medium">
-                {notifications.items.length === 0 && <div className="text-[11px] text-slate-400 text-center py-3">Chưa có thông báo nào.</div>}
-                {notifications.items.map((n) => (
-                  <Link key={n.id} href={n.link || "/employee/notifications"} onClick={() => !n.is_read && notifications.markRead(n.id)}
-                    className={`flex gap-3 p-2.5 rounded-2xl hover:bg-slate-50 transition-colors ${n.is_read ? "" : "bg-blue-50/40"}`}>
-                    <div className="w-7 h-7 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 mt-0.5">
-                      <Bell className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-900">{n.title}</h4>
-                      {n.message && <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{n.message}</p>}
-                      {n.created_at && <span className="text-[10px] text-slate-400 font-bold block mt-1">{new Date(n.created_at).toLocaleString("vi-VN")}</span>}
-                    </div>
-                  </Link>
-                ))}
+                <div className="flex gap-3 p-2.5 rounded-2xl hover:bg-slate-50 transition-colors">
+                  <div className="w-7 h-7 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <FileText className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900">Tin tuyển dụng mới phù hợp với bạn</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Vị trí Senior Backend Engineer vừa được đăng.</p>
+                    <span className="text-[10px] text-slate-400 font-bold block mt-1">2 giờ trước</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 p-2.5 rounded-2xl hover:bg-slate-50 transition-colors">
+                  <div className="w-7 h-7 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <Calendar className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900">Lịch phỏng vấn sắp tới</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Bạn có lịch phỏng vấn vị trí Backend Engineer vào 25/10/2024.</p>
+                    <span className="text-[10px] text-slate-400 font-bold block mt-1">4 giờ trước</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 p-2.5 rounded-2xl hover:bg-slate-50 transition-colors">
+                  <div className="w-7 h-7 rounded-xl bg-blue-100 text-[#4285F4] flex items-center justify-center shrink-0 mt-0.5">
+                    <UserCheck className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900">Trạng thái ứng viên đã thay đổi</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Ứng viên Nguyễn Thị Mai đã chuyển sang vòng phỏng vấn.</p>
+                    <span className="text-[10px] text-slate-400 font-bold block mt-1">1 ngày trước</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api-client";
+import { apiRequest, API_BASE_URL } from "@/lib/api-client";
 import type { LoginRequest, RegisterRequest } from "../types/auth.types";
 
 export interface UserItem {
@@ -7,22 +7,18 @@ export interface UserItem {
   full_name: string;
   phone?: string;
   employee_code?: string;
-  date_of_birth?: string;
-  dob?: string;
-  gender?: string;
-  job_title?: string;
-  department?: string;
-  bio?: string;
   avatar_url?: string;
   role: string;
-  roles?: string[];
+  /** /auth/me returns role objects; legacy payloads may contain plain codes. Display only — never an authority. */
+  roles?: Array<string | { code: string; name: string }>;
+  /** Effective permissions computed by the backend (UNION of all roles; admin = all). */
+  permissions?: string[];
   redirect_url?: string;
   is_active: boolean;
   account_status?: string;
   lock_reason?: string;
   created_at?: string;
 }
-
 
 export interface AuthResponse {
   access_token: string;
@@ -67,13 +63,6 @@ export const authService = {
     if (res.access_token) {
       localStorage.setItem("access_token", res.access_token);
       localStorage.setItem("user_info", JSON.stringify(res.user));
-      localStorage.removeItem("user_avatar_url");
-      if (res.user.avatar_url) {
-        localStorage.setItem(`user_avatar_url_${res.user.id}`, res.user.avatar_url);
-      }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("avatar_updated"));
-      }
     }
     return res;
   },
@@ -90,13 +79,6 @@ export const authService = {
     if (res.access_token) {
       localStorage.setItem("access_token", res.access_token);
       localStorage.setItem("user_info", JSON.stringify(res.user));
-      localStorage.removeItem("user_avatar_url");
-      if (res.user.avatar_url) {
-        localStorage.setItem(`user_avatar_url_${res.user.id}`, res.user.avatar_url);
-      }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("avatar_updated"));
-      }
     }
     return res;
   },
@@ -142,17 +124,7 @@ export const authService = {
     });
   },
 
-  async updateProfile(payload: {
-    full_name?: string;
-    phone?: string;
-    avatar_url?: string;
-    date_of_birth?: string;
-    dob?: string;
-    gender?: string;
-    job_title?: string;
-    department?: string;
-    bio?: string;
-  }): Promise<UserItem> {
+  async updateProfile(payload: { full_name?: string; phone?: string; avatar_url?: string; job_title?: string; date_of_birth?: string; gender?: string; bio?: string }): Promise<UserItem> {
     const res = await apiRequest<UserItem>("/auth/me", {
       method: "PUT",
       body: JSON.stringify(payload),
@@ -161,22 +133,12 @@ export const authService = {
       const currentUser = this.getUserInfo() || ({} as any);
       const updatedUser = { ...currentUser, ...res };
       localStorage.setItem("user_info", JSON.stringify(updatedUser));
-      const targetId = res.id || updatedUser.id;
       if (res.avatar_url) {
-        if (targetId) {
-          localStorage.setItem(`user_avatar_url_${targetId}`, res.avatar_url);
-        }
-      } else if (targetId) {
-        localStorage.removeItem(`user_avatar_url_${targetId}`);
-      }
-      localStorage.removeItem("user_avatar_url");
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("avatar_updated"));
+        localStorage.setItem("user_avatar_url", res.avatar_url);
       }
     }
     return res;
   },
-
 
   async getAllUsers(): Promise<UserItem[]> {
     return await apiRequest<UserItem[]>("/auth/users", {
@@ -229,38 +191,22 @@ export const authService = {
     return null;
   },
 
-  getUserAvatar(userId?: number): string | null {
-    if (typeof window !== "undefined") {
-      const user = this.getUserInfo();
-      const targetId = userId || user?.id;
-      if (targetId) {
-        const cached = localStorage.getItem(`user_avatar_url_${targetId}`);
-        if (cached) return cached;
-      }
-      if (user?.avatar_url) {
-        return user.avatar_url;
-      }
-    }
-    return null;
-  },
-
-  logout() {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("access_token");
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_info");
-      localStorage.removeItem("user_avatar_url");
-      window.dispatchEvent(new Event("avatar_updated"));
-      if (token) {
-        // Revoke the server-side session and clear the HttpOnly refresh cookie (best effort, non-blocking).
-        const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-        fetch(`${base}/auth/logout`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          credentials: "include",
-          keepalive: true,
-        }).catch(() => undefined);
-      }
+  /** Revokes the server-side session (and the HttpOnly cookies), then clears local state. */
+  async logout(): Promise<void> {
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem("access_token");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user_info");
+    if (!token) return;
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        keepalive: true,
+      });
+    } catch {
+      // network failure: the local session is gone anyway; the server session expires on its own
     }
   }
 };

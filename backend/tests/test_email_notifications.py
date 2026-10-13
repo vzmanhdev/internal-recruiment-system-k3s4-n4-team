@@ -47,8 +47,12 @@ def ctx():
     for code in ["admin", "hr_manager", "recruiter", "interviewer", "employee"]:
         roles[code] = Role(code=code, name=code)
         db.add(roles[code])
-    db.add(Permission(code="interview:schedule", name="Lên lịch phỏng vấn", module="Phỏng Vấn"))
-    db.add(RolePermission(role_code="hr_manager", permission_code="interview:schedule", is_granted=True))
+    # production permission catalogue + default matrix (app/db/rbac_catalog.py)
+    from app.db.rbac_catalog import PERMISSIONS_DATA, DEFAULT_GRANTED_MATRIX
+    for perm in PERMISSIONS_DATA:
+        db.add(Permission(code=perm["code"], name=perm["name"], module=perm["module"]))
+        for role_code, granted in DEFAULT_GRANTED_MATRIX.items():
+            db.add(RolePermission(role_code=role_code, permission_code=perm["code"], is_granted=perm["code"] in granted))
     db.commit()
 
     def mk(email, code):

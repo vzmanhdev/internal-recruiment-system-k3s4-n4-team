@@ -14,6 +14,7 @@ export interface OnboardingItem {
 
 export interface OfferApprovalLogItem {
   id: number;
+  actor_id?: number | null;
   action: string;
   level?: string | null;
   comment?: string | null;
@@ -45,6 +46,13 @@ export interface OfferItem {
   onboarding_progress?: number;
   approval_logs?: OfferApprovalLogItem[];
   created_at?: string;
+  allowance?: number;
+  /** Review context added by the API (band only for offer approvers / salary viewers). */
+  department?: string | null;
+  requisition_code?: string | null;
+  created_by_name?: string | null;
+  band_min?: number | null;
+  band_max?: number | null;
 }
 
 export type OfferDecisionAction = "approved" | "rejected" | "changes_requested";

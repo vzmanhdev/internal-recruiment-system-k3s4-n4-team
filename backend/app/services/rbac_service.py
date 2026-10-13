@@ -133,3 +133,17 @@ def update_permission_matrix(db: Session, changes: List[Dict[str, Any]], actor_e
 
     db.commit()
     return True
+
+
+def landing_path(db: Session, user: User) -> str:
+    """Where to send a user after sign-in, from database roles (never the legacy users.role string).
+
+    The unified shell shows every function the user is permitted, so this only picks a sensible first
+    page; it never restricts access.
+    """
+    codes = {r["code"] for r in get_user_roles(db, user)}
+    if "admin" in codes:
+        return "/admin/dashboard"
+    if codes and codes <= {"candidate"}:
+        return "/candidate"
+    return "/workspace"

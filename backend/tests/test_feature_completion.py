@@ -444,3 +444,14 @@ def test_reports_from_real_data(w):
     hm = client.get("/api/v1/analytics/hiring-manager", headers=w["h"]["hm"]).json()
     assert hm[0]["code"] == "REQ-F-1" and hm[0]["stage_counts"]["submitted"] == 2
     assert client.get("/api/v1/analytics/funnel", headers=w["h"]["emp"]).status_code == 403
+
+
+def test_direct_email_is_escaped_scoped_and_queued(w):
+    app_id = apply(w, cv=False).json()["id"]
+    body = {"subject": "Hẹn trao đổi", "body": "Xin chào <script>alert(1)</script>\nHẹn gặp bạn"}
+    assert client.post(f"/api/v1/applications/{app_id}/email", headers=w["h"]["rec2"], json=body).status_code == 403  # not in scope
+    ok = client.post(f"/api/v1/applications/{app_id}/email", headers=w["h"]["rec"], json=body)
+    assert ok.status_code == 201, ok.text
+    log = db_get(EmailLog, id=ok.json()["id"])
+    assert log.status == "queued" and log.template_code == "DIRECT_MESSAGE"
+    assert "<script>" not in log.body_html and "&lt;script&gt;" in log.body_html and "<br>" in log.body_html

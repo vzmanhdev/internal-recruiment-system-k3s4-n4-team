@@ -1,13 +1,8 @@
 "use client";
 
-import React from "react";
-import { EmployeeAppShell } from "@/components/layout/EmployeeAppShell";
-import { NotificationPreferencesPanel } from "@/components/notifications/NotificationPreferencesPanel";
+import { NotificationPreferencesView } from "@/components/personal/NotificationPreferencesView";
 
-export default function EmployeeNotificationSettingsPage() {
-  return (
-    <EmployeeAppShell activeTab="notification-settings">
-      <NotificationPreferencesPanel title="Cài Đặt Thông Báo Nhân Viên" />
-    </EmployeeAppShell>
-  );
+// Real per-user notification preferences (S8-04), shared by every workspace.
+export default function NotificationSettingsPage() {
+  return <NotificationPreferencesView />;
 }

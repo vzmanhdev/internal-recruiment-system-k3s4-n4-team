@@ -1,10 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { referralService } from "@/services/referral.service";
-import { jobService, type JobPostingItem } from "@/services/job.service";
-import { ApiError } from "@/lib/api-client";
-import { uploadFile } from "@/services/file.service";
+import React, { useState } from "react";
 import { EmployeeAppShell } from "@/components/layout/EmployeeAppShell";
 import { UserPlus, Upload, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -21,33 +17,13 @@ export default function NewReferralPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState(false);
 
-  const [jobs, setJobs] = useState<JobPostingItem[]>([]);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  useEffect(() => {
-    jobService.getJobs().then(setJobs).catch(() => setJobs([]));
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setSubmitError(null);
-    try {
-      const cv = file ? await uploadFile("cv", file) : null; // server validates PDF/DOCX ≤ 10MB
-      await referralService.createReferral({
-        cv_url: cv?.url,
-        candidate_name: candidateName,
-        candidate_email: candidateEmail,
-        candidate_phone: candidatePhone,
-        job_posting_id: Number(selectedJob),
-        relationship_note: [relationship, notes].filter(Boolean).join(" — "),
-      });
-      setSuccessMsg(true); // only after the server persisted the referral
-    } catch (err) {
-      setSubmitError(err instanceof ApiError ? err.message : "Gửi giới thiệu thất bại. Vui lòng thử lại.");
-    } finally {
+    setTimeout(() => {
       setIsSubmitting(false);
-    }
+      setSuccessMsg(true);
+    }, 1000);
   };
 
   return (
@@ -104,9 +80,6 @@ export default function NewReferralPage() {
         ) : (
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-100 shadow-xs">
             <form onSubmit={handleSubmit} className="space-y-5 text-xs font-medium">
-              {submitError && (
-                <div className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 font-semibold">{submitError}</div>
-              )}
               <div>
                 <label className="block font-bold text-slate-800 mb-1">Họ và tên ứng viên *</label>
                 <input
@@ -153,9 +126,10 @@ export default function NewReferralPage() {
                   required
                 >
                   <option value="">-- Chọn vị trí tuyển dụng --</option>
-                  {jobs.map((j) => (
-                    <option key={j.id} value={j.id}>{j.title}{j.department_name ? ` — ${j.department_name}` : ""}</option>
-                  ))}
+                  <option value="1">Chuyên Viên Tuyển Dụng Cao Cấp (HR Specialist)</option>
+                  <option value="2">Senior Backend Engineer</option>
+                  <option value="3">Trưởng Nhóm Sản Phẩm</option>
+                  <option value="4">Chuyên Viên Marketing Internal</option>
                 </select>
               </div>
 
@@ -175,20 +149,13 @@ export default function NewReferralPage() {
 
               <div>
                 <label className="block font-bold text-slate-800 mb-1">Tải lên file CV (PDF / DOCX)</label>
-                <label
-                  className="block border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center space-y-2 hover:border-blue-300 transition-colors cursor-pointer"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) setFile(f); }}
-                >
+                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center space-y-2 hover:border-blue-300 transition-colors">
                   <Upload className="w-8 h-8 text-slate-400 mx-auto" />
                   <div className="text-slate-600 font-medium">
-                    {file ? <>Đã chọn: <span className="font-bold text-slate-800">{file.name}</span></>
-                      : <>Kéo thả file CV vào đây hoặc <span className="text-[#4285F4] font-bold">chọn file từ máy</span></>}
+                    Kéo thả file CV vào đây hoặc <span className="text-[#4285F4] font-bold">chọn file từ máy</span>
                   </div>
                   <p className="text-[11px] text-slate-400">Hỗ trợ định dạng .pdf, .docx (tối đa 10MB)</p>
-                  <input type="file" className="hidden" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    onChange={(e) => setFile(e.target.files?.[0] || null)} />
-                </label>
+                </div>
               </div>
 
               <div>

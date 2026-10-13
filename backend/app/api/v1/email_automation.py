@@ -7,7 +7,7 @@ from app.models.user import User
 from app.models.email_automation import EmailTemplate, EmailLog
 from app.models.application import JobApplication
 from app.models.audit import AuditLog
-from app.api.deps import require_roles_dep
+from app.api.deps import require_permission
 from app.services.access_scope import ensure_application_visible
 from app.services.email_service import deliver_email_log, SENSITIVE_BODY_PLACEHOLDER
 from app.services.email_templates import DEFAULT_TEMPLATES, ensure_default_templates
@@ -22,7 +22,7 @@ from app.schemas.email_automation import (
 router = APIRouter(prefix="/email-automation", tags=["email-automation"])
 
 # Backlog matrix "Email & thông báo": Recruiter F, HR Manager F (Admin full access).
-EMAIL_STAFF = require_roles_dep({"hr_manager", "recruiter"})
+EMAIL_STAFF = require_permission("email:manage")
 MAX_EMAIL_ATTEMPTS = 3
 
 
@@ -74,7 +74,7 @@ def update_email_template(template_id: int, payload: EmailTemplateUpdate, curren
 
 
 @router.delete("/templates/{template_id}")
-def delete_email_template(template_id: int, current_user: User = Depends(require_roles_dep({"hr_manager"})), db: Session = Depends(get_db)):
+def delete_email_template(template_id: int, current_user: User = Depends(require_permission("email:delete")), db: Session = Depends(get_db)):
     template = db.query(EmailTemplate).filter(EmailTemplate.id == template_id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Không tìm thấy mẫu email.")

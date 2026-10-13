@@ -5,7 +5,6 @@ import { Icon } from "@/components/ui/Icons";
 import { JobCard } from "./JobCard";
 import { jobService, JobPostingItem } from "@/services/job.service";
 import type { Job } from "@/types/job";
-import { toJob } from "@/features/jobs/mapPosting";
 
 export function JobExplorer() {
   const [dbJobs, setDbJobs] = useState<JobPostingItem[]>([]);
@@ -34,7 +33,20 @@ export function JobExplorer() {
   }, []);
 
   const formattedJobs: Job[] = useMemo(() => {
-    return dbJobs.map(toJob);
+    return dbJobs.map((j) => ({
+      id: j.slug || String(j.id),
+      title: j.title,
+      department: j.department_name || j.department || "Khối Công Nghệ",
+      location: j.location || "Hà Nội",
+      employmentType: j.type || "Toàn thời gian",
+      openings: "Tuyển dụng",
+      status: j.status === "published" ? "open" : j.status === "paused" ? "closingSoon" : "closed",
+      description: j.description,
+      skills: j.requirements ? j.requirements.split(",").map((s) => s.trim()) : ["Tuyển dụng nội bộ"],
+      deadline: j.deadline || "31/12/2026",
+      responsibilities: ["Nhiệm vụ chuyên môn theo mô tả công việc"],
+      requirements: j.requirements ? [j.requirements] : ["Kỹ năng phù hợp"],
+    }));
   }, [dbJobs]);
 
   const filtered = useMemo(() => {

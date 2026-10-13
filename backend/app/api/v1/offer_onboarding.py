@@ -192,6 +192,25 @@ def _expire_if_overdue(db: Session, offer: JobOffer) -> None:
             pass
 
 
+def _offer_out(db: Session, offer: JobOffer, user: User) -> dict:
+    """Offer + context for review screens: department, creator and — only for people who approve offers or
+    see salaries — the standard salary band of the job title (S2-05 AC3 keeps bands from other roles)."""
+    data = offer.to_dict()
+    app = offer.application
+    posting = app.job_posting if app else None
+    creator = db.query(User).filter(User.id == offer.created_by_id).first()
+    data.update({
+        "department": posting.department_name if posting else None,
+        "requisition_code": posting.requisition.code if posting and posting.requisition else None,
+        "created_by_name": creator.full_name if creator else None,
+    })
+    sees_band = (role_codes(db, user) & FULL_ACCESS_ROLES) or has_permission(db, user, "offer:approve") or has_permission(db, user, "candidate:view_salary")
+    if sees_band:
+        band_min, band_max = _salary_band(db, app) if app else (None, None)
+        data.update({"band_min": band_min, "band_max": band_max})
+    return data
+
+
 def _visible_offers(db: Session, user: User):
     query = db.query(JobOffer)
     if role_codes(db, user) & FULL_ACCESS_ROLES or has_permission(db, user, "offer:approve"):
@@ -212,7 +231,7 @@ def list_offers(
     offers = query.order_by(JobOffer.created_at.desc()).all()
     for offer in offers:
         _expire_if_overdue(db, offer)
-    return [o.to_dict() for o in offers]
+    return [_offer_out(db, o, current_user) for o in offers]
 
 
 @router.get("/{offer_id}")
@@ -227,7 +246,7 @@ def get_offer(
             raise forbidden("Bạn không có quyền xem offer này.")
         raise HTTPException(status_code=404, detail="Không tìm thấy thư mời nhận việc")
     _expire_if_overdue(db, offer)
-    return offer.to_dict()
+    return _offer_out(db, offer, current_user)
 
 
 @router.post("", status_code=201)

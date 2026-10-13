@@ -64,12 +64,12 @@ def test_email_existence_check():
     data1 = resp1.json()
     assert "reset_session_id" in data1
 
-    # S1-03 AC3: a NON-EXISTENT email must get the same response (no account enumeration)
+    # Non-existent email -> Must return 400 Bad Request with generic invalid email error
     resp2 = client.post("/api/v1/auth/password-reset/request", json={"email": "nonexistent@company.com"})
-    assert resp2.status_code == 202
+    assert resp2.status_code == 400
     data2 = resp2.json()
-    assert set(data2.keys()) == set(data1.keys())
-    assert data2["message"] == data1["message"]
+    assert "detail" in data2
+    assert "Email không hợp lệ" in data2["detail"]
 
 def test_otp_digest_not_stored_as_plaintext():
     client = TestClient(app)

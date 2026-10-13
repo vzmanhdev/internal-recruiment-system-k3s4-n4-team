@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import {
   Users,
   ShieldCheck,
@@ -16,7 +17,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
-import { apiRequest } from "@/lib/api-client";
+import { authService } from "@/features/auth/services/auth.service";
 
 export default function AdminDashboardControlCenter() {
   const [stats, setStats] = useState<any>({
@@ -40,8 +41,12 @@ export default function AdminDashboardControlCenter() {
   const fetchStats = async () => {
     setIsLoading(true);
     try {
-      const data = await apiRequest<any>("/admin/stats");
-      if (data) {
+      const token = authService.getToken();
+      const res = await fetch("http://localhost:8000/api/v1/admin/stats", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
         setStats(data);
       }
     } catch (err) {
@@ -120,7 +125,8 @@ export default function AdminDashboardControlCenter() {
   ];
 
   return (
-    <div className="space-y-8">
+    <AdminAppShell activeTab="dashboard">
+      <div className="space-y-8">
         {/* ========================================================================= */}
         {/* 1. HERO BANNER & BENTO GRID QUICK ACTIONS */}
         {/* ========================================================================= */}
@@ -611,5 +617,6 @@ export default function AdminDashboardControlCenter() {
           </Link>
         </div>
       </div>
+    </AdminAppShell>
   );
 }

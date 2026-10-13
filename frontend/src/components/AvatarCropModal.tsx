@@ -67,8 +67,8 @@ export function AvatarCropModal({
       onClose();
     } catch (error) {
       console.error("Lỗi khi xử lý cắt ảnh:", error);
+      alert("Đã xảy ra lỗi trong quá trình cắt ảnh. Vui lòng thử lại!");
     } finally {
-
       setIsProcessing(false);
     }
   };

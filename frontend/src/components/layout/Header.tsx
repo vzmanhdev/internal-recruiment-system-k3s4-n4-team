@@ -8,7 +8,6 @@ import { BrandLogo } from "./BrandLogo";
 import { Container } from "./Container";
 import { Button } from "@/components/ui/Button";
 import { useActiveSection } from "@/hooks/useActiveSection";
-import { authService } from "@/features/auth/services/auth.service";
 
 interface UserProfile {
   id: number;
@@ -45,13 +44,8 @@ export function Header() {
   useEffect(() => {
     const loadAvatar = () => {
       if (typeof window !== "undefined") {
-        const u = authService.getUserInfo();
-        if (u) {
-          const saved = authService.getUserAvatar(u.id);
-          setAvatarUrl(saved || u.avatar_url || null);
-        } else {
-          setAvatarUrl(null);
-        }
+        const saved = localStorage.getItem("user_avatar_url");
+        if (saved) setAvatarUrl(saved);
       }
     };
     loadAvatar();
@@ -67,22 +61,22 @@ export function Header() {
         try {
           const u = JSON.parse(uStr);
           setUser(u);
-          const saved = authService.getUserAvatar(u.id);
-          setAvatarUrl(saved || u.avatar_url || null);
+          if (u.avatar_url && !localStorage.getItem("user_avatar_url")) {
+            setAvatarUrl(u.avatar_url);
+          }
         } catch (e) {
           console.error("Failed to parse user_info", e);
         }
-      } else {
-        setUser(null);
-        setAvatarUrl(null);
       }
     }
   }, []);
 
   const handleLogout = () => {
-    authService.logout();
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user_info");
+    }
     setUser(null);
-    setAvatarUrl(null);
     router.push("/login");
   };
 
@@ -105,7 +99,7 @@ export function Header() {
     if (roles.includes("hiring_manager") || roles.includes("manager")) return "/manager";
     if (roles.includes("interviewer")) return "/interviewer";
     if (roles.includes("approver")) return "/approver";
-    if (roles.includes("employee")) return "/employee/dashboard";
+    if (roles.includes("employee")) return "/employee";
     return "/jobs";
   };
 

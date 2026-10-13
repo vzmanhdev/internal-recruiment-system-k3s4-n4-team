@@ -1,9 +1,8 @@
 "use client";
 
-import React from "react";
-import { NotificationPreferencesPanel } from "@/components/notifications/NotificationPreferencesPanel";
+import { NotificationPreferencesView } from "@/components/personal/NotificationPreferencesView";
 
-// Previously a local-only form that showed a success toast without saving anything.
-export default function AdminNotificationSettingsPage() {
-  return <NotificationPreferencesPanel title="Cài Đặt Thông Báo" />;
+// Real per-user notification preferences (S8-04), shared by every workspace.
+export default function NotificationSettingsPage() {
+  return <NotificationPreferencesView />;
 }

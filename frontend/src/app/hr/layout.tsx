@@ -1,5 +1,4 @@
 import React from 'react';
-import { HRAppShell } from '@/features/hr/components/HRAppShell';
 
 export const metadata = {
   title: 'HR Manager Control Center | Enterprise ATS',
@@ -15,5 +14,6 @@ export default function HRLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <HRAppShell>{children}</HRAppShell>;
+  // The unified, permission-driven AppShell is mounted once in the root layout.
+  return <>{children}</>;
 }

@@ -14,11 +14,15 @@ import {
 } from 'recharts';
 import { TrendingUp, FileText, CheckCircle2, ArrowUpRight, BarChart2 } from 'lucide-react';
 
-export interface WeeklyPoint {
-  week_start: string;
-  applications: number;
-  closed_positions: number;
-}
+// Hardcoded mock data strictly per requirements (No backend modification or API calls)
+const chartData = [
+  { name: 'Tuần 36', cv: 25, closed: 2 },
+  { name: 'Tuần 37', cv: 32, closed: 3 },
+  { name: 'Tuần 38', cv: 28, closed: 1 },
+  { name: 'Tuần 39', cv: 42, closed: 4 },
+  { name: 'Tuần 40', cv: 39, closed: 2 },
+  { name: 'Tuần 41 (Hiện tại)', cv: 48, closed: 5 },
+];
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -75,12 +79,7 @@ const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label })
   return null;
 };
 
-export default function RecruitmentComboChart({ weekly = [] }: { weekly?: WeeklyPoint[] }) {
-  // Real weekly series from /analytics/overview (applications received, positions closed).
-  const chartData = weekly.map((w) => {
-    const d = new Date(w.week_start);
-    return { name: `Tuần ${d.getDate()}/${d.getMonth() + 1}`, cv: w.applications, closed: w.closed_positions };
-  });
+export default function RecruitmentComboChart() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {

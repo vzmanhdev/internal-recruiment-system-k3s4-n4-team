@@ -37,6 +37,16 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def setup_database():
     Base.metadata.create_all(bind=engine)
+    # production permission catalogue + default matrix: authorization is permission-based
+    from app.db.rbac_catalog import PERMISSIONS_DATA, DEFAULT_GRANTED_MATRIX
+    from app.models.audit import Permission, RolePermission
+    db = TestingSessionLocal()
+    for perm in PERMISSIONS_DATA:
+        db.add(Permission(code=perm["code"], name=perm["name"], module=perm["module"]))
+        for role_code, granted in DEFAULT_GRANTED_MATRIX.items():
+            db.add(RolePermission(role_code=role_code, permission_code=perm["code"], is_granted=perm["code"] in granted))
+    db.commit()
+    db.close()
     yield
     Base.metadata.drop_all(bind=engine)
 

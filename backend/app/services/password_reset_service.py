@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -60,10 +61,19 @@ class PasswordResetService:
                 detail="Địa chỉ IP của bạn đã tạo quá nhiều yêu cầu. Vui lòng thử lại sau 15 phút."
             )
 
-        # 3. Lookup real user
-        # S1-03 AC3: an unknown email gets exactly the same response; a decoy session (user_id=None) is
-        # created and no email is sent, so the reset flow cannot be used to enumerate accounts.
-        user = db.query(User).filter(User.email == normalized_email).first()
+        # 3. Lookup real user - Must exist in system before generating OTP & sending email
+        user = db.query(User).filter(func.lower(User.email) == normalized_email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email không hợp lệ."
+            )
+
+        if not user.is_active or user.account_status == "locked":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tài khoản đã bị khóa hoặc chưa được kích hoạt. Vui lòng liên hệ Quản trị viên."
+            )
 
         # 4. Generate Cryptographic OTP
         otp_code = generate_secure_otp()
@@ -74,7 +84,7 @@ class PasswordResetService:
 
         # 5. Create PasswordResetSession record
         session = PasswordResetSession(
-            user_id=user.id if user else None,
+            user_id=user.id,
             email_fingerprint=fingerprint,
             otp_digest=otp_digest_hash,
             otp_expires_at=otp_expires_at,
@@ -90,17 +100,16 @@ class PasswordResetService:
         db.commit()
         db.refresh(session)
 
-        # 6. Send OTP Email only if user exists
-        if user:
-            send_otp_email(
-                to_email=user.email,
-                otp_code=otp_code,
-                expires_in_minutes=int(settings.PASSWORD_RESET_OTP_TTL_SECONDS / 60)
-            )
+        # 6. Send OTP Email
+        send_otp_email(
+            to_email=user.email,
+            otp_code=otp_code,
+            expires_in_minutes=int(settings.PASSWORD_RESET_OTP_TTL_SECONDS / 60)
+        )
 
         masked = mask_email(normalized_email)
         return {
-            "message": "Nếu email này tồn tại trong hệ thống, mã xác thực sẽ được gửi đến email.",
+            "message": "Mã xác thực đã được gửi đến email của bạn.",
             "reset_session_id": session.id,
             "masked_email": masked,
             "expires_in_seconds": settings.PASSWORD_RESET_OTP_TTL_SECONDS,

@@ -45,9 +45,12 @@ def create_access_token(
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-def decode_access_token(token: str) -> Optional[dict]:
+def decode_access_token(token: str, verify_exp: bool = True) -> Optional[dict]:
+    """Verify signature + type. ``verify_exp=False`` is only for route-access decisions, where the
+    server-side session (revocation, absolute/idle expiry, security version) is the authority."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM],
+                             options={"verify_exp": verify_exp})
         # Backwards compatibility check: support legacy tokens with purpose="access" or typ="access"
         token_typ = payload.get("typ") or payload.get("purpose")
         if token_typ != "access":

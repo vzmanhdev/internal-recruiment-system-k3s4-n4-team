@@ -80,6 +80,11 @@ class NoteCreate(BaseModel):
     content: str = Field(..., min_length=1)
 
 
+class DirectEmail(BaseModel):
+    subject: str = Field(..., min_length=3, max_length=255)
+    body: str = Field(..., min_length=1, max_length=10_000)
+
+
 class SavedFilterIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     filters: dict
@@ -469,6 +474,29 @@ def add_note(app_id: int, payload: NoteCreate, current_user: User = Depends(get_
     note = ApplicationNote(application_id=app.id, author_id=current_user.id, content=payload.content.strip())
     db.add(note); db.commit(); db.refresh(note)
     return note.to_dict(current_user.full_name)
+
+
+@router.post("/{app_id}/email", status_code=201)
+def send_direct_email(app_id: int, payload: DirectEmail, current_user: User = Depends(get_current_user_obj), db: Session = Depends(get_db)):
+    """Recruiter → candidate message, queued in the e-mail outbox (real delivery status in the e-mail log).
+    The text is HTML-escaped; only staff who manage this application may send it."""
+    import html as _html
+    app = db.query(JobApplication).filter(JobApplication.id == app_id).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
+    ensure_can_manage_application(db, current_user, app)
+    require_any_permission(db, current_user, "candidate:evaluate")
+    body_html = "<p>" + _html.escape(payload.body.strip()).replace(chr(10), "<br>") + "</p>"
+    log = EmailLog(template_code="DIRECT_MESSAGE", recipient_name=app.full_name, recipient_email=app.email,
+                   subject=payload.subject.strip(), body_html=body_html, status="queued", attempts=1,
+                   related_entity="APPLICATION", related_id=str(app.id))
+    db.add(log)
+    from app.models.audit import AuditLog
+    db.add(AuditLog(actor_id=current_user.id, actor_email=current_user.email, action="CANDIDATE_EMAIL",
+                    target_entity="APPLICATION", target_id=str(app.id), payload_json=payload.subject.strip()[:200]))
+    db.commit()
+    db.refresh(log)
+    return log.to_dict()
 
 
 @router.get("/{app_id}/duplicates")

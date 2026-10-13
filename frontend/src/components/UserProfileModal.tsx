@@ -141,10 +141,9 @@ export function UserProfileModal({
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith("image/")) {
-        console.warn("Tệp được chọn không phải là hình ảnh hợp lệ.");
+        alert("Vui lòng chọn một tệp hình ảnh hợp lệ (JPG, PNG, WebP).");
         return;
       }
-
       const reader = new FileReader();
       reader.onload = (event) => {
         const result = event.target?.result as string;

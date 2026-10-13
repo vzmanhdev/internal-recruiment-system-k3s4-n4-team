@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.api.v1.auth import require_roles
 from app.api.deps import authenticate_bearer
 from app.db.session import get_db
 from app.models.user import User
@@ -24,17 +23,19 @@ from app.models.requisition import JobRequisition
 from app.models.job import JobPosting
 from app.models.application import JobApplication
 from app.schemas.hr import CategoryCreate, CompetencyCreate, DepartmentCreate, JobTitleCreate, ReorderCategories
-from app.services.access_scope import role_codes
+from app.services.access_scope import has_permission, require_any_permission
 from app.services.headcount_service import headcount_status
 
 router = APIRouter()
-HR_ROLES = {"hr_manager", "admin"}
 APPROVAL_STEPS = {"manager", "hr", "executive"}
 PIPELINE_STAGES = {"submitted", "screening", "interviewing", "offered"}
 
 
 def authorize(authorization: Optional[str], db: Session) -> User:
-    return require_roles(authorization, db, HR_ROLES)
+    """Master-data writes need the master_data:manage permission (admin: full allow)."""
+    user = _authenticated(authorization, db)
+    require_any_permission(db, user, "master_data:manage")
+    return user
 
 
 def _authenticated(authorization: Optional[str], db: Session) -> User:
@@ -43,7 +44,8 @@ def _authenticated(authorization: Optional[str], db: Session) -> User:
 
 
 def _is_hr(db: Session, user: User) -> bool:
-    return bool(role_codes(db, user) & HR_ROLES)
+    """May see inactive master data and salary bands (S2-05 AC3)."""
+    return has_permission(db, user, "master_data:manage") or has_permission(db, user, "candidate:view_salary")
 
 
 def _now_label() -> str:
@@ -339,7 +341,7 @@ class QuestionIn(BaseModel):
 def list_questions(job_title: Optional[str] = None, criteria_id: Optional[str] = None, difficulty: Optional[str] = None,
                    search: Optional[str] = None, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     user = _authenticated(authorization, db)
-    if not role_codes(db, user) & (HR_ROLES | {"recruiter", "interviewer", "hiring_manager"}):
+    if not (has_permission(db, user, "interview:view") or has_permission(db, user, "master_data:manage")):
         raise HTTPException(status_code=403, detail="Bạn không có quyền xem ngân hàng câu hỏi.")
     q = db.query(InterviewQuestion).filter(InterviewQuestion.status == "active")
     if job_title:
@@ -636,7 +638,7 @@ def list_people(role: str, authorization: Optional[str] = Header(None), db: Sess
     Only recruitment staff may call it and only active users are returned."""
     from app.models.rbac import Role, UserRole
     user = _authenticated(authorization, db)
-    if not role_codes(db, user) & (HR_ROLES | {"recruiter", "hiring_manager", "manager"}):
+    if not any(has_permission(db, user, c) for c in ("master_data:manage", "requisition:assign", "interview:schedule", "requisition:create", "offer:create")):
         raise HTTPException(status_code=403, detail="Bạn không có quyền xem danh bạ nhân sự.")
     if role not in {"interviewer", "recruiter", "hiring_manager", "approver", "hr_manager"}:
         raise HTTPException(status_code=422, detail="Vai trò không hợp lệ.")

@@ -1,151 +1,145 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { authService, type UserItem } from "@/features/auth/services/auth.service";
+import { AUTH_FORBIDDEN_EVENT } from "@/lib/api-client";
+import { canSee, policyFor } from "@/lib/auth/route-registry";
 
-interface AuthContextType {
-  currentUser: UserItem | null;
-  isAuthenticated: boolean;
-  isAuthInitialized: boolean;
-  isRefreshing: boolean;
-  login: (email: string, password: string) => Promise<UserItem>;
-  logout: () => void;
-  updateCurrentUser: (updatedUser: Partial<UserItem>) => void;
-  refetchProfile: () => Promise<UserItem | null>;
+/** Fired after an admin changes roles or the permission matrix in this browser, so menus re-sync at once. */
+export const PERMISSIONS_CHANGED_EVENT = "auth:permissions-changed";
+
+type Status = "loading" | "authenticated" | "anonymous";
+
+interface AuthContextValue {
+  status: Status;
+  user: UserItem | null;
+  /** Backend effective permissions (UI hint only — the server re-checks every request). */
+  permissions: ReadonlySet<string>;
+  isAdmin: boolean;
+  roleCodes: string[];
+  /** Whether a link to `href` should be shown (same declarations the server proxy enforces). */
+  canAccess: (href: string) => boolean;
+  refresh: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextValue | null>(null);
 
-let globalAuthInitPromise: Promise<UserItem | null> | null = null;
+const roleCodesOf = (u: UserItem | null): string[] =>
+  (u?.roles || []).map((r) => (typeof r === "string" ? r : r.code)).filter(Boolean);
+
+const FOCUS_RESYNC_MS = 60_000;
+const FORBIDDEN_RESYNC_MS = 5_000;
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<UserItem | null>(() => {
-    return authService.getUserInfo();
-  });
-  const [isAuthInitialized, setIsAuthInitialized] = useState<boolean>(false);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [user, setUser] = useState<UserItem | null>(null);
+  const [status, setStatus] = useState<Status>("loading");
+  const lastSync = useRef(0);
+  const inflight = useRef<Promise<void> | null>(null);
 
-  const initAuth = useCallback(async () => {
-    const token = authService.getToken();
-    if (!token) {
-      setCurrentUser(null);
-      setIsAuthInitialized(true);
-      return null;
-    }
-
-    if (globalAuthInitPromise) {
-      return await globalAuthInitPromise;
-    }
-
-    globalAuthInitPromise = (async () => {
+  const refresh = useCallback(async () => {
+    if (inflight.current) return inflight.current;
+    const run = (async () => {
+      if (!authService.getToken()) {
+        setUser(null);
+        setStatus("anonymous");
+        return;
+      }
       try {
-        const user = await authService.getCurrentUser();
-        setCurrentUser(user);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("user_info", JSON.stringify(user));
-          if (user.avatar_url) {
-            localStorage.setItem("user_avatar_url", user.avatar_url);
-          }
+        const me = await authService.getCurrentUser();
+        localStorage.setItem("user_info", JSON.stringify(me));
+        setUser(me);
+        setStatus("authenticated");
+      } catch {
+        // 401 handling (refresh / redirect) happens in apiRequest; keep the last known UI state otherwise
+        if (!authService.getToken()) {
+          setUser(null);
+          setStatus("anonymous");
         }
-        return user;
-      } catch (err: any) {
-        // Token invalid or session revoked
-        authService.logout();
-        setCurrentUser(null);
-        return null;
       } finally {
-        setIsAuthInitialized(true);
-        globalAuthInitPromise = null;
+        lastSync.current = Date.now();
       }
     })();
-
-    return await globalAuthInitPromise;
-  }, []);
-
-  useEffect(() => {
-    initAuth();
-  }, [initAuth]);
-
-  const login = async (email: string, password: string): Promise<UserItem> => {
-    const res = await authService.login({ email, password });
-    setCurrentUser(res.user);
-    setIsAuthInitialized(true);
-    return res.user;
-  };
-
-  const logout = useCallback(() => {
-    authService.logout();
-    setCurrentUser(null);
-  }, []);
-
-  const updateCurrentUser = useCallback((updatedFields: Partial<UserItem>) => {
-    setCurrentUser((prev) => {
-      if (!prev) return null;
-      const next = { ...prev, ...updatedFields };
-      if (typeof window !== "undefined") {
-        localStorage.setItem("user_info", JSON.stringify(next));
-        if (next.avatar_url) {
-          localStorage.setItem(`user_avatar_url_${next.id}`, next.avatar_url);
-        } else {
-          localStorage.removeItem(`user_avatar_url_${next.id}`);
-        }
-        localStorage.removeItem("user_avatar_url");
-        window.dispatchEvent(new Event("avatar_updated"));
-      }
-      return next;
+    // Clear the in-flight marker only after this run settles. (Clearing it inside the async body can run
+    // synchronously — before the assignment below — and would leave a settled promise cached forever.)
+    inflight.current = run.finally(() => {
+      if (inflight.current === guarded) inflight.current = null;
     });
+    const guarded = inflight.current;
+    return guarded;
   }, []);
 
-  const refetchProfile = useCallback(async (): Promise<UserItem | null> => {
-    try {
-      const user = await authService.getCurrentUser();
-      setCurrentUser(user);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("user_info", JSON.stringify(user));
-        if (user.avatar_url) {
-          localStorage.setItem(`user_avatar_url_${user.id}`, user.avatar_url);
-        }
-        localStorage.removeItem("user_avatar_url");
-        window.dispatchEvent(new Event("avatar_updated"));
+  // Bootstrap once: show the cached profile immediately, then confirm with the server.
+  useEffect(() => {
+    let cancelled = false;
+    const cached = authService.getUserInfo();
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (cached && authService.getToken()) {
+        setUser(cached);
+        setStatus("authenticated");
       }
-      return user;
-    } catch {
-      return null;
-    }
+      void refresh();
+    });
+    return () => { cancelled = true; };
+  }, [refresh]);
+
+  // Controlled re-synchronisation (never on every navigation).
+  useEffect(() => {
+    const onForbidden = () => {
+      if (Date.now() - lastSync.current > FORBIDDEN_RESYNC_MS) void refresh();
+    };
+    const onChanged = () => void refresh();
+    const onFocus = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastSync.current > FOCUS_RESYNC_MS) void refresh();
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "access_token") void refresh();
+    };
+    window.addEventListener(AUTH_FORBIDDEN_EVENT, onForbidden);
+    window.addEventListener(PERMISSIONS_CHANGED_EVENT, onChanged);
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(AUTH_FORBIDDEN_EVENT, onForbidden);
+      window.removeEventListener(PERMISSIONS_CHANGED_EVENT, onChanged);
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [refresh]);
+
+  const logout = useCallback(async () => {
+    await authService.logout();
+    setUser(null);
+    setStatus("anonymous");
   }, []);
 
-  const value: AuthContextType = {
-    currentUser,
-    isAuthenticated: !!currentUser,
-    isAuthInitialized,
-    isRefreshing,
-    login,
-    logout,
-    updateCurrentUser,
-    refetchProfile,
-  };
+  const value = useMemo<AuthContextValue>(() => {
+    const roleCodes = roleCodesOf(user);
+    const isAdmin = roleCodes.includes("admin");
+    const permissions = new Set(user?.permissions || []);
+    return {
+      status,
+      user,
+      permissions,
+      isAdmin,
+      roleCodes,
+      canAccess: (href: string) => status === "authenticated" && canSee(policyFor(href), permissions, isAdmin),
+      refresh,
+      logout,
+    };
+  }, [status, user, refresh, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-const defaultAuthContext: AuthContextType = {
-  currentUser: null,
-  isAuthenticated: false,
-  isAuthInitialized: false,
-  isRefreshing: false,
-  login: async () => { throw new Error("AuthProvider not available"); },
-  logout: () => {},
-  updateCurrentUser: () => {},
-  refetchProfile: async () => null,
-};
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside <AuthProvider>");
+  return ctx;
+}
 
-export function useAuth(): AuthContextType {
-  const context = useContext(AuthContext);
-  if (!context) {
-    if (typeof window === "undefined") {
-      return defaultAuthContext;
-    }
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
+/** Call after changing roles / the permission matrix so this browser's menus update immediately. */
+export function notifyPermissionsChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(PERMISSIONS_CHANGED_EVENT));
 }

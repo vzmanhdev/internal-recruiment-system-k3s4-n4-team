@@ -14,7 +14,7 @@ from app.models.hr import ApprovalFlow, Department, JobTitle, RecruiterAssignmen
 from app.services.headcount_service import headcount_status
 from app.models.job import JobPosting
 from app.models.application import JobApplication
-from app.api.deps import get_current_user_obj, require_permission, require_roles_dep
+from app.api.deps import get_current_user_obj, require_permission
 from app.services.rbac_service import get_user_roles, get_effective_permissions
 from app.models.audit import AuditLog
 from app.services.notification_service import notify, users_with_roles
@@ -446,7 +446,7 @@ def approve_requisition(
 def assign_recruiter(
     req_id: int,
     payload: RecruiterAssignRequest,
-    current_user: User = Depends(require_roles_dep({"hr_manager"})),
+    current_user: User = Depends(require_permission("requisition:assign")),
     db: Session = Depends(get_db)
 ):
     req = _get_or_404(db, req_id)
@@ -528,7 +528,7 @@ def override_headcount(
 def close_requisition(
     req_id: int,
     payload: RequisitionCloseRequest,
-    current_user: User = Depends(require_roles_dep({"hr_manager"})),
+    current_user: User = Depends(require_permission("requisition:close")),
     db: Session = Depends(get_db)
 ):
     if payload.status not in CLOSE_TARGETS:
@@ -595,6 +595,41 @@ def copy_requisition(
     db.commit()
     db.refresh(copy)
     return copy.to_dict()
+
+
+@router.post("/{req_id}/remind")
+def remind_current_approvers(
+    req_id: int,
+    current_user: User = Depends(require_permission("requisition:view")),
+    db: Session = Depends(get_db)
+):
+    """Nudge the people who can act on the current approval step (once per day per requisition).
+    Only the requisition's creator (or an admin) may send it, and only while it is waiting for approval."""
+    from datetime import date as _date
+    from app.models.notification import Notification
+    req = _get_or_404(db, req_id)
+    _ensure_visible(db, current_user, req)
+    if req.created_by_id != current_user.id and "admin" not in _role_codes(db, current_user):
+        raise HTTPException(status_code=403, detail="Chỉ người lập tờ trình mới gửi được nhắc nhở phê duyệt.")
+    if not req.status.startswith("pending_"):
+        raise HTTPException(status_code=409, detail="Tờ trình không ở trạng thái chờ duyệt.")
+    roles = STEP_NOTIFY_ROLES.get(req.status.replace("pending_", "", 1), [])
+    recipients = users_with_roles(db, roles, exclude_user_id=current_user.id)
+    key_prefix = f"remind:{req.id}:{_date.today().isoformat()}"
+    if db.query(Notification.id).filter(Notification.dedupe_key.like(key_prefix + ":%")).first():
+        raise HTTPException(status_code=409, detail="Đã gửi nhắc nhở cho tờ trình này trong hôm nay.")
+    sent = 0
+    for uid in recipients:
+        if notify(db, [uid], "approval_pending", f"Nhắc duyệt tờ trình {req.code}",
+                  f"{current_user.full_name} đề nghị xử lý tờ trình '{req.title}'.",
+                  link="/approver/requisitions", entity_type="REQUISITION", entity_id=req.id):
+            db.flush()
+            last = db.query(Notification).filter(Notification.recipient_id == uid).order_by(Notification.id.desc()).first()
+            last.dedupe_key = f"{key_prefix}:{uid}"
+            sent += 1
+    _audit(db, current_user, "REQUISITION_REMIND", req, {"recipients": sent})
+    db.commit()
+    return {"sent": sent}
 
 
 @router.delete("/{req_id}")

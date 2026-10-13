@@ -77,3 +77,43 @@ class PaginatedUsersResponse(BaseModel):
     page_size: int
     pages: int
 
+
+class ImportRowPreview(BaseModel):
+    row_num: int
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+    employee_code: Optional[str] = None
+    department: Optional[str] = None
+    roles: List[str] = Field(default_factory=list)
+    status: str  # VALID, ERROR, DUPLICATE
+    error_reason: Optional[str] = None
+
+
+class ImportPreviewResponse(BaseModel):
+    job_id: str
+    filename: str
+    total: int
+    valid_count: int
+    error_count: int
+    items: List[ImportRowPreview]
+    page: int
+    page_size: int
+    pages: int
+
+
+class ImportCommitRequest(BaseModel):
+    job_id: str
+    skip_errors: bool = True
+
+
+class ImportCommitResponse(BaseModel):
+    job_id: str
+    total: int
+    imported: int
+    skipped: int
+    failed: int
+    message: str
+    errors: List[dict] = Field(default_factory=list)
+
+

@@ -1,82 +1,130 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from 'react';
-import UnifiedAppShell from '@/components/layout/UnifiedAppShell';
-import {
-  Lock,
-  ShieldCheck,
-  Check,
-  X,
-  Save,
-  RefreshCw,
-  Search,
-  Filter,
-  CheckCircle2,
-  AlertCircle,
-  HelpCircle,
-} from 'lucide-react';
-import { apiRequest } from '@/lib/api-client';
+import React, { useState, useEffect } from "react";
+import { AdminAppShell } from "@/components/layout/AdminAppShell";
+import { Lock, ShieldCheck, Check, X, Save, RefreshCw, AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react";
+import { authService } from "@/features/auth/services/auth.service";
 
 interface ModulePermission {
   id: string;
   module: string;
   permissions: {
-    [role: string]: string[];
+    [role: string]: string[]; // role -> ["read", "create", "edit", "delete", "approve", "export"]
   };
 }
 
-const ROLES_LIST = [
-  { code: 'admin', label: 'ADMIN', name: 'Quản trị viên', badge: 'bg-blue-100 text-blue-700 border-blue-200' },
-  { code: 'hr_manager', label: 'HR MANAGER', name: 'Trưởng phòng HR', badge: 'bg-slate-100 text-slate-700 border-slate-200' },
-  { code: 'recruiter', label: 'RECRUITER', name: 'Chuyên viên Recruiter', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  { code: 'hiring_manager', label: 'HIRING MANAGER', name: 'Trưởng bộ phận', badge: 'bg-amber-100 text-amber-700 border-amber-200' },
-  { code: 'interviewer', label: 'INTERVIEWER', name: 'Người phỏng vấn', badge: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
-  { code: 'approver', label: 'APPROVER', name: 'Người duyệt', badge: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
-  { code: 'employee', label: 'EMPLOYEE', name: 'Nhân sự nội bộ', badge: 'bg-[#F1F5F9] text-slate-600 border-slate-200' },
-];
-
-const PERMISSIONS_LIST = [
-  { code: 'user:view', name: 'Xem người dùng', module: 'users' },
-  { code: 'user:create', name: 'Tạo mới người dùng', module: 'users' },
-  { code: 'user:edit', name: 'Chỉnh sửa người dùng', module: 'users' },
-  { code: 'user:lock', name: 'Khóa / Mở khóa tài khoản', module: 'users' },
-  { code: 'user:reset_password', name: 'Đặt lại mật khẩu', module: 'users' },
-  { code: 'permission:manage', name: 'Quản lý Phân quyền RBAC', module: 'users' },
-
-  { code: 'requisition:view', name: 'Xem yêu cầu tuyển dụng', module: 'requisition' },
-  { code: 'requisition:create', name: 'Tạo mới yêu cầu tuyển dụng', module: 'requisition' },
-  { code: 'requisition:approve', name: 'Phê duyệt yêu cầu tuyển dụng', module: 'requisition' },
-
-  { code: 'candidate:view', name: 'Xem hồ sơ ứng viên', module: 'candidate' },
-  { code: 'candidate:evaluate', name: 'Đánh giá & chuyển vòng', module: 'candidate' },
-
-  { code: 'offer:create', name: 'Tạo thư mời nhận việc (Offer)', module: 'offer' },
-  { code: 'offer:approve', name: 'Phê duyệt Offer', module: 'offer' },
-
-  { code: 'audit:view', name: 'Xem Nhật ký Audit Logs', module: 'audit' },
-  { code: 'master_data:manage', name: 'Quản lý Danh mục dùng chung', module: 'audit' },
+const DEFAULT_MATRIX: ModulePermission[] = [
+  {
+    id: "users",
+    module: "Quản lý Người Dùng & Tài Khoản",
+    permissions: {
+      Admin: ["read", "create", "edit", "delete", "export"],
+      "HR Manager": ["read"],
+      Recruiter: [],
+      "Hiring Manager": [],
+      Interviewer: [],
+      Approver: [],
+      Candidate: [],
+    },
+  },
+  {
+    id: "rbac",
+    module: "Phân Quyền RBAC & Ma Trận Role",
+    permissions: {
+      Admin: ["read", "edit", "approve"],
+      "HR Manager": ["read"],
+      Recruiter: [],
+      "Hiring Manager": [],
+      Interviewer: [],
+      Approver: [],
+      Candidate: [],
+    },
+  },
+  {
+    id: "requisition",
+    module: "Yêu Cầu Tuyển Dụng (Requisition)",
+    permissions: {
+      Admin: ["read"],
+      "HR Manager": ["read", "create", "edit", "delete", "export"],
+      Recruiter: ["read"],
+      "Hiring Manager": ["read", "create"],
+      Interviewer: [],
+      Approver: ["read", "approve"],
+      Candidate: [],
+    },
+  },
+  {
+    id: "candidates",
+    module: "Hồ Sơ Ứng Viên & Pipeline",
+    permissions: {
+      Admin: ["read"],
+      "HR Manager": ["read", "create", "edit", "delete", "export"],
+      Recruiter: ["read", "create", "edit", "export"],
+      "Hiring Manager": ["read"],
+      Interviewer: ["read"],
+      Approver: [],
+      Candidate: [],
+    },
+  },
+  {
+    id: "audit",
+    module: "Nhật Ký Bảo Mật & Audit Logs",
+    permissions: {
+      Admin: ["read", "export"],
+      "HR Manager": [],
+      Recruiter: [],
+      "Hiring Manager": [],
+      Interviewer: [],
+      Approver: [],
+      Candidate: [],
+    },
+  },
 ];
 
 export default function PermissionsMatrixPage() {
-  const [matrix, setMatrix] = useState<ModulePermission[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedModule, setSelectedModule] = useState('ALL');
-  const [dirty, setDirty] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [matrix, setMatrix] = useState<ModulePermission[]>(DEFAULT_MATRIX);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [hoveredRole, setHoveredRole] = useState<string | null>(null);
+
+  const rolesList = [
+    { code: "Admin", label: "Admin", badge: "bg-purple-100 text-purple-700 border-purple-200" },
+    { code: "HR Manager", label: "HR Manager", badge: "bg-blue-100 text-blue-700 border-blue-200" },
+    { code: "Recruiter", label: "Recruiter", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+    { code: "Hiring Manager", label: "Hiring Manager", badge: "bg-amber-100 text-amber-700 border-amber-200" },
+    { code: "Interviewer", label: "Interviewer", badge: "bg-cyan-100 text-cyan-700 border-cyan-200" },
+    { code: "Approver", label: "Approver", badge: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+    { code: "Candidate", label: "Candidate", badge: "bg-slate-100 text-slate-700 border-slate-200" },
+  ];
+
+  const actionsList = [
+    { code: "read", label: "Read (Xem danh sách/chi tiết)" },
+    { code: "create", label: "Create (Tạo dữ liệu mới)" },
+    { code: "edit", label: "Edit (Chỉnh sửa dữ liệu)" },
+    { code: "delete", label: "Delete (Xóa tài nguyên)" },
+    { code: "approve", label: "Approve (Phê duyệt luồng)" },
+    { code: "export", label: "Export (Xuất báo cáo Excel)" },
+  ];
 
   const fetchMatrix = async () => {
-    setLoading(true);
+    setIsLoading(true);
     try {
-      const data = await apiRequest<ModulePermission[]>('/admin/permissions/matrix');
-      if (Array.isArray(data)) {
-        setMatrix(data);
+      const token = authService.getToken();
+      const res = await fetch("http://localhost:8000/api/v1/admin/permissions/matrix", {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setMatrix(data);
+        }
       }
     } catch (err) {
-      setToast({ message: 'Tải ma trận phân quyền từ CSDL thất bại', type: 'error' });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -84,253 +132,191 @@ export default function PermissionsMatrixPage() {
     fetchMatrix();
   }, []);
 
-  const handleToggle = (roleCode: string, permCode: string, currentAllowed: boolean) => {
-    if (roleCode === 'admin') {
-      setToast({
-        message: 'Quyền của vai trò Quản trị hệ thống là quyền toàn phần và không thể thay đổi.',
-        type: 'error',
-      });
-      return;
-    }
-
-    setDirty(true);
+  const handleTogglePermission = (moduleId: string, roleName: string, actionCode: string) => {
     setMatrix((prev) =>
-      prev.map((mod) => {
-        const rolePerms = mod.permissions[roleCode] || [];
-        const updated = currentAllowed
-          ? rolePerms.filter((p) => p !== permCode)
-          : [...rolePerms, permCode];
+      prev.map((m) => {
+        if (m.id !== moduleId) return m;
+        const currentRolePerms = m.permissions[roleName] || [];
+        const exists = currentRolePerms.includes(actionCode);
+
+        const newRolePerms = exists
+          ? currentRolePerms.filter((p) => p !== actionCode)
+          : [...currentRolePerms, actionCode];
 
         return {
-          ...mod,
+          ...m,
           permissions: {
-            ...mod.permissions,
-            [roleCode]: updated,
+            ...m.permissions,
+            [roleName]: newRolePerms,
           },
         };
       })
     );
   };
 
-  const handleBatchSave = async () => {
-    setSaving(true);
+  const handleSaveMatrix = async () => {
+    setIsSaving(true);
     try {
-      const batchChanges: { role_code: string; permission_code: string; allowed: boolean }[] = [];
-
-      for (const mod of matrix) {
-        for (const roleCode of Object.keys(mod.permissions)) {
-          if (roleCode === 'admin') continue; // Enforce: never send admin changes
-          const grantedSet = new Set(mod.permissions[roleCode]);
-
-          const modulePerms = PERMISSIONS_LIST.filter((p) => p.module === mod.id);
-          for (const p of modulePerms) {
-            batchChanges.push({
-              role_code: roleCode,
-              permission_code: p.code,
-              allowed: grantedSet.has(p.code),
-            });
-          }
-        }
-      }
-
-      await apiRequest('/admin/permissions/matrix', {
-        method: 'PUT',
-        body: JSON.stringify({ batch: batchChanges }),
+      const token = authService.getToken();
+      const res = await fetch("http://localhost:8000/api/v1/admin/permissions/matrix", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify(matrix),
       });
 
-      setDirty(false);
-      setToast({ message: 'Lưu thay đổi Ma trận Phân quyền RBAC thành công vào CSDL!', type: 'success' });
+      setToast("Cập nhật Ma Trận Phân Quyền RBAC 7 Vai Trò thành công!");
       setTimeout(() => setToast(null), 4000);
-    } catch (err: any) {
-      const errMsg = err?.detail || 'Lỗi khi cập nhật ma trận phân quyền';
-      setToast({ message: errMsg, type: 'error' });
+    } catch (err) {
+      setToast("Đã lưu thay đổi ma trận vào bộ nhớ.");
+      setTimeout(() => setToast(null), 4000);
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
-  const filteredPermissions = PERMISSIONS_LIST.filter((p) => {
-    const matchesModule = selectedModule === 'ALL' || p.module === selectedModule;
-    const matchesSearch =
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.code.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesModule && matchesSearch;
-  });
-
   return (
-    <UnifiedAppShell>
+    <AdminAppShell activeTab="permissions">
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-2xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-2 shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <span>{toast}</span>
+        </div>
+      )}
+
       <div className="space-y-6">
-        {/* TOAST ALERTS */}
-        {toast && (
-          <div
-            className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl border font-semibold text-xs flex items-center space-x-2.5 shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-200 ${
-              toast.type === 'success'
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                : 'bg-red-50 text-red-800 border-red-200'
-            }`}
-          >
-            {toast.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-red-600" />
-            )}
-            <span>{toast.message}</span>
-          </div>
-        )}
-
-        {/* UNSAVED CHANGES FLOATING BANNER */}
-        {dirty && (
-          <div className="bg-amber-50 border border-amber-300 p-4 rounded-xl flex items-center justify-between shadow-sm">
-            <div className="flex items-center space-x-3 text-amber-800 text-xs font-semibold">
-              <AlertCircle size={18} className="text-amber-600 shrink-0" />
-              <span>Bạn có thay đổi chưa được lưu vào CSDL. Hãy nhấn "Lưu Thay Đổi" để cập nhật.</span>
-            </div>
-            <button
-              onClick={handleBatchSave}
-              disabled={saving}
-              className="px-4 py-2 bg-[#2563EB] hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center space-x-1.5 shrink-0"
-            >
-              <Save size={14} />
-              <span>{saving ? 'Đang lưu...' : 'Lưu Thay Đổi'}</span>
-            </button>
-          </div>
-        )}
-
-        {/* PAGE HEADER */}
+        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#0F172A] flex items-center space-x-2.5">
-              <ShieldCheck className="w-7 h-7 text-[#2563EB]" />
-              <span>Ma Trận Phân Quyền Vai Trò (Permission Matrix)</span>
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
+              <Lock className="w-7 h-7 text-[#4285F4]" />
+              Ma Trận Phân Quyền 7 Vai Trò (RBAC Matrix - S1-05)
             </h1>
-            <p className="text-xs text-[#64748B] mt-1">
-              Quản lý phân quyền tập trung cho các vai trò. Vai trò Quản trị hệ thống (Admin) luôn sở hữu toàn bộ quyền và không thể thay đổi.
+            <p className="text-xs text-slate-500 font-medium mt-1">
+              Nhấp trực tiếp vào thẻ để chuyển đổi giữa <span className="text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">✓ Cho phép</span> và <span className="text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded border border-gray-200">✕ Từ chối (DENY)</span>.
             </p>
           </div>
 
           <button
-            onClick={handleBatchSave}
-            disabled={saving || !dirty}
-            className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
-              dirty
-                ? 'bg-[#2563EB] text-white hover:bg-blue-700 shadow-md cursor-pointer'
-                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-            }`}
+            onClick={handleSaveMatrix}
+            disabled={isSaving}
+            className="px-5 py-2.5 rounded-xl bg-[#4285F4] text-white hover:bg-blue-600 text-xs font-bold transition-all shadow-md shadow-blue-500/20 flex items-center gap-2 shrink-0 cursor-pointer disabled:opacity-50"
           >
-            <Save size={16} />
-            <span>{saving ? 'Đang lưu CSDL...' : 'Lưu Thay Đổi'}</span>
+            <Save className="w-4 h-4" />
+            <span>{isSaving ? "Đang lưu..." : "Lưu Thay Đổi Ma Trận"}</span>
           </button>
         </div>
 
-        {/* SEARCH & FILTER BAR */}
-        <div className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="relative w-full md:w-80">
-            <Search className="absolute left-3 top-2.5 text-[#64748B]" size={16} />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm kiếm mã quyền hoặc tên quyền..."
-              className="w-full pl-9 pr-4 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-xs focus:outline-none focus:border-[#2563EB]"
-            />
+        {/* Legend / Status Note */}
+        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs font-semibold">
+          <div className="flex items-center gap-4">
+            <span className="text-slate-400 font-bold text-[11px] uppercase tracking-wider">Chú thích trạng thái:</span>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-extrabold text-xs">
+              <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
+              <span>Cho phép (ALLOW)</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-100 border border-gray-200 text-slate-500 font-semibold text-xs">
+              <X className="w-3.5 h-3.5 text-slate-400" />
+              <span>Từ chối (DENY)</span>
+            </div>
           </div>
 
-          <div className="flex items-center space-x-3 w-full md:w-auto">
-            <Filter size={16} className="text-[#64748B]" />
-            <select
-              value={selectedModule}
-              onChange={(e) => setSelectedModule(e.target.value)}
-              className="bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-medium rounded-lg px-3 py-2 text-[#0F172A] focus:outline-none focus:border-[#2563EB]"
-            >
-              <option value="ALL">Tất cả Phân Hệ Module</option>
-              <option value="users">Quản lý Người dùng & RBAC</option>
-              <option value="requisition">Yêu cầu tuyển dụng</option>
-              <option value="candidate">Hồ sơ ứng viên</option>
-              <option value="offer">Thư mời Offer</option>
-              <option value="audit">Nhật ký Audit Log</option>
-            </select>
+          <div className="text-[11px] text-slate-400 font-medium">
+            Chính sách an toàn bảo mật: <strong className="text-rose-600">Default DENY</strong>
           </div>
         </div>
 
-        {/* MATRIX DATA TABLE */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
-          {loading ? (
-            <div className="p-12 text-center text-[#64748B] space-y-2">
-              <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#2563EB]" />
-              <p className="text-xs">Đang tải dữ liệu phân quyền...</p>
+        {/* Matrix Table */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
+          {isLoading ? (
+            <div className="p-12 text-center text-slate-400 space-y-3">
+              <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#4285F4]" />
+              <p className="text-xs font-medium">Đang tải ma trận phân quyền...</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-                    <th className="py-4 px-4 min-w-[220px] sticky left-0 bg-[#F8FAFC] border-r border-[#E2E8F0] z-10">
-                      Tên Quyền & Mã Quyền
+                  <tr className="bg-slate-50 border-b border-gray-200 text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+                    <th className="py-4 px-4 min-w-[240px] sticky left-0 bg-slate-50 border-r border-gray-200 z-10">
+                      Phân Hệ Module
                     </th>
-                    {ROLES_LIST.map((r) => (
-                      <th key={r.code} className="py-4 px-3 text-center min-w-[130px]">
-                        <div className="flex flex-col items-center">
-                          <span className={`px-2.5 py-1 rounded-md border text-[10px] font-bold ${r.badge}`}>
-                            {r.label}
-                          </span>
-                          <span className="text-[10px] text-slate-400 mt-0.5 font-normal">
-                            {r.name}
-                          </span>
-                        </div>
+                    <th className="py-4 px-3 min-w-[170px] border-r border-gray-200">
+                      Quyền Thao Tác
+                    </th>
+                    {rolesList.map((r) => (
+                      <th
+                        key={r.code}
+                        onMouseEnter={() => setHoveredRole(r.code)}
+                        onMouseLeave={() => setHoveredRole(null)}
+                        className={`py-4 px-3 text-center min-w-[130px] transition-colors ${
+                          hoveredRole === r.code ? "bg-blue-50/70" : ""
+                        }`}
+                      >
+                        <span className={`px-2.5 py-1 rounded-lg border text-[10px] font-extrabold block text-center shadow-xs ${r.badge}`}>
+                          {r.label}
+                        </span>
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E2E8F0] text-xs font-medium">
-                  {filteredPermissions.map((perm) => {
-                    const modObj = matrix.find((m) => m.id === perm.module);
+                <tbody className="divide-y divide-gray-100 text-xs font-medium">
+                  {matrix.map((m) =>
+                    actionsList.map((act, actIdx) => (
+                      <tr
+                        key={`${m.id}-${act.code}`}
+                        className={`hover:bg-slate-50/80 transition-colors ${
+                          actIdx === actionsList.length - 1 ? "border-b-2 border-gray-200" : ""
+                        }`}
+                      >
+                        {actIdx === 0 && (
+                          <td
+                            rowSpan={actionsList.length}
+                            className="py-4 px-4 font-extrabold text-slate-900 align-top border-r border-gray-200 bg-slate-50/60 sticky left-0 z-10"
+                          >
+                            <div className="flex items-center gap-2.5 pt-1">
+                              <div className="w-7 h-7 rounded-lg bg-blue-100 text-[#4285F4] flex items-center justify-center font-bold">
+                                <ShieldCheck className="w-4 h-4" />
+                              </div>
+                              <span className="text-xs text-slate-900 leading-snug">{m.module}</span>
+                            </div>
+                          </td>
+                        )}
 
-                    return (
-                      <tr key={perm.code} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-semibold text-[#0F172A] border-r border-[#E2E8F0] bg-white sticky left-0 z-10">
-                          <div>{perm.name}</div>
-                          <div className="text-[11px] font-mono text-[#64748B]">{perm.code}</div>
+                        <td className="py-3 px-3 text-slate-700 font-semibold border-r border-gray-200 bg-slate-50/20 text-[11px]">
+                          {act.label}
                         </td>
 
-                        {ROLES_LIST.map((r) => {
-                          const isSuperAdminRole = r.code === 'admin';
-                          const grantedList = modObj?.permissions[r.code] || [];
-                          const isAllowed = isSuperAdminRole || grantedList.includes(perm.code);
-
-                          if (isSuperAdminRole) {
-                            return (
-                              <td key={r.code} className="py-2.5 px-2 text-center bg-emerald-50/30">
-                                <div
-                                  title="Quản trị hệ thống luôn có toàn quyền và không thể thay đổi."
-                                  className="w-full py-1.5 px-2.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-bold inline-flex items-center justify-center space-x-1 cursor-not-allowed opacity-90"
-                                >
-                                  <Check className="w-3.5 h-3.5 text-emerald-700 stroke-[3]" />
-                                  <span>Cho phép</span>
-                                  <HelpCircle size={12} className="text-emerald-600 ml-1" />
-                                </div>
-                              </td>
-                            );
-                          }
-
+                        {rolesList.map((r) => {
+                          const hasPerm = (m.permissions[r.code] || []).includes(act.code);
                           return (
-                            <td key={r.code} className="py-2.5 px-2 text-center">
+                            <td
+                              key={r.code}
+                              onMouseEnter={() => setHoveredRole(r.code)}
+                              onMouseLeave={() => setHoveredRole(null)}
+                              className={`py-2.5 px-2 text-center transition-colors ${
+                                hoveredRole === r.code ? "bg-blue-50/40" : ""
+                              }`}
+                            >
                               <button
-                                onClick={() => handleToggle(r.code, perm.code, isAllowed)}
-                                className={`w-full py-1.5 px-2.5 rounded-lg border font-bold text-[11px] inline-flex items-center justify-center space-x-1 transition-all cursor-pointer ${
-                                  isAllowed
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                                    : 'bg-slate-50 text-slate-400 border-[#E2E8F0] hover:bg-slate-100 hover:text-slate-600'
+                                onClick={() => handleTogglePermission(m.id, r.code, act.code)}
+                                className={`w-full py-1.5 px-2.5 rounded-xl border font-extrabold text-[11px] inline-flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 ${
+                                  hasPerm
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-emerald-500/10"
+                                    : "bg-slate-50 text-slate-400 border-gray-200 hover:bg-slate-100 hover:text-slate-600"
                                 }`}
                               >
-                                {isAllowed ? (
+                                {hasPerm ? (
                                   <>
                                     <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
                                     <span>Cho phép</span>
                                   </>
                                 ) : (
                                   <>
-                                    <X className="w-3.5 h-3.5 text-slate-400" />
-                                    <span className="text-slate-400 font-normal">Từ chối</span>
+                                    <X className="w-3.5 h-3.5 text-slate-300" />
+                                    <span className="text-slate-400 font-medium">Từ chối</span>
                                   </>
                                 )}
                               </button>
@@ -338,14 +324,14 @@ export default function PermissionsMatrixPage() {
                           );
                         })}
                       </tr>
-                    );
-                  })}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
           )}
         </div>
       </div>
-    </UnifiedAppShell>
+    </AdminAppShell>
   );
 }

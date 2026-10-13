@@ -167,6 +167,10 @@ def ensure_schema(engine: Engine, metadata) -> None:
     with engine.begin() as connection:
         added = add_missing_columns(connection)
         synced = sync_legacy_user_roles(connection)
+        from app.db.rbac_catalog import ensure_permission_catalog
+        granted = ensure_permission_catalog(connection)
+    if granted:
+        logger.info("Schema bootstrap added %d default grants for new permission codes", granted)
     if added:
         logger.info("Schema bootstrap added columns: %s", ", ".join(added))
     if synced:

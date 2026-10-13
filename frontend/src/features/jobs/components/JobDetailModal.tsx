@@ -14,7 +14,6 @@ interface JobDetailModalProps {
   onApply: (job: Job) => void;
   isSaved?: boolean;
   onToggleSave?: (jobId: string) => void;
-  isApplied?: boolean;
 }
 
 export function JobDetailModal({
@@ -24,7 +23,6 @@ export function JobDetailModal({
   onApply,
   isSaved = false,
   onToggleSave,
-  isApplied = false,
 }: JobDetailModalProps) {
   if (!isOpen || !job) return null;
 
@@ -35,43 +33,43 @@ export function JobDetailModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="relative bg-gradient-to-r from-blue-50 via-sky-50 to-white p-6 sm:p-8 text-slate-900 border-b border-blue-100 shrink-0">
+        <div className="relative bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 p-6 sm:p-8 text-white shrink-0">
           <button
             onClick={onClose}
-            className="absolute top-5 right-5 w-9 h-9 rounded-full bg-white/80 hover:bg-white text-slate-500 hover:text-slate-700 border border-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+            className="absolute top-5 right-5 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
 
           <div className="flex flex-wrap items-center gap-2 mb-3">
-            <span className="px-3 py-1 bg-blue-100/80 text-blue-800 text-xs font-bold rounded-full border border-blue-200 flex items-center gap-1.5">
-              <Building className="w-3.5 h-3.5 text-blue-600" />
+            <span className="px-3 py-1 bg-blue-500/20 text-blue-300 text-xs font-bold rounded-full border border-blue-400/30 flex items-center gap-1.5">
+              <Building className="w-3.5 h-3.5" />
               {job.department}
             </span>
-            <span className="px-3 py-1 bg-emerald-100/80 text-emerald-800 text-xs font-bold rounded-full border border-emerald-200 flex items-center gap-1.5">
-              <Briefcase className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-full border border-emerald-400/30 flex items-center gap-1.5">
+              <Briefcase className="w-3.5 h-3.5" />
               {job.employmentType}
             </span>
-            <span className="px-3 py-1 bg-indigo-100/80 text-indigo-800 text-xs font-bold rounded-full border border-indigo-200">
+            <span className="px-3 py-1 bg-purple-500/20 text-purple-300 text-xs font-bold rounded-full border border-purple-400/30">
               Tuyển dụng nội bộ
             </span>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight mb-2">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight mb-2">
             {job.title}
           </h2>
 
-          <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-slate-600 font-medium">
+          <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-slate-300 font-medium">
             <div className="flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-blue-600" />
+              <MapPin className="w-4 h-4 text-blue-400" />
               <span>{job.location}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-emerald-600" />
+              <Users className="w-4 h-4 text-emerald-400" />
               <span>{job.openings}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <Calendar className="w-4 h-4 text-amber-600" />
+              <Calendar className="w-4 h-4 text-amber-400" />
               <span>Hạn nộp: {job.deadline}</span>
             </div>
           </div>
@@ -147,20 +145,28 @@ export function JobDetailModal({
             )}
           </div>
 
-          {/* Benefits declared on the posting (S4-02 AC1) — never hardcoded policy text */}
-          {job.benefits && job.benefits.length > 0 && (
-            <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/60">
-              <h4 className="font-bold text-amber-900 text-xs uppercase tracking-wider mb-2">Quyền lợi</h4>
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-amber-900 font-medium">
-                {job.benefits.map((b, idx) => (
-                  <li key={idx} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                    <span>{b}</span>
-                  </li>
-                ))}
-              </ul>
+          {/* Employee Mobility Benefits */}
+          <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/60">
+            <h4 className="font-bold text-amber-900 text-xs uppercase tracking-wider mb-2">Quyền lợi điều chuyển nội bộ</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-amber-900 font-medium">
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                <span>Bảo lưu thâm niên & Quỹ phép năm</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                <span>Thưởng điều chuyển vị trí chuyên môn</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                <span>Đào tạo Onboarding 1-on-1 từ Trưởng nhóm</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                <span>Xét duyệt tăng dải lương theo khung mới</span>
+              </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Modal Footer / Actions */}
@@ -183,27 +189,16 @@ export function JobDetailModal({
             >
               Đóng
             </button>
-            {isApplied ? (
-              <span className="px-5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-1.5 shadow-xs">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Bạn đã nộp hồ sơ vị trí này</span>
-              </span>
-            ) : job.isExpired ? (
-              <span className="px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
-                Tin tuyển dụng đã hết hạn nhận hồ sơ.
-              </span>
-            ) : (
-              <button
-                onClick={() => {
-                  onClose();
-                  onApply(job);
-                }}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-lg shadow-blue-500/25 transition-all flex items-center gap-2 cursor-pointer"
-              >
-                <Send className="w-4 h-4" />
-                <span>Ứng tuyển nội bộ ngay</span>
-              </button>
-            )}
+            <button
+              onClick={() => {
+                onClose();
+                onApply(job);
+              }}
+              className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-lg shadow-blue-500/25 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Send className="w-4 h-4" />
+              <span>Ứng tuyển nội bộ ngay</span>
+            </button>
           </div>
         </div>
       </div>

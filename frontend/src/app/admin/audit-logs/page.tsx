@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import { ScrollText, Search, RefreshCw, Eye, X, ShieldAlert, CheckCircle2, AlertTriangle, Filter } from "lucide-react";
-import { apiRequest } from "@/lib/api-client";
+import { authService } from "@/features/auth/services/auth.service";
 
 interface AuditLog {
   id: number;
@@ -25,15 +26,19 @@ export default function AuditLogsPage() {
   const fetchLogs = async () => {
     setIsLoading(true);
     try {
-      const data = await apiRequest<AuditLog[]>("/admin/audit-logs");
-      setLogs(data || []);
+      const token = authService.getToken();
+      const res = await fetch("http://localhost:8000/api/v1/admin/audit-logs", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data || []);
+      }
     } catch (err) {
-      // Fallback empty list on connection error
     } finally {
       setIsLoading(false);
     }
   };
-
 
   useEffect(() => {
     fetchLogs();
@@ -47,7 +52,7 @@ export default function AuditLogsPage() {
   );
 
   return (
-    <>
+    <AdminAppShell activeTab="audit-logs">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -182,6 +187,6 @@ export default function AuditLogsPage() {
           </div>
         </div>
       )}
-    </>
+    </AdminAppShell>
   );
 }

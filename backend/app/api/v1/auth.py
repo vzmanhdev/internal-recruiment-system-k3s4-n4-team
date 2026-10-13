@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,26 @@ router = APIRouter()
 
 # Pre-computed bcrypt hash used to equalise login timing for unknown emails.
 _DUMMY_PASSWORD_HASH = hash_password("timing-equaliser-not-a-real-password")
+
+# HttpOnly cookie carrying the access token for *page navigation checks only* (frontend proxy → /auth/route-access).
+# API calls keep using the Authorization header. Path "/" so the browser also sends it to the Next.js server.
+ROUTE_ACCESS_COOKIE = "ats_access"
+
+
+def _set_route_cookie(resp: JSONResponse, access_token: str) -> None:
+    resp.set_cookie(
+        key=ROUTE_ACCESS_COOKIE,
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        secure=settings.is_production,
+        path="/",
+        max_age=settings.SESSION_ABSOLUTE_TIMEOUT_HOURS * 3600,
+    )
+
+
+def _clear_route_cookie(resp: JSONResponse) -> None:
+    resp.delete_cookie(ROUTE_ACCESS_COOKIE, path="/")
 
 @router.post(
     "/register",
@@ -173,9 +193,9 @@ def _login(user_in: UserLogin, request: Request, db: Session, client_id: str) ->
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
                 "detail": f"Tài khoản hoặc mật khẩu không chính xác. Bạn đã nhập sai {failed_count}/{login_guard.MAX_FAILURES} lần. Nếu nhập sai {login_guard.MAX_FAILURES} lần liên tiếp sẽ bị tạm khóa {login_guard.LOCK_MINUTES} phút.",
-                "field_errors": {
-                    "password": f"Tài khoản hoặc mật khẩu không chính xác (Đã sai {failed_count}/{login_guard.MAX_FAILURES} lần)."
-                }
+                # "field_errors": {
+                #     "password": f"Tài khoản hoặc mật khẩu không chính xác (Đã sai {failed_count}/{login_guard.MAX_FAILURES} lần)."
+                # }
             }
         )
 
@@ -261,10 +281,12 @@ def _login(user_in: UserLogin, request: Request, db: Session, client_id: str) ->
     )
 
     user_dict = user.to_dict()
-    from app.services.rbac_service import get_user_roles, get_effective_permissions
+    from app.services.rbac_service import get_user_roles, get_effective_permissions, landing_path
     user_dict["roles"] = get_user_roles(db, user)
     user_dict["permissions"] = get_effective_permissions(db, user)
-    redirect_path = user.get_redirect_url()
+    user_dict["redirect_url"] = landing_path(db, user)
+    from app.services.rbac_service import landing_path
+    redirect_path = landing_path(db, user)
 
     # Create response with HttpOnly Cookie for Refresh Token
     resp = JSONResponse(content={
@@ -283,6 +305,7 @@ def _login(user_in: UserLogin, request: Request, db: Session, client_id: str) ->
         path="/api/v1/auth",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
     )
+    _set_route_cookie(resp, access_token)
 
     return resp
 
@@ -420,15 +443,16 @@ def refresh_token_endpoint(
     )
 
     user_dict = user.to_dict()
-    from app.services.rbac_service import get_user_roles, get_effective_permissions
+    from app.services.rbac_service import get_user_roles, get_effective_permissions, landing_path
     user_dict["roles"] = get_user_roles(db, user)
     user_dict["permissions"] = get_effective_permissions(db, user)
+    user_dict["redirect_url"] = landing_path(db, user)
 
     resp = JSONResponse(content={
         "access_token": new_access_token,
         "refresh_token": new_refresh_token,
         "token_type": "bearer",
-        "redirect_url": user.get_redirect_url(),
+        "redirect_url": landing_path(db, user),
         "user": user_dict
     })
     resp.set_cookie(
@@ -440,6 +464,7 @@ def refresh_token_endpoint(
         path="/api/v1/auth",
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
     )
+    _set_route_cookie(resp, new_access_token)
     return resp
 
 
@@ -480,6 +505,7 @@ def logout(
 
     resp = JSONResponse(content={"success": True, "message": "Đăng xuất thành công."})
     resp.delete_cookie("refresh_token", path="/api/v1/auth")
+    _clear_route_cookie(resp)
     return resp
 
 
@@ -528,6 +554,7 @@ def logout_all_sessions(
 
     resp = JSONResponse(content={"success": True, "message": "Đã đăng xuất thành công khỏi tất cả các thiết bị."})
     resp.delete_cookie("refresh_token", path="/api/v1/auth")
+    _clear_route_cookie(resp)
     return resp
 
 
@@ -741,6 +768,7 @@ def forgot_password_legacy(
     db: Session = Depends(get_db)
 ):
     client_ip = request.client.host if request.client else "127.0.0.1"
+    return PasswordResetService.request_reset(db=db, email=req.email, client_ip=client_ip)
 
 
 def require_admin(authorization: Optional[str], db: Session) -> User:
@@ -844,10 +872,45 @@ def get_me(
 ):
     user, _ = deps_data
     user_dict = user.to_dict()
-    from app.services.rbac_service import get_user_roles, get_effective_permissions
+    from app.services.rbac_service import get_user_roles, get_effective_permissions, landing_path
     user_dict["roles"] = get_user_roles(db, user)
     user_dict["permissions"] = get_effective_permissions(db, user)
+    user_dict["redirect_url"] = landing_path(db, user)
     return user_dict
+
+@router.get("/route-access")
+def route_access(
+    request: Request,
+    required_all: Optional[str] = Query(None, alias="all"),
+    required_any: Optional[str] = Query(None, alias="any"),
+    workspace: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    """Authorization decision for one page navigation (used by the frontend proxy before rendering).
+
+    401 → not authenticated / session revoked or expired (the page redirects to login).
+    403 → authenticated but missing the route's required permissions (the page renders a real HTTP 403).
+    The token comes from the Authorization header or the HttpOnly ``ats_access`` cookie.
+    """
+    from app.api.deps import authenticate_access_token
+    from app.services import route_access as policy
+
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+    token = token or request.cookies.get(ROUTE_ACCESS_COOKIE)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail={"code": "NOT_AUTHENTICATED", "message": "Vui lòng đăng nhập để tiếp tục."})
+    user, _session = authenticate_access_token(token, db, allow_expired_jwt=True)
+    ws = workspace if workspace in policy.WORKSPACE_LABELS else None
+    if not policy.decide(db, user, policy.parse_codes(required_all), policy.parse_codes(required_any)):
+        import logging
+        logging.getLogger("app.authz").info("route access denied user=%s workspace=%s", user.id, ws)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=policy.denial(ws))
+    return {"allowed": True}
+
 
 @router.put("/me", response_model=UserResponse)
 def update_me(

@@ -18,3 +18,5 @@ from app.models.master_data import (
     CompetencyFramework, CompetencyCriterion, InterviewQuestion, OnboardingTemplate, StoredFile,
     ApplicationNote, TalentPoolEntry, SavedFilter, SlaRule, RecruitmentCost, AskedQuestion,
 )
+from app.models.import_job import ImportJob
+

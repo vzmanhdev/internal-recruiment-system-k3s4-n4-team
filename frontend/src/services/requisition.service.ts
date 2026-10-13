@@ -1,5 +1,16 @@
 import { apiRequest } from "@/lib/api-client";
 
+export interface RequisitionApprovalLog {
+  id: number;
+  requisition_id: number;
+  approver_id?: number | null;
+  approver_name?: string | null;
+  step_name?: string | null;
+  action: string;
+  comment?: string | null;
+  created_at?: string;
+}
+
 export interface RequisitionItem {
   id: number;
   code: string;
@@ -26,7 +37,15 @@ export interface RequisitionItem {
   creator_name?: string;
   created_at?: string;
   updated_at?: string;
-  approval_logs?: any[];
+  approval_logs?: RequisitionApprovalLog[];
+  approval_chain?: string[];
+  approval_step_index?: number;
+  days_open?: number | null;
+  days_remaining?: number | null;
+  is_overdue?: boolean;
+  job_title_name?: string | null;
+  salary_justification?: string | null;
+  recruiters?: Array<{ recruiter_id: number; full_name: string; assignment_type: string }>;
 }
 
 export const requisitionService = {
@@ -77,6 +96,11 @@ export const requisitionService = {
 
   async copyRequisition(id: number): Promise<RequisitionItem> {
     return apiRequest<RequisitionItem>(`/requisitions/${id}/copy`, { method: "POST" });
+  },
+
+  /** Nudge the approvers of the current step (creator only, once per day). */
+  async remind(id: number): Promise<{ sent: number }> {
+    return apiRequest(`/requisitions/${id}/remind`, { method: "POST" });
   },
 
   async deleteDraft(id: number): Promise<{ success: boolean }> {

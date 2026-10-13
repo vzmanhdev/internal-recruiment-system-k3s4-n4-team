@@ -12,7 +12,7 @@ from app.models.application import JobApplication
 from app.models.interview import InterviewSchedule
 from app.models.offer_onboarding import JobOffer
 from app.models.hr import HeadcountBudget, Department, RecruiterAssignment
-from app.api.deps import require_roles_dep
+from app.api.deps import require_permission
 from app.services import reporting
 
 router = APIRouter()
@@ -33,7 +33,7 @@ def _parse_day(value):
 
 @router.get("/overview")
 def get_analytics_overview(
-    current_user: User = Depends(require_roles_dep({"hr_manager", "approver"})),
+    current_user: User = Depends(require_permission("report:view")),
     db: Session = Depends(get_db),
 ):
     """HR dashboard. Every figure is aggregated from database rows; nothing is synthesised."""
@@ -156,25 +156,24 @@ from app.models.master_data import RecruitmentCost  # noqa: E402
 from app.models.referral_eval import CandidateEvaluation  # noqa: E402
 from app.services import reporting  # noqa: E402
 
-REPORT_ROLES = {"hr_manager", "approver"}
 
 
 @router.get("/trends")
-def get_trends(current_user: User = Depends(require_roles_dep(REPORT_ROLES)), db: Session = Depends(get_db)):
+def get_trends(current_user: User = Depends(require_permission("report:view")), db: Session = Depends(get_db)):
     """S8-05 AC2: applications per week and positions closed per month."""
     return {"weekly_applications": reporting.weekly_applications(db), "monthly_closed_positions": reporting.monthly_closed_positions(db)}
 
 
 @router.get("/funnel")
 def get_funnel(job_id: _Optional[int] = None, department_id: _Optional[int] = None, date_from: _Optional[date] = None,
-               date_to: _Optional[date] = None, current_user: User = Depends(require_roles_dep(REPORT_ROLES)),
+               date_to: _Optional[date] = None, current_user: User = Depends(require_permission("report:view")),
                db: Session = Depends(get_db)):
     return reporting.funnel(db, job_id=job_id, department_id=department_id, date_from=date_from, date_to=date_to)
 
 
 @router.get("/hiring-metrics")
 def get_hiring_metrics(date_from: _Optional[date] = None, date_to: _Optional[date] = None, export: bool = False,
-                       current_user: User = Depends(require_roles_dep(REPORT_ROLES)), db: Session = Depends(get_db)):
+                       current_user: User = Depends(require_permission("report:view")), db: Session = Depends(get_db)):
     data = reporting.hiring_metrics(db, date_from, date_to)
     if export:
         buf = reporting.to_xlsx({"Theo phong ban": data["by_department"], "Theo chuc danh": data["by_job_title"]})
@@ -185,7 +184,7 @@ def get_hiring_metrics(date_from: _Optional[date] = None, date_to: _Optional[dat
 
 @router.get("/sources")
 def get_source_effectiveness(date_from: _Optional[date] = None, date_to: _Optional[date] = None, export: bool = False,
-                             current_user: User = Depends(require_roles_dep(REPORT_ROLES)), db: Session = Depends(get_db)):
+                             current_user: User = Depends(require_permission("report:view")), db: Session = Depends(get_db)):
     rows = reporting.source_effectiveness(db, date_from, date_to)
     if export:
         buf = reporting.to_xlsx({"Nguon ung vien": rows})
@@ -202,7 +201,7 @@ class CostIn(BaseModel):
 
 
 @router.get("/costs")
-def list_costs(requisition_id: _Optional[int] = None, current_user: User = Depends(require_roles_dep({"hr_manager"})),
+def list_costs(requisition_id: _Optional[int] = None, current_user: User = Depends(require_permission("report:manage")),
                db: Session = Depends(get_db)):
     q = db.query(RecruitmentCost)
     if requisition_id:
@@ -211,7 +210,7 @@ def list_costs(requisition_id: _Optional[int] = None, current_user: User = Depen
 
 
 @router.post("/costs", status_code=201)
-def add_cost(payload: CostIn, current_user: User = Depends(require_roles_dep({"hr_manager"})), db: Session = Depends(get_db)):
+def add_cost(payload: CostIn, current_user: User = Depends(require_permission("report:manage")), db: Session = Depends(get_db)):
     """S8-08 AC2: manually entered recruitment costs."""
     if not db.query(JobRequisition.id).filter(JobRequisition.id == payload.requisition_id).first():
         raise HTTPException(status_code=404, detail="Không tìm thấy tờ trình")
@@ -221,7 +220,7 @@ def add_cost(payload: CostIn, current_user: User = Depends(require_roles_dep({"h
 
 
 @router.get("/hiring-manager")
-def hiring_manager_dashboard(current_user: User = Depends(require_roles_dep({"hiring_manager", "manager"})),
+def hiring_manager_dashboard(current_user: User = Depends(require_permission("workspace:manager:access")),
                              db: Session = Depends(get_db)):
     """S8-06: per position owned by this hiring manager — stage counts, upcoming interviews,
     candidates waiting for my feedback, days left until the needed-by date."""

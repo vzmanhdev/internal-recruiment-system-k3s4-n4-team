@@ -52,6 +52,10 @@ export const referralService = {
     application_id: number;
     interview_id?: number;
     overall_score?: number;
+    technical_score?: number;
+    culture_fit_score?: number;
+    communication_score?: number;
+    strengths?: string;
     recommendation: "hire" | "hold" | "reject";
     comments?: string;
     ratings?: Array<{ criterion_id: string; score: number; comment?: string }>;

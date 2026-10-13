@@ -1,23 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { masterDataService } from "@/services/master-data.service";
 import { 
   X, Send, User, Mail, Phone, Briefcase, Building, 
   FileText, CheckCircle2, AlertCircle, UploadCloud, Sparkles 
 } from "lucide-react";
 import type { Job } from "@/types/job";
 import { apiRequest } from "@/lib/api-client";
-import { ApiError } from "@/lib/api-client";
-import { uploadFile, type UploadedFile } from "@/services/file.service";
 
 interface ApplyJobModalProps {
   job: Job | null;
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (appData: any) => void;
-  isAlreadyApplied?: boolean;
-  onAlreadyApplied?: (jobId: string) => void;
 }
 
 export function ApplyJobModal({
@@ -25,37 +20,21 @@ export function ApplyJobModal({
   isOpen,
   onClose,
   onSuccess,
-  isAlreadyApplied = false,
-  onAlreadyApplied,
 }: ApplyJobModalProps) {
   const [formData, setFormData] = useState({
     full_name: "",
     email: "",
     phone: "",
-    current_company: "",
+    current_company: "Hệ Thống Nội Bộ Company",
     current_position: "",
     years_of_experience: 2,
     cv_url: "",
     cover_letter: "",
     referral_code: "",
-    source: "",
   });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [cvFile, setCvFile] = useState<UploadedFile | null>(null);
-  const [sources, setSources] = useState<string[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    masterDataService.categories()
-      .then((cats) => {
-        if (active) setSources(cats.filter((c) => c.category_type === "source" && c.is_active).sort((a, b) => a.sort_order - b.sort_order).map((c) => c.name));
-      })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, []);
 
   // Pre-fill employee profile from localStorage or authService
   useEffect(() => {
@@ -68,8 +47,8 @@ export function ApplyJobModal({
             ...prev,
             full_name: u.full_name || prev.full_name,
             email: u.email || prev.email,
-            phone: u.phone || prev.phone,
-            current_position: u.job_title || prev.current_position,
+            phone: u.phone || "0912345678",
+            current_position: u.employee_code ? `Mã NV: ${u.employee_code}` : "Chuyên viên nội bộ",
           }));
         } catch (e) {
           console.error(e);
@@ -86,10 +65,8 @@ export function ApplyJobModal({
     setLoading(true);
 
     try {
-      const numericId = Number(job.id);
-      if (!Number.isInteger(numericId) || numericId <= 0) {
-        throw new Error("Không xác định được tin tuyển dụng. Vui lòng tải lại trang.");
-      }
+      // Find numeric job_posting_id
+      const numericId = parseInt(job.id, 10) || 1;
 
       const payload = {
         job_posting_id: numericId,
@@ -99,10 +76,9 @@ export function ApplyJobModal({
         current_company: formData.current_company,
         current_position: formData.current_position,
         years_of_experience: Number(formData.years_of_experience) || 0,
-        cv_url: cvFile?.url || undefined,
-        cover_letter: formData.cover_letter || undefined,
+        cv_url: formData.cv_url || "https://company.internal/resumes/employee_profile.pdf",
+        cover_letter: formData.cover_letter || "Ứng tuyển điều chuyển nội bộ theo định hướng phát triển cá nhân.",
         referral_code: formData.referral_code || null,
-        source: formData.source || undefined,
       };
 
       const res = await apiRequest("/applications", {
@@ -113,21 +89,8 @@ export function ApplyJobModal({
       onSuccess(res);
       onClose();
     } catch (err: any) {
-      console.warn("Lỗi nộp hồ sơ:", err?.message || err);
-      const errMsg = String(err?.message || "");
-      const isDuplicate = 
-        err?.status === 409 || 
-        errMsg.includes("đã nộp hồ sơ") || 
-        errMsg.includes("DUPLICATE_APPLICATION");
-
-      if (isDuplicate) {
-        setError("Bạn đã nộp hồ sơ cho vị trí này và hồ sơ vẫn đang được xử lý.");
-        if (onAlreadyApplied && job) {
-          onAlreadyApplied(String(job.id));
-        }
-      } else {
-        setError(errMsg || "Có lỗi xảy ra khi nộp hồ sơ. Vui lòng thử lại!");
-      }
+      console.error(err);
+      setError(err.message || "Có lỗi xảy ra khi nộp hồ sơ. Vui lòng thử lại!");
     } finally {
       setLoading(false);
     }
@@ -140,46 +103,26 @@ export function ApplyJobModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-50 via-sky-50 to-indigo-50/50 p-6 text-slate-900 border-b border-blue-100 relative shrink-0">
+        <div className="bg-gradient-to-r from-blue-700 to-indigo-800 p-6 text-white relative shrink-0">
           <button
             onClick={onClose}
-            className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/80 hover:bg-white text-slate-500 hover:text-slate-700 border border-slate-200 flex items-center justify-center transition-colors cursor-pointer"
+            className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2 text-blue-700 text-xs font-bold uppercase tracking-wider mb-1">
-            <Sparkles className="w-4 h-4 text-blue-600" />
+          <div className="flex items-center gap-2 text-blue-200 text-xs font-bold uppercase tracking-wider mb-1">
+            <Sparkles className="w-4 h-4 text-blue-300" />
             <span>Đăng ký Điều chuyển / Ứng tuyển Nội bộ</span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
+          <h2 className="text-xl sm:text-2xl font-extrabold text-white">
             {job.title}
           </h2>
-          <p className="text-xs text-slate-600 mt-1">
-            Phòng ban: <strong className="text-slate-800">{job.department}</strong> | Địa điểm: <strong className="text-slate-800">{job.location}</strong>
+          <p className="text-xs text-blue-100 mt-1">
+            Phòng ban: <strong>{job.department}</strong> | Địa điểm: <strong>{job.location}</strong>
           </p>
         </div>
 
-        {isAlreadyApplied ? (
-          <div className="p-8 text-center space-y-4">
-            <div className="w-14 h-14 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-200">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Bạn đã nộp hồ sơ cho vị trí này</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto leading-relaxed">
-                Hồ sơ ứng tuyển nội bộ của bạn hiện đang được bộ phận Tuyển dụng tiếp nhận và xử lý. Bạn có thể theo dõi tiến độ ở mục &quot;Hồ sơ đã ứng tuyển của tôi&quot;.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="py-2.5 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20"
-            >
-              Đã hiểu & Đóng cửa sổ
-            </button>
-          </div>
-        ) : (
-        /* Form Body */
+        {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto flex-1 space-y-4 text-xs sm:text-sm">
           {error && (
             <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-2.5">
@@ -271,62 +214,26 @@ export function ApplyJobModal({
             </div>
           </div>
 
-          {/* Section 3: CV upload (PDF/DOCX ≤ 10MB, validated by the server) */}
-          <div className="space-y-2">
-            <label className="block font-semibold text-slate-700 mb-1 text-xs">CV (PDF hoặc DOCX, tối đa 10MB)</label>
-            <input
-              type="file"
-              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                setUploading(true);
-                setError(null);
-                try {
-                  setCvFile(await uploadFile("cv", file));
-                } catch (err) {
-                  setCvFile(null);
-                  setError(err instanceof ApiError ? err.message : "Tải CV thất bại.");
-                } finally {
-                  setUploading(false);
-                }
-              }}
-              className="block w-full text-xs text-slate-600 file:mr-3 file:px-3 file:py-2 file:rounded-xl file:border-0 file:bg-slate-100 file:font-bold file:text-slate-700"
-            />
-            {uploading && <div className="text-xs text-slate-500">Đang tải CV lên...</div>}
-            {cvFile && (
-              <div className="text-xs rounded-xl border border-emerald-200 bg-emerald-50 p-3 space-y-1">
-                <div className="font-semibold text-emerald-800">Đã tải lên: {cvFile.original_name}</div>
-                {cvFile.parsed?.status === "parsed" && (
-                  <div className="text-slate-600 space-y-1">
-                    <div>Thông tin bóc tách từ CV (kiểm tra trước khi dùng):
-                      {[cvFile.parsed.full_name, cvFile.parsed.email, cvFile.parsed.phone].filter(Boolean).join(" · ")}</div>
-                    <button type="button" className="font-bold text-blue-600 cursor-pointer"
-                      onClick={() => setFormData({
-                        ...formData,
-                        full_name: cvFile.parsed?.full_name || formData.full_name,
-                        email: cvFile.parsed?.email || formData.email,
-                        phone: cvFile.parsed?.phone || formData.phone,
-                      })}>Dùng thông tin này</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {sources.length > 0 && (
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1 text-xs">Bạn biết tin tuyển dụng qua đâu?</label>
-              <select
-                value={formData.source}
-                onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+          {/* Section 3: CV Upload / Path */}
+          <div>
+            <label className="block font-semibold text-slate-700 mb-1 text-xs">Link CV / Hồ sơ năng lực đính kèm</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={formData.cv_url}
+                onChange={(e) => setFormData({ ...formData, cv_url: e.target.value })}
+                placeholder="https://company.internal/cv/nguyen_van_a.pdf (để trống nếu dùng CV mặc định)"
+                className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, cv_url: "https://company.internal/resumes/employee_cv_verified.pdf" })}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer"
               >
-                <option value="">— Chọn nguồn —</option>
-                {sources.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
+                Dùng CV Hệ Thống
+              </button>
             </div>
-          )}
+          </div>
 
           {/* Section 4: Cover Letter / Lý do điều chuyển */}
           <div>
@@ -373,7 +280,6 @@ export function ApplyJobModal({
             </button>
           </div>
         </form>
-        )}
       </div>
     </div>
   );

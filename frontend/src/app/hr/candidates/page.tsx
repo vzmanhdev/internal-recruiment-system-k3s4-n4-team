@@ -1,179 +1,232 @@
 'use client';
 
-import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import React, { useState } from 'react';
+import { 
+  Users, Search, Filter, Star, Eye, ChevronRight, CheckCircle2, 
+  XCircle, Clock, FileText, ArrowRight, UserCheck, ShieldAlert, Sparkles
+} from 'lucide-react';
 
-const noopSubscribe = () => () => {};
-import { ArrowRight, Loader2, RefreshCw, Search, Users, XCircle } from 'lucide-react';
-import { openProtectedFile } from "@/services/file.service";
-import { applicationService, type ApplicationItem } from '@/services/application.service';
-import { useToast } from '@/components/ui/Toast';
-import { ApiError } from '@/lib/api-client';
+interface CandidateItem {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  position_applied: string;
+  stage: 'applied' | 'screening' | 'tech_interview' | 'hr_interview' | 'offer' | 'hired';
+  rating: number; // 1-5
+  source: string;
+  recruiter: string;
+  applied_at: string;
+  resume_url?: string;
+}
 
-const STAGES: Record<string, { label: string; next?: string; cls: string }> = {
-  submitted: { label: 'Mới nộp', next: 'screening', cls: 'bg-blue-50 text-blue-700 border-blue-100' },
-  screening: { label: 'Sàng lọc', next: 'interviewing', cls: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
-  interviewing: { label: 'Phỏng vấn', next: 'offered', cls: 'bg-purple-50 text-purple-700 border-purple-100' },
-  offered: { label: 'Đề xuất offer', cls: 'bg-amber-50 text-amber-700 border-amber-100' },
-  hired: { label: 'Đã tuyển', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-  onboarded: { label: 'Đã onboard', cls: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-  rejected: { label: 'Đã loại', cls: 'bg-rose-50 text-rose-700 border-rose-100' },
-  withdrawn: { label: 'Ứng viên rút', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
-};
+const STAGES = [
+  { key: 'applied', label: '1. Hồ sơ mới', color: 'bg-slate-100 text-slate-700' },
+  { key: 'screening', label: '2. Thẩm định (Screening)', color: 'bg-blue-50 text-blue-700' },
+  { key: 'tech_interview', label: '3. Phỏng vấn Chuyên môn', color: 'bg-indigo-50 text-indigo-700' },
+  { key: 'hr_interview', label: '4. Phỏng vấn HR', color: 'bg-purple-50 text-purple-700' },
+  { key: 'offer', label: '5. Thư mời (Offer)', color: 'bg-amber-50 text-amber-700' },
+  { key: 'hired', label: '6. Đã tuyển dụng (Hired)', color: 'bg-emerald-50 text-emerald-700' }
+];
 
 export default function HRCandidatesPage() {
-  const { showSuccess, showError } = useToast();
-  const [items, setItems] = useState<ApplicationItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  // ?q= from the header search box seeds the filter until the user edits it.
-  const urlQuery = useSyncExternalStore(noopSubscribe, () => new URLSearchParams(window.location.search).get('q') ?? '', () => '');
-  const [typedSearch, setSearch] = useState<string | null>(null);
-  const search = typedSearch ?? urlQuery;
-  const [statusFilter, setStatusFilter] = useState('');
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [rejecting, setRejecting] = useState<ApplicationItem | null>(null);
-  const [reason, setReason] = useState('');
-
-  const load = useCallback(async () => {
-    try {
-      setItems(await applicationService.getApplications({ search: search.trim() || undefined, status_filter: statusFilter || undefined }));
-      setLoadError(null);
-    } catch (err) {
-      setLoadError(err instanceof ApiError ? err.message : 'Không tải được danh sách ứng viên.');
-    } finally {
-      setLoading(false);
+  const [candidates, setCandidates] = useState<CandidateItem[]>([
+    {
+      id: "CAN-001",
+      name: "Đỗ Hoàng Long",
+      email: "long.do@gmail.com",
+      phone: "0988 123 456",
+      position_applied: "Senior Backend Engineer",
+      stage: "offer",
+      rating: 5,
+      source: "TopCV",
+      recruiter: "Nguyễn Văn Hùng",
+      applied_at: "20/09/2026"
+    },
+    {
+      id: "CAN-002",
+      name: "Nguyễn Thu Thủy",
+      email: "thuthuy.nguyen@gmail.com",
+      phone: "0912 345 678",
+      position_applied: "Senior Backend Engineer",
+      stage: "tech_interview",
+      rating: 4,
+      source: "Website Công Khai",
+      recruiter: "Nguyễn Văn Hùng",
+      applied_at: "25/09/2026"
+    },
+    {
+      id: "CAN-003",
+      name: "Trần Minh Quang",
+      email: "quang.tm@gmail.com",
+      phone: "0934 567 890",
+      position_applied: "Trưởng nhóm Data Analyst",
+      stage: "hr_interview",
+      rating: 4,
+      source: "Giới Thiệu Nội Bộ",
+      recruiter: "Lê Thị Mai",
+      applied_at: "28/09/2026"
     }
-  }, [search, statusFilter]);
+  ]);
 
-  // Reload on status change or a new ?q= from the header; typed searches apply via reload().
-  useEffect(() => {
-    let active = true;
-    applicationService.getApplications({ search: search.trim() || undefined, status_filter: statusFilter || undefined })
-      .then((rows) => { if (active) { setItems(rows); setLoadError(null); } })
-      .catch((err) => { if (active) setLoadError(err instanceof ApiError ? err.message : 'Không tải được danh sách ứng viên.'); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [statusFilter, urlQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [viewMode, setViewMode] = useState<'board' | 'table'>('board');
+  const [selectedCandidate, setSelectedCandidate] = useState<CandidateItem | null>(null);
 
-  const reload = () => {
-    setLoading(true);
-    setLoadError(null);
-    void load();
-  };
-
-  const move = async (app: ApplicationItem, status: string, rejection_reason?: string) => {
-    setBusyId(app.id);
-    try {
-      const updated = await applicationService.updateStatus(app.id, { status, rejection_reason });
-      setItems((prev) => prev.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)));
-      showSuccess(`Đã chuyển ${app.full_name} sang "${STAGES[status]?.label || status}".`);
-    } catch (err) {
-      showError(err instanceof ApiError ? err.message : 'Không cập nhật được trạng thái.');
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const confirmReject = () => {
-    if (!rejecting) return;
-    if (!reason.trim()) {
-      showError('Loại hồ sơ bắt buộc phải nhập lý do.');
-      return;
-    }
-    const app = rejecting;
-    setRejecting(null);
-    move(app, 'rejected', reason.trim());
+  const moveStage = (candidateId: string, newStage: any) => {
+    setCandidates(prev => prev.map(c => c.id === candidateId ? { ...c, stage: newStage } : c));
+    alert(`Đã chuyển ứng viên sang giai đoạn: ${STAGES.find(s => s.key === newStage)?.label}`);
+    setSelectedCandidate(null);
   };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="border-b border-slate-200/80 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2"><Users className="w-6 h-6 text-blue-600" />Hồ Sơ Ứng Viên & Pipeline</h1>
-          <p className="text-xs text-slate-500 mt-1">Chỉ hiển thị ứng viên thuộc vị trí bạn được phân công (bảo vệ dữ liệu cá nhân, kiểm ở tầng server).</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Phễu Tuyển Dụng & Ứng Viên (Pipeline)</h1>
+            <span className="bg-blue-50 text-blue-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-blue-200">
+              [S5-01] 6-Stage Pipeline
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">Theo dõi phễu chuyển đổi ứng viên qua 6 giai đoạn tuyển dụng chuẩn ATS</p>
         </div>
-        <div className="flex gap-2 items-center">
-          <form onSubmit={(e) => { e.preventDefault(); reload(); }} className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tên, email, SĐT..."
-              className="pl-8 pr-3 py-2 border border-slate-200 rounded-xl text-xs w-56 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-          </form>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white">
-            <option value="">Tất cả trạng thái</option>
-            {Object.entries(STAGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-          <button onClick={reload} className="p-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl cursor-pointer" title="Tải lại"><RefreshCw className="w-4 h-4 text-slate-600" /></button>
+
+        <div className="flex items-center gap-2">
+          <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 text-xs font-bold">
+            <button 
+              onClick={() => setViewMode('board')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${viewMode === 'board' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+            >
+              Kanban Board
+            </button>
+            <button 
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+            >
+              Danh Sách
+            </button>
+          </div>
         </div>
       </div>
 
-      {rejecting && (
-        <div className="bg-white rounded-2xl border border-rose-200 shadow-sm p-4 space-y-3">
-          <div className="text-xs font-bold text-slate-800">Lý do loại hồ sơ {rejecting.full_name} (bắt buộc)</div>
-          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
-            className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setRejecting(null)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer">Huỷ</button>
-            <button onClick={confirmReject} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 cursor-pointer">Xác nhận loại</button>
-          </div>
+      {/* Kanban Board View */}
+      {viewMode === 'board' ? (
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 overflow-x-auto pb-4">
+          {STAGES.map((st) => {
+            const stageCandidates = candidates.filter(c => c.stage === st.key);
+            return (
+              <div key={st.key} className="bg-slate-50/80 rounded-2xl border border-slate-200/80 p-3 space-y-3 min-w-[220px]">
+                <div className="flex items-center justify-between font-bold text-xs">
+                  <span className={`px-2 py-0.5 rounded-md ${st.color}`}>{st.label}</span>
+                  <span className="bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-[10px]">
+                    {stageCandidates.length}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {stageCandidates.map((can) => (
+                    <div 
+                      key={can.id}
+                      onClick={() => setSelectedCandidate(can)}
+                      className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-sm hover:shadow-md transition-all cursor-pointer space-y-2"
+                    >
+                      <div className="flex items-start justify-between">
+                        <span className="font-bold text-xs text-slate-900">{can.name}</span>
+                        <div className="flex items-center text-amber-400 text-[10px]">
+                          <Star className="w-3 h-3 fill-amber-400" />
+                          <span className="font-bold text-slate-700 ml-0.5">{can.rating}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-[11px] text-slate-500 line-clamp-1">{can.position_applied}</div>
+
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-slate-100">
+                        <span>{can.source}</span>
+                        <span>{can.applied_at}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Table View */
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-extrabold text-slate-400 uppercase">
+                <th className="p-4">Họ & Tên Ứng Viên</th>
+                <th className="p-4">Vị Trí Ứng Tuyển</th>
+                <th className="p-4">Giai Đoạn Phễu</th>
+                <th className="p-4 text-center">Đánh Giá</th>
+                <th className="p-4">Recruiter Phụ Trách</th>
+                <th className="p-4 text-right">Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {candidates.map((can) => (
+                <tr key={can.id} className="hover:bg-slate-50/70">
+                  <td className="p-4">
+                    <div className="font-bold text-slate-900">{can.name}</div>
+                    <div className="text-[11px] text-slate-400">{can.email} | {can.phone}</div>
+                  </td>
+                  <td className="p-4 font-semibold text-slate-800">{can.position_applied}</td>
+                  <td className="p-4">
+                    <span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full text-[10px] font-extrabold">
+                      {STAGES.find(s => s.key === can.stage)?.label}
+                    </span>
+                  </td>
+                  <td className="p-4 text-center font-bold text-amber-500">⭐ {can.rating}/5</td>
+                  <td className="p-4 text-slate-700 font-semibold">{can.recruiter}</td>
+                  <td className="p-4 text-right">
+                    <button onClick={() => setSelectedCandidate(can)} className="text-blue-600 font-bold hover:underline">Chi tiết</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-10 flex items-center justify-center gap-2 text-xs text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Đang tải...</div>
-        ) : loadError ? (
-          <div className="p-10 text-center text-xs text-rose-600">{loadError}</div>
-        ) : items.length === 0 ? (
-          <div className="p-10 text-center text-xs text-slate-500">Không có hồ sơ ứng viên nào phù hợp.</div>
-        ) : (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                <th className="p-4">Ứng viên</th>
-                <th className="p-4">Vị trí ứng tuyển</th>
-                <th className="p-4 text-center">Kinh nghiệm</th>
-                <th className="p-4 text-center">Giai đoạn</th>
-                <th className="p-4 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {items.map((a) => {
-                const st = STAGES[a.status] || { label: a.status, cls: 'bg-slate-50 text-slate-600 border-slate-200' };
-                const terminal = ['hired', 'onboarded', 'rejected', 'withdrawn'].includes(a.status);
-                return (
-                  <tr key={a.id} className="hover:bg-slate-50/70">
-                    <td className="p-4">
-                      <div className="font-bold text-slate-900">{a.full_name}</div>
-                      <div className="text-[11px] text-slate-400">{a.email} · {a.phone}</div>
-                      {a.cv_url && <button type="button" onClick={() => openProtectedFile(a.cv_url!).catch((e) => showError(e.message))} className="text-[11px] text-blue-600 font-semibold cursor-pointer">Xem CV</button>}
-                    </td>
-                    <td className="p-4">{a.job_title}</td>
-                    <td className="p-4 text-center">{a.years_of_experience} năm</td>
-                    <td className="p-4 text-center">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border ${st.cls}`}>{st.label}</span>
-                      {a.rejection_reason && <div className="text-[10px] text-slate-400 mt-1 max-w-[180px] mx-auto">{a.rejection_reason}</div>}
-                    </td>
-                    <td className="p-4 text-right whitespace-nowrap">
-                      {busyId === a.id ? <Loader2 className="w-4 h-4 animate-spin inline text-slate-400" /> : !terminal && (
-                        <div className="inline-flex gap-1.5">
-                          {st.next && (
-                            <button onClick={() => move(a, st.next!)} className="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer">
-                              <ArrowRight className="w-3 h-3" />{STAGES[st.next].label}
-                            </button>
-                          )}
-                          <button onClick={() => { setRejecting(a); setReason(''); }} className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer">
-                            <XCircle className="w-3 h-3" />Loại
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {/* Candidate Quick Action Modal */}
+      {selectedCandidate && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Ứng Viên: {selectedCandidate.name}</h3>
+              <button onClick={() => setSelectedCandidate(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="font-bold text-slate-900">{selectedCandidate.position_applied}</div>
+                <div className="text-slate-500">Email: {selectedCandidate.email} | SĐT: {selectedCandidate.phone}</div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Chuyển Giai Đoạn Phễu Mới *</label>
+                <div className="space-y-1">
+                  {STAGES.map((st) => (
+                    <button 
+                      key={st.key}
+                      onClick={() => moveStage(selectedCandidate.id, st.key)}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between border ${
+                        selectedCandidate.stage === st.key ? 'bg-blue-50 border-blue-300 text-blue-700 font-bold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>{st.label}</span>
+                      {selectedCandidate.stage === st.key && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

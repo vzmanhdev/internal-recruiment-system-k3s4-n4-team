@@ -24,8 +24,17 @@ def authenticate_bearer(authorization: Optional[str], db: Session) -> Tuple[User
             }
         )
 
-    token = authorization.split(" ", 1)[1]
-    payload = decode_access_token(token)
+    return authenticate_access_token(authorization.split(" ", 1)[1], db)
+
+
+def authenticate_access_token(token: str, db: Session, allow_expired_jwt: bool = False) -> Tuple[User, AuthSession]:
+    """Validate an access token and its server-side session.
+
+    ``allow_expired_jwt`` is used only by the route-access check (page navigation): the JWT signature is
+    still verified, and every session rule below (exists, owner, not revoked, absolute + idle expiry,
+    account status, security version) still applies, so a revoked or expired session is always rejected.
+    """
+    payload = decode_access_token(token, verify_exp=not allow_expired_jwt)
 
     if not payload:
         raise HTTPException(

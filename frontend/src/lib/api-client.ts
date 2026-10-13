@@ -1,14 +1,17 @@
 export class ApiError extends Error {
   constructor(
-    public status: number, 
-    message: string, 
-    public fieldErrors?: Record<string, string>
-  ) { 
-    super(message); 
+    public status: number,
+    message: string,
+    public fieldErrors?: Record<string, string>,
+    /** Machine-readable code from the backend envelope (error.code), e.g. "HR_WORKSPACE_ACCESS_DENIED". */
+    public code?: string,
+    public requestId?: string | null,
+  ) {
+    super(message);
   }
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 export const HTTP_STATUS_MESSAGES_VI: Record<number, string> = {
   400: "Yêu cầu không hợp lệ. Vui lòng kiểm tra lại thông tin đã gửi.",
@@ -32,6 +35,9 @@ export const HTTP_STATUS_MESSAGES_VI: Record<number, string> = {
   504: "Dịch vụ xử lý phản hồi quá chậm. Vui lòng thử lại sau.",
 };
 
+/** Window events the AuthProvider listens to (permission re-sync without logging out). */
+export const AUTH_FORBIDDEN_EVENT = "auth:forbidden";
+
 interface CustomRequestInit extends RequestInit {
   _retry?: boolean;
 }
@@ -43,14 +49,13 @@ function endLocalSession(): void {
   localStorage.removeItem("access_token");
   localStorage.removeItem("user_info");
   if (!window.location.pathname.startsWith("/login")) {
-    window.location.href = "/login";
+    const next = window.location.pathname + window.location.search;
+    window.location.href = `/login?next=${encodeURIComponent(next)}`;
   }
 }
 
 async function performTokenRefresh(): Promise<string | null> {
-  if (refreshPromise) {
-    return refreshPromise;
-  }
+  if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
     try {
@@ -66,16 +71,10 @@ async function performTokenRefresh(): Promise<string | null> {
         await new Promise((resolve) => setTimeout(resolve, 400));
         response = await callRefresh();
       }
-
-      if (!response.ok) {
-        throw new Error("Refresh token expired");
-      }
-
+      if (!response.ok) throw new Error("Refresh token expired");
       const data = await response.json();
       if (data.access_token) {
-        if (typeof window !== "undefined") {
-          localStorage.setItem("access_token", data.access_token);
-        }
+        if (typeof window !== "undefined") localStorage.setItem("access_token", data.access_token);
         return data.access_token as string;
       }
       return null;
@@ -92,14 +91,12 @@ async function performTokenRefresh(): Promise<string | null> {
 
 export async function apiRequest<T>(path: string, init?: CustomRequestInit): Promise<T> {
   const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+  const isForm = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(init?.headers as Record<string, string> || {}),
+    ...(isForm ? {} : { "Content-Type": "application/json" }),
+    ...((init?.headers as Record<string, string>) || {}),
   };
-
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   // 15 seconds timeout to prevent request hanging when Backend is offline
   const controller = new AbortController();
@@ -112,19 +109,20 @@ export async function apiRequest<T>(path: string, init?: CustomRequestInit): Pro
       credentials: "include",
       signal: controller.signal,
     });
-
     clearTimeout(timeoutId);
 
     if (!response.ok) {
       let errorDetail = HTTP_STATUS_MESSAGES_VI[response.status] || "Không thể kết nối đến hệ thống.";
       let fieldErrors: Record<string, string> | undefined = undefined;
       let errorCode: string | undefined = undefined;
+      const requestId = response.headers.get("X-Request-ID");
 
       try {
         const errorData = await response.json();
         if (errorData.error && typeof errorData.error === "object") {
           errorCode = errorData.error.code;
           if (errorData.error.message) errorDetail = errorData.error.message;
+          if (errorData.error.field_errors) fieldErrors = errorData.error.field_errors;
         }
         if (errorData.detail) {
           if (typeof errorData.detail === "object") {
@@ -134,49 +132,36 @@ export async function apiRequest<T>(path: string, init?: CustomRequestInit): Pro
             errorDetail = errorData.detail;
           }
         }
-        if (errorData.field_errors) {
-          fieldErrors = errorData.field_errors;
-        }
-      } catch (e) {
+        if (errorData.field_errors) fieldErrors = errorData.field_errors;
+      } catch {
         errorDetail = HTTP_STATUS_MESSAGES_VI[response.status] ?? errorDetail;
       }
 
       // 401 = authentication/session failure. An expired access token is refreshed once;
       // any other 401 (revoked, idle, locked, security version changed) ends the local session.
-      // 403 (permission denied) never logs the user out.
+      // 403 (permission denied) NEVER logs the user out: it asks the AuthProvider to re-sync permissions.
       const isAuthEndpoint = path.startsWith("/auth/login") || path.startsWith("/auth/refresh") || path.startsWith("/auth/password-reset");
       if (response.status === 401 && !isAuthEndpoint) {
         if (!init?._retry && errorCode === "TOKEN_EXPIRED") {
           const newToken = await performTokenRefresh();
-          if (newToken) {
-            return apiRequest<T>(path, { ...init, _retry: true });
-          }
+          if (newToken) return apiRequest<T>(path, { ...init, _retry: true });
         } else {
           endLocalSession();
         }
       }
-
-      if (response.status === 423 && !isAuthEndpoint) {
-        endLocalSession();
+      if (response.status === 403 && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(AUTH_FORBIDDEN_EVENT, { detail: { path, code: errorCode } }));
       }
 
-      throw new ApiError(response.status, errorDetail, fieldErrors);
+      throw new ApiError(response.status, errorDetail, fieldErrors, errorCode, requestId);
     }
 
-    return await response.json() as T;
-  } catch (err: any) {
+    if (response.status === 204) return undefined as T;
+    return (await response.json()) as T;
+  } catch (err: unknown) {
     clearTimeout(timeoutId);
-
-    if (err instanceof ApiError) {
-      throw err;
-    }
-
-    if (err.name === "AbortError") {
-      throw new ApiError(408, HTTP_STATUS_MESSAGES_VI[408]);
-    }
-
-    throw new ApiError(503, "Không thể kết nối tới máy chủ Backend (http://localhost:8000). Vui lòng bật dịch vụ Backend trước khi Đăng nhập.");
+    if (err instanceof ApiError) throw err;
+    if (err instanceof Error && err.name === "AbortError") throw new ApiError(408, HTTP_STATUS_MESSAGES_VI[408]);
+    throw new ApiError(503, "Không thể kết nối tới máy chủ. Vui lòng kiểm tra dịch vụ Backend và thử lại.");
   }
 }
-
-

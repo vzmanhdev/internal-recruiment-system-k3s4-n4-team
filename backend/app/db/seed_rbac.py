@@ -10,61 +10,9 @@ from app.models.user import User
 from app.models.rbac import Role, UserRole
 from app.models.audit import Permission, RolePermission
 
-ROLES_DATA = [
-    {"code": "admin", "name": "Quản trị viên", "description": "Toàn quyền quản trị hệ thống và truy cập Admin Console"},
-    {"code": "hr_manager", "name": "Trưởng phòng HR", "description": "Quản lý tổng quan tuyển dụng, định biên và quy trình"},
-    {"code": "recruiter", "name": "Chuyên viên Tuyển dụng", "description": "Thực thi đăng tuyển, lọc hồ sơ và điều phối ứng viên"},
-    {"code": "hiring_manager", "name": "Trưởng bộ phận", "description": "Khởi tạo đề xuất nhu cầu và quyết định tuyển dụng"},
-    {"code": "interviewer", "name": "Người phỏng vấn", "description": "Tham gia đánh giá và nộp phiếu phỏng vấn ứng viên"},
-    {"code": "approver", "name": "Người duyệt", "description": "Phê duyệt các đề xuất tuyển dụng và đề nghị Offer"},
-    {"code": "employee", "name": "Nhân sự nội bộ", "description": "Xem cơ hội việc làm nội bộ, giới thiệu ứng viên và cập nhật hồ sơ"},
-]
-
-PERMISSIONS_DATA = [
-    # Quản lý người dùng & hệ thống
-    {"code": "user:view", "name": "Xem danh sách người dùng", "module": "Quản lý Người Dùng & Tài Khoản"},
-    {"code": "user:create", "name": "Khởi tạo tài khoản mới", "module": "Quản lý Người Dùng & Tài Khoản"},
-    {"code": "user:edit", "name": "Cập nhật thông tin người dùng", "module": "Quản lý Người Dùng & Tài Khoản"},
-    {"code": "user:lock", "name": "Khóa/Mở khóa tài khoản", "module": "Quản lý Người Dùng & Tài Khoản"},
-    {"code": "user:reset_password", "name": "Đặt lại mật khẩu người dùng", "module": "Quản lý Người Dùng & Tài Khoản"},
-    {"code": "permission:manage", "name": "Quản lý Ma trận phân quyền RBAC", "module": "Quản lý Người Dùng & Tài Khoản"},
-    
-    # Yêu cầu tuyển dụng
-    {"code": "requisition:view", "name": "Xem yêu cầu tuyển dụng", "module": "Yêu Cầu Tuyển Dụng"},
-    {"code": "requisition:create", "name": "Tạo mới yêu cầu tuyển dụng", "module": "Yêu Cầu Tuyển Dụng"},
-    {"code": "requisition:edit", "name": "Chỉnh sửa yêu cầu tuyển dụng", "module": "Yêu Cầu Tuyển Dụng"},
-    {"code": "requisition:approve", "name": "Phê duyệt yêu cầu tuyển dụng", "module": "Yêu Cầu Tuyển Dụng"},
-    
-    # Hồ sơ ứng viên
-    {"code": "candidate:view", "name": "Xem danh sách ứng viên", "module": "Hồ Sơ Ứng Viên"},
-    {"code": "candidate:create", "name": "Thêm hồ sơ ứng viên", "module": "Hồ Sơ Ứng Viên"},
-    {"code": "candidate:evaluate", "name": "Đánh giá & chuyển vòng ứng viên", "module": "Hồ Sơ Ứng Viên"},
-    {"code": "candidate:view_salary", "name": "Xem thông tin lương mong muốn", "module": "Hồ Sơ Ứng Viên"},
-    
-    # Lịch & Đánh giá Phỏng vấn
-    {"code": "interview:view", "name": "Xem lịch phỏng vấn", "module": "Phỏng Vấn"},
-    {"code": "interview:schedule", "name": "Lên lịch phỏng vấn", "module": "Phỏng Vấn"},
-    {"code": "interview:evaluate", "name": "Nộp phiếu đánh giá phỏng vấn", "module": "Phỏng Vấn"},
-    
-    # Offer & Onboarding
-    {"code": "offer:view", "name": "Xem đề nghị tuyển dụng (Offer)", "module": "Đề Nghị Tuyển Dụng"},
-    {"code": "offer:create", "name": "Tạo thư mời nhận việc", "module": "Đề Nghị Tuyển Dụng"},
-    {"code": "offer:approve", "name": "Phê duyệt Offer", "module": "Đề Nghị Tuyển Dụng"},
-    
-    # Giám sát & Nhật ký
-    {"code": "audit:view", "name": "Xem nhật ký thao tác hệ thống (Audit Log)", "module": "Giám Sát & Nhật Ký"},
-    {"code": "master_data:manage", "name": "Quản lý Danh mục dùng chung", "module": "Dữ Liệu Hệ Thống"},
-]
-
-# Baseline role grants for non-admin default matrix
-DEFAULT_GRANTED_MATRIX = {
-    "hr_manager": ["user:view", "requisition:view", "requisition:create", "requisition:edit", "requisition:approve", "candidate:view", "candidate:create", "candidate:evaluate", "candidate:view_salary", "interview:view", "interview:schedule", "interview:evaluate", "offer:view", "offer:create", "offer:approve", "master_data:manage"],
-    "recruiter": ["requisition:view", "candidate:view", "candidate:create", "candidate:evaluate", "interview:view", "interview:schedule", "interview:evaluate", "offer:view", "offer:create"],
-    "hiring_manager": ["requisition:view", "requisition:create", "requisition:edit", "candidate:view", "candidate:evaluate", "interview:view", "interview:evaluate"],
-    "interviewer": ["interview:view", "interview:evaluate", "candidate:view"],
-    "approver": ["requisition:view", "requisition:approve", "offer:view", "offer:approve"],
-    "employee": ["requisition:view"],
-}
+from app.db.rbac_catalog import (  # noqa: F401  re-exported for existing imports
+    ROLES_DATA, PERMISSIONS_DATA, DEFAULT_GRANTED_MATRIX, WORKSPACE_GRANTS, ensure_permission_catalog,
+)
 
 
 def seed_rbac():
@@ -130,3 +78,4 @@ def seed_rbac():
 
 if __name__ == "__main__":
     seed_rbac()
+

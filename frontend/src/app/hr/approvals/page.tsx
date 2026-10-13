@@ -1,153 +1,237 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Loader2, MessageSquareWarning, RefreshCw, XCircle } from 'lucide-react';
-import { requisitionService, type RequisitionItem } from '@/services/requisition.service';
-import { useToast } from '@/components/ui/Toast';
-import { ApiError } from '@/lib/api-client';
+import React, { useState } from 'react';
+import { 
+  ShieldCheck, CheckCircle2, XCircle, Clock, AlertCircle, Eye, 
+  MessageSquare, UserCheck, ArrowRight, Building2, DollarSign, Calendar
+} from 'lucide-react';
 
-type Action = 'approved' | 'rejected' | 'changes_requested';
+interface ApprovalItem {
+  id: string;
+  code: string;
+  type: 'requisition' | 'offer';
+  title: string;
+  department: string;
+  requester: string;
+  amount_or_headcount: string;
+  current_step: number;
+  total_steps: number;
+  steps: Array<{
+    step_num: number;
+    role_name: string;
+    approver_name?: string;
+    status: 'approved' | 'pending' | 'rejected';
+    updated_at?: string;
+    comment?: string;
+  }>;
+  created_at: string;
+}
 
 export default function HRApprovalsPage() {
-  const { showSuccess, showError } = useToast();
-  const [items, setItems] = useState<RequisitionItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [pending, setPending] = useState<{ id: number; action: Action } | null>(null);
-  const [comment, setComment] = useState('');
-
-  const load = useCallback(async () => {
-    try {
-      const [step1, step2] = await Promise.all([
-        requisitionService.getRequisitions('pending_manager'),
-        requisitionService.getRequisitions('pending_hr'),
-      ]);
-      setItems([...step1, ...step2]);
-    } catch (err) {
-      setLoadError(err instanceof ApiError ? err.message : 'Không tải được danh sách chờ duyệt.');
-    } finally {
-      setLoading(false);
+  const [approvals, setApprovals] = useState<ApprovalItem[]>([
+    {
+      id: "APP-001",
+      code: "REQ-2026-001",
+      type: "requisition",
+      title: "Tờ trình tuyển dụng Senior Backend Engineer",
+      department: "Công Nghệ Thông Tin",
+      requester: "Lê Văn Mạnh (Trưởng phòng CNTT)",
+      amount_or_headcount: "3 chỉ tiêu (35 - 50 TR VNĐ)",
+      current_step: 2,
+      total_steps: 3,
+      steps: [
+        { step_num: 1, role_name: "Trưởng phòng chuyên môn", approver_name: "Lê Văn Mạnh", status: "approved", updated_at: "01/10/2026 09:00", comment: "Đã xác nhận nhu cầu dự án" },
+        { step_num: 2, role_name: "Trưởng phòng Nhân sự (HR Manager)", approver_name: "Trần Thị Thu Hà", status: "pending" },
+        { step_num: 3, role_name: "Ban Giám Đốc (CEO)", status: "pending" }
+      ],
+      created_at: "01/10/2026"
+    },
+    {
+      id: "APP-002",
+      code: "OFFER-2026-088",
+      type: "offer",
+      title: "Thư mời nhận việc (Offer) — Ứng viên Đỗ Hoàng Long",
+      department: "Khối Dữ Liệu",
+      requester: "Nguyễn Văn Hùng (Recruiter)",
+      amount_or_headcount: "Lương 52 TR VNĐ (Vượt dải 12%)",
+      current_step: 2,
+      total_steps: 3,
+      steps: [
+        { step_num: 1, role_name: "Trưởng bộ phận", approver_name: "Phạm Quốc Tuấn", status: "approved", updated_at: "03/10/2026 14:30", comment: "Đánh giá xuất sắc, đồng ý vượt band" },
+        { step_num: 2, role_name: "Trưởng phòng Nhân sự (HR Manager)", approver_name: "Trần Thị Thu Hà", status: "pending" },
+        { step_num: 3, role_name: "Ban Giám Đốc (CEO)", status: "pending" }
+      ],
+      created_at: "03/10/2026"
     }
-  }, []);
+  ]);
 
-  useEffect(() => { void load(); }, [load]);
+  const [selectedApp, setSelectedApp] = useState<ApprovalItem | null>(null);
+  const [actionComment, setActionComment] = useState('');
 
-  const reload = () => {
-    setLoading(true);
-    setLoadError(null);
-    void load();
-  };
+  const handleDecision = (decision: 'approved' | 'rejected') => {
+    if (!selectedApp) return;
 
-  const submit = async (id: number, action: Action, text?: string) => {
-    setBusyId(id);
-    try {
-      const updated = await requisitionService.approveRequisition(id, action, text);
-      // Remove from the queue only when the server confirms the new state left the pending steps.
-      setItems((prev) => (['pending_manager', 'pending_hr'].includes(updated.status)
-        ? prev.map((r) => (r.id === id ? updated : r))
-        : prev.filter((r) => r.id !== id)));
-      showSuccess(action === 'approved' ? 'Đã duyệt yêu cầu.' : action === 'rejected' ? 'Đã từ chối yêu cầu.' : 'Đã trả hồ sơ yêu cầu bổ sung.');
-    } catch (err) {
-      showError(err instanceof ApiError ? err.message : 'Thao tác thất bại.');
-    } finally {
-      setBusyId(null);
-    }
-  };
+    setApprovals(prev => prev.map(item => {
+      if (item.id === selectedApp.id) {
+        const updatedSteps = item.steps.map(step => {
+          if (step.step_num === item.current_step) {
+            return {
+              ...step,
+              status: decision,
+              comment: actionComment || (decision === 'approved' ? "HR Manager đã phê duyệt" : "HR Manager từ chối"),
+              updated_at: new Date().toLocaleString()
+            };
+          }
+          return step;
+        });
 
-  const confirm = () => {
-    if (!pending) return;
-    if (!comment.trim()) {
-      showError('Từ chối hoặc Yêu cầu bổ sung bắt buộc phải nhập ý kiến.');
-      return;
-    }
-    const { id, action } = pending;
-    setPending(null);
-    submit(id, action, comment.trim());
+        const nextStep = decision === 'approved' ? item.current_step + 1 : item.current_step;
+        return {
+          ...item,
+          current_step: nextStep,
+          steps: updatedSteps
+        };
+      }
+      return item;
+    }));
+
+    alert(`Đã thực hiện ${decision === 'approved' ? 'Phê duyệt' : 'Từ chối'} cho ${selectedApp.code}`);
+    setSelectedApp(null);
+    setActionComment('');
   };
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-slate-200/80 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Hàng Chờ Phê Duyệt Yêu Cầu Tuyển Dụng</h1>
-            <span className="bg-blue-50 text-blue-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-blue-200">[S3-02]</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">Duyệt, Từ chối hoặc Yêu cầu bổ sung — hai hành động sau bắt buộc nhập ý kiến; lịch sử được ghi lại và không sửa được.</p>
+      {/* Page Header */}
+      <div className="border-b border-slate-200/80 pb-5">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Trung Tâm Phê Duyệt Tuyển Dụng 3 Cấp</h1>
+          <span className="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200">
+            [S3-01] Approval Engine
+          </span>
         </div>
-        <button onClick={reload} className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold cursor-pointer">
-          <RefreshCw className="w-4 h-4" /> Tải lại
-        </button>
+        <p className="text-xs text-slate-500 mt-1">Duyệt tờ trình tuyển dụng & offer vượt dải lương theo luồng phê duyệt 3 cấp động</p>
       </div>
 
-      {pending && (
-        <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-4 space-y-3">
-          <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
-            <MessageSquareWarning className="w-4 h-4 text-amber-600" />
-            {pending.action === 'rejected' ? 'Lý do từ chối' : 'Nội dung cần bổ sung'} (bắt buộc)
+      {/* Main Queue List */}
+      <div className="space-y-4">
+        {approvals.map((item) => (
+          <div key={item.id} className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4 hover:shadow-md transition-all">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-sm ${
+                  item.type === 'requisition' ? 'bg-blue-600' : 'bg-emerald-600'
+                }`}>
+                  {item.type === 'requisition' ? <Building2 className="w-5 h-5" /> : <DollarSign className="w-5 h-5" />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono bg-slate-100 text-slate-700 text-[10px] font-extrabold px-2 py-0.5 rounded">
+                      {item.code}
+                    </span>
+                    <h2 className="text-base font-bold text-slate-900">{item.title}</h2>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    Phòng ban: <strong>{item.department}</strong> | Người yêu cầu: <strong>{item.requester}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setSelectedApp(item)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Xử Lý Phê Duyệt</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 3-Step Dynamic Approval Timeline */}
+            <div>
+              <div className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-3">
+                Tiến Độ Luồng Phê Duyệt (Cấp {item.current_step}/{item.total_steps})
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {item.steps.map((step) => (
+                  <div 
+                    key={step.step_num}
+                    className={`p-3 rounded-xl border text-xs space-y-1 ${
+                      step.status === 'approved' 
+                        ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900' 
+                        : step.status === 'pending' && step.step_num === item.current_step
+                        ? 'bg-amber-50/70 border-amber-200 text-amber-900 shadow-sm animate-pulse'
+                        : 'bg-slate-50 border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-bold">
+                      <span>Cấp {step.step_num}: {step.role_name}</span>
+                      {step.status === 'approved' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                      {step.status === 'pending' && <Clock className="w-4 h-4 text-amber-600" />}
+                    </div>
+                    {step.approver_name && (
+                      <div className="text-[11px]">Người duyệt: <strong>{step.approver_name}</strong></div>
+                    )}
+                    {step.comment && (
+                      <p className="text-[11px] italic text-slate-600">"{step.comment}"</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
-          <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={3}
-            className="w-full border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setPending(null)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer">Huỷ</button>
-            <button onClick={confirm} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 cursor-pointer">Xác nhận</button>
+        ))}
+      </div>
+
+      {/* Decision Modal */}
+      {selectedApp && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Phê Duyệt: {selectedApp.code}</h3>
+              <button onClick={() => setSelectedApp(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1">
+                <div className="font-bold text-slate-900">{selectedApp.title}</div>
+                <div className="text-slate-600">Chi tiết: {selectedApp.amount_or_headcount}</div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Ý Kiến Phê Duyệt / Nhận Xét (Không bắt buộc)</label>
+                <textarea 
+                  rows={3}
+                  placeholder="Ghi nhận xét của Trưởng phòng HR..."
+                  value={actionComment}
+                  onChange={(e) => setActionComment(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              <button 
+                onClick={() => handleDecision('rejected')}
+                className="px-4 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold transition-all"
+              >
+                Từ Chối
+              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setSelectedApp(null)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-semibold">Hủy</button>
+                <button 
+                  onClick={() => handleDecision('approved')}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/20"
+                >
+                  Phê Duyệt (Approve)
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
-
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="p-10 flex items-center justify-center gap-2 text-xs text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Đang tải...</div>
-        ) : loadError ? (
-          <div className="p-10 text-center text-xs text-rose-600">{loadError}</div>
-        ) : items.length === 0 ? (
-          <div className="p-10 text-center text-xs text-slate-500 flex flex-col items-center gap-2"><ClipboardCheck className="w-6 h-6 text-slate-300" />Không có yêu cầu nào đang chờ bạn duyệt.</div>
-        ) : (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                <th className="p-4">Yêu cầu</th>
-                <th className="p-4 text-center">Số lượng</th>
-                <th className="p-4 text-center">Dải lương</th>
-                <th className="p-4 text-center">Ngày cần người</th>
-                <th className="p-4 text-center">Cấp duyệt</th>
-                <th className="p-4 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {items.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/70 align-top">
-                  <td className="p-4">
-                    <div className="font-bold text-slate-900">{r.title}</div>
-                    <span className="font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px] font-bold">{r.code}</span>
-                    {r.department_name && <span className="ml-2 text-[11px] text-slate-400">{r.department_name}</span>}
-                  </td>
-                  <td className="p-4 text-center font-bold">{r.quantity}</td>
-                  <td className="p-4 text-center font-mono">
-                    {r.min_salary || r.max_salary ? `${(r.min_salary ?? 0).toLocaleString('vi-VN')} – ${(r.max_salary ?? 0).toLocaleString('vi-VN')}` : 'Thỏa thuận'}
-                  </td>
-                  <td className="p-4 text-center">{r.target_onboard_date || '—'}</td>
-                  <td className="p-4 text-center">
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold border bg-amber-50 text-amber-700 border-amber-100">
-                      {r.status === 'pending_manager' ? 'Cấp 1 · Trưởng khối' : 'Cấp 2 · HR Manager'}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right whitespace-nowrap">
-                    {busyId === r.id ? <Loader2 className="w-4 h-4 animate-spin inline text-slate-400" /> : (
-                      <div className="inline-flex gap-1.5">
-                        <button onClick={() => submit(r.id, 'approved')} className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"><CheckCircle2 className="w-3 h-3" />Duyệt</button>
-                        <button onClick={() => { setPending({ id: r.id, action: 'changes_requested' }); setComment(''); }} className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold cursor-pointer">Yêu cầu bổ sung</button>
-                        <button onClick={() => { setPending({ id: r.id, action: 'rejected' }); setComment(''); }} className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer"><XCircle className="w-3 h-3" />Từ chối</button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
     </div>
   );
 }

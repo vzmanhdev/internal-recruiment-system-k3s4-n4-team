@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard, FileCheck, ShieldCheck, Briefcase, Users, Calendar, 
   FileText, Award, Layers, Target, Mail, Send, BarChart3, History, 
-  ChevronRight, Sparkles, Building2, UserCheck, Sparkle, UserPlus
+  ChevronRight, Sparkles, Building2, UserCheck, Sparkle, UserPlus, Globe
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -30,11 +30,12 @@ const hrNavigationGroups: NavGroup[] = [
     ]
   },
   {
-    groupName: "TUYỂN DỤNG",
+    groupName: "TUYỂN DỤNG & CỔNG CAREER",
     items: [
       { label: "Yêu cầu tuyển dụng (REQ)", href: "/hr/requisitions", icon: FileCheck, badge: "SLA" },
       { label: "Trung tâm Phê duyệt", href: "/hr/approvals", icon: ShieldCheck, badge: "3 cấp" },
-      { label: "Tin tuyển dụng", href: "/hr/job-postings", icon: Briefcase },
+      { label: "Duyệt & Xuất bản tin", href: "/hr/jobs", icon: Briefcase, badge: "Portal" },
+      { label: "Cấu hình Career Page", href: "/hr/career-page-config", icon: Globe },
       { label: "Ứng viên & Pipeline", href: "/hr/candidates", icon: Users },
       { label: "Kho tiềm năng (Talent Pool)", href: "/hr/talent-pool", icon: Sparkles },
       { label: "Lịch phỏng vấn", href: "/hr/interviews", icon: Calendar },
@@ -45,18 +46,19 @@ const hrNavigationGroups: NavGroup[] = [
   {
     groupName: "QUẢN TRỊ NGHIỆP VỤ",
     items: [
+      { label: "Danh Mục & Cơ Cấu Tổ Chức", href: "/hr/categories", icon: Building2, badge: "Hub" },
       { label: "Cơ cấu phòng ban", href: "/hr/master-data/departments", icon: Building2 },
       { label: "Chức danh & Dải lương", href: "/hr/master-data/positions", icon: Award },
       { label: "Ngân sách Headcount", href: "/hr/master-data/headcount", icon: Target, badge: "Override" },
       { label: "Luồng phê duyệt động", href: "/hr/master-data/approval-flows", icon: Layers },
-      { label: "Khung năng lực & Câu hỏi", href: "/hr/master-data/competencies", icon: UserCheck },
+      { label: "Khung năng lực & Đánh giá", href: "/hr/competencies", icon: UserCheck, badge: "Scorecard" },
       { label: "Danh mục dùng chung", href: "/hr/master-data/lookups", icon: Layers },
     ]
   },
   {
     groupName: "TỰ ĐỘNG HÓA",
     items: [
-      { label: "Cấu hình Mẫu Email", href: "/hr/automation/email-templates", icon: Mail },
+      { label: "Cấu hình Mẫu Email", href: "/hr/email-templates", icon: Mail },
       { label: "Nhật ký gửi Email", href: "/hr/automation/email-logs", icon: Send },
     ]
   },

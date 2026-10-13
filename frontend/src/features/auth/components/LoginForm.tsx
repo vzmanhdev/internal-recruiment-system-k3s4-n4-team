@@ -12,26 +12,41 @@ import { Alert } from "@/components/ui/Alert";
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { authService } from "../services/auth.service";
 import { saveAuthSession } from "../lib/auth-session";
+import { notifyPermissionsChanged } from "@/providers/auth-provider";
 import { ApiError } from "@/lib/api-client";
-import { useToast } from "@/components/ui/Toast";
 
 export function LoginForm() {
   const router = useRouter();
-  const { showSuccess } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [successMsg, setSuccessMsg] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
+    setFieldErrors({});
+    setSuccessMsg("");
 
     const cleanEmail = email.trim();
+    const errors: Record<string, string> = {};
 
-    if (!cleanEmail || !password) {
-      setErrorMsg("Tài Khoản hoặc Mật khẩu không chính xác. Vui lòng thử lại.");
+    if (!cleanEmail) {
+      errors["email"] = "Vui lòng nhập email công việc.";
+    } else if (!cleanEmail.includes("@")) {
+      errors["email"] = "Email không đúng định dạng (Ví dụ: name@company.com).";
+    }
+
+    if (!password) {
+      errors["password"] = "Vui lòng nhập mật khẩu.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setErrorMsg("Vui lòng nhập đầy đủ và chính xác thông tin đăng nhập.");
       return;
     }
 
@@ -45,23 +60,29 @@ export function LoginForm() {
 
       // Lưu thông tin phiên đăng nhập
       saveAuthSession({ displayName: res.user?.full_name || "User" });
+      notifyPermissionsChanged(); // the persistent AuthProvider loads the new user + permissions
 
-      // Đường dẫn chuyển hướng hoàn toàn do Backend xác định dựa trên Database Role
-      const targetUrl = res.redirect_url || res.user?.redirect_url || "/jobs";
+      // Destination: the page the proxy sent us from (?next=, same-origin paths only), otherwise the
+      // landing page computed by the backend from database roles. No role/email checks here.
+      const nextParam = new URLSearchParams(window.location.search).get("next");
+      const safeNext = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.startsWith("/login") ? nextParam : null;
+      const targetUrl = safeNext || res.redirect_url || res.user?.redirect_url || "/workspace";
 
-      // Kích hoạt Toast ở góc trên bên phải
-      showSuccess("Đăng nhập thành công!", "Thành công");
+      setSuccessMsg(
+        `Đăng nhập thành công! Đang chuyển hướng dựa theo cấu hình vai trò từ hệ thống...`
+      );
 
       setTimeout(() => {
         router.push(targetUrl);
-      }, 500);
-    } catch (err: any) {
-      if (err instanceof ApiError && err.status !== 503) {
-        // Show the server's message: it is already generic for wrong credentials (no enumeration),
-        // and it carries the browser-session lock (429, minutes remaining) and admin-lock / pending notices.
-        setErrorMsg(err.message || "Tài Khoản hoặc Mật khẩu không chính xác. Vui lòng thử lại.");
+      }, 800);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+        if (err.fieldErrors) {
+          setFieldErrors(err.fieldErrors);
+        }
       } else {
-        setErrorMsg(err.message || "Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại dịch vụ Backend.");
+        setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại dịch vụ Backend.");
       }
     } finally {
       setIsLoading(false);
@@ -93,6 +114,14 @@ export function LoginForm() {
         </div>
       )}
 
+      {successMsg && (
+        <div className="mb-5">
+          <Alert variant="success" title="Thông báo">
+            {successMsg}
+          </Alert>
+        </div>
+      )}
+
       {/* Direct Email + Password Form */}
       <form onSubmit={handleSubmit} className="space-y-[20px]">
         {/* Email Field */}
@@ -101,9 +130,13 @@ export function LoginForm() {
           type="email"
           placeholder="Nhập email công việc"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: "" }));
+          }}
           leftIcon={<Mail className="w-[18px] h-[18px] text-slate-400" />}
           autoComplete="email"
+          error={fieldErrors.email}
           required
         />
 
@@ -112,12 +145,15 @@ export function LoginForm() {
           label="Mật khẩu"
           placeholder="Nhập mật khẩu"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: "" }));
+          }}
           leftIcon={<Lock className="w-[18px] h-[18px] text-slate-400" />}
           autoComplete="current-password"
+          error={fieldErrors.password}
           required
         />
-
 
         {/* Options Row: Remember Me + Forgot Password */}
         <div className="flex items-center justify-between text-[14px] pt-1 pb-1">
