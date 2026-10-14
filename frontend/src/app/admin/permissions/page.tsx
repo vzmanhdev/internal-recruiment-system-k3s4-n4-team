@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import { AdminAppShell } from "@/components/layout/AdminAppShell";
-import { Lock, ShieldCheck, Check, X, Save, RefreshCw, AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react";
-import { authService } from "@/features/auth/services/auth.service";
+import { Lock, ShieldCheck, Check, X, RefreshCw, CheckCircle2 } from "lucide-react";
+import { apiRequest } from "@/lib/api-client";
 
 interface ModulePermission {
   id: string;
   module: string;
   permissions: {
-    [role: string]: string[]; // role -> ["read", "create", "edit", "delete", "approve", "export"]
+    [role: string]: string[];
   };
 }
 
@@ -18,159 +18,212 @@ const DEFAULT_MATRIX: ModulePermission[] = [
     id: "users",
     module: "Quản lý Người Dùng & Tài Khoản",
     permissions: {
-      Admin: ["read", "create", "edit", "delete", "export"],
-      "HR Manager": ["read"],
-      Recruiter: [],
-      "Hiring Manager": [],
-      Interviewer: [],
-      Approver: [],
-      Candidate: [],
+      admin: ["user:view", "user:create", "user:edit", "user:lock", "user:reset_password"],
+      hr_manager: ["user:view", "user:create", "user:edit"],
+      recruiter: [],
+      hiring_manager: [],
+      interviewer: [],
+      approver: [],
+      candidate: [],
     },
   },
   {
     id: "rbac",
     module: "Phân Quyền RBAC & Ma Trận Role",
     permissions: {
-      Admin: ["read", "edit", "approve"],
-      "HR Manager": ["read"],
-      Recruiter: [],
-      "Hiring Manager": [],
-      Interviewer: [],
-      Approver: [],
-      Candidate: [],
+      admin: ["master_data:manage"],
+      hr_manager: [],
+      recruiter: [],
+      hiring_manager: [],
+      interviewer: [],
+      approver: [],
+      candidate: [],
     },
   },
   {
     id: "requisition",
     module: "Yêu Cầu Tuyển Dụng (Requisition)",
     permissions: {
-      Admin: ["read"],
-      "HR Manager": ["read", "create", "edit", "delete", "export"],
-      Recruiter: ["read"],
-      "Hiring Manager": ["read", "create"],
-      Interviewer: [],
-      Approver: ["read", "approve"],
-      Candidate: [],
+      admin: ["requisition:view", "requisition:create", "requisition:approve"],
+      hr_manager: ["requisition:view", "requisition:create", "requisition:approve"],
+      recruiter: ["requisition:view"],
+      hiring_manager: ["requisition:view", "requisition:create"],
+      interviewer: [],
+      approver: ["requisition:view", "requisition:approve"],
+      candidate: [],
     },
   },
   {
     id: "candidates",
     module: "Hồ Sơ Ứng Viên & Pipeline",
     permissions: {
-      Admin: ["read"],
-      "HR Manager": ["read", "create", "edit", "delete", "export"],
-      Recruiter: ["read", "create", "edit", "export"],
-      "Hiring Manager": ["read"],
-      Interviewer: ["read"],
-      Approver: [],
-      Candidate: [],
+      admin: ["candidate:view", "candidate:evaluate"],
+      hr_manager: ["candidate:view", "candidate:evaluate"],
+      recruiter: ["candidate:view", "candidate:evaluate"],
+      hiring_manager: ["candidate:view", "candidate:evaluate"],
+      interviewer: ["candidate:view", "candidate:evaluate"],
+      approver: [],
+      candidate: [],
     },
   },
   {
     id: "audit",
     module: "Nhật Ký Bảo Mật & Audit Logs",
     permissions: {
-      Admin: ["read", "export"],
-      "HR Manager": [],
-      Recruiter: [],
-      "Hiring Manager": [],
-      Interviewer: [],
-      Approver: [],
-      Candidate: [],
+      admin: ["audit:view"],
+      hr_manager: [],
+      recruiter: [],
+      hiring_manager: [],
+      interviewer: [],
+      approver: [],
+      candidate: [],
     },
   },
 ];
 
 export default function PermissionsMatrixPage() {
   const [matrix, setMatrix] = useState<ModulePermission[]>(DEFAULT_MATRIX);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [hoveredRole, setHoveredRole] = useState<string | null>(null);
 
   const rolesList = [
-    { code: "Admin", label: "Admin", badge: "bg-purple-100 text-purple-700 border-purple-200" },
-    { code: "HR Manager", label: "HR Manager", badge: "bg-blue-100 text-blue-700 border-blue-200" },
-    { code: "Recruiter", label: "Recruiter", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-    { code: "Hiring Manager", label: "Hiring Manager", badge: "bg-amber-100 text-amber-700 border-amber-200" },
-    { code: "Interviewer", label: "Interviewer", badge: "bg-cyan-100 text-cyan-700 border-cyan-200" },
-    { code: "Approver", label: "Approver", badge: "bg-indigo-100 text-indigo-700 border-indigo-200" },
-    { code: "Candidate", label: "Candidate", badge: "bg-slate-100 text-slate-700 border-slate-200" },
+    { code: "admin", label: "Admin", badge: "bg-purple-100 text-purple-700 border-purple-200" },
+    { code: "hr_manager", label: "HR Manager", badge: "bg-blue-100 text-blue-700 border-blue-200" },
+    { code: "recruiter", label: "Recruiter", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+    { code: "hiring_manager", label: "Hiring Manager", badge: "bg-amber-100 text-amber-700 border-amber-200" },
+    { code: "interviewer", label: "Interviewer", badge: "bg-cyan-100 text-cyan-700 border-cyan-200" },
+    { code: "approver", label: "Approver", badge: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+    { code: "candidate", label: "Candidate", badge: "bg-slate-100 text-slate-700 border-slate-200" },
   ];
 
   const actionsList = [
-    { code: "read", label: "Read (Xem danh sách/chi tiết)" },
-    { code: "create", label: "Create (Tạo dữ liệu mới)" },
-    { code: "edit", label: "Edit (Chỉnh sửa dữ liệu)" },
-    { code: "delete", label: "Delete (Xóa tài nguyên)" },
-    { code: "approve", label: "Approve (Phê duyệt luồng)" },
-    { code: "export", label: "Export (Xuất báo cáo Excel)" },
+    { code: "user:view", label: "Xem người dùng (user:view)" },
+    { code: "user:create", label: "Tạo người dùng (user:create)" },
+    { code: "user:edit", label: "Sửa người dùng (user:edit)" },
+    { code: "user:lock", label: "Khóa/Mở khóa (user:lock)" },
+    { code: "user:reset_password", label: "Reset Mật khẩu (user:reset_password)" },
+    { code: "requisition:view", label: "Xem Yêu cầu tuyển dụng (requisition:view)" },
+    { code: "requisition:create", label: "Tạo Yêu cầu tuyển dụng (requisition:create)" },
+    { code: "requisition:approve", label: "Phê duyệt Yêu cầu (requisition:approve)" },
+    { code: "candidate:view", label: "Xem Hồ sơ Ứng viên (candidate:view)" },
+    { code: "candidate:evaluate", label: "Đánh giá Ứng viên (candidate:evaluate)" },
+    { code: "offer:create", label: "Tạo Thư mời (offer:create)" },
+    { code: "offer:approve", label: "Duyệt Thư mời (offer:approve)" },
+    { code: "master_data:manage", label: "Quản lý Danh mục (master_data:manage)" },
+    { code: "audit:view", label: "Xem Nhật ký Audit Logs (audit:view)" },
   ];
 
-  const fetchMatrix = async () => {
+  const fetchMatrix = async (showError = true): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const token = authService.getToken();
-      const res = await fetch("http://localhost:8000/api/v1/admin/permissions/matrix", {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setMatrix(data);
-        }
+      const data = await apiRequest<ModulePermission[]>("/admin/permissions/matrix");
+      if (Array.isArray(data) && data.length > 0) {
+        setMatrix(data);
       }
-    } catch (err) {
+      return true;
+    } catch {
+      if (showError) {
+        setToast("Không thể tải ma trận quyền từ hệ thống.");
+        setTimeout(() => setToast(null), 3000);
+      }
+      return false;
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMatrix();
+    let cancelled = false;
+
+    apiRequest<ModulePermission[]>("/admin/permissions/matrix")
+      .then((data) => {
+        if (!cancelled && Array.isArray(data) && data.length > 0) {
+          setMatrix(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setToast("Không thể tải ma trận quyền từ hệ thống.");
+          setTimeout(() => setToast(null), 3000);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleTogglePermission = (moduleId: string, roleName: string, actionCode: string) => {
+  const handleTogglePermission = async (moduleId: string, roleCode: string, actionCode: string) => {
+    const roleLower = roleCode.toLowerCase();
+    const currentRolePerms = (matrix.find(m => m.id === moduleId)?.permissions[roleLower]) || [];
+    const isCurrentlyGranted = currentRolePerms.includes(actionCode);
+    const nextGranted = !isCurrentlyGranted;
+
+    // Optimistic UI update
     setMatrix((prev) =>
       prev.map((m) => {
         if (m.id !== moduleId) return m;
-        const currentRolePerms = m.permissions[roleName] || [];
-        const exists = currentRolePerms.includes(actionCode);
-
-        const newRolePerms = exists
-          ? currentRolePerms.filter((p) => p !== actionCode)
-          : [...currentRolePerms, actionCode];
+        const rolePerms = m.permissions[roleLower] || [];
+        const updatedPerms = nextGranted
+          ? [...rolePerms, actionCode]
+          : rolePerms.filter((p) => p !== actionCode);
 
         return {
           ...m,
           permissions: {
             ...m.permissions,
-            [roleName]: newRolePerms,
+            [roleLower]: updatedPerms,
           },
         };
       })
     );
+
+    try {
+      await apiRequest<{ message: string }>("/admin/permissions/matrix", {
+        method: "PUT",
+        body: JSON.stringify({
+          role_code: roleLower,
+          permission_code: actionCode,
+          is_granted: nextGranted,
+        }),
+      });
+      setToast(`Đã lưu thay đổi quyền [${actionCode}] cho vai trò ${roleCode} vào Database.`);
+      setTimeout(() => setToast(null), 3000);
+    } catch {
+      setMatrix((prev) =>
+        prev.map((module) => {
+          if (module.id !== moduleId) return module;
+          const permissions = module.permissions[roleLower] || [];
+          return {
+            ...module,
+            permissions: {
+              ...module.permissions,
+              [roleLower]: isCurrentlyGranted
+                ? [...permissions, actionCode]
+                : permissions.filter((permission) => permission !== actionCode),
+            },
+          };
+        })
+      );
+      setToast("Không thể lưu thay đổi. Giao diện đã khôi phục trạng thái trước đó.");
+      setTimeout(() => setToast(null), 3000);
+    }
   };
 
   const handleSaveMatrix = async () => {
     setIsSaving(true);
     try {
-      const token = authService.getToken();
-      const res = await fetch("http://localhost:8000/api/v1/admin/permissions/matrix", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-        body: JSON.stringify(matrix),
-      });
-
-      setToast("Cập nhật Ma Trận Phân Quyền RBAC 7 Vai Trò thành công!");
-      setTimeout(() => setToast(null), 4000);
-    } catch (err) {
-      setToast("Đã lưu thay đổi ma trận vào bộ nhớ.");
+      const refreshed = await fetchMatrix(false);
+      setToast(
+        refreshed
+          ? "Đã đồng bộ ma trận phân quyền mới nhất từ hệ thống."
+          : "Không thể đồng bộ ma trận quyền từ hệ thống."
+      );
       setTimeout(() => setToast(null), 4000);
     } finally {
       setIsSaving(false);
@@ -204,8 +257,8 @@ export default function PermissionsMatrixPage() {
             disabled={isSaving}
             className="px-5 py-2.5 rounded-xl bg-[#4285F4] text-white hover:bg-blue-600 text-xs font-bold transition-all shadow-md shadow-blue-500/20 flex items-center gap-2 shrink-0 cursor-pointer disabled:opacity-50"
           >
-            <Save className="w-4 h-4" />
-            <span>{isSaving ? "Đang lưu..." : "Lưu Thay Đổi Ma Trận"}</span>
+            <RefreshCw className={`w-4 h-4 ${isSaving ? "animate-spin" : ""}`} />
+            <span>{isSaving ? "Đang đồng bộ..." : "Đồng bộ ma trận"}</span>
           </button>
         </div>
 

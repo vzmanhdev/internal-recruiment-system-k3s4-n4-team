@@ -34,7 +34,9 @@ export interface UserItem {
   phone?: string;
   employee_code?: string;
   avatar_url?: string;
+  department?: string;
   role: string;
+  roles?: string[];
   redirect_url?: string;
   is_active: boolean;
   account_status?: string;
