@@ -6,6 +6,10 @@ export interface InterviewerInfo {
   email: string;
 }
 
+export interface AvailableInterviewer extends InterviewerInfo {
+  roles: string[];
+}
+
 export interface InterviewItem {
   id: number;
   code: string;
@@ -19,8 +23,14 @@ export interface InterviewItem {
   end_time: string;
   notes?: string;
   status: "scheduled" | "completed" | "cancelled" | "rescheduled";
-  candidate_response?: "pending" | "confirmed" | "declined";
+  candidate_response?:
+    "pending" | "confirmed" | "declined" | "reschedule_requested";
   candidate_response_at?: string;
+  candidate_response_note?: string;
+  candidate_proposed_start_time?: string;
+  response_token?: string;
+  candidate_email?: string;
+  accepts_response?: boolean;
   interviewers: InterviewerInfo[];
   created_at: string;
   updated_at: string;
@@ -56,10 +66,49 @@ export interface UpdateInterviewPayload {
   interviewer_ids?: number[];
 }
 
-export async function createInterview(payload: CreateInterviewPayload): Promise<InterviewItem> {
+export interface InterviewConflict {
+  interview_id: number;
+  code: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  reason: string;
+}
+
+export interface InterviewConflictResult {
+  has_conflict: boolean;
+  conflicts: InterviewConflict[];
+}
+
+export interface CandidateInterviewReply {
+  response: "confirmed" | "declined" | "reschedule_requested";
+  note?: string;
+  proposed_start_time?: string;
+}
+
+export async function createInterview(
+  payload: CreateInterviewPayload,
+): Promise<InterviewItem> {
   return apiRequest<InterviewItem>("/interviews", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function createInterviewBatch(
+  interviews: CreateInterviewPayload[],
+): Promise<InterviewItem[]> {
+  return apiRequest<InterviewItem[]>("/interviews/batch", {
+    method: "POST",
+    body: JSON.stringify({ interviews }),
+  });
+}
+
+export async function sendInterviewInvitation(
+  id: number,
+): Promise<{ message: string }> {
+  return apiRequest<{ message: string }>(`/interviews/${id}/send-invitation`, {
+    method: "POST",
   });
 }
 
@@ -71,11 +120,57 @@ export async function fetchCandidateInterviews(): Promise<PaginatedInterviews> {
   return apiRequest<PaginatedInterviews>("/interviews/candidate/my");
 }
 
-export async function respondToInterview(id: number, response: "confirmed" | "declined"): Promise<InterviewItem> {
+export async function respondToInterview(
+  id: number,
+  response: "confirmed" | "declined" | "reschedule_requested",
+  note?: string,
+  proposed_start_time?: string,
+): Promise<InterviewItem> {
   return apiRequest<InterviewItem>(`/interviews/${id}/respond`, {
     method: "POST",
-    body: JSON.stringify({ response }),
+    body: JSON.stringify({ response, note, proposed_start_time }),
   });
+}
+
+export async function checkInterviewConflicts(payload: {
+  start_time: string;
+  end_time: string;
+  interviewer_ids: number[];
+  interview_type: string;
+  location_or_link: string;
+  exclude_interview_id?: number;
+}): Promise<InterviewConflictResult> {
+  return apiRequest<InterviewConflictResult>("/interviews/check-conflicts", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAvailableInterviewers(): Promise<
+  AvailableInterviewer[]
+> {
+  return apiRequest<AvailableInterviewer[]>("/interviews/interviewers");
+}
+
+export async function fetchPublicInterview(
+  token: string,
+): Promise<InterviewItem> {
+  return apiRequest<InterviewItem>(
+    `/interviews/public/${encodeURIComponent(token)}`,
+  );
+}
+
+export async function respondToPublicInterview(
+  token: string,
+  payload: CandidateInterviewReply,
+): Promise<InterviewItem> {
+  return apiRequest<InterviewItem>(
+    `/interviews/public/${encodeURIComponent(token)}/respond`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function fetchManageInterviews(params?: {
@@ -91,12 +186,14 @@ export async function fetchManageInterviews(params?: {
   if (params?.page_size) query.append("page_size", String(params.page_size));
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
-  return apiRequest<PaginatedInterviews>(`/interviews/manage/all${queryString}`);
+  return apiRequest<PaginatedInterviews>(
+    `/interviews/manage/all${queryString}`,
+  );
 }
 
 export async function updateInterview(
   id: number,
-  payload: UpdateInterviewPayload
+  payload: UpdateInterviewPayload,
 ): Promise<InterviewItem> {
   return apiRequest<InterviewItem>(`/interviews/${id}`, {
     method: "PUT",
@@ -104,6 +201,10 @@ export async function updateInterview(
   });
 }
 
-export async function fetchApplicationInterviews(application_id: number): Promise<InterviewItem[]> {
-  return apiRequest<InterviewItem[]>(`/applications/${application_id}/interviews`);
+export async function fetchApplicationInterviews(
+  application_id: number,
+): Promise<InterviewItem[]> {
+  return apiRequest<InterviewItem[]>(
+    `/applications/${application_id}/interviews`,
+  );
 }

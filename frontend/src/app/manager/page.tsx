@@ -2,8 +2,10 @@
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from 'next/link';
 import {
   Briefcase,
+  ClipboardCheck,
   Users,
   CheckCircle2,
   XCircle,
@@ -2468,6 +2470,7 @@ III. QUYỀN LỢI ĐÃI NGỘ:
             </button>
 
             {/* 4. Lịch phỏng vấn */}
+            <Link href="/interviewer" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-gray-600 hover:bg-blue-50 hover:text-blue-600"><ClipboardCheck className="h-5 w-5"/>Phiếu & so sánh điểm</Link>
             <button
               type="button"
               onClick={() => {

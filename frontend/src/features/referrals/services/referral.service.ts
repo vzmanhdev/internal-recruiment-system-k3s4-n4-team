@@ -13,7 +13,13 @@ export interface ReferralItem {
   candidate_phone: string;
   cv_url: string;
   relationship_note?: string;
-  status: "pending" | "contacted" | "interviewed" | "hired" | "bonus_paid" | "rejected";
+  status:
+    | "pending"
+    | "contacted"
+    | "interviewed"
+    | "hired"
+    | "bonus_paid"
+    | "rejected";
   bonus_amount: number;
   created_at: string;
   updated_at: string;
@@ -58,7 +64,9 @@ export interface CreateEvaluationPayload {
   feedback: string;
 }
 
-export async function createReferral(payload: CreateReferralPayload): Promise<ReferralItem> {
+export async function createReferral(
+  payload: CreateReferralPayload,
+): Promise<ReferralItem> {
   return apiRequest<ReferralItem>("/referrals", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -88,7 +96,7 @@ export async function fetchManageReferrals(params?: {
 export async function updateReferralStatus(
   id: number,
   status: string,
-  bonus_amount?: number
+  bonus_amount?: number,
 ): Promise<ReferralItem> {
   return apiRequest<ReferralItem>(`/referrals/${id}/status`, {
     method: "POST",
@@ -98,14 +106,45 @@ export async function updateReferralStatus(
 
 export async function createEvaluation(
   application_id: number,
-  payload: CreateEvaluationPayload
+  payload: CreateEvaluationPayload,
 ): Promise<EvaluationItem> {
-  return apiRequest<EvaluationItem>(`/applications/${application_id}/evaluations`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return apiRequest<EvaluationItem>(
+    `/applications/${application_id}/evaluations`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
-export async function fetchEvaluations(application_id: number): Promise<EvaluationItem[]> {
-  return apiRequest<EvaluationItem[]>(`/applications/${application_id}/evaluations`);
+export async function fetchEvaluations(
+  application_id: number,
+): Promise<EvaluationItem[]> {
+  return apiRequest<EvaluationItem[]>(
+    `/applications/${application_id}/evaluations`,
+  );
+}
+
+export interface CandidateScoreComparison {
+  application_id: number;
+  candidate_name: string;
+  job_title?: string;
+  fit_score: number;
+  overall_score: number;
+  competency_score: number;
+  culture_fit_score: number;
+  evaluation_count: number;
+  recommendations: string[];
+  evaluators: EvaluationItem[];
+}
+
+export async function fetchEvaluationComparison(
+  applicationIds: number[] = [],
+): Promise<CandidateScoreComparison[]> {
+  const query = applicationIds.length
+    ? `?application_ids=${applicationIds.join(",")}`
+    : "";
+  return apiRequest<CandidateScoreComparison[]>(
+    `/evaluations/comparison${query}`,
+  );
 }

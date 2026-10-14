@@ -17,7 +17,7 @@ const appStatus: Record<string, string> = {
   applied: "Đã nộp", screening: "Đang sàng lọc", interviewing: "Phỏng vấn", offered: "Đã gửi offer",
   hired: "Trúng tuyển", rejected: "Chưa phù hợp", withdrawn: "Đã rút",
 };
-const responseLabel: Record<string, string> = { pending: "Chờ phản hồi", confirmed: "Đã xác nhận", declined: "Đã từ chối" };
+const responseLabel: Record<string, string> = { pending: "Chờ phản hồi", confirmed: "Đã xác nhận", declined: "Đã từ chối", reschedule_requested: "Đã đề nghị đổi lịch" };
 
 export function CandidateDashboard() {
   const session = useAuthSession();
@@ -105,7 +105,7 @@ export function CandidateDashboard() {
         <Card>
           <div className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-violet-600"/><h2 className="font-bold text-slate-900">Lịch phỏng vấn</h2></div>
           <div className="mt-4 space-y-4">{interviews.length === 0 ? <p className="text-sm text-slate-500">Chưa có lịch phỏng vấn.</p> : interviews.map((item) => (
-            <div key={item.id} className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold text-slate-900">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{new Date(item.start_time).toLocaleString("vi-VN")} · {item.location_or_link}</p><p className="mt-2 text-xs font-semibold text-violet-700">{responseLabel[item.candidate_response ?? "pending"]}</p>{(item.candidate_response ?? "pending") === "pending" && <div className="mt-3 flex gap-2"><Button size="sm" isLoading={workingId === `int-${item.id}`} onClick={() => runAction(`int-${item.id}`, () => respondToInterview(item.id, "confirmed"), "Đã xác nhận tham gia phỏng vấn.")}>Xác nhận</Button><Button size="sm" variant="outline" onClick={() => runAction(`int-${item.id}`, () => respondToInterview(item.id, "declined"), "Đã gửi phản hồi từ chối.")}>Từ chối</Button></div>}</div>
+            <div key={item.id} className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold text-slate-900">{item.title}</h3><p className="mt-1 text-sm text-slate-600">{new Date(item.start_time).toLocaleString("vi-VN")} · {item.location_or_link}</p><p className="mt-2 text-xs font-semibold text-violet-700">{responseLabel[item.candidate_response ?? "pending"]}</p>{item.response_token && <Button size="sm" variant="outline" className="mt-3" href={`/interview-response?token=${encodeURIComponent(item.response_token)}`}>Xem lịch / đề nghị đổi lịch</Button>}{(item.candidate_response ?? "pending") === "pending" && <div className="mt-3 flex gap-2"><Button size="sm" isLoading={workingId === `int-${item.id}`} onClick={() => runAction(`int-${item.id}`, () => respondToInterview(item.id, "confirmed"), "Đã xác nhận tham gia phỏng vấn.")}>Xác nhận</Button><Button size="sm" variant="outline" onClick={() => runAction(`int-${item.id}`, () => respondToInterview(item.id, "declined"), "Đã gửi phản hồi từ chối.")}>Từ chối</Button></div>}</div>
           ))}</div>
         </Card>
 

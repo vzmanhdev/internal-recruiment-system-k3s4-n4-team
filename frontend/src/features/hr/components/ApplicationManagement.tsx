@@ -29,7 +29,7 @@ import {
   fetchEvaluations,
   EvaluationItem,
 } from "@/features/referrals/services/referral.service";
-import { createInterview } from "@/features/interviews/services/interview.service";
+import { createInterview, fetchAvailableInterviewers, AvailableInterviewer } from "@/features/interviews/services/interview.service";
 import { createOffer } from "@/features/offers/services/offer.service";
 import { ApiError } from "@/lib/api-client";
 
@@ -78,6 +78,8 @@ export function ApplicationManagement() {
   // Interview Schedule Modal State
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [submittingSchedule, setSubmittingSchedule] = useState(false);
+  const [schedulePanel, setSchedulePanel] = useState<number[]>([]);
+  const [availablePanel, setAvailablePanel] = useState<AvailableInterviewer[]>([]);
   const [scheduleForm, setScheduleForm] = useState({
     title: "Phỏng vấn Chuyên môn Vòng 1",
     interview_type: "online",
@@ -101,8 +103,9 @@ export function ApplicationManagement() {
         start_time: new Date(scheduleForm.start_time).toISOString(),
         end_time: new Date(scheduleForm.end_time).toISOString(),
         notes: scheduleForm.notes,
+        interviewer_ids: schedulePanel,
       });
-      setNotice("Đã lên lịch phỏng vấn và gửi thông báo thành công!");
+      setNotice("Đã tạo lịch phỏng vấn. Mở trang Lịch phỏng vấn để gửi lời mời.");
     } catch (err: unknown) {
       setActionError(err instanceof ApiError ? err.message : "Không thể lên lịch phỏng vấn.");
     } finally {
@@ -228,6 +231,8 @@ export function ApplicationManagement() {
   };
 
   const openScheduleModal = () => {
+    setSchedulePanel([]);
+    void fetchAvailableInterviewers().then(setAvailablePanel).catch(() => setActionError('Không thể tải hội đồng phỏng vấn.'));
     const start = new Date(Date.now() + 86400000);
     const end = new Date(start.getTime() + 3600000);
     setScheduleForm((current) => ({
@@ -607,6 +612,8 @@ export function ApplicationManagement() {
                       </div>
                     </div>
                     <div>
+                      <p className="mb-2 font-semibold text-slate-700">Hội đồng phỏng vấn</p>
+                      <div className="mb-3 flex flex-wrap gap-3">{availablePanel.map((person) => <label key={person.id} className="flex items-center gap-2"><input type="checkbox" checked={schedulePanel.includes(person.id)} onChange={() => setSchedulePanel((current) => current.includes(person.id) ? current.filter((id) => id !== person.id) : [...current, person.id])}/>{person.full_name}</label>)}</div>
                       <label className="block font-semibold text-slate-700 mb-1">Ghi chú dặn dò</label>
                       <textarea
                         rows={2}

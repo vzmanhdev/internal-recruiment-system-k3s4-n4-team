@@ -77,6 +77,11 @@ with engine.begin() as connection:
     if "candidate_response_at" not in interview_columns:
         timestamp_type = "TIMESTAMP" if engine.dialect.name == "postgresql" else "DATETIME"
         connection.execute(text(f"ALTER TABLE interview_schedules ADD COLUMN candidate_response_at {timestamp_type}"))
+    if "candidate_response_note" not in interview_columns:
+        connection.execute(text("ALTER TABLE interview_schedules ADD COLUMN candidate_response_note TEXT"))
+    if "candidate_proposed_start_time" not in interview_columns:
+        timestamp_type = "TIMESTAMP" if engine.dialect.name == "postgresql" else "DATETIME"
+        connection.execute(text(f"ALTER TABLE interview_schedules ADD COLUMN candidate_proposed_start_time {timestamp_type}"))
     application_columns = {column["name"] for column in inspect(engine).get_columns("job_applications")}
     for name, definition in {
         "code": "VARCHAR(50)",

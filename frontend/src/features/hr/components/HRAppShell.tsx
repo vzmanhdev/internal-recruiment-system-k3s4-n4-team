@@ -11,7 +11,7 @@ interface HRAppShellProps {
 
 export const HRAppShell: React.FC<HRAppShellProps> = ({ children }) => {
   const path = usePathname();
-  if (["/hr/headcount", "/hr/requests", "/hr/configuration", "/hr/applications", "/hr/analytics", "/hr/content"].some(route => path === route || path.startsWith(route + "/"))) return <>{children}</>;
+  if (["/hr/headcount", "/hr/requests", "/hr/configuration", "/hr/applications", "/hr/analytics", "/hr/content", "/hr/interviews"].some(route => path === route || path.startsWith(route + "/"))) return <>{children}</>;
   return (
     <div className="min-h-screen bg-[#fafbfc] text-slate-800 font-sans flex flex-col antialiased">
       {/* Shared Global HR Header */}

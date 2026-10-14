@@ -1,141 +1,453 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { Calendar, UserCheck, Star, FileText, CheckCircle2, Clock, LogOut } from 'lucide-react';
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardCheck,
+  RefreshCw,
+  Star,
+  X,
+} from "lucide-react";
+import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
+import { Alert } from "@/components/ui/Alert";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { ApiError } from "@/lib/api-client";
+import {
+  fetchMyInterviews,
+  InterviewItem,
+} from "@/features/interviews/services/interview.service";
+import {
+  CandidateScoreComparison,
+  createEvaluation,
+  fetchEvaluationComparison,
+} from "@/features/referrals/services/referral.service";
+
+const recommendationLabel: Record<string, string> = {
+  strong_hire: "Rất nên tuyển",
+  hire: "Nên tuyển",
+  hold: "Cân nhắc",
+  reject: "Không phù hợp",
+};
+const navItems = [
+  { href: "/interviewer", label: "Lịch & đánh giá", icon: ClipboardCheck },
+];
 
 export default function InterviewerWorkspacePage() {
-  const [selectedCandidate, setSelectedCandidate] = useState<any>(null);
+  const [interviews, setInterviews] = useState<InterviewItem[]>([]);
+  const [comparison, setComparison] = useState<CandidateScoreComparison[]>([]);
+  const [jobFilter, setJobFilter] = useState("all");
+  const filteredComparison = comparison.filter(
+    (candidate) => jobFilter === "all" || candidate.job_title === jobFilter,
+  );
+  const [selected, setSelected] = useState<InterviewItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [form, setForm] = useState({
+    overall_score: 4,
+    competency_score: 4,
+    culture_fit_score: 4,
+    recommendation: "hire",
+    feedback: "",
+  });
 
-  const interviews = [
-    { id: 1, candidateName: 'Lê Hoàng Cường', position: 'Kỹ sư Frontend Lead', time: '14:00 - 15:00, Hôm nay', room: 'Phòng PV 2 (Google Meet)', cvUrl: '#', status: 'Sắp tới' },
-    { id: 2, name: 'Đỗ Hoàng Long', candidateName: 'Đỗ Hoàng Long', position: 'Data Analyst Senior', time: '09:30 - 10:30, Ngày mai', room: 'Phòng Trực tiếp A3', cvUrl: '#', status: 'Đã xếp lịch' },
-  ];
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [scheduleData, scoreData] = await Promise.all([
+        fetchMyInterviews(),
+        fetchEvaluationComparison(),
+      ]);
+      setInterviews(scheduleData.items);
+      setComparison(scoreData);
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Không thể tải dữ liệu đánh giá.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    queueMicrotask(() => void load());
+  }, [load]);
+
+  async function submitEvaluation(event: FormEvent) {
+    event.preventDefault();
+    if (!selected) return;
+    if (form.feedback.trim().length < 5) {
+      setError("Nhận xét phải có ít nhất 5 ký tự.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await createEvaluation(selected.application_id, form);
+      setNotice(`Đã lưu phiếu đánh giá cho ${selected.candidate_name}.`);
+      setSelected(null);
+      await load();
+    } catch (caught: unknown) {
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Không thể lưu phiếu đánh giá.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-[#fafbfc] text-slate-800 font-sans flex flex-col antialiased">
-      {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
-        <div className="w-full max-w-full px-6 sm:px-8 lg:px-10 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-md">
-              <UserCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-slate-900">Interviewer Workspace</span>
-                <span className="bg-purple-100 text-purple-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                  Người Phỏng Vấn
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">Xem lịch phỏng vấn được gán, đọc CV & nộp phiếu đánh giá 1-5 điểm</p>
-            </div>
+    <WorkspaceShell
+      title="Hội đồng phỏng vấn"
+      description="Lịch phỏng vấn, phiếu đánh giá và so sánh ứng viên"
+      icon={ClipboardCheck}
+      items={navItems}
+      allowedRoles={[
+        "admin",
+        "hr_manager",
+        "recruiter",
+        "manager",
+        "hiring_manager",
+        "interviewer",
+      ]}
+    >
+      <div className="space-y-6">
+        <section className="workspace-hero flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-bold text-violet-600">
+              Sprint 6 · Interview Scorecards
+            </p>
+            <h1 className="mt-2 text-2xl font-black text-slate-950 sm:text-3xl">
+              Phiếu đánh giá & so sánh ứng viên
+            </h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Nộp đánh giá theo thang 1–5 và đối chiếu kết quả của hội đồng trên
+              một lưới chung.
+            </p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-3 bg-slate-50 border border-gray-100 px-3.5 py-1.5 rounded-full">
-              <div className="w-8 h-8 rounded-full bg-purple-600 text-white font-bold flex items-center justify-center text-xs">
-                IT
+          <Button
+            variant="outline"
+            onClick={() => void load()}
+            leftIcon={<RefreshCw className="h-4 w-4" />}
+          >
+            Tải lại
+          </Button>
+        </section>
+        {error && <Alert variant="error">{error}</Alert>}
+        {notice && <Alert variant="success">{notice}</Alert>}
+        {loading ? (
+          <Card className="flex items-center justify-center gap-3 py-14 text-sm text-slate-500">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+            Đang tải dữ liệu...
+          </Card>
+        ) : (
+          <>
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-blue-600" />
+                <h2 className="text-lg font-black text-slate-950">
+                  Lịch được phân công
+                </h2>
               </div>
-              <div className="text-xs">
-                <span className="font-bold text-slate-800 block leading-none">Nguyễn Minh Trí (Interviewer)</span>
-                <span className="text-slate-400 text-[10px]">interviewer@company.com</span>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {interviews.length === 0 ? (
+                  <Card>
+                    <p className="text-sm text-slate-500">
+                      Bạn chưa được phân công lịch phỏng vấn.
+                    </p>
+                  </Card>
+                ) : (
+                  interviews.map((item) => (
+                    <Card key={item.id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-bold text-blue-600">
+                            {item.code}
+                          </p>
+                          <h3 className="mt-1 font-black text-slate-950">
+                            {item.candidate_name}
+                          </h3>
+                          <p className="text-sm text-slate-500">
+                            {item.job_title}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+                          {new Date(item.start_time).toLocaleDateString(
+                            "vi-VN",
+                          )}
+                        </span>
+                      </div>
+                      <p className="mt-4 text-sm text-slate-600">
+                        {new Date(item.start_time).toLocaleString("vi-VN")} ·{" "}
+                        {item.location_or_link}
+                      </p>
+                      <Button
+                        className="mt-4"
+                        size="sm"
+                        onClick={() => {
+                          setForm({
+                            overall_score: 4,
+                            competency_score: 4,
+                            culture_fit_score: 4,
+                            recommendation: "hire",
+                            feedback: "",
+                          });
+                          setSelected(item);
+                        }}
+                        leftIcon={<ClipboardCheck className="h-4 w-4" />}
+                      >
+                        Nhập phiếu đánh giá
+                      </Button>
+                    </Card>
+                  ))
+                )}
               </div>
-            </div>
-            <Link href="/login" className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-gray-200 text-slate-600 hover:text-rose-600 hover:bg-rose-50 text-xs font-semibold">
-              <LogOut className="w-4 h-4" />
-              <span>Đăng xuất</span>
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="flex-1 w-full max-w-full px-6 sm:px-8 lg:px-10 py-6 flex flex-col lg:flex-row gap-6">
-        {/* Main List */}
-        <div className="flex-1 space-y-6">
-          <div className="bg-white rounded-[24px] border border-gray-100 p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-slate-900 mb-1">Lịch Phỏng Vấn Được Phân Công</h2>
-            <p className="text-xs text-slate-500 mb-6">Đọc CV ứng viên trước buổi phỏng vấn và nộp kết quả đánh giá theo khung năng lực</p>
-
-            <div className="space-y-4">
-              {interviews.map((item) => (
-                <div key={item.id} className="border border-gray-100 bg-slate-50/50 hover:bg-slate-50 rounded-2xl p-5 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900 text-base">{item.candidateName}</span>
-                      <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{item.status}</span>
-                    </div>
-                    <p className="text-xs font-medium text-slate-600">Vị trí: {item.position}</p>
-                    <div className="flex items-center gap-4 text-xs text-slate-500 pt-1">
-                      <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-slate-400" /> {item.time}</span>
-                      <span>• {item.room}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all cursor-pointer">
-                      Đọc CV (.PDF)
-                    </button>
-                    <button 
-                      onClick={() => setSelectedCandidate(item)}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-purple-500/20 cursor-pointer"
-                    >
-                      Nộp Phiếu Đánh Giá
-                    </button>
-                  </div>
+            </section>
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-violet-600" />
+                <h2 className="text-lg font-black text-slate-950">
+                  Bảng so sánh điểm ứng viên
+                </h2>
+              </div>
+              <Card className="overflow-x-auto p-0">
+                <label className="block border-b border-slate-100 p-4 text-sm font-semibold text-slate-700">
+                  So sánh theo vị trí
+                  <select
+                    value={jobFilter}
+                    onChange={(event) => setJobFilter(event.target.value)}
+                    className="mt-2 block h-10 w-full rounded-xl border border-slate-200 px-3 sm:w-80"
+                  >
+                    <option value="all">Tất cả vị trí</option>
+                    {Array.from(
+                      new Set(
+                        comparison
+                          .map((candidate) => candidate.job_title)
+                          .filter(Boolean),
+                      ),
+                    ).map((title) => (
+                      <option key={title} value={title}>
+                        {title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <table className="min-w-[850px] w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="p-4">Ứng viên</th>
+                      <th className="p-4 text-center">Tổng quan</th>
+                      <th className="p-4 text-center">Chuyên môn</th>
+                      <th className="p-4 text-center">Văn hóa</th>
+                      <th className="p-4 text-center">CV phù hợp</th>
+                      <th className="p-4">Kết luận hội đồng</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredComparison.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="p-10 text-center text-slate-500"
+                        >
+                          Chưa có phiếu đánh giá để so sánh.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredComparison.map((candidate) => (
+                        <tr
+                          key={candidate.application_id}
+                          className="hover:bg-blue-50/40"
+                        >
+                          <td className="p-4">
+                            <strong className="block text-slate-950">
+                              {candidate.candidate_name}
+                            </strong>
+                            <span className="text-xs text-slate-500">
+                              {candidate.job_title} ·{" "}
+                              {candidate.evaluation_count} phiếu
+                            </span>
+                          </td>
+                          <Score value={candidate.overall_score} />
+                          <Score value={candidate.competency_score} />
+                          <Score value={candidate.culture_fit_score} />
+                          <td className="p-4 text-center">
+                            <span className="rounded-full bg-cyan-50 px-3 py-1 font-bold text-cyan-700">
+                              {candidate.fit_score}%
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-wrap gap-1.5">
+                              {candidate.recommendations.length ? (
+                                candidate.recommendations.map(
+                                  (value, index) => (
+                                    <span
+                                      key={`${value}-${index}`}
+                                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${value.includes("hire") ? "bg-emerald-50 text-emerald-700" : value === "reject" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700"}`}
+                                    >
+                                      {recommendationLabel[value] ?? value}
+                                    </span>
+                                  ),
+                                )
+                              ) : (
+                                <span className="text-xs text-slate-400">
+                                  Chưa kết luận
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </Card>
+            </section>
+          </>
+        )}
+        {selected && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm">
+            <form
+              onSubmit={submitEvaluation}
+              className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 p-5">
+                <div>
+                  <h2 className="text-xl font-black text-slate-950">
+                    Phiếu đánh giá 1–5 điểm
+                  </h2>
+                  <p className="text-sm text-slate-500">
+                    {selected.candidate_name} · {selected.job_title}
+                  </p>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Evaluation Panel Modal / Form */}
-        {selectedCandidate && (
-          <div className="w-full lg:w-96 bg-white rounded-[24px] border border-gray-100 p-6 shadow-lg h-fit space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-sm">Phiếu Đánh Giá 1-5 Điểm</h3>
-              <button onClick={() => setSelectedCandidate(null)} className="text-slate-400 hover:text-slate-600 text-xs font-bold cursor-pointer">Đóng ✕</button>
-            </div>
-
-            <div className="text-xs text-slate-600 space-y-3">
-              <div>
-                <span className="block font-bold text-slate-900">{selectedCandidate.candidateName}</span>
-                <span className="text-slate-500">{selectedCandidate.position}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-
-              <div className="space-y-2 pt-2">
-                <label className="block font-bold text-slate-700">1. Kiến thức chuyên môn (Thang 1-5):</label>
-                <select className="w-full p-2 border border-gray-200 rounded-xl bg-slate-50 text-xs font-semibold">
-                  <option value="5">5 - Xuất sắc</option>
-                  <option value="4">4 - Tốt</option>
-                  <option value="3">3 - Đạt yêu cầu</option>
-                  <option value="2">2 - Yếu</option>
-                  <option value="1">1 - Kém</option>
-                </select>
+              <div className="grid gap-4 p-5 sm:grid-cols-3">
+                {error && (
+                  <div className="sm:col-span-3">
+                    <Alert variant="error">{error}</Alert>
+                  </div>
+                )}
+                <ScoreInput
+                  label="Tổng quan"
+                  value={form.overall_score}
+                  onChange={(value) =>
+                    setForm({ ...form, overall_score: value })
+                  }
+                />
+                <ScoreInput
+                  label="Chuyên môn"
+                  value={form.competency_score}
+                  onChange={(value) =>
+                    setForm({ ...form, competency_score: value })
+                  }
+                />
+                <ScoreInput
+                  label="Phù hợp văn hóa"
+                  value={form.culture_fit_score}
+                  onChange={(value) =>
+                    setForm({ ...form, culture_fit_score: value })
+                  }
+                />
+                <label className="sm:col-span-3 text-sm font-bold text-slate-700">
+                  Đề xuất
+                  <select
+                    value={form.recommendation}
+                    onChange={(event) =>
+                      setForm({ ...form, recommendation: event.target.value })
+                    }
+                    className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-3 font-normal"
+                  >
+                    <option value="strong_hire">Rất nên tuyển</option>
+                    <option value="hire">Nên tuyển</option>
+                    <option value="hold">Cân nhắc</option>
+                    <option value="reject">Không phù hợp</option>
+                  </select>
+                </label>
+                <label className="sm:col-span-3 text-sm font-bold text-slate-700">
+                  Nhận xét
+                  <textarea
+                    rows={4}
+                    value={form.feedback}
+                    onChange={(event) =>
+                      setForm({ ...form, feedback: event.target.value })
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-200 p-3 font-normal"
+                    placeholder="Nêu điểm mạnh, rủi ro và khuyến nghị..."
+                  />
+                </label>
               </div>
-
-              <div className="space-y-2">
-                <label className="block font-bold text-slate-700">2. Kỹ năng giao tiếp & Tiếng Anh:</label>
-                <select className="w-full p-2 border border-gray-200 rounded-xl bg-slate-50 text-xs font-semibold">
-                  <option value="4">4 - Tốt</option>
-                  <option value="5">5 - Xuất sắc</option>
-                  <option value="3">3 - Đạt yêu cầu</option>
-                </select>
+              <div className="flex justify-end gap-3 border-t border-slate-100 p-5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSelected(null)}
+                >
+                  Hủy
+                </Button>
+                <Button
+                  type="submit"
+                  isLoading={saving}
+                  leftIcon={<CheckCircle2 className="h-4 w-4" />}
+                >
+                  Lưu phiếu
+                </Button>
               </div>
-
-              <div className="space-y-2">
-                <label className="block font-bold text-slate-700">Nhận xét chi tiết:</label>
-                <textarea rows={3} placeholder="Nhập ưu/nhược điểm chính của ứng viên..." className="w-full p-2.5 border border-gray-200 rounded-xl bg-slate-50 text-xs" />
-              </div>
-
-              <button className="w-full py-2.5 bg-purple-600 text-white font-bold rounded-xl text-xs hover:bg-purple-700 transition-all cursor-pointer shadow-md shadow-purple-500/20">
-                Lưu & Gửi Đánh Giá
-              </button>
-            </div>
+            </form>
           </div>
         )}
       </div>
-    </div>
+    </WorkspaceShell>
+  );
+}
+
+function Score({ value }: { value: number }) {
+  return (
+    <td className="p-4 text-center">
+      <span className="inline-flex items-center gap-1 font-black text-slate-900">
+        <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+        {value ? value.toFixed(1) : "—"}
+      </span>
+    </td>
+  );
+}
+function ScoreInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="text-sm font-bold text-slate-700">
+      {label}
+      <select
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-3 font-normal"
+      >
+        {[5, 4, 3, 2, 1].map((score) => (
+          <option key={score} value={score}>
+            {score} / 5
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

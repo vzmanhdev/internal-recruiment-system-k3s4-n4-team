@@ -12,6 +12,8 @@ from app.models.application import JobApplication
 from app.models.job import JobPosting
 from app.models.referral_eval import InternalReferral, CandidateEvaluation
 from app.models.user import User
+from app.models.interview import InterviewSchedule, InterviewInterviewer
+from app.models.requisition import JobRequisition
 from app.schemas.referral_eval import (
     EvaluationCreate,
     EvaluationResponse,
@@ -24,6 +26,7 @@ from app.schemas.referral_eval import (
 router = APIRouter()
 
 HR_ADMIN_ROLES = {"admin", "hr_manager"}
+EVALUATION_ROLES = {"admin", "hr_manager", "recruiter", "hiring_manager", "manager", "interviewer"}
 
 def get_current_user_from_header(authorization: Optional[str], db: Session) -> User:
     if not authorization or not authorization.startswith("Bearer "):
@@ -39,6 +42,17 @@ def get_current_user_from_header(authorization: Optional[str], db: Session) -> U
 
 def get_hr_user(authorization: Optional[str], db: Session) -> User:
     return require_roles(authorization, db, HR_ADMIN_ROLES)
+
+def get_evaluation_user(authorization: Optional[str], db: Session) -> User:
+    return require_roles(authorization, db, EVALUATION_ROLES)
+
+def accessible_evaluation_applications(db: Session, user: User):
+    query = db.query(JobApplication)
+    if set(user.role.split(',')).intersection({'admin', 'hr_manager', 'recruiter'}):
+        return query
+    assigned_ids = db.query(InterviewSchedule.application_id).join(InterviewInterviewer).filter(InterviewInterviewer.interviewer_id == user.id)
+    managed_job_ids = db.query(JobPosting.id).join(JobRequisition, JobPosting.requisition_id == JobRequisition.id).filter(JobRequisition.created_by_id == user.id)
+    return query.filter(or_(JobApplication.id.in_(assigned_ids), JobApplication.job_id.in_(managed_job_ids)))
 
 def get_internal_user(authorization: Optional[str], db: Session) -> User:
     user = get_current_user_from_header(authorization, db)
@@ -192,12 +206,20 @@ def create_application_evaluation(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    hr_user = get_hr_user(authorization, db)
+    hr_user = get_evaluation_user(authorization, db)
 
-    app_record = db.query(JobApplication).filter(JobApplication.id == application_id).first()
+    app_record = accessible_evaluation_applications(db, hr_user).filter(JobApplication.id == application_id).first()
     if not app_record:
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
 
+    evaluation = db.query(CandidateEvaluation).filter_by(application_id=application_id, evaluator_id=hr_user.id).first()
+    if evaluation:
+        for field, value in payload.model_dump().items():
+            setattr(evaluation, field, value.strip() if isinstance(value, str) else value)
+        evaluation.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(evaluation)
+        return evaluation.to_dict()
     evaluation = CandidateEvaluation(
         application_id=application_id,
         evaluator_id=hr_user.id,
@@ -220,9 +242,9 @@ def get_application_evaluations(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
-    get_hr_user(authorization, db)
+    user = get_evaluation_user(authorization, db)
 
-    app_record = db.query(JobApplication).filter(JobApplication.id == application_id).first()
+    app_record = accessible_evaluation_applications(db, user).filter(JobApplication.id == application_id).first()
     if not app_record:
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
 
@@ -234,3 +256,43 @@ def get_application_evaluations(
     )
 
     return [e.to_dict() for e in evaluations]
+
+@router.get("/evaluations/comparison")
+def compare_candidate_evaluations(
+    application_ids: str = Query(""),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db),
+):
+    user = get_evaluation_user(authorization, db)
+    requested_ids = [int(value) for value in application_ids.split(",") if value.strip().isdigit()]
+    applications_query = accessible_evaluation_applications(db, user)
+    if requested_ids:
+        applications_query = applications_query.filter(JobApplication.id.in_(requested_ids))
+    else:
+        evaluated_ids = db.query(CandidateEvaluation.application_id)
+        applications_query = applications_query.filter(JobApplication.id.in_(evaluated_ids))
+    applications = applications_query.order_by(JobApplication.updated_at.desc()).limit(12).all()
+
+    result = []
+    for application in applications:
+        evaluations = (
+            db.query(CandidateEvaluation)
+            .filter(CandidateEvaluation.application_id == application.id)
+            .order_by(CandidateEvaluation.created_at.asc())
+            .all()
+        )
+        count = len(evaluations)
+        average = lambda field: round(sum(float(getattr(item, field) or 0) for item in evaluations) / count, 2) if count else 0
+        result.append({
+            "application_id": application.id,
+            "candidate_name": application.full_name,
+            "job_title": application.job.title if application.job else None,
+            "fit_score": application.fit_score or 0,
+            "overall_score": average("overall_score"),
+            "competency_score": average("competency_score"),
+            "culture_fit_score": average("culture_fit_score"),
+            "evaluation_count": count,
+            "recommendations": [item.recommendation for item in evaluations],
+            "evaluators": [item.to_dict() for item in evaluations],
+        })
+    return result

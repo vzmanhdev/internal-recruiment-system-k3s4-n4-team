@@ -135,6 +135,14 @@ def test_referral_eval_flow():
     assert get_evals.status_code == 200
     assert len(get_evals.json()) >= 1
 
+    comparison = client.get(
+        f"/api/v1/evaluations/comparison?application_ids={app_id}",
+        headers=headers_admin,
+    )
+    assert comparison.status_code == 200
+    assert comparison.json()[0]["application_id"] == app_id
+    assert comparison.json()[0]["overall_score"] == 4.8
+
     print("Internal referrals & candidate evaluations flow test PASSED successfully!")
 
 if __name__ == "__main__":
