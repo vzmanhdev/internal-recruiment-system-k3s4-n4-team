@@ -22,6 +22,7 @@ NOTIFICATION_TYPES: Dict[str, tuple] = {
     "sla_overdue": ("Nhắc việc hồ sơ quá hạn SLA", True),
     "interview_response": ("Ứng viên phản hồi lịch phỏng vấn", False),
     "evaluation_pending": ("Phiếu đánh giá cần nộp", False),
+    "job_review": ("Tin tuyển dụng được trả lại để chỉnh sửa", False),
 }
 
 

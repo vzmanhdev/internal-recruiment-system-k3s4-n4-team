@@ -63,7 +63,17 @@ def list_departments(include_inactive: bool = False, authorization: Optional[str
     q = db.query(Department)
     if not (include_inactive and _is_hr(db, user)):
         q = q.filter(Department.is_active == True)  # noqa: E712
-    return [item.to_dict() for item in q.order_by(Department.sort_order, Department.name).all()]
+    rows = q.order_by(Department.sort_order, Department.name).all()
+    # read-only context for the organisation tree: head's name, active members, open (published) postings
+    heads = {u.id: u.full_name for u in db.query(User).filter(User.id.in_({d.head_user_id for d in rows if d.head_user_id} or {-1})).all()}
+    out = []
+    for d in rows:
+        data = d.to_dict()
+        data["head_name"] = heads.get(d.head_user_id)
+        data["member_count"] = db.query(User.id).filter(User.department == d.name, User.account_status == "active").count()
+        data["open_positions"] = db.query(JobPosting.id).filter(JobPosting.department_id == d.id, JobPosting.status == "published").count()
+        out.append(data)
+    return out
 
 
 def _validate_department(db: Session, payload, department_id: Optional[int] = None):
@@ -230,6 +240,10 @@ class CriterionIn(BaseModel):
     name: str = Field(..., min_length=2, max_length=255)
     description: Optional[str] = None
     weight: int = Field(..., ge=1, le=100)
+    category: Optional[str] = Field(default=None, max_length=60)
+    benchmark_low: Optional[str] = None
+    benchmark_mid: Optional[str] = None
+    benchmark_high: Optional[str] = None
 
 
 class FrameworkIn(BaseModel):
@@ -275,7 +289,7 @@ def create_framework(payload: FrameworkIn, authorization: Optional[str] = Header
                              status="active", updated_at=_now_label())
     db.add(fw); db.flush()
     for c in payload.criteria:
-        db.add(CompetencyCriterion(framework_id=fw.id, code=c.code, name=c.name, description=c.description, weight=c.weight))
+        db.add(CompetencyCriterion(framework_id=fw.id, **c.model_dump(exclude={"id"})))
     db.commit()
     return _framework_out(db, fw)
 
@@ -295,10 +309,11 @@ def update_framework(framework_id: str, payload: FrameworkIn, authorization: Opt
     for c in payload.criteria:
         if c.id and c.id in existing:
             row = existing[c.id]
-            row.code, row.name, row.description, row.weight = c.code, c.name, c.description, c.weight
+            for field, value in c.model_dump(exclude={"id"}).items():
+                setattr(row, field, value)
             keep.add(c.id)
         else:
-            db.add(CompetencyCriterion(framework_id=fw.id, code=c.code, name=c.name, description=c.description, weight=c.weight))
+            db.add(CompetencyCriterion(framework_id=fw.id, **c.model_dump(exclude={"id"})))
     for cid, row in existing.items():
         if cid not in keep:
             if db.query(InterviewQuestion.id).filter(InterviewQuestion.criteria_id == cid).first():
@@ -406,7 +421,15 @@ def list_categories(category_type: Optional[str] = None, authorization: Optional
     q = db.query(SharedCategory)
     if category_type:
         q = q.filter(SharedCategory.category_type == category_type)
-    return [item.to_dict() for item in q.order_by(SharedCategory.category_type, SharedCategory.sort_order).all()]
+    rows = q.order_by(SharedCategory.category_type, SharedCategory.sort_order).all()
+    out = []
+    for item in rows:
+        data = item.to_dict()
+        # how many applications reference this value (source or rejection reason) — read-only context
+        data["usage_count"] = db.query(JobApplication.id).filter(
+            or_(JobApplication.source == item.name, JobApplication.rejection_reason == item.name)).count()
+        out.append(data)
+    return out
 
 
 @router.post("/categories", status_code=status.HTTP_201_CREATED)
@@ -470,6 +493,7 @@ class HeadcountIn(BaseModel):
     department_id: int
     year: int = Field(..., ge=2000, le=2100)
     budget_quantity: int = Field(..., ge=0)
+    reason: Optional[str] = Field(default=None, max_length=1000)  # justification when the budget is raised (S3-04)
 
 
 def _headcount_out(db: Session, item: HeadcountBudget):
@@ -497,14 +521,21 @@ def get_headcount_status(department_id: int, year: Optional[int] = None, authori
 
 @router.post("/headcounts", status_code=201)
 def upsert_headcount(payload: HeadcountIn, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    authorize(authorization, db)
+    actor = authorize(authorization, db)
     if not db.query(Department.id).filter(Department.id == payload.department_id).first():
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
     item = db.query(HeadcountBudget).filter(HeadcountBudget.department_id == payload.department_id, HeadcountBudget.year == payload.year).first()
     if not item:
         item = HeadcountBudget(department_id=payload.department_id, year=payload.year, used_quantity=0, status="active")
         db.add(item)
+    previous = item.budget_quantity
     item.budget_quantity = payload.budget_quantity
+    if previous is not None and previous != payload.budget_quantity:
+        from app.models.audit import AuditLog
+        db.add(AuditLog(actor_id=getattr(actor, "id", None), actor_email=getattr(actor, "email", "") or "", action="HEADCOUNT_BUDGET_CHANGED",
+                        target_entity="DEPARTMENT", target_id=str(payload.department_id),
+                        payload_json=json.dumps({"year": payload.year, "from": previous, "to": payload.budget_quantity,
+                                                 "reason": (payload.reason or "").strip()}, ensure_ascii=False)))
     db.commit(); db.refresh(item)
     return _headcount_out(db, item)
 
@@ -583,6 +614,11 @@ class OnboardingItemIn(BaseModel):
     task_name: str = Field(..., min_length=2)
     assigned_role: str = Field("HR")
     days_before_start: int = Field(0, ge=-30, le=60)
+    # template-editor details (kept in the template JSON; checklists only use the three fields above)
+    phase: Optional[str] = Field(default=None, max_length=60)
+    is_mandatory: bool = True
+    description: Optional[str] = Field(default=None, max_length=1000)
+    sla_note: Optional[str] = Field(default=None, max_length=120)
 
 
 class OnboardingTemplateIn(BaseModel):
@@ -607,6 +643,45 @@ def create_onboarding_template(payload: OnboardingTemplateIn, authorization: Opt
                               items_json=json.dumps([i.model_dump() for i in payload.items], ensure_ascii=False), is_active=True)
     db.add(item); db.commit(); db.refresh(item)
     return item.to_dict()
+
+
+# ------------------------------------------------------------------ public career page content
+class CareerBenefit(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    description: str = Field("", max_length=500)
+    icon: str = Field("Award", max_length=40)
+
+
+class CareerPageIn(BaseModel):
+    company_name: str = Field(..., min_length=1, max_length=150)
+    slogan: str = Field("", max_length=300)
+    logo_url: str = Field("", max_length=500)
+    banner_url: str = Field("", max_length=1000)
+    about_us: str = Field("", max_length=5000)
+    benefits: List[CareerBenefit] = Field(default_factory=list, max_length=20)
+
+    @field_validator("logo_url", "banner_url")
+    @classmethod
+    def safe_url(cls, v: str) -> str:
+        v = (v or "").strip()
+        if v and not (v.startswith("https://") or v.startswith("/")):
+            raise ValueError("Đường dẫn ảnh phải bắt đầu bằng https:// hoặc là đường dẫn nội bộ (/...).")
+        return v
+
+
+@router.put("/career-page")
+def save_career_page(payload: CareerPageIn, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    from app.models.master_data import CareerPageSettings
+    user = authorize(authorization, db)
+    row = db.query(CareerPageSettings).filter(CareerPageSettings.id == 1).first()
+    if not row:
+        row = CareerPageSettings(id=1)
+        db.add(row)
+    row.data_json = json.dumps(payload.model_dump(), ensure_ascii=False)
+    row.updated_by_id = user.id
+    row.updated_at = datetime.utcnow()
+    db.commit(); db.refresh(row)
+    return row.data() | {"updated_at": row.updated_at.isoformat()}
 
 
 # ------------------------------------------------------------------ SLA thresholds (S5-10)

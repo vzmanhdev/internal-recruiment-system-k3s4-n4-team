@@ -56,6 +56,8 @@ PERMISSIONS_DATA = [
     {"code": "report:manage", "name": "Nhập chi phí tuyển dụng (cost-per-hire)", "module": "Báo Cáo & Thống Kê"},
     {"code": "email:manage", "name": "Quản lý mẫu email & nhật ký gửi", "module": "Email & Thông Báo"},
     {"code": "email:delete", "name": "Xóa mẫu email", "module": "Email & Thông Báo"},
+    {"code": "job:manage", "name": "Tạo / sửa / gỡ tin tuyển dụng", "module": "Tin Tuyển Dụng"},
+    {"code": "job:publish", "name": "Duyệt & xuất bản tin tuyển dụng", "module": "Tin Tuyển Dụng"},
 
     # Workspace / module access (who may open a workspace at all; actions inside still need their own permission)
     {"code": "workspace:admin:access", "name": "Truy cập phân hệ Quản trị hệ thống", "module": "Truy Cập Phân Hệ"},
@@ -71,8 +73,8 @@ PERMISSIONS_DATA = [
 # Default grants for the workspace permissions (added on top of DEFAULT_GRANTED_MATRIX below).
 WORKSPACE_GRANTS = {
     "hr_manager": ["workspace:hr:access", "workspace:employee:access", "requisition:assign", "requisition:close",
-                   "report:view", "report:manage", "email:manage", "email:delete"],
-    "recruiter": ["workspace:recruiter:access", "workspace:employee:access", "email:manage"],
+                   "report:view", "report:manage", "email:manage", "email:delete", "job:manage", "job:publish"],
+    "recruiter": ["workspace:recruiter:access", "workspace:employee:access", "email:manage", "job:manage"],
     "hiring_manager": ["workspace:manager:access", "workspace:employee:access"],
     "interviewer": ["workspace:interviewer:access", "workspace:employee:access"],
     "approver": ["workspace:approver:access", "workspace:employee:access", "report:view"],

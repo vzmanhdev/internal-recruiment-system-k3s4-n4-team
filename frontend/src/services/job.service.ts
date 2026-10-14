@@ -24,6 +24,7 @@ export interface JobPostingItem {
   published_by_id?: number | null;
   published_at?: string | null;
   created_at?: string;
+  review_note?: string | null;
 }
 
 export const jobService = {
@@ -70,6 +71,10 @@ export const jobService = {
 
   async publishJob(id: number): Promise<JobPostingItem> {
     return apiRequest<JobPostingItem>(`/jobs/${id}/publish`, { method: "POST" });
+  },
+
+  async requestChanges(id: number, reason: string): Promise<JobPostingItem> {
+    return apiRequest<JobPostingItem>(`/jobs/${id}/request-changes`, { method: "POST", body: JSON.stringify({ reason }) });
   },
 
   async closeJob(id: number): Promise<JobPostingItem> {

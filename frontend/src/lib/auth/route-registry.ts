@@ -48,6 +48,7 @@ const entries: Array<[string, Omit<RoutePolicy, "pattern">]> = [
   ["/candidate/tracking", { public: true }],
   ["/candidate/interview/[id]", { public: true }],
   ["/candidate/offer/[id]", { public: true }],
+  ["/candidate/withdraw/[id]", { public: true }],
   // candidate self-service (signed-in applicant with the candidate role)
   ["/candidate", ws("candidate")],
   ["/candidate/applications", ws("candidate")],

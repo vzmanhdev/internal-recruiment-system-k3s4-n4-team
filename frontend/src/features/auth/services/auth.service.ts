@@ -8,6 +8,7 @@ export interface UserItem {
   phone?: string;
   employee_code?: string;
   avatar_url?: string;
+  job_title?: string | null;
   role: string;
   /** /auth/me returns role objects; legacy payloads may contain plain codes. Display only — never an authority. */
   roles?: Array<string | { code: string; name: string }>;

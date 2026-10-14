@@ -1,47 +1,105 @@
-# Environment Variables & Secrets
-.env
-.env.local
-.env.*.local
-.env.development
-.env.production
-*.env
+# ==============================================================================
+# Git Ignore Configuration - Internal Recruitment System
+# ==============================================================================
 
-# Exceptions (Cho phép đẩy file mẫu .env.example)
-!.env.example
-!.env.*.example
-
-# Temporary & Test Folder (Tất cả file test/scratch/data tạm)
+# ------------------------------------------------------------------------------
+# 1. Folders excluded per user request (Ngoại trừ theo yêu cầu)
+# ------------------------------------------------------------------------------
+reports/
 tmp_test/
 .tmp_test/
 /tmp/
 
-# Dependencies
-node_modules/
+# ------------------------------------------------------------------------------
+# 2. Environment Variables & Credentials (Biến môi trường & Bí mật)
+# ------------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+*.env
+
+# Cho phép commit file mẫu .env.example
+!.env.example
+!.env.*.example
+
+# ------------------------------------------------------------------------------
+# 3. Python & Backend (FastAPI / SQLAlchemy / Pytest)
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
 venv/
 .venv/
-__pycache__/
-*.pyc
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
+.installed.cfg
+*.egg
 .pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# Next.js Build Output
+# ------------------------------------------------------------------------------
+# 4. Node.js & Frontend (Next.js / TypeScript)
+# ------------------------------------------------------------------------------
+node_modules/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Next.js Build Output & TypeScript build cache
 .next/
 .next-e2e/
 out/
-build/
-dist/
+*.tsbuildinfo
 
-# Database & SQLite files
+# ------------------------------------------------------------------------------
+# 5. Databases & SQLite files (Dữ liệu cục bộ)
+# ------------------------------------------------------------------------------
 *.db
+*.db-journal
+*.sqlite
 *.sqlite3
 
-# Log & Dump files
+# ------------------------------------------------------------------------------
+# 6. Logs & Dumps
+# ------------------------------------------------------------------------------
 *.log
 *.dump
 *.json_dump
+*.swp
+*.swo
+*~
 
-# OS & IDE Files
+# ------------------------------------------------------------------------------
+# 7. OS & IDE Files
+# ------------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+Desktop.ini
 .vscode/
+!.vscode/extensions.json
 .idea/
+*.sublime-project
+*.sublime-workspace

@@ -19,12 +19,14 @@ import {
   Users,
 } from 'lucide-react';
 import { BrandLogo } from '@/components/layout/BrandLogo';
-import {
-  CANDIDATE_JOBS,
-  CandidateJob,
-} from '@/features/candidate/data/candidateJobsData';
+import { careerApi, type CandidateJob } from '@/features/candidate/api';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 
 export default function CandidateJobsPage() {
+  const { data, error, loading, reload } = useApiData(() => careerApi.list(), []);
+  const CANDIDATE_JOBS: CandidateJob[] = useMemo(() => data || [], [data]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
@@ -33,13 +35,13 @@ export default function CandidateJobsPage() {
   const departments = useMemo(() => {
     const list = Array.from(new Set(CANDIDATE_JOBS.map((j) => j.department)));
     return list;
-  }, []);
+  }, [CANDIDATE_JOBS]);
 
   // Danh sách các địa điểm duy nhất
   const locations = useMemo(() => {
     const list = Array.from(new Set(CANDIDATE_JOBS.map((j) => j.location)));
     return list;
-  }, []);
+  }, [CANDIDATE_JOBS]);
 
   // Lọc dữ liệu theo từ khóa, phòng ban, địa điểm
   const filteredJobs = useMemo(() => {
@@ -57,13 +59,16 @@ export default function CandidateJobsPage() {
 
       return matchSearch && matchDept && matchLoc;
     });
-  }, [searchTerm, selectedDepartment, selectedLocation]);
+  }, [CANDIDATE_JOBS, searchTerm, selectedDepartment, selectedLocation]);
 
   const handleResetFilters = () => {
     setSearchTerm('');
     setSelectedDepartment('all');
     setSelectedLocation('all');
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-8">

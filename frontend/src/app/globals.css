@@ -78,4 +78,62 @@
     linear-gradient(to right, rgba(99, 102, 241, 0.07) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(99, 102, 241, 0.07) 1px, transparent 1px);
   background-size: 36px 36px;
-}
+}
+
+/* ========================================================
+   Sleek Custom Scrollbars for Sidebar & App Shell
+   ======================================================== */
+.custom-sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(203, 213, 225, 0.6) transparent;
+}
+.custom-sidebar-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(203, 213, 225, 0.6);
+  border-radius: 9999px;
+}
+.custom-sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.85);
+}
+
+/* ========================================================
+   High-Definition Crisp Borders for the Entire System
+   ======================================================== */
+:root {
+  --border: #cbd5e1;
+  --color-border: #cbd5e1;
+}
+
+/* Boost border visibility across all cards, panels, inputs, and tables */
+.border-\[\#E2E8F0\],
+[class*="border-[#E2E8F0]"] {
+  border-color: #cbd5e1 !important;
+}
+
+.border-slate-100,
+.border-gray-100 {
+  border-color: #e2e8f0 !important;
+}
+
+.border-slate-200,
+.border-gray-200 {
+  border-color: #cbd5e1 !important;
+}
+
+.border-slate-200\/80,
+.border-slate-200\/90,
+.border-slate-200\/70,
+.border-slate-200\/60 {
+  border-color: #cbd5e1 !important;
+}
+
+.border-slate-100\/80,
+.border-slate-100\/90 {
+  border-color: #e2e8f0 !important;
+}
+

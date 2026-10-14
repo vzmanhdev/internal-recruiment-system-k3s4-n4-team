@@ -1,6 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+import { masterDataService, type OnboardingTemplateItem, type OnboardingTemplateRow } from "@/services/master-data.service";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
+import { ApiError } from "@/lib/api-client";
 import {
   UserPlus,
   CheckCircle2,
@@ -55,131 +59,82 @@ export interface OnboardingTemplate {
 }
 
 // =============================================================================
-// INITIAL MOCK DATA
+// REAL ONBOARDING TEMPLATES (per department, versioned on save — S7-08)
 // =============================================================================
 
-const INITIAL_TEMPLATES: OnboardingTemplate[] = [
-  {
-    id: "tpl-tech",
-    name: "Mẫu Khối Công Nghệ & Kỹ Thuật (Tech & Dev)",
-    department: "Phòng Kỹ Thuật & Khối Tech",
-    description: "Tập trung cấp phát laptop cấu hình cao, tài khoản GitHub/AWS, thiết lập môi trường Dev & gán Mentor kỹ thuật.",
-    tasksCount: 8,
-  },
-  {
-    id: "tpl-biz",
-    name: "Mẫu Khối Kinh Doanh & Tăng Trưởng (Sales & Growth)",
-    department: "Khối Kinh Doanh & Marketing",
-    description: "Cấp phát CRM HubSpot, danh thiếp công ty, đào tạo sản phẩm và tài liệu giới thiệu giải pháp khách hàng.",
-    tasksCount: 6,
-  },
-  {
-    id: "tpl-standard",
-    name: "Mẫu Hội Nhập Chuẩn Chung (Standard Corporate)",
-    department: "Toàn bộ khối phòng ban",
-    description: "Quy trình tiêu chuẩn áp dụng cho tất cả nhân sự mới gia nhập công ty.",
-    tasksCount: 7,
-  },
-];
+const PHASES: OnboardingTaskItem["phase"][] = ["Pre-boarding (Trước Day 1)", "Day 1 (Ngày đầu tiên)", "Week 1 (Tuần đầu)", "Month 1 (Tháng đầu)"];
+// due date of each phase relative to the start date (days before start; negative = after)
+const PHASE_DAYS: Record<OnboardingTaskItem["phase"], number> = {
+  "Pre-boarding (Trước Day 1)": 3, "Day 1 (Ngày đầu tiên)": 0, "Week 1 (Tuần đầu)": -5, "Month 1 (Tháng đầu)": -20,
+};
+const ASSIGNEES: OnboardingTaskItem["assignee"][] = ["IT Support", "HR Operations", "Hiring Manager", "Buddy / Mentor"];
+const phaseOf = (i: OnboardingTemplateItem): OnboardingTaskItem["phase"] =>
+  (PHASES.find((ph) => ph === i.phase)
+    || (i.days_before_start > 0 ? PHASES[0] : i.days_before_start === 0 ? PHASES[1] : i.days_before_start >= -7 ? PHASES[2] : PHASES[3]));
+const assigneeOf = (role: string): OnboardingTaskItem["assignee"] =>
+  ASSIGNEES.find((a) => a === role) || (/it/i.test(role) ? "IT Support" : /manager|quản lý/i.test(role) ? "Hiring Manager" : /buddy|mentor/i.test(role) ? "Buddy / Mentor" : "HR Operations");
 
-const INITIAL_TECH_TASKS: OnboardingTaskItem[] = [
-  {
-    id: "task-1",
-    title: "Cấp phát Laptop & Bàn giao thiết bị làm việc",
-    phase: "Pre-boarding (Trước Day 1)",
-    assignee: "IT Support",
-    isMandatory: true,
-    slaDeadline: "Trước Day 1 (17:00)",
-    description: "Chuẩn bị Macbook Pro/ThinkPad M2, cấp màn hình phụ 27 inch, bàn phím và chuột công thái học.",
-    isCompleted: true,
-    order: 1,
-  },
-  {
-    id: "task-2",
-    title: "Khởi tạo Email công ty & Phân quyền Slack, Jira, Confluence",
-    phase: "Pre-boarding (Trước Day 1)",
-    assignee: "IT Support",
-    isMandatory: true,
-    slaDeadline: "Trước Day 1 (12:00)",
-    description: "Tạo tài khoản Google Workspace (ten.ho@company.com), add vào các kênh Slack chung và channel dự án.",
-    isCompleted: true,
-    order: 2,
-  },
-  {
-    id: "task-3",
-    title: "Ký kết Hợp đồng thử việc & Cam kết bảo mật NDA",
-    phase: "Pre-boarding (Trước Day 1)",
-    assignee: "HR Operations",
-    isMandatory: true,
-    slaDeadline: "Trước Day 1",
-    description: "Gửi hợp đồng điện tử qua DocuSign/FPT.eContract, thu thập hồ sơ nhân sự (CCCD, bằng cấp, thuế TNCN).",
-    isCompleted: true,
-    order: 3,
-  },
-  {
-    id: "task-4",
-    title: "Đón tiếp tại sảnh, Chụp ảnh thẻ & Tour tham quan văn phòng",
-    phase: "Day 1 (Ngày đầu tiên)",
-    assignee: "HR Operations",
-    isMandatory: true,
-    slaDeadline: "Day 1 (09:00 - 10:30)",
-    description: "Trao Welcome Kit (Áo thun, bình giữ nhiệt, sổ tay), phát thẻ từ ra vào văn phòng và giới thiệu các phòng ban.",
+function toTasks(tpl: OnboardingTemplateRow | undefined): OnboardingTaskItem[] {
+  return (tpl?.items || []).map((i, idx) => ({
+    id: `${tpl?.id}-${idx}`,
+    title: i.task_name,
+    phase: phaseOf(i),
+    assignee: assigneeOf(i.assigned_role),
+    isMandatory: i.is_mandatory ?? true,
+    slaDeadline: i.sla_note || (i.days_before_start > 0 ? `Trước ngày nhận việc ${i.days_before_start} ngày` : i.days_before_start === 0 ? "Trong ngày đầu tiên" : `Sau ngày nhận việc ${-i.days_before_start} ngày`),
+    description: i.description || "",
     isCompleted: false,
-    order: 4,
-  },
-  {
-    id: "task-5",
-    title: "Họp 1-on-1 với Quản lý trực tiếp (Hiring Manager Kick-off)",
-    phase: "Day 1 (Ngày đầu tiên)",
-    assignee: "Hiring Manager",
-    isMandatory: true,
-    slaDeadline: "Day 1 (14:00 - 15:30)",
-    description: "Làm rõ mục tiêu 2 tháng thử việc, phân công trách nhiệm trong Sprint hiện tại và trao đổi kỳ vọng KPI.",
-    isCompleted: false,
-    order: 5,
-  },
-  {
-    id: "task-6",
-    title: "Gán Buddy / Mentor hỗ trợ kỹ thuật và Setup môi trường dự án",
-    phase: "Week 1 (Tuần đầu)",
-    assignee: "Buddy / Mentor",
-    isMandatory: true,
-    slaDeadline: "Week 1 (Hết ngày thứ 3)",
-    description: "Clone repo, cấu hình Docker/Kubernetes local, cấp quyền AWS Staging và chạy thử pipeline CI/CD đầu tiên.",
-    isCompleted: false,
-    order: 6,
-  },
-  {
-    id: "task-7",
-    title: "Hoàn thành khóa học Văn hóa doanh nghiệp & An toàn thông tin",
-    phase: "Week 1 (Tuần đầu)",
-    assignee: "HR Operations",
-    isMandatory: false,
-    slaDeadline: "Week 1 (Thứ 6)",
-    description: "Học trực tuyến trên nền tảng E-learning và vượt qua bài test trắc nghiệm quy chuẩn bảo mật ISO 27001.",
-    isCompleted: false,
-    order: 7,
-  },
-  {
-    id: "task-8",
-    title: "Check-in 30 ngày: Đánh giá tiến độ hòa nhập & Phản hồi 2 chiều",
-    phase: "Month 1 (Tháng đầu)",
-    assignee: "HR Operations",
-    isMandatory: true,
-    slaDeadline: "Ngày thứ 30",
-    description: "Phiếu khảo sát trải nghiệm nhân viên mới, buổi đối thoại giữa HR, Quản lý và nhân sự để tháo gỡ vướng mắc.",
-    isCompleted: false,
-    order: 8,
-  },
-];
+    order: idx + 1,
+  }));
+}
+
+const toItems = (tasks: OnboardingTaskItem[]): OnboardingTemplateItem[] => tasks.map((t) => ({
+  task_name: t.title, assigned_role: t.assignee, days_before_start: PHASE_DAYS[t.phase], phase: t.phase,
+  is_mandatory: t.isMandatory, description: t.description || null, sla_note: t.slaDeadline || null,
+}));
 
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
 export default function HROnboardingPage() {
-  const [selectedTemplateId, setSelectedTemplateId] = useState("tpl-tech");
-  const [tasks, setTasks] = useState<OnboardingTaskItem[]>(INITIAL_TECH_TASKS);
+  const { data: od, error, loading, reload } = useApiData(async () => {
+    const [templates, depts] = await Promise.all([masterDataService.onboardingTemplates(), masterDataService.departments(false)]);
+    return { templates: templates.filter((t) => t.is_active), depts };
+  }, []);
+  const templateCards: OnboardingTemplate[] = useMemo(() => (od?.templates || []).map((t) => ({
+    id: String(t.id),
+    name: t.name,
+    department: od?.depts.find((d) => d.id === t.department_id)?.name || "Toàn bộ khối phòng ban",
+    description: `${t.items.filter((i) => i.is_mandatory ?? true).length} đầu việc bắt buộc · tự sinh checklist khi ứng viên nhận offer`,
+    tasksCount: t.items.length,
+  })), [od]);
+  const [pickedTemplateId, setSelectedTemplateId] = useState("");
+  const selectedTemplateId = pickedTemplateId || templateCards[0]?.id || "";
+  const selectedTemplate = od?.templates.find((t) => String(t.id) === selectedTemplateId);
+  const tasks = useMemo(() => toTasks(selectedTemplate), [selectedTemplate]);
+  // per-session preview ticks (not stored: real progress is tracked per hire on the offer's checklist)
+  const [previewDone, setPreviewDone] = useState<Record<string, boolean>>({});
+
+  // Every edit saves a new active version of the template
+  const persist = async (next: OnboardingTaskItem[], message: string) => {
+    if (!next.length) {
+      showToast("Mẫu onboarding phải có ít nhất một công việc.", "error");
+      return;
+    }
+    try {
+      const saved = await masterDataService.saveOnboardingTemplate({
+        name: selectedTemplate?.name || "Mẫu Hội Nhập Chuẩn Chung",
+        department_id: selectedTemplate?.department_id ?? null,
+        items: toItems(next),
+      });
+      setSelectedTemplateId(String(saved.id));
+      showToast(message);
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không lưu được mẫu onboarding.", "error");
+    }
+  };
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Filter phase
@@ -207,9 +162,7 @@ export default function HROnboardingPage() {
 
   // Toggle completed status
   const toggleTaskCompleted = (id: string) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, isCompleted: !t.isCompleted } : t))
-    );
+    setPreviewDone((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   // Move task up/down
@@ -223,13 +176,7 @@ export default function HROnboardingPage() {
     newTasks[index] = newTasks[targetIndex];
     newTasks[targetIndex] = temp;
 
-    // Re-index order numbers
-    newTasks.forEach((t, i) => {
-      t.order = i + 1;
-    });
-
-    setTasks(newTasks);
-    showToast(`Đã di chuyển công việc "${temp.title}"!`);
+    void persist(newTasks, `Đã di chuyển công việc "${temp.title}"!`);
   };
 
   // HTML5 Drag and Drop handlers
@@ -252,14 +199,8 @@ export default function HROnboardingPage() {
     newTasks.splice(draggedIndex, 1);
     newTasks.splice(dropIndex, 0, draggedItem);
 
-    // Re-index orders
-    newTasks.forEach((t, i) => {
-      t.order = i + 1;
-    });
-
-    setTasks(newTasks);
     setDraggedIndex(null);
-    showToast(`Đã sắp xếp lại thứ tự công việc qua kéo thả!`);
+    void persist(newTasks, `Đã sắp xếp lại thứ tự công việc qua kéo thả!`);
   };
 
   const handleDragEnd = () => {
@@ -267,70 +208,47 @@ export default function HROnboardingPage() {
   };
 
   // Handle Save Task (Create / Edit)
-  const handleSaveTask = (e: React.FormEvent) => {
+  const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim()) {
       showToast("Vui lòng nhập tên công việc onboarding", "error");
       return;
     }
 
-    if (modalMode === "create") {
-      const newTask: OnboardingTaskItem = {
-        id: `task-${Date.now()}`,
-        title: formData.title.trim(),
-        phase: formData.phase,
-        assignee: formData.assignee,
-        isMandatory: formData.isMandatory,
-        slaDeadline: formData.slaDeadline.trim() || "Theo lịch trình",
-        description: formData.description.trim() || "Công việc chuẩn bị cho nhân sự mới",
-        isCompleted: false,
-        order: tasks.length + 1,
-      };
-
-      setTasks([...tasks, newTask]);
-      showToast(`Đã thêm mới công việc "${newTask.title}" vào quy trình!`);
-    } else if (editingTask) {
-      setTasks(
-        tasks.map((t) =>
-          t.id === editingTask.id
-            ? {
-                ...t,
-                title: formData.title.trim(),
-                phase: formData.phase,
-                assignee: formData.assignee,
-                isMandatory: formData.isMandatory,
-                slaDeadline: formData.slaDeadline.trim(),
-                description: formData.description.trim(),
-              }
-            : t
-        )
-      );
-      showToast(`Cập nhật công việc "${formData.title}" thành công!`);
-    }
-
+    const edited: OnboardingTaskItem = {
+      id: editingTask?.id || `new-${tasks.length}`,
+      title: formData.title.trim(),
+      phase: formData.phase,
+      assignee: formData.assignee,
+      isMandatory: formData.isMandatory,
+      slaDeadline: formData.slaDeadline.trim(),
+      description: formData.description.trim(),
+      isCompleted: false,
+      order: editingTask?.order || tasks.length + 1,
+    };
+    const next = modalMode === "edit" && editingTask ? tasks.map((t) => (t.id === editingTask.id ? edited : t)) : [...tasks, edited];
+    await persist(next, modalMode === "edit" ? `Cập nhật công việc "${edited.title}" thành công!` : `Đã thêm mới công việc "${edited.title}" vào quy trình!`);
     setIsModalOpen(false);
   };
 
   // Handle Delete Task
   const handleDeleteTask = (id: string, title: string) => {
     if (confirm(`Bạn có chắc chắn muốn xóa công việc "${title}" khỏi mẫu onboarding này?`)) {
-      const remaining = tasks.filter((t) => t.id !== id);
-      remaining.forEach((t, i) => {
-        t.order = i + 1;
-      });
-      setTasks(remaining);
-      showToast(`Đã xóa công việc "${title}"!`);
+      void persist(tasks.filter((t) => t.id !== id), `Đã xóa công việc "${title}"!`);
     }
   };
 
   // Filtered tasks by Phase
-  const displayedTasks = tasks.filter((t) => {
+  const displayedTasks = tasks.map((t) => ({ ...t, isCompleted: !!previewDone[t.id] })).filter((t) => {
     if (phaseFilter === "all") return true;
     return t.phase === phaseFilter;
   });
 
   const mandatoryCount = tasks.filter((t) => t.isMandatory).length;
-  const completedCount = tasks.filter((t) => t.isCompleted).length;
+  const completedCount = tasks.filter((t) => previewDone[t.id]).length;
+
+  if (loading) return <LoadingState />;
+  if (error || !od) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">
@@ -399,7 +317,7 @@ export default function HROnboardingPage() {
 
         {/* Template Switcher */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {INITIAL_TEMPLATES.map((tpl) => {
+          {templateCards.map((tpl) => {
             const isSelected = selectedTemplateId === tpl.id;
             return (
               <div

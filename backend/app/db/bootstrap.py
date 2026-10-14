@@ -99,6 +99,11 @@ COMPAT_COLUMNS: List[Tuple[str, str, str, str]] = [
     # Onboarding owners and due dates (S7-08)
     ("onboarding_checklists", "responsible_user_id", "INTEGER", ""),
     ("onboarding_checklists", "due_date", "VARCHAR(50)", ""),
+    ("competency_criteria", "category", "VARCHAR(60)", ""),
+    ("competency_criteria", "benchmark_low", "TEXT", ""),
+    ("competency_criteria", "benchmark_mid", "TEXT", ""),
+    ("competency_criteria", "benchmark_high", "TEXT", ""),
+    ("job_postings", "review_note", "TEXT", ""),
 ]
 
 

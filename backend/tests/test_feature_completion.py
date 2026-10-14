@@ -22,7 +22,7 @@ from app.models.audit import Permission, RolePermission
 from app.models.hr import Department, JobTitle, RecruiterAssignment, SharedCategory
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
 from app.models.job import JobPosting
-from app.models.application import JobApplication
+from app.models.application import ApplicationLog, JobApplication
 from app.models.email_automation import EmailLog
 from app.models.interview import InterviewSchedule
 from app.models.notification import Notification
@@ -455,3 +455,107 @@ def test_direct_email_is_escaped_scoped_and_queued(w):
     log = db_get(EmailLog, id=ok.json()["id"])
     assert log.status == "queued" and log.template_code == "DIRECT_MESSAGE"
     assert "<script>" not in log.body_html and "&lt;script&gt;" in log.body_html and "<br>" in log.body_html
+
+
+def test_applicant_sees_own_offer_only_after_sending_and_without_internal_data(w):
+    """An employee applying internally must not see drafts / pending approvals nor approval history of their offer."""
+    app_id = apply(w, email="emp@example.com", cv=False, headers=w["h"]["emp"]).json()["id"]
+    client.post("/api/v1/interviews", headers=w["h"]["rec"], json={"application_id": app_id, "scheduled_time": _when(30), "interviewer_ids": [w["ids"]["int"]]})
+    start = (date.today() + timedelta(days=30)).isoformat()
+    offer = client.post("/api/v1/offers", headers=w["h"]["rec"], json={
+        "application_id": app_id, "offered_salary": 25_000_000, "start_date": start, "notes": "nội bộ", "salary_justification": "lý do nội bộ"}).json()
+    assert client.get("/api/v1/offers", headers=w["h"]["emp"]).json() == []
+    assert client.get(f"/api/v1/offers/{offer['id']}", headers=w["h"]["emp"]).status_code in (403, 404)
+    client.post(f"/api/v1/offers/{offer['id']}/decision", headers=w["h"]["hrm"], json={"action": "approved"})
+    assert client.get("/api/v1/offers", headers=w["h"]["emp"]).json() == []  # approved but not sent yet
+    client.post(f"/api/v1/offers/{offer['id']}/send", headers=w["h"]["rec"])
+    mine = client.get("/api/v1/offers", headers=w["h"]["emp"]).json()
+    assert [o["id"] for o in mine] == [offer["id"]] and mine[0]["status"] == "sent"
+    for internal in ("approval_logs", "notes", "salary_justification", "requires_escalation", "band_min", "created_by_name"):
+        assert internal not in mine[0]
+    answered = client.post(f"/api/v1/offers/{offer['id']}/respond", headers=w["h"]["emp"], json={"decision": "accepted"}).json()
+    assert answered["status"] == "accepted" and "approval_logs" not in answered
+    # staff still see the full record
+    assert "approval_logs" in client.get(f"/api/v1/offers/{offer['id']}", headers=w["h"]["hrm"]).json()
+
+
+def test_reschedule_reason_is_kept_in_application_history(w):
+    app_id = apply(w, cv=False).json()["id"]
+    iv = client.post("/api/v1/interviews", headers=w["h"]["rec"], json={
+        "application_id": app_id, "scheduled_time": _when(30), "interviewer_ids": [w["ids"]["int"]]}).json()
+    r = client.put(f"/api/v1/interviews/{iv['id']}", headers=w["h"]["rec"], json={
+        "scheduled_time": _when(54), "duration_minutes": 45, "location": iv["location"], "interviewer_ids": [w["ids"]["int"]],
+        "reason": "Người phỏng vấn bận họp"})
+    assert r.status_code == 200, r.text
+    db = TestingSessionLocal()
+    try:
+        comments = [l.comment for l in db.query(ApplicationLog).filter(ApplicationLog.application_id == app_id).all()]
+    finally:
+        db.close()
+    assert any("Người phỏng vấn bận họp" in (c or "") for c in comments)
+
+
+def test_signed_in_applicant_answers_only_own_interview(w):
+    own = apply(w, email="emp@example.com", cv=False, headers=w["h"]["emp"]).json()["id"]
+    other = apply(w, email="x@example.com", cv=False).json()["id"]
+    iv_own = client.post("/api/v1/interviews", headers=w["h"]["rec"], json={"application_id": own, "scheduled_time": _when(30), "interviewer_ids": [w["ids"]["int"]]}).json()
+    iv_other = client.post("/api/v1/interviews", headers=w["h"]["rec"], json={"application_id": other, "scheduled_time": _when(80), "interviewer_ids": [w["ids"]["int"]]}).json()
+    r = client.post(f"/api/v1/interviews/{iv_own['id']}/candidate-response", headers=w["h"]["emp"], json={"response": "reschedule_requested", "note": "bận"})
+    assert r.status_code == 200 and r.json()["candidate_response"] == "reschedule_requested"
+    assert client.post(f"/api/v1/interviews/{iv_other['id']}/candidate-response", headers=w["h"]["emp"], json={"response": "confirmed"}).status_code == 403
+    assert client.post(f"/api/v1/interviews/{iv_own['id']}/candidate-response", headers=w["h"]["emp"], json={"response": "maybe"}).status_code == 422
+
+
+def test_paused_requisition_can_be_resumed_by_hr_only(w):
+    r = client.post(f"/api/v1/requisitions/{w['req']}/close", headers=w["h"]["hrm"], json={"status": "paused", "reason": "rà soát", "confirm_active_candidates": True})
+    assert r.status_code == 200 and r.json()["status"] == "paused"
+    assert client.post(f"/api/v1/requisitions/{w['req']}/resume", headers=w["h"]["rec"], json={"reason": "x"}).status_code == 403
+    r = client.post(f"/api/v1/requisitions/{w['req']}/resume", headers=w["h"]["hrm"], json={"reason": "đã rà soát xong"})
+    assert r.status_code == 200 and r.json()["status"] == "approved"
+    assert client.post(f"/api/v1/requisitions/{w['req']}/resume", headers=w["h"]["hrm"], json={"reason": "lần 2"}).status_code == 409
+
+
+def test_hr_manager_sends_posting_back_with_reason_then_publishes(w):
+    created = client.post("/api/v1/jobs", headers=w["h"]["rec"], json={
+        "title": "Kỹ sư Backend 2", "requisition_id": w["req"], "department_id": w["dept"], "department_name": "Kỹ thuật",
+        "description": "Mô tả", "status": "published"}).json()
+    assert created["status"] == "pending_review"            # recruiters cannot publish directly
+    assert client.post(f"/api/v1/jobs/{created['id']}/request-changes", headers=w["h"]["rec"], json={"reason": "tự duyệt"}).status_code == 403
+    back = client.post(f"/api/v1/jobs/{created['id']}/request-changes", headers=w["h"]["hrm"], json={"reason": "Bổ sung yêu cầu kỹ năng"}).json()
+    assert back["status"] == "draft" and back["review_note"] == "Bổ sung yêu cầu kỹ năng"
+    assert client.post(f"/api/v1/jobs/{created['id']}/publish", headers=w["h"]["hrm"]).json()["review_note"] is None
+
+
+def test_career_page_settings_saved_by_hr_and_public(w):
+    assert client.get("/api/v1/public/career-page").json() == {"configured": False}
+    body = {"company_name": "Công ty A", "slogan": "x", "logo_url": "javascript:alert(1)", "banner_url": "", "about_us": "", "benefits": []}
+    assert client.put("/api/v1/hr/career-page", headers=w["h"]["hrm"], json=body).status_code == 422   # unsafe URL
+    body["logo_url"] = "https://cdn.example.com/logo.png"
+    assert client.put("/api/v1/hr/career-page", headers=w["h"]["rec"], json=body).status_code == 403
+    assert client.put("/api/v1/hr/career-page", headers=w["h"]["hrm"], json=body).status_code == 200
+    assert client.get("/api/v1/public/career-page").json()["company_name"] == "Công ty A"
+
+
+def test_notifications_are_paginated_private_and_markable_with_patch(w):
+    db = TestingSessionLocal()
+    from app.models.notification import Notification
+    for i in range(5):
+        db.add(Notification(recipient_id=w["ids"]["rec"], type="sla_overdue", title=f"N{i}", message=""))
+    db.add(Notification(recipient_id=w["ids"]["hrm"], type="sla_overdue", title="other", message=""))
+    db.commit(); db.close()
+    page = client.get("/api/v1/notifications?limit=2&offset=2", headers=w["h"]["rec"]).json()
+    assert page["total"] == 5 and len(page["items"]) == 2 and page["unread_count"] == 5
+    first = page["items"][0]["id"]
+    assert client.patch(f"/api/v1/notifications/{first}/read", headers=w["h"]["rec"]).status_code == 200
+    assert client.get("/api/v1/notifications/unread-count", headers=w["h"]["rec"]).json()["unread_count"] == 4
+    other = client.get("/api/v1/notifications", headers=w["h"]["hrm"]).json()["items"][0]["id"]
+    assert client.patch(f"/api/v1/notifications/{other}/read", headers=w["h"]["rec"]).status_code == 404   # not someone else's
+
+
+def test_hiring_manager_creates_requisition_from_scratch_into_approval(w):
+    r = client.post("/api/v1/requisitions", headers=w["h"]["hm"], json={
+        "title": "Kỹ sư Backend mới", "department_id": w["dept"], "job_title_id": w["title"], "quantity": 1,
+        "reason": "expansion", "job_description": "Mô tả", "requirements": "Python", "reason_detail": "Mở rộng", "save_as_draft": False})
+    assert r.status_code == 201, r.text
+    assert r.json()["status"].startswith("pending_") and r.json()["job_title_name"] == "Kỹ sư Backend"
+    assert client.post("/api/v1/requisitions", headers=w["h"]["int"], json={"title": "x", "department_id": w["dept"]}).status_code == 403

@@ -5,6 +5,16 @@ import {
   Users, Search, Filter, Star, Eye, ChevronRight, CheckCircle2, 
   XCircle, Clock, FileText, ArrowRight, UserCheck, ShieldAlert, Sparkles
 } from 'lucide-react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { interviewService } from '@/services/interview.service';
+import type { ApiApplication } from '@/features/candidates/api';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+
+// pipeline column -> application status (both interview columns are the 'interviewing' status)
+const STAGE_TO_STATUS: Record<string, string> = {
+  applied: 'submitted', screening: 'screening', tech_interview: 'interviewing', hr_interview: 'interviewing', offer: 'offered', hired: 'hired',
+};
 
 interface CandidateItem {
   id: string;
@@ -30,53 +40,55 @@ const STAGES = [
 ];
 
 export default function HRCandidatesPage() {
-  const [candidates, setCandidates] = useState<CandidateItem[]>([
-    {
-      id: "CAN-001",
-      name: "Đỗ Hoàng Long",
-      email: "long.do@gmail.com",
-      phone: "0988 123 456",
-      position_applied: "Senior Backend Engineer",
-      stage: "offer",
-      rating: 5,
-      source: "TopCV",
-      recruiter: "Nguyễn Văn Hùng",
-      applied_at: "20/09/2026"
-    },
-    {
-      id: "CAN-002",
-      name: "Nguyễn Thu Thủy",
-      email: "thuthuy.nguyen@gmail.com",
-      phone: "0912 345 678",
-      position_applied: "Senior Backend Engineer",
-      stage: "tech_interview",
-      rating: 4,
-      source: "Website Công Khai",
-      recruiter: "Nguyễn Văn Hùng",
-      applied_at: "25/09/2026"
-    },
-    {
-      id: "CAN-003",
-      name: "Trần Minh Quang",
-      email: "quang.tm@gmail.com",
-      phone: "0934 567 890",
-      position_applied: "Trưởng nhóm Data Analyst",
-      stage: "hr_interview",
-      rating: 4,
-      source: "Giới Thiệu Nội Bộ",
-      recruiter: "Lê Thị Mai",
-      applied_at: "28/09/2026"
-    }
-  ]);
+  const { data, error, loading, reload } = useApiData(async () => {
+    const [apps, interviews] = await Promise.all([apiRequest<ApiApplication[]>('/applications'), interviewService.getInterviews().catch(() => [])]);
+    // an interviewing application whose latest round is the HR round sits in the HR-interview column
+    const hrRound = new Set(apps.filter((a) => {
+      const rounds = interviews.filter((i) => i.application_id === a.id).sort((x, y) => y.scheduled_time.localeCompare(x.scheduled_time));
+      return rounds[0] && /hr|nhân sự/i.test(rounds[0].round_name);
+    }).map((a) => a.id));
+    return apps
+      .filter((a) => ['submitted', 'screening', 'interviewing', 'offered', 'hired', 'onboarded'].includes(a.status))
+      .map((a): CandidateItem => ({
+        id: String(a.id),
+        name: a.full_name,
+        email: a.email,
+        phone: a.phone || '',
+        position_applied: a.job_title || '',
+        stage: a.status === 'submitted' ? 'applied' : a.status === 'screening' ? 'screening'
+          : a.status === 'interviewing' ? (hrRound.has(a.id) ? 'hr_interview' : 'tech_interview')
+            : a.status === 'offered' ? 'offer' : 'hired',
+        rating: a.rating || 0,
+        source: a.source || 'Không rõ',
+        recruiter: '',
+        applied_at: a.created_at ? new Date(a.created_at).toLocaleDateString('vi-VN') : '',
+        resume_url: a.cv_url || undefined,
+      }));
+  }, []);
+  const candidates = data || [];
+  const [moveError, setMoveError] = useState('');
 
   const [viewMode, setViewMode] = useState<'board' | 'table'>('board');
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateItem | null>(null);
 
-  const moveStage = (candidateId: string, newStage: any) => {
-    setCandidates(prev => prev.map(c => c.id === candidateId ? { ...c, stage: newStage } : c));
-    alert(`Đã chuyển ứng viên sang giai đoạn: ${STAGES.find(s => s.key === newStage)?.label}`);
-    setSelectedCandidate(null);
+  const moveStage = async (candidateId: string, newStage: CandidateItem['stage']) => {
+    const current = candidates.find((c) => c.id === candidateId);
+    if (!current || STAGE_TO_STATUS[current.stage] === STAGE_TO_STATUS[newStage]) {
+      setSelectedCandidate(null);
+      return;
+    }
+    try {
+      await apiRequest(`/applications/${candidateId}/status`, { method: 'PUT', body: JSON.stringify({ status: STAGE_TO_STATUS[newStage] }) });
+      setMoveError('');
+      setSelectedCandidate(null);
+      reload();
+    } catch (err) {
+      setMoveError(err instanceof ApiError ? err.message : 'Không chuyển được giai đoạn.');
+    }
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -204,6 +216,7 @@ export default function HRCandidatesPage() {
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="font-bold text-slate-900">{selectedCandidate.position_applied}</div>
                 <div className="text-slate-500">Email: {selectedCandidate.email} | SĐT: {selectedCandidate.phone}</div>
+                {moveError && <div className="text-rose-600 font-semibold">{moveError}</div>}
               </div>
 
               <div>
@@ -212,7 +225,7 @@ export default function HRCandidatesPage() {
                   {STAGES.map((st) => (
                     <button 
                       key={st.key}
-                      onClick={() => moveStage(selectedCandidate.id, st.key)}
+                      onClick={() => moveStage(selectedCandidate.id, st.key as CandidateItem["stage"])}
                       className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between border ${
                         selectedCandidate.stage === st.key ? 'bg-blue-50 border-blue-300 text-blue-700 font-bold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                       }`}

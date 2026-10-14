@@ -1,8 +1,17 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+
+interface LinkInterview {
+  job_title: string | null; round_name: string; scheduled_time: string; duration_minutes: number;
+  location: string; meeting_link: string | null; candidate_response: string | null;
+}
+const pad = (n: number) => String(n).padStart(2, '0');
 import {
   Calendar,
   Clock,
@@ -27,9 +36,13 @@ import {
   FileText,
 } from 'lucide-react';
 
-export default function CandidateInterviewActionPage() {
-  const params = useParams();
-  const interviewId = (params?.id as string) || 'IV-2026-88';
+function CandidateInterviewAction() {
+  // The e-mail link carries a single-use token bound to exactly this interview (S6-05)
+  const token = useSearchParams().get('token') || '';
+  const { data: raw, error, loading, reload } = useApiData(
+    () => apiRequest<LinkInterview>(`/public/interviews?token=${encodeURIComponent(token)}`),
+    [token],
+  );
 
   // Page interaction states: 'pending' | 'confirmed' | 'rescheduling' | 'rescheduled_success'
   const [actionState, setActionState] = useState<
@@ -44,37 +57,47 @@ export default function CandidateInterviewActionPage() {
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Mock interview details
-  const interview = useMemo(() => {
+  const interview = raw ? (() => {
+    const start = new Date(raw.scheduled_time);
+    const end = new Date(start.getTime() + raw.duration_minutes * 60_000);
     return {
-      id: interviewId,
-      position: 'Senior Backend Engineer (Go/Python)',
-      department: 'Khối Công Nghệ & Phần Mềm',
-      round: 'Vòng 2: Phỏng vấn Kỹ thuật & Thiết kế Hệ thống',
-      dateDisplay: 'Thứ Sáu, 16/10/2026',
-      timeDisplay: '14:30 - 15:30 (GMT+7)',
-      duration: '60 phút',
-      format: 'Online Meeting qua Google Meet',
-      meetUrl: 'https://meet.google.com/abc-defg-hij',
-      interviewers: [
-        { name: 'Nguyễn Tiến Dũng', role: 'Engineering Director (Hiring Manager)' },
-        { name: 'Phạm Văn Tuấn', role: 'Backend Tech Lead' },
-        { name: 'Trần Thị Recruiter', role: 'Senior Talent Acquisition' },
-      ],
-      note: 'Vui lòng chuẩn bị máy tính có webcam, mic hoạt động tốt và môi trường yên tĩnh. Buổi phỏng vấn sẽ bao gồm phần Live Coding và System Design.',
+      id: raw.round_name,
+      position: raw.job_title || '',
+      department: '',
+      round: raw.round_name,
+      dateDisplay: start.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }),
+      timeDisplay: `${pad(start.getHours())}:${pad(start.getMinutes())} - ${pad(end.getHours())}:${pad(end.getMinutes())} (GMT+7)`,
+      duration: `${raw.duration_minutes} phút`,
+      format: raw.meeting_link ? 'Phỏng vấn trực tuyến' : `Trực tiếp tại ${raw.location}`,
+      meetUrl: raw.meeting_link || '',
+      interviewers: [] as Array<{ name: string; role: string }>,
+      note: raw.candidate_response === 'confirmed'
+        ? 'Bạn đã xác nhận tham dự buổi phỏng vấn này.'
+        : raw.candidate_response === 'reschedule_requested'
+          ? 'Bạn đã gửi đề nghị đổi lịch — bộ phận tuyển dụng sẽ liên hệ lại.'
+          : 'Vui lòng xác nhận tham dự hoặc đề nghị đổi lịch bên dưới.',
     };
-  }, [interviewId]);
+  })() : null;
 
-  const handleConfirmAttendance = () => {
-    setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setActionState('confirmed');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 600);
+  const reply = async (response: 'confirmed' | 'reschedule_requested', note?: string) => {
+    await apiRequest('/public/interviews/respond', { method: 'POST', body: JSON.stringify({ token, response, note }) });
   };
 
-  const handleRescheduleSubmit = (e: React.FormEvent) => {
+  const handleConfirmAttendance = async () => {
+    setIsSubmitting(true);
+    setFormError('');
+    try {
+      await reply('confirmed');
+      setActionState('confirmed');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Không gửi được xác nhận.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRescheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
@@ -89,12 +112,23 @@ export default function CandidateInterviewActionPage() {
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const note = rescheduleType === 'cancel'
+        ? `Ứng viên xin hủy tham dự: ${rescheduleReason.trim()}`
+        : `Đề nghị đổi sang ${proposedDate} ${proposedTime}: ${rescheduleReason.trim()}`;
+      await reply('reschedule_requested', note);
       setActionState('rescheduled_success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 700);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Không gửi được đề nghị.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (!token) return <ErrorState error={new ApiError(404, 'Liên kết không hợp lệ hoặc đã hết hiệu lực.')} />;
+  if (loading) return <LoadingState />;
+  if (error || !interview) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="max-w-4xl mx-auto w-full space-y-6 pb-12 antialiased">
@@ -466,6 +500,7 @@ export default function CandidateInterviewActionPage() {
             <div className="text-xs font-bold text-slate-500 text-center sm:text-left">
               Vui lòng phản hồi sớm để chúng tôi chuẩn bị đón tiếp bạn chu đáo nhất:
             </div>
+            {formError && <p className="text-xs font-semibold text-rose-600">{formError}</p>}
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               {/* Nút 1: Primary Green (Xác nhận tham dự) */}
@@ -493,5 +528,14 @@ export default function CandidateInterviewActionPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// useSearchParams (?token=) needs a Suspense boundary for static rendering
+export default function CandidateInterviewActionPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <CandidateInterviewAction />
+    </Suspense>
   );
 }

@@ -86,6 +86,12 @@ export const managerApi = {
    * S3-05: copy an existing requisition (always a clean draft without approval history), apply the
    * edited fields, then submit it for approval. Returns the new requisition and whether submit worked.
    */
+  /** S2-10: a brand-new requisition, sent straight into the approval chain. */
+  async createAndSubmit(data: { title: string; department_id: number; job_title_id?: number; quantity: number; target_onboard_date?: string; job_description: string; requirements: string; reason_detail: string }) {
+    const created = await requisitionService.createRequisition({ ...data, reason: "expansion", save_as_draft: false } as Parameters<typeof requisitionService.createRequisition>[0]);
+    return toManagerRequisition(created);
+  },
+
   async copyAndSubmit(sourceId: number, edits: { title: string; quantity: number; target_onboard_date?: string; job_description: string; requirements: string; reason_detail: string }) {
     const draft = await requisitionService.copyRequisition(sourceId);
     const updated = await requisitionService.updateRequisition(draft.id, {

@@ -35,13 +35,13 @@ export function LoginForm() {
     const errors: Record<string, string> = {};
 
     if (!cleanEmail) {
-      errors["email"] = "Vui lòng nhập email công việc.";
+      errors["email"] = "";
     } else if (!cleanEmail.includes("@")) {
       errors["email"] = "Email không đúng định dạng (Ví dụ: name@company.com).";
     }
 
     if (!password) {
-      errors["password"] = "Vui lòng nhập mật khẩu.";
+      errors["password"] = "";
     }
 
     if (Object.keys(errors).length > 0) {

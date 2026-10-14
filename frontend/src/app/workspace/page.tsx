@@ -38,18 +38,24 @@ export default function WorkspaceOverviewPage() {
         {groups.map((g) => {
           const links = g.items.flatMap((i) => (isSubgroup(i) ? i.children : [i]));
           return (
-            <section key={g.id} className="bg-white border border-[#E2E8F0] rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-8 h-8 rounded-lg bg-blue-50 text-[#2563EB] flex items-center justify-center">
+            <section
+              key={g.id}
+              className="bg-white border border-slate-300 rounded-2xl p-4.5 shadow-2xs hover:shadow-xs hover:border-blue-400 transition-all"
+            >
+              <div className="flex items-center gap-2.5 mb-3.5 pb-2.5 border-b border-slate-200">
+                <span className="w-8 h-8 rounded-xl bg-blue-50 text-[#2563EB] flex items-center justify-center border border-blue-200/60 shadow-2xs">
                   <NavIcon name={g.icon} className="w-4 h-4" />
                 </span>
-                <h2 className="text-sm font-bold text-[#0F172A]">{g.label}</h2>
+                <h2 className="text-sm font-bold text-slate-900 tracking-tight">{g.label}</h2>
               </div>
               <ul className="space-y-1">
                 {links.map((l) => (
                   <li key={l.id}>
-                    <Link href={l.href} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-[#334155] hover:bg-slate-50 hover:text-[#2563EB]">
-                      <NavIcon name={l.icon} className="w-3.5 h-3.5 text-[#94A3B8]" />
+                    <Link
+                      href={l.href}
+                      className="flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-[13px] text-slate-700 border border-transparent hover:border-slate-200 hover:bg-slate-50 hover:text-[#2563EB] transition-all font-medium"
+                    >
+                      <NavIcon name={l.icon} className="w-3.5 h-3.5 text-slate-400" />
                       {l.label}
                     </Link>
                   </li>

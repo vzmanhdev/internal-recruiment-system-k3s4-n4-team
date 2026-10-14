@@ -42,6 +42,14 @@ class OfferReply(BaseModel):
     comment: Optional[str] = None
 
 
+@router.get("/career-page")
+def career_page(db: Session = Depends(get_db)):
+    """Public career page content (company, about, benefits) as configured by HR; empty until configured."""
+    from app.models.master_data import CareerPageSettings
+    row = db.query(CareerPageSettings).filter(CareerPageSettings.id == 1).first()
+    return (row.data() | {"updated_at": row.updated_at.isoformat() if row.updated_at else None}) if row else {"configured": False}
+
+
 @router.post("/applications/status")
 def lookup_status(payload: StatusLookup, db: Session = Depends(get_db)):
     """S4-05: tracking code + email → general status only (no internal notes, no interviewer names)."""

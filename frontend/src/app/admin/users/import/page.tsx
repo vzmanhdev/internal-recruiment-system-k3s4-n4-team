@@ -140,24 +140,34 @@ export default function ImportUsersPage() {
           </Link>
         </div>
 
-        {/* Step Indicator */}
-        <div className="w-full grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-4 md:p-5 rounded-2xl border border-gray-100 shadow-xs text-xs font-bold">
-          <div className={`flex items-center gap-2 ${step >= 1 ? "text-blue-600" : "text-slate-400"}`}>
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${step >= 1 ? "bg-blue-100 text-blue-600" : "bg-slate-100"}`}>1</span>
-            <span>1. Chọn file Excel</span>
-          </div>
-          <div className={`flex items-center gap-2 ${step >= 2 ? "text-blue-600" : "text-slate-400"}`}>
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${step >= 2 ? "bg-blue-100 text-blue-600" : "bg-slate-100"}`}>2</span>
-            <span>2. Kiểm tra dữ liệu</span>
-          </div>
-          <div className={`flex items-center gap-2 ${step >= 3 ? "text-blue-600" : "text-slate-400"}`}>
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${step >= 3 ? "bg-blue-100 text-blue-600" : "bg-slate-100"}`}>3</span>
-            <span>3. Xử lý Import</span>
-          </div>
-          <div className={`flex items-center gap-2 ${step >= 4 ? "text-emerald-600" : "text-slate-400"}`}>
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-extrabold shrink-0 ${step >= 4 ? "bg-emerald-100 text-emerald-700" : "bg-slate-100"}`}>4</span>
-            <span>4. Báo cáo kết quả</span>
-          </div>
+        {/* Stepper Progress */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white p-4 md:p-5 rounded-2xl border border-gray-100 shadow-xs">
+          {[
+            { num: 1, title: "1. Chọn file Excel", desc: "Tải lên file .xlsx chuẩn" },
+            { num: 2, title: "2. Kiểm tra dữ liệu", desc: "Xem trước & xác thực" },
+            { num: 3, title: "3. Xử lý Import", desc: "Tạo tài khoản tự động" },
+            { num: 4, title: "4. Báo cáo kết quả", desc: "Tổng kết import" },
+          ].map((s) => (
+            <div key={s.num} className="flex items-center gap-3">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs shrink-0 transition-all ${
+                  step === s.num
+                    ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/20"
+                    : step > s.num
+                    ? "bg-emerald-500 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-400"
+                }`}
+              >
+                {step > s.num ? <CheckCircle2 className="w-4 h-4" /> : s.num}
+              </div>
+              <div className="min-w-0">
+                <p className={`text-xs font-bold truncate ${step >= s.num ? "text-slate-800" : "text-slate-400"}`}>
+                  {s.title}
+                </p>
+                <p className="text-[10px] text-slate-400 truncate">{s.desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* STEP 1: DOWNLOAD & UPLOAD */}
@@ -223,22 +233,80 @@ export default function ImportUsersPage() {
               </label>
             </div>
 
-            {/* Field Requirements List */}
+            {/* Field Requirements & Format Preview */}
             <div className="w-full bg-white rounded-2xl border border-gray-100 p-5 md:p-6 space-y-4 shadow-xs">
               <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm border-b border-gray-100 pb-3">
-                <HelpCircle className="w-5 h-5 text-blue-600" />
+                <HelpCircle className="w-5 h-5 text-[#4285F4]" />
                 <span>Hướng Dẫn Cấu Trúc Cột File Excel Chuẩn</span>
               </div>
 
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-gray-100 space-y-1">
-                  <span className="font-bold text-slate-800 block">Các Cột Bắt Buộc (Dòng 1):</span>
-                  <div className="text-[11px] text-slate-600 space-y-0.5">
-                    <div>• <strong>Họ và tên</strong>: Tên đầy đủ của nhân sự (bắt buộc)</div>
-                    <div>• <strong>Email</strong>: Email công ty duy nhất (bắt buộc, không trùng lặp)</div>
-                    <div>• <strong>Vai trò</strong>: Mã vai trò hệ thống (admin, hr_manager, recruiter, hiring_manager, interviewer, approver, employee)</div>
-                    <div>• <strong>Số điện thoại</strong>: Số điện thoại liên hệ (tùy chọn)</div>
-                    <div>• <strong>Phòng ban</strong>: Tên phòng ban công tác (tùy chọn)</div>
+              {/* Sample Structure Preview Table */}
+              <div className="w-full border border-gray-100 rounded-xl overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-gray-100 font-bold text-slate-600 text-[11px]">
+                    <tr>
+                      <th className="p-2.5">Họ và tên *</th>
+                      <th className="p-2.5">Email *</th>
+                      <th className="p-2.5">Số điện thoại</th>
+                      <th className="p-2.5">Phòng ban</th>
+                      <th className="p-2.5">Vai trò *</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-[11px] font-medium text-slate-600">
+                    <tr className="hover:bg-slate-50/50">
+                      <td className="p-2.5 font-bold text-slate-800">Lê Hoàng Cường</td>
+                      <td className="p-2.5 font-mono text-slate-600">lehoangcuong@company.com</td>
+                      <td className="p-2.5 font-mono text-slate-500">0901112223</td>
+                      <td className="p-2.5">Phòng Kỹ Thuật</td>
+                      <td className="p-2.5">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          hiring_manager
+                        </span>
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50">
+                      <td className="p-2.5 font-bold text-slate-800">Trần Thị Bình</td>
+                      <td className="p-2.5 font-mono text-slate-600">tranthibinh@company.com</td>
+                      <td className="p-2.5 font-mono text-slate-500">0987654321</td>
+                      <td className="p-2.5">Phòng Tuyển Dụng</td>
+                      <td className="p-2.5">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          recruiter
+                        </span>
+                      </td>
+                    </tr>
+                    <tr className="hover:bg-slate-50/50">
+                      <td className="p-2.5 font-bold text-slate-800">Nguyễn Văn An</td>
+                      <td className="p-2.5 font-mono text-slate-600">nguyenvanan@company.com</td>
+                      <td className="p-2.5 font-mono text-slate-500">0912345678</td>
+                      <td className="p-2.5">Ban Công Nghệ</td>
+                      <td className="p-2.5">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                          employee
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-1">
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-gray-100 space-y-2">
+                  <span className="font-bold text-slate-800 block">Các mã vai trò hợp lệ:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { code: "admin", label: "Quản trị viên", color: "bg-purple-50 text-purple-700 border-purple-200" },
+                      { code: "hr_manager", label: "Trưởng phòng HR", color: "bg-sky-50 text-sky-700 border-sky-200" },
+                      { code: "recruiter", label: "Chuyên viên Tuyển dụng", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+                      { code: "hiring_manager", label: "Quản lý tuyển dụng", color: "bg-amber-50 text-amber-700 border-amber-200" },
+                      { code: "interviewer", label: "Phỏng vấn viên", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+                      { code: "approver", label: "Người phê duyệt", color: "bg-violet-50 text-violet-700 border-violet-200" },
+                      { code: "employee", label: "Nhân viên nội bộ", color: "bg-slate-100 text-slate-700 border-slate-200" },
+                    ].map((r) => (
+                      <span key={r.code} className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${r.color}`}>
+                        {r.code} ({r.label})
+                      </span>
+                    ))}
                   </div>
                 </div>
 
@@ -403,7 +471,7 @@ export default function ImportUsersPage() {
               <button
                 onClick={handleConfirmImport}
                 disabled={previewData.valid_count === 0}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                className="px-6 py-2.5 rounded-xl bg-[#4285F4] hover:bg-blue-600 disabled:opacity-40 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20 flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
               >
                 <span>Xác nhận Import ({previewData.valid_count} tài khoản hợp lệ)</span>
                 <ArrowRight className="w-4 h-4" />
@@ -415,7 +483,7 @@ export default function ImportUsersPage() {
         {/* STEP 3: PROCESSING */}
         {step === 3 && (
           <div className="w-full bg-white rounded-3xl border border-gray-100 p-12 text-center space-y-4 shadow-xs">
-            <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto" />
+            <Loader2 className="w-12 h-12 text-[#4285F4] animate-spin mx-auto" />
             <h3 className="font-extrabold text-base text-slate-900">Đang thực hiện import vào cơ sở dữ liệu</h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
               Hệ thống đang tiến hành tạo tài khoản theo các lô chunk 50 bản ghi, thiết lập bảng vai trò normalized multi-role và ghi nhật ký kiểm toán hệ thống...
@@ -486,7 +554,7 @@ export default function ImportUsersPage() {
 
               <Link
                 href="/admin/users"
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20"
+                className="px-6 py-2.5 rounded-xl bg-[#4285F4] hover:bg-blue-600 text-white text-xs font-bold transition-all shadow-md shadow-blue-500/20"
               >
                 Xem danh sách người dùng
               </Link>

@@ -2,13 +2,15 @@ import { apiRequest } from "@/lib/api-client";
 
 export interface Department { id: number; name: string; code: string; parent_id: number | null; head_user_id: number | null; sort_order: number; is_active: boolean }
 export interface JobTitle { id: number; name: string; department_id: number | null; level: string; min_salary?: number; max_salary?: number; description?: string; is_active: boolean }
-export interface Criterion { id?: string; code: string; name: string; description?: string; weight: number }
+export interface Criterion { id?: string; code: string; name: string; description?: string; weight: number; category?: string | null; benchmark_low?: string | null; benchmark_mid?: string | null; benchmark_high?: string | null }
 export interface Framework { id: string; code: string; name: string; department?: string; applied_job_titles: string[]; status: string; criteria: Criterion[]; total_weight: number }
 export interface Question { id: string; code: string; content: string; criteria_id: string; criteria_name?: string; job_title?: string; difficulty: string; suggested_answer?: string }
 export interface Headcount { id: number; department_id: number; year: number; budget_quantity: number; committed_quantity: number; remaining_quantity: number | null }
 export interface Category { id: number; category_type: string; name: string; sort_order: number; is_active: boolean }
 export interface ApprovalFlow { id: number; name: string; department_id: number | null; steps: string[]; min_salary_threshold: number; max_salary_threshold: number; status: string }
 export interface Person { id: number; full_name: string; email: string }
+export interface OnboardingTemplateItem { task_name: string; assigned_role: string; days_before_start: number; phase?: string | null; is_mandatory?: boolean; description?: string | null; sla_note?: string | null }
+export interface OnboardingTemplateRow { id: number; department_id: number | null; name: string; items: OnboardingTemplateItem[]; is_active: boolean }
 
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) });
 
@@ -29,9 +31,10 @@ export const masterDataService = {
     apiRequest<Framework>(id ? `/hr/competency-frameworks/${id}` : "/hr/competency-frameworks", json(id ? "PUT" : "POST", f)),
   questions: (params = "") => apiRequest<Question[]>(`/hr/interview-questions${params}`),
   saveQuestion: (q: Partial<Question>, id?: string) => apiRequest<Question>(id ? `/hr/interview-questions/${id}` : "/hr/interview-questions", json(id ? "PUT" : "POST", q)),
+  deactivateQuestion: (id: string) => apiRequest<Question>(`/hr/interview-questions/${id}/deactivate`, { method: "POST" }),
 
   headcounts: () => apiRequest<Headcount[]>("/hr/headcounts"),
-  saveHeadcount: (h: { department_id: number; year: number; budget_quantity: number }) => apiRequest<Headcount>("/hr/headcounts", json("POST", h)),
+  saveHeadcount: (h: { department_id: number; year: number; budget_quantity: number; reason?: string }) => apiRequest<Headcount>("/hr/headcounts", json("POST", h)),
 
   categories: () => apiRequest<Category[]>("/hr/categories"),
   createCategory: (c: { category_type: string; name: string; sort_order: number }) => apiRequest<Category>("/hr/categories", json("POST", c)),
@@ -45,4 +48,9 @@ export const masterDataService = {
   deactivateApprovalFlow: (id: number) => apiRequest<ApprovalFlow>(`/hr/approval-flows/${id}/deactivate`, { method: "POST" }),
 
   people: (role: string) => apiRequest<Person[]>(`/hr/people?role=${role}`),
+
+  onboardingTemplates: () => apiRequest<OnboardingTemplateRow[]>("/hr/onboarding-templates"),
+  /** Saving creates a new active version for the department (older versions are kept, inactive). */
+  saveOnboardingTemplate: (tpl: { name: string; department_id: number | null; items: OnboardingTemplateItem[] }) =>
+    apiRequest<OnboardingTemplateRow>("/hr/onboarding-templates", json("POST", tpl)),
 };

@@ -16,7 +16,7 @@ from app.models.login_guard import LoginAttemptGuard
 
 from app.models.master_data import (
     CompetencyFramework, CompetencyCriterion, InterviewQuestion, OnboardingTemplate, StoredFile,
-    ApplicationNote, TalentPoolEntry, SavedFilter, SlaRule, RecruitmentCost, AskedQuestion,
+    ApplicationNote, TalentPoolEntry, SavedFilter, SlaRule, RecruitmentCost, AskedQuestion, CareerPageSettings,
 )
 from app.models.import_job import ImportJob
 

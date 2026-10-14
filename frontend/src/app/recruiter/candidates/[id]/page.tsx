@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -41,27 +41,23 @@ import {
   Award,
 } from 'lucide-react';
 import clsx from 'clsx';
-import {
-  MOCK_UNIFIED_CANDIDATES,
-  UnifiedCandidate,
-  CandidateNote,
-  CandidateEmailLog,
-} from '@/features/candidates/mockCandidates';
+import type { UnifiedCandidate, CandidateEmailLog } from '@/features/candidates/types';
+import { candidatesApi } from '@/features/candidates/api';
+import { fileUrl } from '@/services/file.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 
 export default function UnifiedCandidateDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const candidateId = (params?.id as string) || 'CAN-085';
+  const appId = Number(params?.id);
 
-  // Lấy ứng viên từ mock database, nếu không tìm thấy lấy ứng viên đầu tiên làm fallback
-  const initialCandidate = useMemo(() => {
-    return (
-      MOCK_UNIFIED_CANDIDATES.find((c) => c.id === candidateId) ||
-      MOCK_UNIFIED_CANDIDATES[0]
-    );
-  }, [candidateId]);
-
-  const [candidate, setCandidate] = useState<UnifiedCandidate>(initialCandidate);
+  // Unified profile of the person behind this application (S4-09): real notes, tags, history, CV.
+  const { data, error, loading, reload, setData } = useApiData(() => candidatesApi.profile(appId), [appId]);
+  const candidate = data as (UnifiedCandidate & { cvUrl: string | null; applicationId: number }) | null;
+  const setCandidate = (fn: (prev: UnifiedCandidate) => UnifiedCandidate) =>
+    setData((prev) => (prev ? ({ ...prev, ...fn(prev) } as typeof prev) : prev));
   const [toast, setToast] = useState<string | null>(null);
 
   // Tab switch in Center column: Timeline vs Email Logs
@@ -71,10 +67,22 @@ export default function UnifiedCandidateDetailPage() {
   const [selectedEmail, setSelectedEmail] = useState<CandidateEmailLog | null>(null);
   const [isComposeModalOpen, setIsComposeModalOpen] = useState(false);
   const [composeForm, setComposeForm] = useState({
-    subject: `[Thông báo tuyển dụng] Trao đổi cơ hội việc làm cùng ${initialCandidate.name}`,
+    subject: '',
     template: 'offer' as 'offer' | 'interview' | 'rejection' | 'reminder',
-    content: `Kính gửi bạn ${initialCandidate.name},\n\nBộ phận Tuyển dụng trân trọng liên hệ để trao đổi thêm về lộ trình tuyển dụng tại công ty...`,
+    content: '',
   });
+  const [sending, setSending] = useState(false);
+  const openCompose = (kind: 'contact' | 'reengage' = 'contact') => {
+    if (!candidate) return;
+    setComposeForm({
+      subject: kind === 'reengage' ? `Mời ứng tuyển vị trí mới — ${candidate.name}` : `[Thông báo tuyển dụng] Trao đổi cơ hội việc làm cùng ${candidate.name}`,
+      template: kind === 'reengage' ? 'reminder' : 'offer',
+      content: kind === 'reengage'
+        ? `Kính gửi ${candidate.name},\n\nChúng tôi có vị trí mới phù hợp với hồ sơ của bạn và trân trọng mời bạn ứng tuyển.`
+        : `Kính gửi ${candidate.name},\n\n`,
+    });
+    setIsComposeModalOpen(true);
+  };
 
   // Tag state
   const [newTagInput, setNewTagInput] = useState('');
@@ -82,8 +90,26 @@ export default function UnifiedCandidateDetailPage() {
   // Internal Note state
   const [newNoteText, setNewNoteText] = useState('');
 
-  // PDF Viewer Zoom simulation state
+  // PDF Viewer zoom + the real CV file loaded through the authorised download endpoint
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [cvBlobUrl, setCvBlobUrl] = useState<string | null>(null);
+  const [cvError, setCvError] = useState<string | null>(null);
+  const cvPath = candidate?.cvUrl || null;
+  useEffect(() => {
+    if (!cvPath) return;
+    let revoked: string | null = null;
+    let active = true;
+    const token = localStorage.getItem('access_token');
+    fetch(fileUrl(cvPath), { headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: 'include' })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(res.status === 404 ? 'Không tìm thấy tệp CV hoặc bạn không có quyền xem.' : 'Không tải được CV.');
+        const url = URL.createObjectURL(await res.blob());
+        revoked = url;
+        if (active) setCvBlobUrl(url);
+      })
+      .catch((e: Error) => active && setCvError(e.message));
+    return () => { active = false; if (revoked) URL.revokeObjectURL(revoked); };
+  }, [cvPath]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -93,81 +119,73 @@ export default function UnifiedCandidateDetailPage() {
   // ==========================================
   // TAG ACTIONS
   // ==========================================
+  const saveTags = async (next: string[], message: string) => {
+    if (!candidate) return;
+    try {
+      await candidatesApi.setTags(candidate.applicationId, next);
+      setCandidate((prev) => ({ ...prev, tags: next }));
+      showToast(message);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không lưu được nhãn.');
+    }
+  };
+
   const handleAddTag = (tagToAdd: string) => {
     const clean = tagToAdd.trim();
-    if (!clean || candidate.tags.includes(clean)) return;
-
-    setCandidate((prev) => ({
-      ...prev,
-      tags: [...prev.tags, clean],
-    }));
+    if (!candidate || !clean || candidate.tags.includes(clean)) return;
     setNewTagInput('');
-    showToast(`Đã gắn thêm nhãn "${clean}" cho ứng viên.`);
+    void saveTags([...candidate.tags, clean], `Đã gắn thêm nhãn "${clean}" cho ứng viên.`);
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
-    setCandidate((prev) => ({
-      ...prev,
-      tags: prev.tags.filter((t) => t !== tagToRemove),
-    }));
-    showToast(`Đã xóa nhãn "${tagToRemove}".`);
+    if (!candidate) return;
+    void saveTags(candidate.tags.filter((t) => t !== tagToRemove), `Đã xóa nhãn "${tagToRemove}".`);
   };
 
   // ==========================================
   // NOTE ACTIONS
   // ==========================================
-  const handleAddNote = (e: React.FormEvent) => {
+  const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNoteText.trim()) return;
-
-    const newNote: CandidateNote = {
-      id: `note-${Date.now()}`,
-      author: 'Trần Thị Recruiter',
-      role: 'Recruiter',
-      createdAt: 'Vừa xong',
-      content: newNoteText.trim(),
-    };
-
-    setCandidate((prev) => ({
-      ...prev,
-      notes: [newNote, ...prev.notes],
-    }));
-    setNewNoteText('');
-    showToast('Đã thêm ghi chú nội bộ thành công!');
+    if (!candidate || !newNoteText.trim()) return;
+    try {
+      const n = await candidatesApi.addNote(candidate.applicationId, newNoteText.trim());
+      setCandidate((prev) => ({
+        ...prev,
+        notes: [{ id: String(n.id), author: n.author_name || '—', role: '', createdAt: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : '', content: n.content }, ...prev.notes],
+      }));
+      setNewNoteText('');
+      showToast('Đã thêm ghi chú nội bộ.');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không lưu được ghi chú.');
+    }
   };
 
-  // Send direct email simulation
-  const handleSendDirectEmail = (e: React.FormEvent) => {
+  const handleSendDirectEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!composeForm.subject.trim()) return;
-
-    const newEmail: CandidateEmailLog = {
-      id: `EML-${Date.now().toString().slice(-4)}`,
-      subject: composeForm.subject,
-      templateType: composeForm.template,
-      sentAt: 'Vừa xong',
-      sender: 'Trần Thị Recruiter (recruiter@company.com)',
-      recipientEmail: candidate.email,
-      status: 'sent',
-      contentSnippet: composeForm.content,
-    };
-
-    setCandidate((prev) => ({
-      ...prev,
-      emailLogs: [newEmail, ...(prev.emailLogs || [])],
-    }));
-
-    setIsComposeModalOpen(false);
-    showToast(`Đã gửi email "${composeForm.subject}" tới ${candidate.email}!`);
+    if (!candidate || !composeForm.subject.trim() || !composeForm.content.trim()) return;
+    setSending(true);
+    try {
+      const log = await candidatesApi.sendEmail(candidate.applicationId, composeForm.subject.trim(), composeForm.content);
+      const entry: CandidateEmailLog = {
+        id: String(log.id), subject: log.subject, templateType: composeForm.template, sentAt: new Date().toLocaleString('vi-VN'),
+        sender: 'Bạn', recipientEmail: candidate.email, status: log.status, contentSnippet: composeForm.content.slice(0, 160),
+      };
+      setCandidate((prev) => ({ ...prev, emailLogs: [entry, ...(prev.emailLogs || [])] }));
+      setIsComposeModalOpen(false);
+      showToast(`Email "${log.subject}" đã được đưa vào hàng đợi gửi (trạng thái: ${log.status}).`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không gửi được email.');
+    } finally {
+      setSending(false);
+    }
   };
 
-  // Re-engagement simulation
-  const handleReEngage = () => {
-    alert(
-      `Đã tạo thư mời ứng tuyển vị trí mới gửi tới ${candidate.name} (${candidate.email})!`
-    );
-    showToast('Đã gửi lời mời ứng tuyển lại (Re-engage)!');
-  };
+  // Re-engage = invite the candidate to apply again (real e-mail, pre-filled message)
+  const handleReEngage = () => openCompose('reengage');
+
+  if (loading) return <LoadingState />;
+  if (error || !candidate) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6 antialiased font-sans">
@@ -368,11 +386,9 @@ export default function UnifiedCandidateDetailPage() {
                   <ZoomIn className="w-3.5 h-3.5" />
                 </button>
                 <a
-                  href={`#download-${candidate.cvFileName}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    alert(`Đang tải file ${candidate.cvFileName}...`);
-                  }}
+                  href={cvBlobUrl || undefined}
+                  download={candidate.cvFileName || 'cv'}
+                  aria-disabled={!cvBlobUrl}
                   className="p-1 rounded hover:bg-slate-100 text-blue-600 ml-1"
                   title="Tải xuống CV"
                 >
@@ -381,53 +397,28 @@ export default function UnifiedCandidateDetailPage() {
               </div>
             </div>
 
-            {/* Khung mô phỏng trang tài liệu CV */}
-            <div
-              className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3 text-[11px] leading-relaxed overflow-hidden"
-              style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
-            >
-              <div className="border-b border-slate-200 pb-2">
-                <h4 className="font-black text-xs text-slate-900 uppercase tracking-wider">
-                  HỒ SƠ NĂNG LỰC ỨNG VIÊN
-                </h4>
-                <p className="text-[10px] text-slate-500 font-medium">
-                  {candidate.name} &bull; Chuyên ngành: Kỹ thuật phần mềm
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-extrabold text-blue-700 uppercase block">
-                  Tóm Tắt Chuyên Môn
-                </span>
-                <p className="text-slate-600">
-                  {candidate.experienceYears} phát triển các hệ thống chịu tải cao, microservices,
-                  thành thạo các công nghệ: {candidate.skills.join(', ')}.
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-extrabold text-blue-700 uppercase block">
-                  Kinh Nghiệm Gần Nhất
-                </span>
-                <p className="text-slate-700 font-bold">
-                  Senior Software Engineer (2024 - Hiện tại)
-                </p>
-                <p className="text-slate-500 text-[10px]">
-                  Chịu trách nhiệm thiết kế API Gateway, tối ưu cơ sở dữ liệu PostgreSQL và quản trị
-                  hạ tầng container Kubernetes.
-                </p>
-              </div>
-
-              <div className="pt-2 text-center border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => alert(`Đang mở xem toàn màn hình file ${candidate.cvFileName}...`)}
-                  className="text-xs font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <span>Mở xem toàn màn hình</span>
-                  <ExternalLink className="w-3 h-3" />
-                </button>
-              </div>
+            {/* Real CV file (PDF embedded; other formats downloadable) */}
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden">
+              {!cvPath ? (
+                <p className="p-6 text-center text-[11px] text-slate-500">Ứng viên chưa có CV đính kèm.</p>
+              ) : cvError ? (
+                <p className="p-6 text-center text-[11px] text-rose-600">{cvError}</p>
+              ) : !cvBlobUrl ? (
+                <p className="p-6 text-center text-[11px] text-slate-500">Đang tải CV...</p>
+              ) : candidate.cvFileName.toLowerCase().endsWith('.pdf') ? (
+                <iframe title={`CV ${candidate.name}`} src={cvBlobUrl} className="w-full h-[520px] bg-white"
+                  style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }} />
+              ) : (
+                <p className="p-6 text-center text-[11px] text-slate-500">Định dạng này không xem trước được — hãy tải xuống để xem.</p>
+              )}
+              {cvBlobUrl && (
+                <div className="py-2 text-center border-t border-slate-200 bg-white">
+                  <a href={cvBlobUrl} target="_blank" rel="noopener" className="text-xs font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">
+                    <span>Mở xem toàn màn hình</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -478,7 +469,7 @@ export default function UnifiedCandidateDetailPage() {
               {centerTab === 'emails' && (
                 <button
                   type="button"
-                  onClick={() => setIsComposeModalOpen(true)}
+                  onClick={() => openCompose()}
                   className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -616,7 +607,7 @@ export default function UnifiedCandidateDetailPage() {
                     <p className="font-bold text-slate-700">Chưa có lịch sử email nào được gửi</p>
                     <button
                       type="button"
-                      onClick={() => setIsComposeModalOpen(true)}
+                      onClick={() => openCompose()}
                       className="px-4 py-2 rounded-xl bg-blue-600 text-white font-extrabold text-xs inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -1019,7 +1010,7 @@ export default function UnifiedCandidateDetailPage() {
                 <select
                   value={composeForm.template}
                   onChange={(e) => {
-                    const t = e.target.value as any;
+                    const t = e.target.value as typeof composeForm.template;
                     let s = composeForm.subject;
                     let c = composeForm.content;
                     if (t === 'offer') {
@@ -1078,10 +1069,11 @@ export default function UnifiedCandidateDetailPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer"
+                  disabled={sending}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>Gửi Email Ngay</span>
+                  <span>{sending ? 'Đang gửi...' : 'Gửi Email Ngay'}</span>
                 </button>
               </div>
             </form>

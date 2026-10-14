@@ -20,6 +20,14 @@ import {
   Mail,
   DollarSign,
 } from 'lucide-react';
+import { offerService, type OfferItem } from '@/services/offer.service';
+import { useApiData } from '@/hooks/useApiData';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
+
+const DECLINE_TO_API: Record<string, string> = { salary: 'salary', another_offer: 'other_offer', location: 'location', other: 'personal' };
+const vnd = (n: number, cur: string) => `${n.toLocaleString('vi-VN')} ${cur === 'VND' ? 'VNĐ' : cur}`;
+const POLICY_NOTE = 'Theo chính sách chung của công ty';
 
 export default function CandidateOffersPage() {
   const [actionState, setActionState] = useState<'reviewing' | 'accepted_success' | 'declined_success'>('reviewing');
@@ -34,41 +42,39 @@ export default function CandidateOffersPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
-  const offer = {
-    id: 'OF-2026-99',
-    candidateName: 'Nguyễn Văn A',
-    jobTitle: 'Senior Frontend Engineer (React/Next.js)',
-    department: 'Khối Công Nghệ & Trải Nghiệm Số',
-    salaryGross: '42.000.000 VNĐ / tháng',
-    salaryNetEstimated: '~36.200.000 VNĐ (sau thuế & bảo hiểm bắt buộc)',
-    startDate: 'Thứ Hai, 02/11/2026',
-    probationPeriod: '02 tháng (100% lương chính thức)',
-    workLocation: 'Tầng 8, Tòa nhà Tech Tower, 19 Duy Tân, Cầu Giấy, Hà Nội',
-    workModel: 'Hybrid (3 ngày văn phòng, 2 ngày WFH)',
-    expiresAt: '23:59 ngày 18/10/2026',
-    dateIssued: '12/10/2026',
-  };
+  // The applicant's own offers (the API only returns sent / answered offers with the letter terms)
+  const { data: rows, error, loading, reload } = useApiData(() => offerService.getOffers(), []);
+  const current = (rows || []).find((o) => o.status === 'sent') || (rows || [])[0] || null;
+  const [pageError, setPageError] = useState('');
+  const offer = current ? toView(current) : null;
 
+  // Save the letter as PDF through the browser's print dialog
   const handleDownloadPDF = () => {
     setIsDownloading(true);
-    setTimeout(() => {
-      setIsDownloading(false);
-      setDownloadSuccess(true);
-      setTimeout(() => setDownloadSuccess(false), 3500);
-    }, 800);
+    window.print();
+    setIsDownloading(false);
+    setDownloadSuccess(true);
+    setTimeout(() => setDownloadSuccess(false), 3500);
   };
 
-  const handleConfirmAccept = () => {
+  const handleConfirmAccept = async () => {
+    if (!current) return;
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    setPageError('');
+    try {
+      await offerService.respond(current.id, 'accepted');
       setShowAcceptModal(false);
       setActionState('accepted_success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 600);
+    } catch (err) {
+      setShowAcceptModal(false);
+      setPageError(err instanceof ApiError ? err.message : 'Không gửi được phản hồi.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleConfirmDecline = (e: React.FormEvent) => {
+  const handleConfirmDecline = async (e: React.FormEvent) => {
     e.preventDefault();
     setDeclineError('');
 
@@ -76,18 +82,34 @@ export default function CandidateOffersPage() {
       setDeclineError('Vui lòng chọn 1 lý do để hoàn tất phản hồi.');
       return;
     }
+    if (!current) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      await offerService.respond(current.id, 'declined', DECLINE_TO_API[declineReason] || 'other', customDeclineNote.trim() || undefined);
       setShowDeclineModal(false);
       setActionState('declined_success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 600);
+    } catch (err) {
+      setDeclineError(err instanceof ApiError ? err.message : 'Không gửi được phản hồi.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (!offer || !current) return <EmptyState title="Bạn chưa có thư mời nhận việc nào." hint="Thư mời sẽ xuất hiện tại đây khi bộ phận tuyển dụng gửi cho bạn." />;
+  const canRespond = current.status === 'sent';
 
   return (
     <div className="w-full space-y-8 pb-20">
+      {pageError && <p className="text-sm font-semibold text-rose-600">{pageError}</p>}
+      {!canRespond && actionState === 'reviewing' && (
+        <p className="text-sm font-semibold text-slate-600">
+          Thư mời này đã ở trạng thái: {current.status === 'accepted' ? 'Bạn đã chấp nhận' : current.status === 'declined' ? 'Bạn đã từ chối' : 'Hết hạn phản hồi'}.
+        </p>
+      )}
       {/* 1. STATE: ĐÃ CHẤP NHẬN THÀNH CÔNG */}
       {actionState === 'accepted_success' && (
         <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-md border border-slate-200 p-8 md:p-12 text-center space-y-6 animate-in zoom-in-95 duration-200">
@@ -261,7 +283,7 @@ export default function CandidateOffersPage() {
               </div>
 
               {/* Dải nút hành động */}
-              <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row gap-4 justify-end">
+              {canRespond && <div className="pt-6 border-t border-slate-100 flex flex-col sm:flex-row gap-4 justify-end">
                 <button
                   type="button"
                   onClick={() => setShowDeclineModal(true)}
@@ -277,7 +299,7 @@ export default function CandidateOffersPage() {
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Chấp nhận & Gia nhập</span>
                 </button>
-              </div>
+              </div>}
             </div>
 
             {/* Cột Phải (Thông tin bổ trợ & Tải PDF - lg:col-span-4) */}
@@ -491,4 +513,23 @@ export default function CandidateOffersPage() {
       )}
     </div>
   );
+}
+
+function toView(o: OfferItem & { sent_at?: string | null }) {
+  const start = new Date(`${o.start_date.slice(0, 10)}T00:00:00`);
+  const deadline = o.response_deadline ? new Date(`${o.response_deadline.slice(0, 10)}T00:00:00`) : null;
+  return {
+    id: `OF-${o.id}`,
+    candidateName: o.candidate_name || '',
+    jobTitle: o.job_title || '',
+    department: o.department || '',
+    salaryGross: `${vnd(o.offered_salary, o.currency)} / tháng`,
+    salaryNetEstimated: o.allowance ? `Phụ cấp: ${vnd(o.allowance, o.currency)} / tháng` : '',
+    startDate: start.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }),
+    probationPeriod: `${o.probation_duration_months} tháng (${o.probation_salary_percentage}% lương chính thức)`,
+    workLocation: o.work_location,
+    workModel: POLICY_NOTE,
+    expiresAt: deadline ? `23:59 ngày ${deadline.toLocaleDateString('vi-VN')}` : '—',
+    dateIssued: o.sent_at ? new Date(o.sent_at).toLocaleDateString('vi-VN') : '',
+  };
 }

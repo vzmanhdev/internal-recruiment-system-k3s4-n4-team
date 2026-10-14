@@ -41,6 +41,8 @@ class JobPosting(Base):
     department = relationship("Department")
     applications = relationship("JobApplication", back_populates="job_posting", cascade="all, delete-orphan")
 
+    review_note = Column(Text, nullable=True)  # HR Manager's change request when a posting is sent back (S3-10)
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -61,6 +63,7 @@ class JobPosting(Base):
             "requirements": self.requirements,
             "benefits": self.benefits,
             "status": self.status,
+            "review_note": self.review_note,
             "views_count": self.views_count,
             "applications_count": len(self.applications) if self.applications else self.applications_count,
             "created_by_id": self.created_by_id,

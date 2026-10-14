@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
+import { jobService } from "@/services/job.service";
+import { useApiData } from "@/hooks/useApiData";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui/DataStates";
 import { EmployeeAppShell } from "@/components/layout/EmployeeAppShell";
 import { Search, Briefcase, MapPin, Building2, Clock, Star, Gift } from "lucide-react";
 import Link from "next/link";
@@ -9,48 +12,24 @@ export default function EmployeeJobsPage() {
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
 
-  const [jobs, setJobs] = useState([
-    {
-      id: 1,
-      title: "Chuyên Viên Tuyển Dụng Cao Cấp (HR Specialist)",
-      department: "Phòng Nhân sự",
-      location: "Hà Nội",
-      type: "Toàn thời gian",
-      description: "Tham gia xây dựng chiến lược tuyển dụng, tìm kiếm và thu hút nhân tài cho các bộ phận.",
-      tags: ["Tuyển dụng", "HR", "Giao tiếp"],
-      daysLeft: 5,
-    },
-    {
-      id: 2,
-      title: "Senior Backend Engineer",
-      department: "Phòng Công nghệ",
-      location: "Hà Nội",
-      type: "Toàn thời gian",
-      description: "Phát triển và tối ưu hệ thống backend, tham gia thiết kế kiến trúc hệ thống quy mô lớn.",
-      tags: ["Python", "FastAPI", "Database"],
-      daysLeft: 10,
-    },
-    {
-      id: 3,
-      title: "Trưởng Nhóm Sản Phẩm",
-      department: "Phòng Sản phẩm",
-      location: "Hồ Chí Minh",
-      type: "Toàn thời gian",
-      description: "Dẫn dắt nhóm phát triển sản phẩm, định hướng chiến lược và triển khai các dự án quan trọng.",
-      tags: ["Product", "Quản lý", "Agile"],
-      daysLeft: 7,
-    },
-    {
-      id: 4,
-      title: "Chuyên Viên Marketing Internal",
-      department: "Phòng Marketing",
-      location: "Hà Nội",
-      type: "Toàn thời gian",
-      description: "Xây dựng và triển khai các hoạt động truyền thông nội bộ, thu hút nhân tài.",
-      tags: ["Truyền thông", "Content", "Sự kiện"],
-      daysLeft: 12,
-    },
-  ]);
+  // Published, non-expired postings (the same list the public career page shows)
+  const { data, error, loading, reload } = useApiData(async () => {
+    const rows = await jobService.getJobs();
+    const now = Date.now();
+    return rows.map((j) => ({
+      id: j.id,
+      slug: j.slug,
+      title: j.title,
+      department: j.department_name || j.department || "",
+      location: j.location,
+      type: j.type,
+      description: (j.description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 220),
+      tags: ((j as { required_skills?: string[] }).required_skills || []).slice(0, 5),
+      daysLeft: j.deadline ? Math.max(0, Math.ceil((new Date(j.deadline.slice(0, 10)).getTime() - now) / 86_400_000)) : null,
+    }));
+  }, []);
+  const jobs = useMemo(() => data || [], [data]);
+  const departments = useMemo(() => Array.from(new Set(jobs.map((j) => j.department).filter(Boolean))).sort(), [jobs]);
 
   const filteredJobs = jobs.filter((j) => {
     const matchesSearch =
@@ -62,7 +41,7 @@ export default function EmployeeJobsPage() {
 
   return (
     <EmployeeAppShell activeTab="jobs">
-      <div className="space-y-6 max-w-7xl mx-auto">
+      <div className="space-y-6 w-full">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -104,15 +83,17 @@ export default function EmployeeJobsPage() {
               className="px-3.5 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none"
             >
               <option value="all">Tất cả phòng ban</option>
-              <option value="Công nghệ">Phòng Công nghệ</option>
-              <option value="Nhân sự">Phòng Nhân sự</option>
-              <option value="Sản phẩm">Phòng Sản phẩm</option>
-              <option value="Marketing">Phòng Marketing</option>
+              {departments.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
             </select>
           </div>
         </div>
 
         {/* Job Cards Grid */}
+        {loading && <LoadingState />}
+        {error ? <ErrorState error={error} onRetry={reload} /> : null}
+        {!loading && !error && filteredJobs.length === 0 && <EmptyState title="Chưa có vị trí tuyển dụng nào đang mở." />}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filteredJobs.map((job) => (
             <div
@@ -150,7 +131,7 @@ export default function EmployeeJobsPage() {
               <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
                 <span className="text-[11px] font-medium text-amber-600 flex items-center gap-1">
                   <Clock className="w-3.5 h-3.5" />
-                  Còn {job.daysLeft} ngày
+                  {job.daysLeft == null ? "Không giới hạn hạn nộp" : `Còn ${job.daysLeft} ngày`}
                 </span>
 
                 <div className="flex items-center gap-2">
@@ -161,7 +142,7 @@ export default function EmployeeJobsPage() {
                     Giới thiệu
                   </Link>
                   <Link
-                    href={`/jobs/${job.id}`}
+                    href={`/candidate/jobs/${job.slug || job.id}`}
                     className="px-3 py-1.5 rounded-xl bg-[#4285F4] text-white hover:bg-blue-600 font-bold text-xs transition-all"
                   >
                     Xem chi tiết

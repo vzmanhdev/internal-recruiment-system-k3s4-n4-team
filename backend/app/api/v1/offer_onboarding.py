@@ -192,10 +192,27 @@ def _expire_if_overdue(db: Session, offer: JobOffer) -> None:
             pass
 
 
+CANDIDATE_VISIBLE_OFFER_STATES = {"sent", "accepted", "declined", "expired"}
+CANDIDATE_OFFER_FIELDS = ("id", "application_id", "candidate_name", "job_title", "offered_salary", "allowance", "currency",
+                          "probation_salary_percentage", "start_date", "probation_duration_months", "work_location",
+                          "status", "response_deadline", "sent_at", "responded_at", "onboarding", "onboarding_progress")
+
+
+def _is_own_offer(offer: JobOffer, user: User) -> bool:
+    app = offer.application
+    return bool(app and app.candidate_id is not None and app.candidate_id == user.id)
+
+
 def _offer_out(db: Session, offer: JobOffer, user: User) -> dict:
     """Offer + context for review screens: department, creator and — only for people who approve offers or
-    see salaries — the standard salary band of the job title (S2-05 AC3 keeps bands from other roles)."""
+    see salaries — the standard salary band of the job title (S2-05 AC3 keeps bands from other roles).
+    The applicant themself only ever gets the letter terms (no approval history, notes or salary rationale)."""
     data = offer.to_dict()
+    if _is_own_offer(offer, user):
+        return {k: data[k] for k in CANDIDATE_OFFER_FIELDS} | {
+            "department": offer.application.job_posting.department_name if offer.application.job_posting else None,
+            "is_own_application": True,
+        }
     app = offer.application
     posting = app.job_posting if app else None
     creator = db.query(User).filter(User.id == offer.created_by_id).first()
@@ -213,10 +230,13 @@ def _offer_out(db: Session, offer: JobOffer, user: User) -> dict:
 
 def _visible_offers(db: Session, user: User):
     query = db.query(JobOffer)
+    # an applicant's own offer becomes visible to them only once it has actually been sent
+    own_unsent = db.query(JobApplication.id).filter(JobApplication.candidate_id == user.id)
+    hide_own_unsent = ~(JobOffer.application_id.in_(own_unsent) & JobOffer.status.notin_(CANDIDATE_VISIBLE_OFFER_STATES))
     if role_codes(db, user) & FULL_ACCESS_ROLES or has_permission(db, user, "offer:approve"):
-        return query
+        return query.filter(hide_own_unsent)
     app_ids = visible_applications(db, user).with_entities(JobApplication.id)
-    return query.filter(JobOffer.application_id.in_(app_ids))
+    return query.filter(JobOffer.application_id.in_(app_ids), hide_own_unsent)
 
 
 @router.get("")
@@ -397,7 +417,7 @@ def send_offer(
                                         "response_token_hash": digest})
     _app_log(db, offer.application, current_user, "offered", "Đã gửi thư mời nhận việc")
     _log(db, offer, current_user, "sent")
-    link = frontend_link("/candidate/offer", raw)
+    link = frontend_link("/candidate/offer/link", raw)
     app = offer.application
     queue_template_email(db, "OFFER_LETTER", app.email, app.full_name, _letter_variables(offer), related_entity="APPLICATION",
                          related_id=app.id, force=True,
@@ -453,7 +473,7 @@ def respond_offer(
     db: Session = Depends(get_db)
 ):
     offer = _respond(db, _get_offer(db, offer_id), current_user, payload)
-    out = offer.to_dict()
+    out = _offer_out(db, offer, current_user)
     out["suggest_talent_pool"] = offer.status == "declined"  # S7-07 AC3
     return out
 
@@ -472,7 +492,7 @@ def update_offer_status(
         )
     response = OfferResponse(decision=payload.status, reason_category="other" if payload.status == "declined" else None,
                              comment=payload.decline_reason)
-    return _respond(db, _get_offer(db, offer_id), current_user, response).to_dict()
+    return _offer_out(db, _respond(db, _get_offer(db, offer_id), current_user, response), current_user)
 
 
 @router.put("/{offer_id}/onboarding/{item_id}")

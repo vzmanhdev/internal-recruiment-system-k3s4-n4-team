@@ -67,12 +67,12 @@ function toInterviewItem(i: ApiInterview): InterviewItem {
 export default function InterviewsPage() {
   const { data, error, loading, reload } = useApiData(async () =>
     (await interviewService.getInterviews()).filter((i) => i.status !== "cancelled").map(toInterviewItem));
-  const MOCK_INTERVIEWS = useMemo(() => data || [], [data]);
+  const allInterviews = useMemo(() => data || [], [data]);
   const [tabFilter, setTabFilter] = useState<'ALL' | 'TODAY' | 'UPCOMING' | 'COMPLETED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const filtered = MOCK_INTERVIEWS.filter((item) => {
+  const filtered = allInterviews.filter((item) => {
     if (tabFilter === 'TODAY' && item.status !== 'TODAY') return false;
     if (tabFilter === 'UPCOMING' && item.status !== 'UPCOMING') return false;
     if (tabFilter === 'COMPLETED' && item.status !== 'COMPLETED') return false;
@@ -103,8 +103,8 @@ export default function InterviewsPage() {
     return filtered.slice(start, start + ITEMS_PER_PAGE);
   }, [filtered, currentPage]);
 
-  const todayCount = MOCK_INTERVIEWS.filter((i) => i.status === 'TODAY').length;
-  const upcomingCount = MOCK_INTERVIEWS.filter((i) => i.status === 'UPCOMING').length;
+  const todayCount = allInterviews.filter((i) => i.status === 'TODAY').length;
+  const upcomingCount = allInterviews.filter((i) => i.status === 'UPCOMING').length;
 
   const handleJoinMeeting = (meetingUrl: string, candidateName: string) => {
     if (!meetingUrl) {
@@ -181,7 +181,7 @@ export default function InterviewsPage() {
                 : 'text-slate-600 hover:text-slate-900'
             )}
           >
-            Tất cả ({MOCK_INTERVIEWS.length})
+            Tất cả ({allInterviews.length})
           </button>
           <button
             onClick={() => setTabFilter('TODAY')}
@@ -264,8 +264,12 @@ export default function InterviewsPage() {
                       <span className="text-sm font-bold text-slate-900">{item.candidateName}</span>
                       <span className="text-xs text-slate-300">•</span>
                       <span className="text-xs text-slate-500">{item.candidateEmail}</span>
-                      <span className="text-xs text-slate-300">•</span>
-                      <span className="text-xs text-slate-500">{item.candidateEmail}</span>
+                      {item.candidatePhone && (
+                        <>
+                          <span className="text-xs text-slate-300">•</span>
+                          <span className="text-xs text-slate-500">{item.candidatePhone}</span>
+                        </>
+                      )}
                     </div>
 
                     <div className="font-bold text-xs text-slate-800">

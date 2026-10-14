@@ -7,6 +7,7 @@ import { Bell, ChevronDown, LogOut, Menu, X } from "lucide-react";
 import { apiRequest } from "@/lib/api-client";
 import { visibleNavigation } from "@/lib/auth/navigation";
 import { useAuth } from "@/providers/auth-provider";
+import { BrandLogo } from "@/components/layout/BrandLogo";
 import { Sidebar } from "./Sidebar";
 
 const UNREAD_POLL_MS = 60_000;
@@ -111,14 +112,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-[#0F172A]">
-      <header className="sticky top-0 z-40 h-14 bg-white border-b border-[#E2E8F0] flex items-center gap-3 px-3 lg:px-5">
+      <header className="sticky top-0 z-40 h-14 bg-white/95 backdrop-blur-md border-b border-slate-300 flex items-center gap-3 px-3 lg:px-5 shadow-2xs">
         <button type="button" onClick={() => setDrawer(true)} className="lg:hidden p-2 rounded-lg text-[#64748B] hover:bg-slate-100 cursor-pointer" aria-label="Mở menu">
           <Menu className="w-5 h-5" />
         </button>
-        <Link href="/workspace" className="flex items-center gap-2 min-w-0">
-          <span className="w-8 h-8 rounded-lg bg-[#2563EB] text-white text-sm font-bold flex items-center justify-center">TD</span>
-          <span className="hidden sm:block text-[15px] font-bold text-[#0F172A] truncate">Tuyển dụng nội bộ</span>
-        </Link>
+        <BrandLogo size="md" href="/" />
         <div className="flex-1" />
         <UnreadBell href={notificationsHref && "href" in notificationsHref ? notificationsHref.href : null} />
         <UserMenu />
@@ -126,7 +124,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex">
         {/* desktop sidebar */}
-        <aside className="hidden lg:block w-[248px] shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto bg-white border-r border-[#E2E8F0]">
+        <aside className="hidden lg:block w-80 shrink-0 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto bg-slate-50/30 border-r border-slate-300 shadow-xs custom-sidebar-scroll">
           <Sidebar />
         </aside>
 
@@ -134,9 +132,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {drawer && (
           <div className="lg:hidden fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Menu điều hướng">
             <div className="absolute inset-0 bg-slate-900/40" onClick={() => setDrawer(false)} />
-            <aside className="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] bg-white border-r border-[#E2E8F0] overflow-y-auto">
-              <div className="h-14 flex items-center justify-between px-3 border-b border-[#E2E8F0]">
-                <span className="text-[15px] font-bold">Menu</span>
+            <aside className="absolute inset-y-0 left-0 w-80 max-w-[85vw] bg-white border-r border-slate-300 shadow-2xl overflow-y-auto custom-sidebar-scroll">
+              <div className="h-14 flex items-center justify-between px-3 border-b border-slate-300">
+                <BrandLogo size="sm" href="/" onClick={() => setDrawer(false)} />
                 <button type="button" onClick={() => setDrawer(false)} className="p-2 rounded-lg text-[#64748B] hover:bg-slate-100 cursor-pointer" aria-label="Đóng menu">
                   <X className="w-5 h-5" />
                 </button>
@@ -146,7 +144,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        <main className="flex-1 min-w-0 w-full px-4 lg:px-6 py-5">{children}</main>
+        <main className="flex-1 min-w-0 w-full p-4 sm:p-5 lg:p-6">{children}</main>
       </div>
     </div>
   );

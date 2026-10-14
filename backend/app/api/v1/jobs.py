@@ -13,12 +13,10 @@ from app.models.job import JobPosting
 from app.models.requisition import JobRequisition
 from app.models.hr import Department
 from app.api.deps import get_current_user_obj, authenticate_bearer
-from app.services.rbac_service import get_user_roles
+from app.services.access_scope import has_permission
 
 router = APIRouter()
 
-STAFF_ROLES = {"admin", "hr_manager", "recruiter"}
-PUBLISHER_ROLES = {"admin", "hr_manager"}
 JOB_STATES = {"draft", "pending_review", "published", "closed"}
 
 
@@ -55,15 +53,11 @@ class JobPostingCreate(BaseModel):
     required_skills: List[str] = Field(default_factory=list)
 
 
-def _roles(db: Session, user: User) -> set:
-    return {r["code"] for r in get_user_roles(db, user)}
-
-
-def _require_staff(db: Session, user: User) -> set:
-    roles = _roles(db, user)
-    if not roles & STAFF_ROLES:
-        raise HTTPException(status_code=403, detail="Chỉ Admin, HR Manager hoặc Recruiter mới được quản lý tin tuyển dụng.")
-    return roles
+def _require_staff(db: Session, user: User) -> bool:
+    """Managing postings needs job:manage (database permission); returns whether the user may also publish."""
+    if not has_permission(db, user, "job:manage"):
+        raise HTTPException(status_code=403, detail="Bạn không có quyền quản lý tin tuyển dụng.")
+    return has_permission(db, user, "job:publish")
 
 
 def _optional_staff(authorization: Optional[str], db: Session) -> bool:
@@ -73,7 +67,7 @@ def _optional_staff(authorization: Optional[str], db: Session) -> bool:
         user, _ = authenticate_bearer(authorization, db)
     except FastAPIHTTPException:
         return False
-    return bool(_roles(db, user) & STAFF_ROLES)
+    return has_permission(db, user, "job:manage")
 
 
 def _is_expired(job: JobPosting) -> bool:
@@ -96,11 +90,11 @@ def _out(job: JobPosting) -> dict:
     return data
 
 
-def _requested_status(roles: set, requested: str) -> str:
+def _requested_status(can_publish: bool, requested: str) -> str:
     if requested not in JOB_STATES:
         raise HTTPException(status_code=422, detail=f"Trạng thái tin '{requested}' không hợp lệ.")
     # S3-10: postings must be reviewed by the HR Manager before going public.
-    if requested == "published" and not roles & PUBLISHER_ROLES:
+    if requested == "published" and not can_publish:
         return "pending_review"
     return requested
 
@@ -169,7 +163,7 @@ def create_job(
     current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    roles = _require_staff(db, current_user)
+    can_publish = _require_staff(db, current_user)
 
     # Business Guard (S3-09): a posting can only be created from an approved requisition
     req = db.query(JobRequisition).filter(JobRequisition.id == payload.requisition_id).first()
@@ -190,7 +184,7 @@ def create_job(
         slug = f"{base_slug}-{idx}"
         idx += 1
 
-    job_status = _requested_status(roles, payload.status)
+    job_status = _requested_status(can_publish, payload.status)
     job = JobPosting(
         slug=slug,
         **payload.model_dump(exclude={"status", "required_skills"}),
@@ -213,7 +207,7 @@ def update_job(
     current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
-    roles = _require_staff(db, current_user)
+    can_publish = _require_staff(db, current_user)
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
@@ -225,8 +219,8 @@ def update_job(
         setattr(job, field, getattr(payload, field))
     job.required_skills_json = json.dumps(payload.required_skills, ensure_ascii=False)
 
-    new_status = _requested_status(roles, payload.status)
-    if job.status == "published" and not roles & PUBLISHER_ROLES:
+    new_status = _requested_status(can_publish, payload.status)
+    if job.status == "published" and not can_publish:
         new_status = "pending_review"  # content changed by a recruiter must be re-reviewed
     if new_status == "published" and job.status != "published":
         job.published_by_id = current_user.id
@@ -244,7 +238,7 @@ def publish_job(
     db: Session = Depends(get_db)
 ):
     """S3-10: HR Manager reviews and publishes; publisher and timestamp are recorded."""
-    if not _roles(db, current_user) & PUBLISHER_ROLES:
+    if not has_permission(db, current_user, "job:publish"):
         raise HTTPException(status_code=403, detail="Chỉ Trưởng phòng Nhân sự mới được duyệt và xuất bản tin tuyển dụng.")
     job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
     if not job:
@@ -257,6 +251,32 @@ def publish_job(
     job.status = "published"
     job.published_by_id = current_user.id
     job.published_at = datetime.utcnow()
+    job.review_note = None
+    db.commit()
+    db.refresh(job)
+    return _out(job)
+
+
+class ReviewRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=1000)
+
+
+@router.post("/{job_id}/request-changes")
+def request_job_changes(job_id: int, payload: ReviewRequest, current_user: User = Depends(get_current_user_obj),
+                        db: Session = Depends(get_db)):
+    """S3-10: the HR Manager sends a posting back to its author with the reason (instead of publishing)."""
+    if not has_permission(db, current_user, "job:publish"):
+        raise HTTPException(status_code=403, detail="Chỉ Trưởng phòng Nhân sự mới được duyệt tin tuyển dụng.")
+    job = db.query(JobPosting).filter(JobPosting.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
+    if job.status != "pending_review":
+        raise HTTPException(status_code=409, detail=f"Chỉ trả lại được tin đang chờ duyệt (hiện tại '{job.status}').")
+    job.status, job.review_note = "draft", payload.reason.strip()
+    from app.services.notification_service import notify
+    if job.created_by_id:
+        notify(db, [job.created_by_id], "job_review", f"Tin tuyển dụng cần chỉnh sửa: {job.title}", job.review_note,
+               link="/recruiter/jobs", entity_type="JOB", entity_id=job.id)
     db.commit()
     db.refresh(job)
     return _out(job)

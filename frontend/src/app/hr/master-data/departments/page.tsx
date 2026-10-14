@@ -5,6 +5,25 @@ import {
   Building2, Plus, Edit2, Trash2, Users, ChevronRight, ChevronDown, 
   User, CheckCircle2, Search, Layers
 } from 'lucide-react';
+import { masterDataService, type Department } from '@/services/master-data.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
+
+type DepartmentRow = Department & { head_name?: string | null; member_count?: number; open_positions?: number };
+
+/** Flat department list -> two-level tree (root departments and their direct children). */
+function toTree(rows: DepartmentRow[]): DepartmentNode[] {
+  const node = (d: DepartmentRow): DepartmentNode => ({
+    id: String(d.id), code: d.code, name: d.name, manager_name: d.head_name || 'Chưa gán',
+    total_members: d.member_count || 0, open_positions: d.open_positions || 0,
+  });
+  const ids = new Set(rows.map((d) => d.id));
+  return rows.filter((d) => !d.parent_id || !ids.has(d.parent_id)).map((root) => ({
+    ...node(root),
+    sub_departments: rows.filter((d) => d.parent_id === root.id).map(node),
+  }));
+}
 
 interface DepartmentNode {
   id: string;
@@ -17,52 +36,16 @@ interface DepartmentNode {
 }
 
 export default function HRDepartmentsPage() {
-  const [departments, setDepartments] = useState<DepartmentNode[]>([
-    {
-      id: "DEP-01",
-      code: "IT",
-      name: "Khối Công Nghệ Thông Tin",
-      manager_name: "Lê Văn Mạnh",
-      total_members: 45,
-      open_positions: 5,
-      sub_departments: [
-        {
-          id: "DEP-01-1",
-          code: "DEV",
-          name: "Phòng Phát Triển Phần Mềm (Software Dev)",
-          manager_name: "Trần Anh Tuấn",
-          total_members: 30,
-          open_positions: 3
-        },
-        {
-          id: "DEP-01-2",
-          code: "DEVOPS",
-          name: "Phòng Hạ Tầng & DevOps",
-          manager_name: "Nguyễn Văn Hùng",
-          total_members: 15,
-          open_positions: 2
-        }
-      ]
-    },
-    {
-      id: "DEP-02",
-      code: "DATA",
-      name: "Khối Dữ Liệu & Phân Tích (Data & BI)",
-      manager_name: "Phạm Quốc Tuấn",
-      total_members: 18,
-      open_positions: 3
-    },
-    {
-      id: "DEP-03",
-      code: "MKT",
-      name: "Phòng Marketing & Growth",
-      manager_name: "Nguyễn Thị Phương",
-      total_members: 12,
-      open_positions: 2
-    }
-  ]);
+  const { data, error, loading, reload } = useApiData(() => masterDataService.departments(false) as Promise<DepartmentRow[]>, []);
+  const departments = toTree(data || []);
+  const { data: managers } = useApiData(async () => {
+    const [hm, hr] = await Promise.all([masterDataService.people('hiring_manager'), masterDataService.people('hr_manager')]);
+    return [...hm, ...hr.filter((u) => !hm.some((x) => x.id === u.id))];
+  }, []);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
-  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({ "DEP-01": true });
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [newDeptName, setNewDeptName] = useState('');
   const [newDeptCode, setNewDeptCode] = useState('');
@@ -73,43 +56,38 @@ export default function HRDepartmentsPage() {
     setExpandedNodes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleAddDept = () => {
-    if (!newDeptName || !newDeptCode) {
-      alert("Vui lòng nhập đầy đủ tên và mã phòng ban!");
+  const handleAddDept = async () => {
+    if (!newDeptName.trim() || !newDeptCode.trim()) {
+      setFormError("Vui lòng nhập đầy đủ tên và mã phòng ban!");
       return;
     }
-
-    const newDept: DepartmentNode = {
-      id: `DEP-${Date.now()}`,
-      code: newDeptCode.toUpperCase(),
-      name: newDeptName,
-      manager_name: newDeptManager || "Chưa gán",
-      total_members: 0,
-      open_positions: 0
-    };
-
-    if (newDeptParentId) {
-      setDepartments(prev => prev.map(d => {
-        if (d.id === newDeptParentId) {
-          return {
-            ...d,
-            sub_departments: [...(d.sub_departments || []), newDept]
-          };
-        }
-        return d;
-      }));
-      setExpandedNodes(prev => ({ ...prev, [newDeptParentId]: true }));
-    } else {
-      setDepartments(prev => [...prev, newDept]);
+    setSaving(true);
+    setFormError('');
+    try {
+      await masterDataService.saveDepartment({
+        name: newDeptName.trim(),
+        code: newDeptCode.trim().toUpperCase(),
+        head_user_id: newDeptManager ? Number(newDeptManager) : null,
+        parent_id: newDeptParentId ? Number(newDeptParentId) : null,
+        sort_order: 0,
+        is_active: true,
+      });
+      if (newDeptParentId) setExpandedNodes(prev => ({ ...prev, [newDeptParentId]: true }));
+      setModalOpen(false);
+      setNewDeptName('');
+      setNewDeptCode('');
+      setNewDeptManager('');
+      setNewDeptParentId('');
+      reload();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Không lưu được phòng ban.');
+    } finally {
+      setSaving(false);
     }
-
-    alert(`Đã thêm phòng ban "${newDeptName}" thành công!`);
-    setModalOpen(false);
-    setNewDeptName('');
-    setNewDeptCode('');
-    setNewDeptManager('');
-    setNewDeptParentId('');
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -259,13 +237,16 @@ export default function HRDepartmentsPage() {
                 <label className="block font-bold text-slate-700 mb-1.5 uppercase tracking-wider text-[11px]">
                   Trưởng Phòng Phụ Trách
                 </label>
-                <input 
-                  type="text" 
-                  placeholder="Ví dụ: Trần Thị Thu Hà (HR Manager) hoặc Tên nhân sự quản lý..."
+                <select
                   value={newDeptManager}
                   onChange={(e) => setNewDeptManager(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                >
+                  <option value="">-- Chưa gán người phụ trách --</option>
+                  {(managers || []).map((u) => (
+                    <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                  ))}
+                </select>
               </div>
 
               {/* Phòng ban cha (Thuộc phòng ban nào - nếu có): Cho chiếm toàn bộ chiều ngang md:col-span-2 */}
@@ -289,6 +270,8 @@ export default function HRDepartmentsPage() {
               </div>
             </div>
 
+            {formError && <p className="mt-4 text-xs font-semibold text-rose-600">{formError}</p>}
+
             {/* 3. Footer: Nút bấm căn phải */}
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
               <button 
@@ -300,7 +283,8 @@ export default function HRDepartmentsPage() {
               </button>
               <button 
                 type="button"
-                onClick={handleAddDept} 
+                onClick={handleAddDept}
+                disabled={saving}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer active:scale-95"
               >
                 Lưu Phòng Ban

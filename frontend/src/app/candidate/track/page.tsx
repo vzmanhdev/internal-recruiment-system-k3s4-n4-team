@@ -25,6 +25,10 @@ import {
   Loader2,
   HeartHandshake,
 } from 'lucide-react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+
+// Public lookup returns the general status only (S4-05); map it onto the 4-step timeline
+const STATUS_STEP: Record<string, number> = { 'Đã nhận': 0, 'Đang xem xét': 1, 'Mời phỏng vấn': 2, 'Kết thúc': 3 };
 
 function CandidateTrackContent() {
   const searchParams = useSearchParams();
@@ -46,41 +50,41 @@ function CandidateTrackContent() {
     department: string;
     appliedDate: string;
     currentStepIndex: number; // 0, 1, 2, 3 tương ứng 4 bước
+    statusLabel: string;
   } | null>(null);
 
-  // Tự động điền và kích hoạt tra cứu nếu có tham số URL
-  useEffect(() => {
-    if (queryCode) {
-      setTrackingCode(queryCode);
-      if (!email) {
-        setEmail(queryEmail || 'an.nguyen@gmail.com');
-      }
-      executeLookup(queryEmail || 'an.nguyen@gmail.com', queryCode);
-    }
-  }, [queryCode, queryEmail]);
-
-  const executeLookup = (userEmail: string, userCode: string) => {
+  const executeLookup = async (userEmail: string, userCode: string) => {
     setErrorMessage('');
     setIsLoading(true);
-
-    setTimeout(() => {
-      setIsLoading(false);
-
-      const trimmedCode = userCode.trim().toUpperCase();
-      const trimmedEmail = userEmail.trim().toLowerCase();
-
-      // Giả lập dữ liệu tra cứu
+    try {
+      const r = await apiRequest<{ tracking_code: string; job_title: string | null; status: string; applied_date: string | null }>(
+        '/public/applications/status',
+        { method: 'POST', body: JSON.stringify({ tracking_code: userCode.trim().toUpperCase(), email: userEmail.trim().toLowerCase() }) },
+      );
       setSearchResult({
-        candidateName: 'Nguyễn Văn An',
-        email: trimmedEmail,
-        trackingCode: trimmedCode,
-        position: 'Senior Backend Engineer (Go/Python)',
-        department: 'Khối Công Nghệ & Phần Mềm',
-        appliedDate: '12/10/2026 - 14:30',
-        currentStepIndex: 1, // Bước 2: Đang xét duyệt CV
+        candidateName: userEmail.trim().toLowerCase(),
+        email: userEmail.trim().toLowerCase(),
+        trackingCode: r.tracking_code,
+        position: r.job_title || '',
+        department: '',
+        appliedDate: r.applied_date ? new Date(`${r.applied_date}T00:00:00`).toLocaleDateString('vi-VN') : '',
+        currentStepIndex: STATUS_STEP[r.status] ?? 1,
+        statusLabel: r.status,
       });
-    }, 600);
+    } catch (err) {
+      setSearchResult(null);
+      setErrorMessage(err instanceof ApiError ? err.message : 'Không tra cứu được hồ sơ. Vui lòng thử lại.');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Tự động tra cứu khi đường dẫn có đủ mã tra cứu và email
+  useEffect(() => {
+    if (queryCode && queryEmail) {
+      void executeLookup(queryEmail, queryCode); // eslint-disable-line react-hooks/set-state-in-effect
+    }
+  }, [queryCode, queryEmail]);
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,25 +114,25 @@ function CandidateTrackContent() {
       step: 1,
       title: 'Đã tiếp nhận hồ sơ',
       subtitle: 'Hệ thống đã nhận đầy đủ thông tin và CV của bạn.',
-      timeText: '12/10/2026 14:30',
+      timeText: searchResult?.appliedDate || '',
     },
     {
       step: 2,
       title: 'Đang xét duyệt CV',
       subtitle: 'Hội đồng tuyển dụng và Trưởng bộ phận đang sàng lọc CV.',
-      timeText: 'Đang tiến hành',
+      timeText: (searchResult?.currentStepIndex ?? 0) > 1 ? 'Đã hoàn tất' : (searchResult?.currentStepIndex ?? 0) === 1 ? 'Đang tiến hành' : 'Chưa diễn ra',
     },
     {
       step: 3,
       title: 'Phỏng vấn',
       subtitle: 'Lên lịch phỏng vấn chuyên môn & văn hóa công ty.',
-      timeText: 'Đang chờ xếp lịch',
+      timeText: (searchResult?.currentStepIndex ?? 0) > 2 ? 'Đã hoàn tất' : (searchResult?.currentStepIndex ?? 0) === 2 ? 'Đang tiến hành' : 'Chưa diễn ra',
     },
     {
       step: 4,
       title: 'Kết quả Offer',
       subtitle: 'Thông báo kết quả phỏng vấn và gửi Thư mời nhận việc.',
-      timeText: 'Chưa diễn ra',
+      timeText: (searchResult?.currentStepIndex ?? 0) === 3 ? 'Quy trình đã kết thúc — kết quả được gửi qua email' : 'Chưa diễn ra',
     },
   ];
 

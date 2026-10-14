@@ -1,6 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { interviewService, type InterviewItem } from '@/services/interview.service';
+import { masterDataService } from '@/services/master-data.service';
+import type { ApiApplication } from '@/features/candidates/api';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { 
   Calendar, Clock, Users, Video, MapPin, CheckCircle2, XCircle, 
   Plus, Search, Filter, AlertCircle, Eye, UserCheck, Sparkles, X, Check
@@ -33,64 +39,43 @@ export interface InterviewFormData {
   locationOrLink: string;
   interviewers: string[];
   notes?: string;
+  applicationId: number;
+  interviewerIds: number[];
 }
 
-const CANDIDATE_OPTIONS = [
-  { name: "Nguyễn Thu Thủy", position: "Senior Backend Engineer" },
-  { name: "Trần Minh Quang", position: "Trưởng nhóm Data Analyst" },
-  { name: "Phạm Minh Hoàng", position: "Senior Backend Engineer (Python/Go)" },
-  { name: "Trần Mai Phương", position: "Senior UI/UX Designer" },
-  { name: "Đặng Quốc Bảo", position: "Senior Frontend Engineer (React/Next.js)" },
-  { name: "Lê Thị Thảo Trang", position: "Senior Data Scientist (LLM & GenAI)" },
-  { name: "Vũ Đình Cường", position: "DevOps & Cloud Engineer" },
-];
-
-const POSITION_OPTIONS = [
-  "Senior Backend Engineer",
-  "Trưởng nhóm Data Analyst",
-  "Senior Backend Engineer (Python/Go)",
-  "Senior UI/UX Designer",
-  "Senior Frontend Engineer (React/Next.js)",
-  "Senior Data Scientist (LLM & GenAI)",
-  "DevOps & Cloud Engineer",
-  "Product Manager (Enterprise Solutions)",
-];
-
-const EVALUATOR_OPTIONS = [
-  "Lê Văn Mạnh (Tech Lead)",
-  "Trần Thị Thu Hà (HR Manager)",
-  "Phạm Quốc Tuấn (Solution Architect)",
-  "Vũ Hải Đăng (CTO)",
-  "Bùi Quốc Đạt (CCO)",
-  "Đỗ Hoàng Long (Lead QA/QC)",
-];
+interface CandidateOption { id: number; name: string; position: string }
+interface EvaluatorOption { id: number; label: string }
 
 // =============================================================================
 // COMPONENT MODAL TẠO LỊCH PHỎNG VẤN (INLINE TRONG FILE ĐẢM BẢO HOẠT ĐỘNG 100%)
 // =============================================================================
 
-export interface CreateInterviewModalProps {
+interface CreateInterviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: InterviewFormData) => void;
+  candidateOptions: CandidateOption[];
+  evaluatorOptions: EvaluatorOption[];
 }
 
-export function CreateInterviewModal({
+function CreateInterviewModal({
   isOpen,
   onClose,
   onSubmit,
+  candidateOptions,
+  evaluatorOptions,
 }: CreateInterviewModalProps) {
-  const [candidateName, setCandidateName] = useState(CANDIDATE_OPTIONS[0].name);
-  const [position, setPosition] = useState(CANDIDATE_OPTIONS[0].position);
-  const [interviewDate, setInterviewDate] = useState("2026-10-15");
+  const CANDIDATE_OPTIONS = candidateOptions;
+  const POSITION_OPTIONS = Array.from(new Set(candidateOptions.map((c) => c.position).filter(Boolean)));
+  const EVALUATOR_OPTIONS = evaluatorOptions.map((e) => e.label);
+  const [candidateName, setCandidateName] = useState("");
+  const [position, setPosition] = useState("");
+  const [interviewDate, setInterviewDate] = useState("");
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
   const [interviewType, setInterviewType] = useState<"online" | "offline">("online");
-  const [locationOrLink, setLocationOrLink] = useState("https://meet.google.com/abc-xyz-123");
-  const [selectedInterviewers, setSelectedInterviewers] = useState<string[]>([
-    EVALUATOR_OPTIONS[0],
-    EVALUATOR_OPTIONS[1],
-  ]);
+  const [locationOrLink, setLocationOrLink] = useState("");
+  const [selectedInterviewers, setSelectedInterviewers] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -138,7 +123,14 @@ export function CreateInterviewModal({
       return;
     }
 
+    const chosen = CANDIDATE_OPTIONS.find((c) => c.name === candidateName);
+    if (!chosen || !interviewDate) {
+      setErrorMsg("Vui lòng chọn ứng viên và ngày phỏng vấn!");
+      return;
+    }
     onSubmit({
+      applicationId: chosen.id,
+      interviewerIds: evaluatorOptions.filter((e) => selectedInterviewers.includes(e.label)).map((e) => e.id),
       candidateName,
       position,
       interviewDate,
@@ -212,6 +204,7 @@ export function CreateInterviewModal({
                   onChange={handleCandidateChange}
                   className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-hidden focus:border-blue-500"
                 >
+                  <option value="">-- Chọn ứng viên --</option>
                   {CANDIDATE_OPTIONS.map((c, idx) => (
                     <option key={idx} value={c.name}>
                       {c.name}
@@ -419,32 +412,42 @@ export default function HRInterviewsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Danh sách lịch phỏng vấn
-  const [interviews, setInterviews] = useState<InterviewSchedule[]>([
-    {
-      id: "INT-001",
-      code: "INT-2026-045",
-      candidate_name: "Nguyễn Thu Thủy",
-      position: "Senior Backend Engineer",
-      datetime: "08/10/2026 14:00 - 15:00",
-      type: "online",
-      location_or_link: "https://meet.google.com/abc-xyz-123",
-      interviewers: ["Lê Văn Mạnh (Tech Lead)", "Phạm Quốc Tuấn (Solution Architect)"],
-      status: "scheduled",
-      evaluation_submitted: 0
-    },
-    {
-      id: "INT-002",
-      code: "INT-2026-042",
-      candidate_name: "Trần Minh Quang",
-      position: "Trưởng nhóm Data Analyst",
-      datetime: "05/10/2026 10:00 - 11:30",
-      type: "offline",
-      location_or_link: "Phòng họp 402 - Trụ sở chính Hà Nội",
-      interviewers: ["Trần Thị Thu Hà (HR Manager)", "Phạm Quốc Tuấn (Data Director)"],
-      status: "completed",
-      evaluation_submitted: 2
-    }
-  ]);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const { data, error, loading, reload } = useApiData(async () => {
+    const [rows, apps, people] = await Promise.all([
+      interviewService.getInterviews(),
+      apiRequest<ApiApplication[]>('/applications'),
+      masterDataService.people('interviewer').catch(() => []),
+    ]);
+    // submitted evaluations per completed interview
+    const completed = rows.filter((i) => i.status === 'completed');
+    const evals = await Promise.all(Array.from(new Set(completed.map((i) => i.application_id))).map((appId) =>
+      apiRequest<Array<{ interview_id?: number | null }>>(`/referrals/evaluations?application_id=${appId}`).catch(() => [])));
+    const evalCount = (id: number) => evals.flat().filter((e) => e.interview_id === id).length;
+    const interviews: InterviewSchedule[] = rows.map((i: InterviewItem) => {
+      const start = new Date(i.scheduled_time);
+      const end = new Date(start.getTime() + i.duration_minutes * 60_000);
+      const panel = (i.interviewers || []) as Array<{ interviewer_name?: string | null }>;
+      return {
+        id: String(i.id),
+        code: `INT-${i.id}`,
+        candidate_name: i.candidate_name || '',
+        position: i.job_title || '',
+        datetime: `${start.toLocaleDateString('vi-VN')} ${pad(start.getHours())}:${pad(start.getMinutes())} - ${pad(end.getHours())}:${pad(end.getMinutes())}`,
+        type: i.meeting_link ? 'online' : 'offline',
+        location_or_link: i.meeting_link || i.location,
+        interviewers: panel.map((x) => x.interviewer_name || '—'),
+        status: i.status === 'completed' ? 'completed' : i.status === 'cancelled' ? 'cancelled' : 'scheduled',
+        evaluation_submitted: evalCount(i.id),
+      };
+    });
+    const candidateOptions = apps
+      .filter((a) => ['submitted', 'screening', 'interviewing', 'offered'].includes(a.status))
+      .map((a) => ({ id: a.id, name: a.full_name, position: a.job_title || '' }));
+    const evaluatorOptions = people.map((u) => ({ id: u.id, label: u.full_name }));
+    return { interviews, candidateOptions, evaluatorOptions };
+  }, []);
+  const interviews = data?.interviews || [];
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -455,32 +458,37 @@ export default function HRInterviewsPage() {
   };
 
   // Hàm xử lý khi submit tạo lịch mới từ Modal
-  const handleCreateInterview = (data: InterviewFormData) => {
-    const dateParts = data.interviewDate.split('-');
-    const formattedDate = dateParts.length === 3 
-      ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` 
-      : data.interviewDate;
-
-    const formattedDatetime = `${formattedDate} ${data.startTime} - ${data.endTime}`;
-    const nextIndex = interviews.length + 1;
-    const newCode = `INT-2026-${String(45 + nextIndex).padStart(3, '0')}`;
-
-    const newInterview: InterviewSchedule = {
-      id: `INT-${Date.now()}`,
-      code: newCode,
-      candidate_name: data.candidateName,
-      position: data.position,
-      datetime: formattedDatetime,
-      type: data.type,
-      location_or_link: data.locationOrLink,
-      interviewers: data.interviewers,
-      status: 'scheduled',
-      evaluation_submitted: 0,
-    };
-
-    setInterviews((prev) => [newInterview, ...prev]);
-    showToast(`Đã tạo lịch phỏng vấn thành công cho ứng viên ${data.candidateName}!`);
+  // Real scheduling: conflicts, invitations (.ics e-mail + notifications) are handled by the server (S6-02..S6-04)
+  const handleCreateInterview = async (form: InterviewFormData) => {
+    const [h1, m1] = form.startTime.split(':').map(Number);
+    const [h2, m2] = form.endTime.split(':').map(Number);
+    const duration = h2 * 60 + m2 - (h1 * 60 + m1);
+    if (duration <= 0) {
+      showToast('Giờ kết thúc phải sau giờ bắt đầu.');
+      return;
+    }
+    try {
+      await apiRequest('/interviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          application_id: form.applicationId,
+          round_name: form.notes ? `Phỏng vấn — ${form.notes.slice(0, 60)}` : 'Phỏng vấn chuyên môn',
+          scheduled_time: `${form.interviewDate}T${form.startTime}`,
+          duration_minutes: duration,
+          location: form.type === 'offline' ? form.locationOrLink : 'Trực tuyến',
+          meeting_link: form.type === 'online' ? form.locationOrLink : null,
+          interviewer_ids: form.interviewerIds,
+        }),
+      });
+      reload();
+      showToast(`Đã tạo lịch phỏng vấn thành công cho ứng viên ${form.candidateName}!`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không tạo được lịch phỏng vấn.');
+    }
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -588,6 +596,8 @@ export default function HRInterviewsPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleCreateInterview}
+        candidateOptions={data?.candidateOptions || []}
+        evaluatorOptions={data?.evaluatorOptions || []}
       />
     </div>
   );

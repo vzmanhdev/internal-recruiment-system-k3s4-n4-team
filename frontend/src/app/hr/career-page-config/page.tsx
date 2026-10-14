@@ -1,6 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
+import { apiRequest, ApiError } from "@/lib/api-client";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
+
+interface CareerSettings {
+  configured?: boolean; company_name?: string; slogan?: string; logo_url?: string; banner_url?: string; about_us?: string;
+  benefits?: Array<{ title: string; description: string; icon: string }>;
+}
 import {
   Globe,
   Upload,
@@ -30,42 +38,26 @@ interface BenefitItem {
 }
 
 export default function HRCareerPageConfig() {
+  // what the public career page currently shows (empty until HR saves it the first time)
+  const { data, error, loading, reload } = useApiData(() => apiRequest<CareerSettings>("/public/career-page"), []);
+  if (loading) return <LoadingState />;
+  if (error || !data) return <ErrorState error={error} onRetry={reload} />;
+  return <CareerPageEditor initial={data} />;
+}
+
+function CareerPageEditor({ initial }: { initial: CareerSettings }) {
   // Brand & Media CMS State
-  const [companyName, setCompanyName] = useState("Enterprise ATS Tech Corp");
-  const [slogan, setSlogan] = useState("Kiến tạo tương lai số cùng những tài năng xuất sắc nhất");
-  const [logoUrl, setLogoUrl] = useState("/images/company-logo.png");
-  const [bannerUrl, setBannerUrl] = useState("https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1600&q=80");
-  const [aboutUs, setAboutUs] = useState(
-    "Chúng tôi là tập đoàn công nghệ tiên phong cung cấp giải pháp chuyển đổi số toàn diện cho các doanh nghiệp hàng đầu Đông Nam Á. Tại Enterprise ATS, con người luôn là tài sản quý giá nhất. Chúng tôi kiến tạo môi trường làm việc minh bạch, linh hoạt và không ngừng trao quyền để mỗi cá nhân phát huy tối đa năng lực sáng tạo của mình."
-  );
+  const [companyName, setCompanyName] = useState(initial.company_name || "");
+  const [slogan, setSlogan] = useState(initial.slogan || "");
+  const [logoUrl, setLogoUrl] = useState(initial.logo_url || "");
+  const [bannerUrl, setBannerUrl] = useState(initial.banner_url || "");
+  const [aboutUs, setAboutUs] = useState(initial.about_us || "");
 
   // Benefits list
-  const [benefits, setBenefits] = useState<BenefitItem[]>([
-    {
-      id: "b1",
-      title: "Chế độ đãi ngộ & Thưởng vượt trội",
-      description: "Tháng lương 13++, thưởng hiệu quả dự án hàng quý và cơ chế ESOP cổ phần hấp dẫn cho nhân sự tài năng.",
-      iconName: "Award",
-    },
-    {
-      id: "b2",
-      title: "Chăm sóc sức khỏe toàn diện",
-      description: "Gói bảo hiểm sức khỏe cao cấp Bảo Việt / PVI hạng Kim Cương cho nhân viên và người thân trong gia đình.",
-      iconName: "Heart",
-    },
-    {
-      id: "b3",
-      title: "Trang thiết bị làm việc đỉnh cao",
-      description: "Cung cấp Macbook Pro M-Series mới nhất, màn hình kép 4K và ngân sách thiết lập góc làm việc công thái học.",
-      iconName: "Laptop",
-    },
-    {
-      id: "b4",
-      title: "Du lịch & Cân bằng cuộc sống",
-      description: "Chuyến nghỉ dưỡng 5 sao thường niên, 16 ngày nghỉ phép năm có lương và chế độ làm việc Hybrid linh hoạt.",
-      iconName: "Plane",
-    },
-  ]);
+  const [benefits, setBenefits] = useState<BenefitItem[]>(
+    (initial.benefits || []).map((b, i) => ({ id: `b${i + 1}`, title: b.title, description: b.description, iconName: b.icon })),
+  );
+  const [saving, setSaving] = useState(false);
 
   // Tab preview vs editor
   const [previewMode, setPreviewMode] = useState<"editor" | "preview">("editor");
@@ -94,7 +86,7 @@ export default function HRCareerPageConfig() {
 
   // Remove benefit
   const handleRemoveBenefit = (id: string) => {
-    if (benefits.length <= 1) {
+    if (benefits.length < 1) {
       showToast("Cần giữ lại ít nhất một mục phúc lợi!", "error");
       return;
     }
@@ -110,9 +102,27 @@ export default function HRCareerPageConfig() {
   };
 
   // Save CMS
-  const handleSaveCMS = (e: React.FormEvent) => {
+  const handleSaveCMS = async (e: React.FormEvent) => {
     e.preventDefault();
-    showToast("Đã xuất bản cấu hình Career Page lên Cổng tuyển dụng thành công!", "success");
+    if (!companyName.trim()) {
+      showToast("Vui lòng nhập tên công ty!", "error");
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiRequest("/hr/career-page", {
+        method: "PUT",
+        body: JSON.stringify({
+          company_name: companyName.trim(), slogan, logo_url: logoUrl.trim(), banner_url: bannerUrl.trim(), about_us: aboutUs,
+          benefits: benefits.map((b) => ({ title: b.title, description: b.description, icon: b.iconName })),
+        }),
+      });
+      showToast("Đã xuất bản cấu hình Career Page lên Cổng tuyển dụng thành công!", "success");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không lưu được cấu hình.", "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -153,7 +163,7 @@ export default function HRCareerPageConfig() {
               Cấu Hình Cổng Tuyển Dụng (Career Page)
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Tùy biến Logo thương hiệu, Banner bìa, câu chuyện "Về chúng tôi" và các đãi ngộ đặc quyền hiển thị trên Cổng sự nghiệp công khai.
+              Tùy biến Logo thương hiệu, Banner bìa, câu chuyện &ldquo;Về chúng tôi&rdquo; và các đãi ngộ đặc quyền hiển thị trên Cổng sự nghiệp công khai.
             </p>
           </div>
 
@@ -238,11 +248,9 @@ export default function HRCareerPageConfig() {
                   </label>
                   <div className="space-y-2">
                     <div className="relative h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-                      <img
-                        src={bannerUrl}
-                        alt="Banner Preview"
-                        className="w-full h-full object-cover"
-                      />
+                      {bannerUrl && (
+                        <img src={bannerUrl} alt="Banner Preview" className="w-full h-full object-cover" />
+                      )}
                       <div className="absolute inset-0 bg-slate-900/30 flex items-center justify-center">
                         <button
                           type="button"
@@ -299,7 +307,7 @@ export default function HRCareerPageConfig() {
                 <div className="flex items-center gap-2">
                   <Globe className="w-4 h-4 text-emerald-600" />
                   <h3 className="text-sm font-extrabold text-slate-900">
-                    2. Giới Thiệu "Về Chúng Tôi" (About Us Narrative)
+                    2. Giới Thiệu &ldquo;Về Chúng Tôi&rdquo; (About Us Narrative)
                   </h3>
                 </div>
                 <span className="text-[11px] text-slate-400">
@@ -386,6 +394,7 @@ export default function HRCareerPageConfig() {
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="submit"
+                disabled={saving}
                 className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
               >
                 <Save className="w-4 h-4" />
@@ -398,11 +407,9 @@ export default function HRCareerPageConfig() {
           <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-xl bg-white space-y-0">
             {/* Banner Cover Section */}
             <div className="relative h-64 md:h-80 w-full overflow-hidden">
-              <img
-                src={bannerUrl}
-                alt="Career Cover"
-                className="w-full h-full object-cover"
-              />
+              {bannerUrl && (
+                <img src={bannerUrl} alt="Career Cover" className="w-full h-full object-cover" />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/40 to-transparent flex flex-col justify-end p-8 text-white space-y-2">
                 <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold border border-white/20 w-fit">
                   <Building2 className="w-4 h-4 text-emerald-400" />

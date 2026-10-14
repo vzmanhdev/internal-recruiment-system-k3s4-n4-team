@@ -6,6 +6,21 @@ import {
   DollarSign, Edit2, History, Check
 } from 'lucide-react';
 import { CreateApprovalFlowModal, ApprovalFlowFormData } from '@/features/hr/components/CreateApprovalFlowModal';
+import { masterDataService } from '@/services/master-data.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
+
+const M = 1_000_000;
+// workflow approval levels supported by the requisition engine (S3-01)
+const STEP_LABEL: Record<string, { role: string; description: string }> = {
+  manager: { role: 'HIRING_MANAGER', description: 'Trưởng phòng chuyên môn phê duyệt' },
+  hr: { role: 'HR_MANAGER', description: 'Trưởng phòng Nhân sự thẩm định định biên & dải lương' },
+  executive: { role: 'EXECUTIVE', description: 'Ban Giám Đốc phê duyệt cuối' },
+};
+const ROLE_TO_STEP: Record<string, string> = {
+  HIRING_MANAGER: 'manager', HR_MANAGER: 'hr', DIRECTOR: 'executive', CFO: 'executive', CEO: 'executive',
+};
 
 interface ApprovalFlowRule {
   id: string;
@@ -26,57 +41,51 @@ export default function HRApprovalFlowsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const [flows, setFlows] = useState<ApprovalFlowRule[]>([
-    {
-      id: "FLOW-001",
-      name: "Luồng Duyệt Tuyển Dụng Khối CNTT (Dưới 50 Tr VNĐ)",
-      department: "Công Nghệ Thông Tin",
-      min_salary_threshold: 0,
-      max_salary_threshold: 50,
-      version: "v2.1",
-      steps: [
-        { step_num: 1, role: "HIRING_MANAGER", description: "Trưởng phòng chuyên môn đề xuất" },
-        { step_num: 2, role: "HR_MANAGER", description: "Trưởng phòng Nhân sự thẩm định định biên & dải lương" },
-        { step_num: 3, role: "CEO", description: "Ban Giám Đốc phê duyệt cuối" }
-      ],
-      status: "active"
-    },
-    {
-      id: "FLOW-002",
-      name: "Luồng Duyệt Offer Vượt Band Lương (> 50 Tr VNĐ)",
-      department: "Toàn Doanh Nghiệp",
-      min_salary_threshold: 50,
-      max_salary_threshold: 150,
-      version: "v3.0",
-      steps: [
-        { step_num: 1, role: "RECRUITER", description: "Recruiter trình giải trình vượt dải" },
-        { step_num: 2, role: "HR_MANAGER", description: "Trưởng phòng HR xem xét tài chính" },
-        { step_num: 3, role: "CEO", description: "CEO phê duyệt ngoại lệ" }
-      ],
-      status: "active"
+  const { data, error, loading, reload } = useApiData(async () => {
+    const [rows, depts] = await Promise.all([masterDataService.approvalFlows(), masterDataService.departments(false)]);
+    return { rows, depts };
+  }, []);
+  const flows: ApprovalFlowRule[] = (data?.rows || []).map((f) => ({
+    id: `FLOW-${f.id}`,
+    name: f.name,
+    department: data?.depts.find((d) => d.id === f.department_id)?.name || 'Toàn Doanh Nghiệp',
+    min_salary_threshold: Math.round(f.min_salary_threshold / M),
+    max_salary_threshold: Math.round(f.max_salary_threshold / M),
+    version: f.status === 'active' ? 'Đang áp dụng' : 'Ngừng áp dụng',
+    steps: f.steps.map((code, i) => ({ step_num: i + 1, ...(STEP_LABEL[code] || { role: code, description: '' }) })),
+    status: f.status === 'active' ? 'active' : 'draft',
+  }));
+
+  const handleCreateFlow = async (form: ApprovalFlowFormData) => {
+    const unsupported = form.steps.filter((st) => !ROLE_TO_STEP[st.role]).map((st) => st.role);
+    if (unsupported.length) {
+      setToastMessage(`Cấp duyệt chưa được hỗ trợ trong quy trình: ${unsupported.join(', ')} (chỉ Trưởng phòng chuyên môn, Trưởng phòng Nhân sự, Ban Giám Đốc).`);
+      return;
     }
-  ]);
-
-  const handleCreateFlow = (data: ApprovalFlowFormData) => {
-    const newFlow: ApprovalFlowRule = {
-      id: `FLOW-00${flows.length + 1}`,
-      name: data.name,
-      department: data.department,
-      min_salary_threshold: data.minSalary,
-      max_salary_threshold: data.maxSalary,
-      version: `v1.0`,
-      steps: data.steps,
-      status: "active",
-    };
-
-    setFlows([newFlow, ...flows]);
+    try {
+      await masterDataService.saveApprovalFlow({
+        name: form.name,
+        department_id: data?.depts.find((d) => d.name === form.department)?.id ?? null,
+        steps: form.steps.map((st) => ROLE_TO_STEP[st.role]),
+        min_salary_threshold: form.minSalary * M,
+        max_salary_threshold: form.maxSalary * M,
+      });
+      reload();
+    } catch (err) {
+      setToastMessage(err instanceof ApiError ? err.message : 'Không lưu được luồng phê duyệt.');
+      return;
+    }
+    const data_ = form;
     setIsModalOpen(false);
 
-    setToastMessage(`Đã thiết lập luồng phê duyệt "${data.name}" (${data.steps.length} cấp duyệt) thành công!`);
+    setToastMessage(`Đã thiết lập luồng phê duyệt "${data_.name}" (${data_.steps.length} cấp duyệt) thành công!`);
     setTimeout(() => {
       setToastMessage(null);
     }, 4000);
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -160,6 +169,7 @@ export default function HRApprovalFlowsPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleCreateFlow}
+        departmentOptions={(data?.depts || []).map((d) => d.name)}
       />
     </div>
   );

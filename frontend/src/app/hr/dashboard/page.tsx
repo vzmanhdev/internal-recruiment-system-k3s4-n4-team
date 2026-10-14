@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { apiRequest, API_BASE_URL } from "@/lib/api-client";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
 import Link from "next/link";
 
 import {
@@ -44,113 +47,99 @@ import {
 } from "recharts";
 
 // =============================================================================
-// MOCK DATA & DEFINITIONS
+// REAL ANALYTICS (S8-05 … S8-09) -> CHART MODELS
 // =============================================================================
 
-// 1. Phễu Tuyển dụng (Recruitment Funnel)
-const FUNNEL_DATA = [
-  { stage: "Hồ sơ tiếp nhận (CV)", count: 1250, conversionFromPrev: 100, color: "#3B82F6", dropOff: 0 },
-  { stage: "Sàng lọc hồ sơ (Screening)", count: 680, conversionFromPrev: 54.4, color: "#6366F1", dropOff: 45.6 },
-  { stage: "Phỏng vấn chuyên môn (Interview)", count: 210, conversionFromPrev: 30.9, color: "#8B5CF6", dropOff: 69.1 },
-  { stage: "Gửi thư mời (Offer Sent)", count: 48, conversionFromPrev: 22.9, color: "#EC4899", dropOff: 77.1 },
-  { stage: "Đã nhận việc (Hired)", count: 36, conversionFromPrev: 75.0, color: "#10B981", dropOff: 25.0 },
-];
+const FUNNEL_COLORS = ["#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#10B981", "#14B8A6"];
+const SOURCE_COLORS = ["#0A66C2", "#10B981", "#1877F2", "#8B5CF6", "#F59E0B", "#EF4444", "#64748B"];
+const TARGET_SLA_DAYS = 25; // committed time-to-hire target shown as the reference line
 
-// 2. Hiệu quả Nguồn tuyển dụng (Source of Hire)
-const SOURCE_PIE_DATA = [
-  { name: "LinkedIn", value: 438, percentage: 35, color: "#0A66C2" },
-  { name: "Nội bộ giới thiệu", value: 350, percentage: 28, color: "#10B981" },
-  { name: "Facebook & Mạng XH", value: 225, percentage: 18, color: "#1877F2" },
-  { name: "Cổng tuyển dụng Portal", value: 150, percentage: 12, color: "#8B5CF6" },
-  { name: "Headhunter / Agency", value: 87, percentage: 7, color: "#F59E0B" },
-];
+interface FunnelResp { total: number; stages: Array<{ stage: string; label: string; count: number; conversion_from_previous: number | null }>; biggest_drop: { from: string; to: string; lost: number } | null }
+interface SourceRow { source: string; applications: number; passed_screening: number; hired: number; hire_rate: number }
+interface Metrics { total_hires: number; avg_time_to_hire_days: number | null; cost_per_hire: number | null }
+interface Overview { kpis: { active_requisitions: number; pending_approvals: number; total_applications: number; new_candidates_this_week: number } }
 
-const SOURCE_EFFICIENCY_TABLE = [
-  {
-    source: "Nội bộ giới thiệu (Referral)",
-    applied: 350,
-    interviewed: 112,
-    hired: 16,
-    hireRate: "4.57%",
-    costPerHire: "3.500.000 ₫",
-    roi: "Xuất sắc (Tối ưu)",
-    badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  },
-  {
-    source: "LinkedIn Talent Solutions",
-    applied: 438,
-    interviewed: 58,
-    hired: 11,
-    hireRate: "2.51%",
-    costPerHire: "6.200.000 ₫",
-    roi: "Rất tốt (Chất lượng cao)",
-    badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
-  },
-  {
-    source: "Cổng tuyển dụng Career Portal",
-    applied: 150,
-    interviewed: 24,
-    hired: 5,
-    hireRate: "3.33%",
-    costPerHire: "1.800.000 ₫",
-    roi: "Chi phí thấp nhất",
-    badgeColor: "bg-purple-50 text-purple-700 border-purple-200",
-  },
-  {
-    source: "Facebook & Mạng xã hội",
-    applied: 225,
-    interviewed: 12,
-    hired: 2,
-    hireRate: "0.89%",
-    costPerHire: "8.500.000 ₫",
-    roi: "Cần cải thiện chất lượng",
-    badgeColor: "bg-amber-50 text-amber-700 border-amber-200",
-  },
-  {
-    source: "Headhunter / Agency",
-    applied: 87,
-    interviewed: 18,
-    hired: 2,
-    hireRate: "2.30%",
-    costPerHire: "28.000.000 ₫",
-    roi: "Chi phí cao (Dành cho C-Level)",
-    badgeColor: "bg-rose-50 text-rose-700 border-rose-200",
-  },
-];
+const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-// 3. Biến động Thời gian & Chi phí tuyển dụng theo tháng (Time-to-Hire & Cost-per-Hire)
-const MONTHLY_TREND_DATA = [
-  { month: "T1", timeToHire: 32.5, costPerHire: 9.8, targetSLA: 25 },
-  { month: "T2", timeToHire: 30.2, costPerHire: 9.2, targetSLA: 25 },
-  { month: "T3", timeToHire: 28.6, costPerHire: 8.7, targetSLA: 25 },
-  { month: "T4", timeToHire: 27.4, costPerHire: 8.5, targetSLA: 25 },
-  { month: "T5", timeToHire: 26.1, costPerHire: 8.1, targetSLA: 25 },
-  { month: "T6", timeToHire: 25.8, costPerHire: 7.8, targetSLA: 25 },
-  { month: "T7", timeToHire: 29.4, costPerHire: 8.4, targetSLA: 25 }, // Điểm nghẽn mùa tuyển dụng
-  { month: "T8", timeToHire: 24.6, costPerHire: 7.2, targetSLA: 25 },
-  { month: "T9", timeToHire: 23.5, costPerHire: 7.0, targetSLA: 25 },
-  { month: "T10 (Nay)", timeToHire: 22.4, costPerHire: 6.85, targetSLA: 25 },
-];
+async function loadDashboard(range: string) {
+  const now = new Date();
+  const from = new Date(now);
+  if (range === "30d") from.setDate(now.getDate() - 30);
+  else if (range === "quarter") from.setMonth(now.getMonth() - 3);
+  else from.setFullYear(now.getFullYear() - 1);
+  const q = `date_from=${iso(from)}&date_to=${iso(now)}`;
+  // last 10 months for the time-to-hire / cost-per-hire trend
+  const months = Array.from({ length: 10 }, (_, k) => {
+    const start = new Date(now.getFullYear(), now.getMonth() - (9 - k), 1);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+    return { start, end, label: `T${start.getMonth() + 1}${k === 9 ? " (Nay)" : ""}` };
+  });
+  const [overview, funnel, sources, metrics, trend] = await Promise.all([
+    apiRequest<Overview>("/analytics/overview"),
+    apiRequest<FunnelResp>(`/analytics/funnel?${q}`),
+    apiRequest<SourceRow[]>(`/analytics/sources?${q}`),
+    apiRequest<Metrics>(`/analytics/hiring-metrics?${q}`),
+    Promise.all(months.map((m) => apiRequest<Metrics>(`/analytics/hiring-metrics?date_from=${iso(m.start)}&date_to=${iso(m.end)}`)
+      .then((r) => ({ month: m.label, timeToHire: r.avg_time_to_hire_days ?? 0, costPerHire: r.cost_per_hire ? Math.round(r.cost_per_hire / 100_000) / 10 : 0, targetSLA: TARGET_SLA_DAYS, hires: r.total_hires })))),
+  ]);
+  const totalApps = sources.reduce((n, r) => n + r.applications, 0) || 1;
+  const FUNNEL_DATA = funnel.stages.map((st, i) => ({
+    stage: st.label, count: st.count, conversionFromPrev: st.conversion_from_previous ?? 0,
+    color: FUNNEL_COLORS[i % FUNNEL_COLORS.length], dropOff: i === 0 || st.conversion_from_previous == null ? 0 : Math.round((100 - st.conversion_from_previous) * 10) / 10,
+  }));
+  const SOURCE_PIE_DATA = sources.map((r, i) => ({
+    name: r.source, value: r.applications, percentage: Math.round((r.applications / totalApps) * 100), color: SOURCE_COLORS[i % SOURCE_COLORS.length],
+  }));
+  const SOURCE_EFFICIENCY_TABLE = sources.map((r) => ({
+    source: r.source, applied: r.applications, interviewed: r.passed_screening, hired: r.hired, hireRate: `${r.hire_rate}%`,
+    costPerHire: "—",
+    roi: r.hire_rate >= 4 ? "Hiệu quả cao" : r.hire_rate >= 2 ? "Ổn định" : r.applications ? "Cần cải thiện chất lượng" : "Chưa có dữ liệu",
+    badgeColor: r.hire_rate >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : r.hire_rate >= 2 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200",
+  }));
+  const hired = funnel.stages.find((x) => x.stage === "hired")?.count ?? 0;
+  const overall = funnel.total ? Math.round((hired / funnel.total) * 10000) / 100 : 0;
+  const withData = trend.filter((t) => t.hires > 0);
+  const worst = withData.reduce<typeof withData[number] | null>((w, t) => (!w || t.timeToHire > w.timeToHire ? t : w), null);
+  return { overview, funnel, FUNNEL_DATA, SOURCE_PIE_DATA, SOURCE_EFFICIENCY_TABLE, MONTHLY_TREND_DATA: trend, metrics, overall, worst, latest: withData[withData.length - 1] || null, from: iso(from), to: iso(now) };
+}
 
 export default function HRDashboardPage() {
-  const [mounted, setMounted] = useState(false);
+
   const [timeRange, setTimeRange] = useState("30d");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { data: dash, error, loading, reload } = useApiData(() => loadDashboard(timeRange), [timeRange]);
+  const FUNNEL_DATA = dash?.FUNNEL_DATA || [];
+  const SOURCE_PIE_DATA = dash?.SOURCE_PIE_DATA || [];
+  const SOURCE_EFFICIENCY_TABLE = dash?.SOURCE_EFFICIENCY_TABLE || [];
+  const MONTHLY_TREND_DATA = dash?.MONTHLY_TREND_DATA || [];
+  const mounted = !!dash; // charts render on the client once the data is loaded
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 600);
+    reload();
+    setTimeout(() => setIsRefreshing(false), 600);
   };
 
-  const handleExportExcel = () => {
-    alert("Đang trích xuất báo cáo phân tích tuyển dụng định dạng Excel (.xlsx)...");
+  // Server-generated Excel (time-to-hire & cost-per-hire by department / job title) for the selected period
+  const handleExportExcel = async () => {
+    if (!dash) return;
+    const token = localStorage.getItem("access_token");
+    const res = await fetch(`${API_BASE_URL}/analytics/hiring-metrics?date_from=${dash.from}&date_to=${dash.to}&export=true`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: "include",
+    });
+    if (!res.ok) return;
+    const name = /filename="?([^"]+)"?/.exec(res.headers.get("content-disposition") || "")?.[1] || "bao-cao-tuyen-dung.xlsx";
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
   };
+
+  if (loading && !dash) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">
@@ -263,11 +252,11 @@ export default function HRDashboardPage() {
               </div>
               <div className="mt-3">
                 <div className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-                  14 <span className="text-sm font-bold text-slate-400">vị trí</span>
+                  {dash?.overview.kpis.active_requisitions ?? 0} <span className="text-sm font-bold text-slate-400">vị trí</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-600">
                   <ArrowUpRightIcon className="w-3.5 h-3.5" />
-                  <span>+2 vị trí mới trong tháng</span>
+                  <span>{dash?.overview.kpis.pending_approvals ?? 0} yêu cầu đang chờ phê duyệt</span>
                 </div>
               </div>
             </div>
@@ -282,11 +271,11 @@ export default function HRDashboardPage() {
               </div>
               <div className="mt-3">
                 <div className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-                  1,250 <span className="text-sm font-bold text-slate-400">hồ sơ</span>
+                  {(dash?.funnel.total ?? 0).toLocaleString("vi-VN")} <span className="text-sm font-bold text-slate-400">hồ sơ</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-600">
                   <ArrowUpRightIcon className="w-3.5 h-3.5" />
-                  <span>+18.4% so với tháng trước</span>
+                  <span>+{dash?.overview.kpis.new_candidates_this_week ?? 0} hồ sơ trong 7 ngày qua</span>
                 </div>
               </div>
             </div>
@@ -301,11 +290,11 @@ export default function HRDashboardPage() {
               </div>
               <div className="mt-3">
                 <div className="text-2xl md:text-3xl font-black text-purple-700 tracking-tight">
-                  22.4 <span className="text-sm font-bold text-slate-400">ngày</span>
+                  {dash?.metrics.avg_time_to_hire_days ?? "—"} <span className="text-sm font-bold text-slate-400">ngày</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-600">
                   <ArrowDownRightIcon className="w-3.5 h-3.5" />
-                  <span>Rút ngắn 3.2 ngày (SLA cam kết: 25 ngày)</span>
+                  <span>{dash?.metrics.total_hires ?? 0} lượt tuyển trong kỳ (SLA cam kết: {TARGET_SLA_DAYS} ngày)</span>
                 </div>
               </div>
             </div>
@@ -320,11 +309,11 @@ export default function HRDashboardPage() {
               </div>
               <div className="mt-3">
                 <div className="text-2xl md:text-3xl font-black text-emerald-700 tracking-tight">
-                  6.85 <span className="text-sm font-bold text-slate-400">triệu VNĐ</span>
+                  {dash?.metrics.cost_per_hire ? (dash.metrics.cost_per_hire / 1_000_000).toFixed(2) : "—"} <span className="text-sm font-bold text-slate-400">triệu VNĐ</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-600">
                   <ArrowDownRightIcon className="w-3.5 h-3.5" />
-                  <span>Tiết kiệm 12% so với định mức ngân sách</span>
+                  <span>Theo chi phí tuyển dụng đã ghi nhận trong kỳ</span>
                 </div>
               </div>
             </div>
@@ -352,14 +341,14 @@ export default function HRDashboardPage() {
 
               <div className="text-right">
                 <span className="text-[10px] text-slate-400 font-bold block">Tỷ lệ trúng tuyển toàn phễu</span>
-                <span className="text-base font-black text-emerald-600">2.88%</span>
+                <span className="text-base font-black text-emerald-600">{dash?.overall ?? 0}%</span>
               </div>
             </div>
 
             {/* Horizontal Bar Visual Funnel */}
             <div className="space-y-3.5">
               {FUNNEL_DATA.map((step, idx) => {
-                const widthPercent = (step.count / FUNNEL_DATA[0].count) * 100;
+                const widthPercent = FUNNEL_DATA[0].count ? (step.count / FUNNEL_DATA[0].count) * 100 : 0;
 
                 return (
                   <div key={idx} className="space-y-1">
@@ -406,10 +395,12 @@ export default function HRDashboardPage() {
             <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-xs space-y-1.5 text-slate-600">
               <div className="flex items-center justify-between font-bold">
                 <span>Điểm thắt cổ chai lớn nhất:</span>
-                <span className="text-purple-700">Vòng Phỏng vấn chuyên môn (Chỉ 22.9% được Offer)</span>
+                <span className="text-purple-700">
+                  {dash?.funnel.biggest_drop ? `${dash.funnel.biggest_drop.from} → ${dash.funnel.biggest_drop.to} (mất ${dash.funnel.biggest_drop.lost} hồ sơ)` : "Chưa đủ dữ liệu"}
+                </span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Đề xuất: Tối ưu lại bộ lọc bài test đầu vào để giảm thời gian phỏng vấn không phù hợp cho Trưởng bộ phận.
+                Số liệu tính trên các hồ sơ nộp từ {dash?.from} đến {dash?.to}.
               </p>
             </div>
           </div>
@@ -454,8 +445,8 @@ export default function HRDashboardPage() {
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(val: any, name: any, item: any) => [
-                          `${val} CV (${item.payload.percentage}%)`,
+                        formatter={(val, name, item) => [
+                          `${val} CV (${(item.payload as { percentage?: number } | undefined)?.percentage ?? 0}%)`,
                           name,
                         ]}
                         contentStyle={{
@@ -601,7 +592,7 @@ export default function HRDashboardPage() {
                         border: "1px solid #e2e8f0",
                         fontSize: "12px",
                       }}
-                      formatter={(val: any, name: any) => {
+                      formatter={(val, name) => {
                         if (name === "timeToHire") return [`${val} ngày`, "Thời gian tuyển TB"];
                         if (name === "costPerHire") return [`${val} triệu VNĐ`, "Chi phí / Hire"];
                         return [val, name];
@@ -652,7 +643,15 @@ export default function HRDashboardPage() {
               <span>Phân tích điểm nghẽn tự động:</span>
             </div>
             <p className="leading-relaxed">
-              Tháng 7 ghi nhận mức thời gian tuyển tăng vọt lên <strong className="text-amber-900">29.4 ngày</strong> (vượt trần cam kết SLA 25 ngày) do khối Công nghệ dồn lịch phỏng vấn và vòng duyệt lương BOD bị trễ. Từ Tháng 8, sau khi áp dụng <em>Luồng duyệt động 3 cấp</em> và <em>Khung năng lực số hóa</em>, thời gian đã giảm đều đặn xuống <strong className="text-emerald-700 font-bold">22.4 ngày</strong> trong Tháng 10.
+              {dash?.worst ? (
+                <>
+                  Thời gian tuyển cao nhất trong 10 tháng gần đây: <strong className="text-amber-900">{dash.worst.timeToHire} ngày</strong> ({dash.worst.month}
+                  {dash.worst.timeToHire > TARGET_SLA_DAYS ? `, vượt mục tiêu ${TARGET_SLA_DAYS} ngày` : ", trong mục tiêu"}). Tháng gần nhất có tuyển dụng ({dash.latest?.month}):{" "}
+                  <strong className="text-emerald-700 font-bold">{dash.latest?.timeToHire} ngày</strong>.
+                </>
+              ) : (
+                <>Chưa có lượt tuyển nào hoàn tất trong 10 tháng gần đây để phân tích thời gian tuyển.</>
+              )}
             </p>
           </div>
         </div>

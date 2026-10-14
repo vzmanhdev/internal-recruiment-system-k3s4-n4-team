@@ -24,6 +24,10 @@ import {
   UserCheck,
   Gift,
 } from 'lucide-react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+
+// Public lookup returns the general status only (S4-05); map it onto the 4-step timeline
+const STATUS_STEP: Record<string, number> = { 'Đã nhận': 0, 'Đang xem xét': 1, 'Mời phỏng vấn': 2, 'Kết thúc': 3 };
 
 function CandidateTrackingContent() {
   const searchParams = useSearchParams();
@@ -53,50 +57,37 @@ function CandidateTrackingContent() {
     offerSalary?: string;
   } | null>(null);
 
-  // Auto-fill and lookup if URL params are present
-  useEffect(() => {
-    if (queryCode) {
-      setTrackingCode(queryCode);
-      const defaultEmail = queryEmail || 'an.nguyen@gmail.com';
-      setEmail(defaultEmail);
-      executeLookup(defaultEmail, queryCode);
-    }
-  }, [queryCode, queryEmail]);
-
-  const executeLookup = (emailVal: string, codeVal: string) => {
+  const executeLookup = async (emailVal: string, codeVal: string) => {
     setIsLoading(true);
     setErrorMessage('');
-
-    setTimeout(() => {
+    try {
+      const r = await apiRequest<{ tracking_code: string; job_title: string | null; status: string; applied_date: string | null }>(
+        '/public/applications/status',
+        { method: 'POST', body: JSON.stringify({ tracking_code: codeVal.trim().toUpperCase(), email: emailVal.trim().toLowerCase() }) },
+      );
+      setSearchResult({
+        candidateName: emailVal.trim().toLowerCase(),
+        email: emailVal.trim().toLowerCase(),
+        trackingCode: r.tracking_code,
+        position: r.job_title || '',
+        department: '',
+        appliedDate: r.applied_date ? new Date(`${r.applied_date}T00:00:00`).toLocaleDateString('vi-VN') : '',
+        currentStepIndex: STATUS_STEP[r.status] ?? 1,
+      });
+    } catch (err) {
+      setSearchResult(null);
+      setErrorMessage(err instanceof ApiError ? err.message : 'Không tra cứu được hồ sơ. Vui lòng thử lại.');
+    } finally {
       setIsLoading(false);
-      const normalizedCode = codeVal.trim().toUpperCase();
-
-      if (normalizedCode === 'APP-2026-9012') {
-        setSearchResult({
-          candidateName: 'Nguyễn Văn A',
-          email: emailVal.trim() || 'an.nguyen@gmail.com',
-          trackingCode: 'APP-2026-9012',
-          position: 'Senior Frontend Engineer (React/Next.js)',
-          department: 'Khối Công Nghệ & Trải Nghiệm Số',
-          appliedDate: '01/10/2026',
-          currentStepIndex: 3,
-          offerSalary: '42.000.000 VNĐ / tháng Gross',
-        });
-      } else {
-        setSearchResult({
-          candidateName: 'Nguyễn Văn A',
-          email: emailVal.trim() || 'an.nguyen@gmail.com',
-          trackingCode: normalizedCode || 'APP-2026-8899',
-          position: 'Senior Backend Engineer (Go/Python)',
-          department: 'Khối Công Nghệ & Phần Mềm',
-          appliedDate: '08/10/2026',
-          currentStepIndex: 2,
-          interviewDate: 'Thứ Sáu, 16/10/2026 (14:30 - 15:30)',
-          interviewFormat: 'Online Google Meet',
-        });
-      }
-    }, 450);
+    }
   };
+
+  // Lookup automatically when the link carries both the tracking code and the e-mail
+  useEffect(() => {
+    if (queryCode && queryEmail) {
+      void executeLookup(queryEmail, queryCode); // eslint-disable-line react-hooks/set-state-in-effect
+    }
+  }, [queryCode, queryEmail]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,26 +129,28 @@ function CandidateTrackingContent() {
       step: 1,
       title: 'Đã Tiếp Nhận Hồ Sơ',
       subtitle: 'Hệ thống tự động ghi nhận CV & thông tin cá nhân',
-      date: searchResult?.appliedDate || '08/10/2026',
+      date: searchResult?.appliedDate || '',
       statusNote: 'Hồ sơ hợp lệ và đã được phân bổ cho Bộ phận Tuyển dụng.',
     },
     {
       step: 2,
       title: 'Đang Xét Duyệt CV',
       subtitle: 'HR & Hiring Manager thẩm định năng lực chuyên môn',
-      date: '10/10/2026',
-      statusNote: 'CV đã vượt qua vòng sơ loại chuyên môn, đáp ứng đầy đủ yêu cầu kỹ thuật.',
+      date: '',
+      statusNote: searchResult && searchResult.currentStepIndex > 1
+        ? 'Đã hoàn tất bước xét duyệt hồ sơ.'
+        : 'Bộ phận tuyển dụng đang xem xét hồ sơ của bạn.',
     },
     {
       step: 3,
       title: 'Phỏng Vấn Chuyên Môn',
       subtitle: 'Phỏng vấn kỹ thuật & văn hóa cùng Trưởng bộ phận',
-      date: searchResult?.interviewDate || '16/10/2026',
+      date: searchResult?.interviewDate || '',
       statusNote:
         searchResult?.currentStepIndex === 2
-          ? 'Đã phát hành Lời mời phỏng vấn Vòng 2. Vui lòng xác nhận tham dự!'
+          ? 'Bạn đã được mời phỏng vấn — chi tiết lịch hẹn được gửi qua email.'
           : searchResult && searchResult.currentStepIndex > 2
-          ? 'Đã hoàn thành các vòng phỏng vấn với kết quả Đạt.'
+          ? 'Giai đoạn phỏng vấn đã kết thúc.'
           : 'Chờ hoàn tất duyệt CV để lên lịch.',
       actionLink: '/candidate/interviews',
       actionText: 'Xem lịch phỏng vấn',
@@ -166,10 +159,10 @@ function CandidateTrackingContent() {
       step: 4,
       title: 'Kết Quả & Thư Mời Nhận Việc',
       subtitle: 'Thông báo kết quả cuối cùng và gửi Job Offer Letter',
-      date: searchResult?.currentStepIndex === 3 ? '12/10/2026' : 'Dự kiến sau phỏng vấn 3 ngày',
+      date: '',
       statusNote:
         searchResult?.currentStepIndex === 3
-          ? 'Chúc mừng! Thư mời nhận việc (Offer Letter) đã sẵn sàng để bạn phản hồi.'
+          ? 'Quy trình tuyển dụng cho hồ sơ này đã kết thúc — kết quả được gửi tới email của bạn.'
           : 'Đang tổng hợp đánh giá từ Hội đồng phỏng vấn.',
       actionLink: '/candidate/offers',
       actionText: 'Xem thư mời nhận việc',

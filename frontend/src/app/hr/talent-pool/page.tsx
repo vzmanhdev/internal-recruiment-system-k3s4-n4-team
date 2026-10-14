@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { apiRequest, ApiError } from "@/lib/api-client";
+import { candidatesApi, STAGE_LABEL, type ApiApplication } from "@/features/candidates/api";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
 import {
   Sparkles,
   Search,
@@ -50,107 +54,46 @@ export interface TalentCandidate {
 }
 
 // =============================================================================
-// INITIAL MOCK DATA
+// REAL TALENT POOL (S5-06) + the source application of each entry
 // =============================================================================
 
-const INITIAL_TALENTS: TalentCandidate[] = [
-  {
-    id: "TP-001",
-    name: "Phạm Minh Hoàng",
-    email: "hoang.pham@gmail.com",
-    phone: "0908 123 456",
-    category: "Công Nghệ & Kỹ Thuật",
-    appliedPosition: "Senior Backend Engineer (Python/Go)",
-    finalRoundStopped: "Vòng 3: System Design & CTO Interview",
-    ratingStars: 5,
-    skills: ["Python", "Go", "Kubernetes", "PostgreSQL", "Kafka"],
-    rejectionReason: "Chuyên môn rất xuất sắc, điểm phỏng vấn 4.8/5. Nhưng đợt tuyển Q3 công ty cần người vào việc ngay trong 1 tuần, ứng viên cần notice period 2 tháng.",
-    talentNote: "Ưu tiên số 1 khi có đợt tuyển Backend/Tech Lead mới. Phong thái điềm đạm, tư duy kiến trúc phân tán rất sâu.",
-    isSilverMedalist: true,
-    lastContactDate: "15/09/2026",
+interface PoolEntry {
+  id: number; application_id: number | null; full_name: string; email: string; phone: string | null;
+  interested_title: string | null; skills: string | null; reason: string; created_at: string | null;
+}
+
+function categoryOf(title: string): TalentCandidate["category"] {
+  const t = title.toLowerCase();
+  if (/data|dữ liệu|ai\b|machine|ml|bi\b/.test(t)) return "Dữ Liệu & AI";
+  if (/design|thiết kế|ui|ux|product|sản phẩm/.test(t)) return "Sản Phẩm & Thiết Kế";
+  if (/sale|kinh doanh|marketing|growth/.test(t)) return "Kinh Doanh & Marketing";
+  if (/hr|nhân sự|tuyển dụng|vận hành|kế toán|admin/.test(t)) return "Nhân Sự & Vận Hành";
+  return "Công Nghệ & Kỹ Thuật";
+}
+
+function toTalent(e: PoolEntry, app: ApiApplication | undefined): TalentCandidate {
+  const title = e.interested_title || app?.job_title || "";
+  const rating = app?.rating ?? 3;
+  return {
+    id: String(e.id),
+    name: e.full_name,
+    email: e.email,
+    phone: e.phone || "",
+    category: categoryOf(title),
+    appliedPosition: title,
+    finalRoundStopped: app ? `Dừng ở giai đoạn: ${STAGE_LABEL[app.status] || app.status}` : "Không rõ",
+    ratingStars: rating,
+    skills: (e.skills || "").split(/[,;]/).map((x) => x.trim()).filter(Boolean),
+    rejectionReason: (app as { rejection_reason?: string | null } | undefined)?.rejection_reason || "",
+    talentNote: e.reason,
+    isSilverMedalist: rating >= 4,
+    lastContactDate: e.created_at ? new Date(e.created_at).toLocaleDateString("vi-VN") : "",
     isBlacklisted: false,
-  },
-  {
-    id: "TP-002",
-    name: "Trần Mai Phương",
-    email: "phuong.tran@outlook.com",
-    phone: "0912 345 678",
-    category: "Sản Phẩm & Thiết Kế",
-    appliedPosition: "Senior UI/UX Designer",
-    finalRoundStopped: "Vòng 2: Portfolio Challenge & Design Lead",
-    ratingStars: 5,
-    skills: ["Figma", "Design Systems", "User Research", "Prototyping"],
-    rejectionReason: "Rớt vòng cuối do ứng viên thiên hướng B2C Marketplace trong khi dự án đợt này cần chuyên gia B2B ERP.",
-    talentNote: "Portfolio cực kỳ thẩm mỹ, tư duy Micro-interactions tinh tế. Mời ngay khi mở dự án Mobile App khách hàng mới.",
-    isSilverMedalist: true,
-    lastContactDate: "20/09/2026",
-    isBlacklisted: false,
-  },
-  {
-    id: "TP-003",
-    name: "Đặng Quốc Bảo",
-    email: "bao.dang@yahoo.com",
-    phone: "0933 888 999",
-    category: "Công Nghệ & Kỹ Thuật",
-    appliedPosition: "Senior Frontend Engineer (React/Next.js)",
-    finalRoundStopped: "Vòng 3: Final Culture Fit với BOD",
-    ratingStars: 4,
-    skills: ["Next.js", "TypeScript", "Tailwind CSS", "Web Performance", "Redux"],
-    rejectionReason: "Kỹ năng chuyên môn đạt 85%, nhưng mức lương kỳ vọng thời điểm đó vượt dải lương trần phê duyệt 3 triệu.",
-    talentNote: "Ứng viên rất thiện chí, hẹn kết nối lại vào đợt review ngân sách năm 2027.",
-    isSilverMedalist: true,
-    lastContactDate: "02/10/2026",
-    isBlacklisted: false,
-  },
-  {
-    id: "TP-004",
-    name: "Lê Thị Thảo Trang",
-    email: "trang.le@gmail.com",
-    phone: "0987 654 321",
-    category: "Dữ Liệu & AI",
-    appliedPosition: "Senior Data Scientist (LLM & GenAI)",
-    finalRoundStopped: "Vòng 3: Case Study & AI Director",
-    ratingStars: 5,
-    skills: ["Python", "PyTorch", "LangChain", "RAG Pipeline", "Vector DB"],
-    rejectionReason: "Dự án AI tạm hoãn 1 quý để chờ duyệt ngân sách GPU Cloud.",
-    talentNote: "Hồ sơ R&D cực mạnh, có công bố nghiên cứu quốc tế. Cần giữ liên lạc thường xuyên qua LinkedIn.",
-    isSilverMedalist: true,
-    lastContactDate: "28/09/2026",
-    isBlacklisted: false,
-  },
-  {
-    id: "TP-005",
-    name: "Nguyễn Hải Đăng",
-    email: "dang.nguyen@company.com",
-    phone: "0944 111 222",
-    category: "Kinh Doanh & Marketing",
-    appliedPosition: "B2B Enterprise Sales Manager",
-    finalRoundStopped: "Vòng 2: Thuyết trình Kế hoạch Doanh thu với CCO",
-    ratingStars: 4,
-    skills: ["B2B SaaS", "Solution Selling", "Key Account", "Negotiation"],
-    rejectionReason: "Kinh nghiệm phong phú nhưng mạng lưới quan hệ khách hàng chủ yếu mảng Bán lẻ thay vì Tài chính Ngân hàng.",
-    talentNote: "Khả năng đàm phán thuyết phục, phong thái chuyên nghiệp. Giữ cho khối Bán lẻ quý sau.",
-    isSilverMedalist: true,
-    lastContactDate: "05/10/2026",
-    isBlacklisted: false,
-  },
-  {
-    id: "TP-006",
-    name: "Vũ Đình Cường",
-    email: "cuong.vu@gmail.com",
-    phone: "0966 333 444",
-    category: "Công Nghệ & Kỹ Thuật",
-    appliedPosition: "DevOps & Cloud Engineer",
-    finalRoundStopped: "Vòng 1: Kỹ thuật",
-    ratingStars: 2,
-    skills: ["Linux", "Bash", "Docker"],
-    rejectionReason: "Khai man kinh nghiệm thực tế về AWS và Terraform.",
-    talentNote: "Cảnh báo Blacklist: Không mời lại vào các vị trí phụ trách Production quan trọng.",
-    isSilverMedalist: false,
-    lastContactDate: "10/08/2026",
-    isBlacklisted: true,
-  },
-];
+  };
+}
+
+const fill = (text: string, t: TalentCandidate) =>
+  text.replace(/\[Tên ứng viên\]/g, t.name).replace(/\[Vị trí từng ứng tuyển\]/g, t.appliedPosition || "đã ứng tuyển").replace(/\[Tên công ty\]/g, "công ty chúng tôi");
 
 const EMAIL_CAMPAIGN_TEMPLATES = [
   {
@@ -172,7 +115,15 @@ const EMAIL_CAMPAIGN_TEMPLATES = [
 // =============================================================================
 
 export default function HRTalentPoolPage() {
-  const [talents, setTalents] = useState<TalentCandidate[]>(INITIAL_TALENTS);
+  const { data: pool, error, loading, reload, setData } = useApiData(async () => {
+    const [entries, apps] = await Promise.all([apiRequest<PoolEntry[]>("/talent-pool"), apiRequest<ApiApplication[]>("/applications")]);
+    return { entries, apps };
+  }, []);
+  const talents: TalentCandidate[] = useMemo(
+    () => (pool?.entries || []).map((e) => toTalent(e, pool?.apps.find((a) => a.id === e.application_id))),
+    [pool],
+  );
+  const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedRating, setSelectedRating] = useState("all");
@@ -198,12 +149,22 @@ export default function HRTalentPoolPage() {
   };
 
   // Toggle star rating
-  const handleToggleStar = (candidateId: string, currentStars: number) => {
+  // the star rating is the source application's rating (kept with its tags)
+  const handleToggleStar = async (candidateId: string, currentStars: number) => {
     const nextStars = currentStars >= 5 ? 3 : currentStars + 1;
-    setTalents((prev) =>
-      prev.map((t) => (t.id === candidateId ? { ...t, ratingStars: nextStars } : t))
-    );
-    showToast(`Đã cập nhật đánh giá ${nextStars} sao cho ứng viên!`, "success");
+    const entry = pool?.entries.find((e) => String(e.id) === candidateId);
+    const app = pool?.apps.find((a) => a.id === entry?.application_id);
+    if (!app) {
+      showToast("Ứng viên này không còn hồ sơ gốc để lưu đánh giá.", "error");
+      return;
+    }
+    try {
+      await candidatesApi.setTags(app.id, app.tags || [], nextStars);
+      setData((prev) => prev && { ...prev, apps: prev.apps.map((a) => (a.id === app.id ? { ...a, rating: nextStars } : a)) });
+      showToast(`Đã cập nhật đánh giá ${nextStars} sao cho ứng viên!`, "success");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không lưu được đánh giá.", "error");
+    }
   };
 
   // Toggle select candidate
@@ -223,9 +184,8 @@ export default function HRTalentPoolPage() {
   };
 
   // Filtered Talents
-  const filteredTalents = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return talents.filter((t) => {
+  const q = searchQuery.trim().toLowerCase();
+  const filteredTalents = talents.filter((t) => {
       const matchSearch =
         !q ||
         t.name.toLowerCase().includes(q) ||
@@ -239,24 +199,37 @@ export default function HRTalentPoolPage() {
       const matchSilver = !onlySilverMedalists || t.isSilverMedalist;
 
       return matchSearch && matchCategory && matchRating && matchSilver;
-    });
-  }, [talents, searchQuery, selectedCategory, selectedRating, onlySilverMedalists]);
+  });
 
-  // Handle Send Bulk Email
-  const handleSendBulkEmail = (e: React.FormEvent) => {
+  // Handle Send Bulk Email: one real (queued) e-mail per selected candidate through their source application
+  const handleSendBulkEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedIds.length === 0) {
       showToast("Vui lòng chọn ít nhất 1 ứng viên để gửi email!", "error");
       return;
     }
-
-    showToast(
-      `Đã phát chiến dịch gửi email mời tuyển dụng tới ${selectedIds.length} ứng viên tiềm năng!`,
-      "success"
-    );
-    setIsBulkEmailModalOpen(false);
-    setSelectedIds([]);
+    setSending(true);
+    let queued = 0, skipped = 0;
+    try {
+      for (const id of selectedIds) {
+        const entry = pool?.entries.find((x) => String(x.id) === id);
+        const t = talents.find((x) => x.id === id);
+        if (!entry?.application_id || !t) { skipped += 1; continue; }
+        await candidatesApi.sendEmail(entry.application_id, fill(campaignSubject, t), fill(campaignBody, t));
+        queued += 1;
+      }
+      showToast(`Đã đưa ${queued} email vào hàng đợi gửi${skipped ? ` (bỏ qua ${skipped} ứng viên không còn hồ sơ gốc)` : ""}!`, "success");
+      setIsBulkEmailModalOpen(false);
+      setSelectedIds([]);
+    } catch (err) {
+      showToast((err instanceof ApiError ? err.message : "Gửi email bị lỗi.") + (queued ? ` (đã gửi ${queued})` : ""), "error");
+    } finally {
+      setSending(false);
+    }
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">

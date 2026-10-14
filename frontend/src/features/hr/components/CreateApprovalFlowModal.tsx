@@ -22,6 +22,8 @@ interface CreateApprovalFlowModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: ApprovalFlowFormData) => void;
+  /** Real department names from master data (falls back to the built-in list). */
+  departmentOptions?: string[];
 }
 
 const DEPARTMENT_OPTIONS = [
@@ -54,7 +56,9 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
   isOpen,
   onClose,
   onSubmit,
+  departmentOptions,
 }) => {
+  const deptOptions = departmentOptions && departmentOptions.length ? ["Toàn Doanh Nghiệp", ...departmentOptions] : DEPARTMENT_OPTIONS;
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("Công Nghệ Thông Tin");
   const [approvalType, setApprovalType] = useState("Tuyển dụng (Job Requisition)");
@@ -213,7 +217,7 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
                 onChange={(e) => setDepartment(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all cursor-pointer"
               >
-                {DEPARTMENT_OPTIONS.map((dept, idx) => (
+                {deptOptions.map((dept, idx) => (
                   <option key={idx} value={dept}>
                     {dept}
                   </option>

@@ -1,8 +1,21 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+
+interface LinkOffer {
+  candidate_name: string; job_title: string | null; offered_salary: number; allowance: number; currency: string;
+  start_date: string; work_location: string; probation_duration_months: number; probation_salary_percentage: number;
+  response_deadline: string | null;
+}
+// portal reasons -> backend decline categories (salary, location, other_offer, personal, other)
+const DECLINE_TO_API: Record<string, string> = { salary: 'salary', another_offer: 'other_offer', location: 'location', career_direction: 'personal', other: 'other' };
+const POLICY_NOTE = 'Theo chính sách chung của công ty — chi tiết trong hợp đồng lao động.';
+const money = (n: number, cur: string) => `${n.toLocaleString('vi-VN')} ${cur === 'VND' ? 'VNĐ' : cur}`;
 import {
   Briefcase,
   DollarSign,
@@ -27,9 +40,14 @@ import {
   HeartHandshake,
 } from 'lucide-react';
 
-export default function CandidateOfferActionPage() {
-  const params = useParams();
-  const offerId = (params?.id as string) || 'OF-2026-99';
+function CandidateOfferAction() {
+  // single-use response token from the offer e-mail (S7-06)
+  const token = useSearchParams().get('token') || '';
+  const { data: raw, error, loading, reload } = useApiData(
+    () => apiRequest<LinkOffer & { now?: number }>(`/public/offers?token=${encodeURIComponent(token)}`)
+      .then((o) => ({ ...o, now: Date.now() })),
+    [token],
+  );
 
   // Interaction State: 'pending' | 'accepted_success' | 'declined_success'
   const [actionState, setActionState] = useState<'pending' | 'accepted_success' | 'declined_success'>('pending');
@@ -48,59 +66,68 @@ export default function CandidateOfferActionPage() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
-  // Mock Offer details
-  const offer = useMemo(() => {
+  const offer = raw ? (() => {
+    const deadline = raw.response_deadline ? new Date(`${raw.response_deadline.slice(0, 10)}T23:59:59`) : null;
+    const start = new Date(`${raw.start_date.slice(0, 10)}T00:00:00`);
     return {
-      id: offerId,
-      candidateName: 'Nguyễn Văn A',
-      jobTitle: 'Senior Frontend Engineer (React/Next.js)',
-      department: 'Khối Công Nghệ & Trải Nghiệm Số',
-      reportsTo: 'Engineering Director & Product Lead',
-      salaryGross: '42.000.000 VNĐ / tháng',
-      salaryNetEstimated: '~36.200.000 VNĐ / tháng (sau thuế & bảo hiểm bắt buộc)',
-      startDate: 'Thứ Hai, 02/11/2026',
-      probationPeriod: '02 tháng (100% lương chính thức và đóng đủ BHXH ngay từ tháng đầu)',
-      bonusPolicy: 'Tháng lương 13 đảm bảo + Thưởng KPI theo hiệu suất kinh doanh (1.5 - 3 tháng lương)',
-      workLocation: 'Tầng 8, Tòa nhà Tech Tower, 19 Duy Tân, Cầu Giấy, Hà Nội',
-      workModel: 'Hybrid (3 ngày văn phòng, 2 ngày làm việc linh hoạt từ xa/WFH)',
-      workingHours: 'Thứ Hai - Thứ Sáu, 08:30 - 17:30 (Nghỉ Thứ Bảy & Chủ Nhật)',
-      expiresAt: '23:59 ngày 18/10/2026',
-      daysLeft: 3,
-      healthInsurance: 'Gói bảo hiểm sức khỏe cao cấp PVI Care toàn diện cho cá nhân và trợ cấp 50% cho người thân',
-      devices: 'MacBook Pro M3 Pro / Dell XPS 15 + Màn hình 4K 27 inch tại văn phòng',
-      annualLeave: '15 ngày phép hưởng nguyên lương / năm (+1 ngày phép thâm niên mỗi năm)',
-      hrContact: {
-        name: 'Trần Thị Mỹ Linh',
-        title: 'Senior Talent Acquisition Specialist',
-        email: 'recruitment@example.com',
-        phone: '024 7300 8899 (Ext: 104)',
-      },
+      id: raw.job_title || '',
+      candidateName: raw.candidate_name,
+      jobTitle: raw.job_title || '',
+      department: '',
+      reportsTo: '',
+      salaryGross: `${money(raw.offered_salary, raw.currency)} / tháng`,
+      salaryNetEstimated: raw.allowance ? `Phụ cấp: ${money(raw.allowance, raw.currency)} / tháng` : '',
+      startDate: start.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }),
+      probationPeriod: `${raw.probation_duration_months} tháng (${raw.probation_salary_percentage}% lương chính thức)`,
+      bonusPolicy: POLICY_NOTE,
+      workLocation: raw.work_location,
+      workModel: POLICY_NOTE,
+      workingHours: '',
+      expiresAt: deadline ? `23:59 ngày ${deadline.toLocaleDateString('vi-VN')}` : 'khi có thông báo mới',
+      daysLeft: deadline ? Math.max(0, Math.ceil((deadline.getTime() - (raw.now || 0)) / 86_400_000)) : 0,
+      healthInsurance: POLICY_NOTE,
+      devices: POLICY_NOTE,
+      annualLeave: '',
+      hrContact: { name: 'Bộ phận Tuyển dụng', title: 'Liên hệ qua email đã gửi thư mời này', email: '', phone: '' },
     };
-  }, [offerId]);
+  })() : null;
 
-  // Handle PDF Download Simulation
+  // Save the letter as PDF through the browser's print dialog (no file is generated server-side for link users)
   const handleDownloadPDF = () => {
     setIsDownloading(true);
-    setTimeout(() => {
-      setIsDownloading(false);
-      setDownloadSuccess(true);
-      setTimeout(() => setDownloadSuccess(false), 4000);
-    }, 1000);
+    window.print();
+    setIsDownloading(false);
+    setDownloadSuccess(true);
+    setTimeout(() => setDownloadSuccess(false), 4000);
   };
 
+  const respond = (decision: 'accepted' | 'declined', reason_category?: string, comment?: string) =>
+    apiRequest<{ status: string }>('/public/offers/respond', {
+      method: 'POST', body: JSON.stringify({ token, decision, reason_category, comment }),
+    });
+
   // Handle Accept Confirmation
-  const handleConfirmAccept = () => {
+  const handleConfirmAccept = async () => {
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      await respond('accepted');
       setShowAcceptModal(false);
       setActionState('accepted_success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 700);
+    } catch (err) {
+      setShowAcceptModal(false);
+      setDeclineError('');
+      alertError(err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
+  const [pageError, setPageError] = useState('');
+  const alertError = (err: unknown) => setPageError(err instanceof ApiError ? err.message : 'Không gửi được phản hồi. Vui lòng thử lại.');
+
   // Handle Decline Submission
-  const handleConfirmDecline = (e: React.FormEvent) => {
+  const handleConfirmDecline = async (e: React.FormEvent) => {
     e.preventDefault();
     setDeclineError('');
 
@@ -115,16 +142,25 @@ export default function CandidateOfferActionPage() {
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      await respond('declined', DECLINE_TO_API[declineReason] || 'other', customDeclineNote.trim() || undefined);
       setShowDeclineModal(false);
       setActionState('declined_success');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 700);
+    } catch (err) {
+      setDeclineError(err instanceof ApiError ? err.message : 'Không gửi được phản hồi.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (!token) return <ErrorState error={new ApiError(404, 'Liên kết không hợp lệ hoặc đã hết hiệu lực.')} />;
+  if (loading) return <LoadingState />;
+  if (error || !offer) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="max-w-5xl mx-auto w-full space-y-6 pb-16 antialiased">
+      {pageError && <p className="text-sm font-semibold text-rose-600">{pageError}</p>}
       {/* Top Navigation */}
       <div className="flex items-center justify-between">
         <Link
@@ -698,5 +734,14 @@ export default function CandidateOfferActionPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// useSearchParams (?token=) needs a Suspense boundary for static rendering
+export default function CandidateOfferActionPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <CandidateOfferAction />
+    </Suspense>
   );
 }

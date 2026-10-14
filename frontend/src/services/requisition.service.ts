@@ -44,6 +44,7 @@ export interface RequisitionItem {
   days_remaining?: number | null;
   is_overdue?: boolean;
   job_title_name?: string | null;
+  job_title_id?: number | null;
   salary_justification?: string | null;
   recruiters?: Array<{ recruiter_id: number; full_name: string; assignment_type: string }>;
 }
@@ -92,6 +93,10 @@ export const requisitionService = {
       method: "POST",
       body: JSON.stringify({ recruiter_id, assignment_type }),
     });
+  },
+
+  async resumeRequisition(id: number, reason: string): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}/resume`, { method: "POST", body: JSON.stringify({ reason }) });
   },
 
   async copyRequisition(id: number): Promise<RequisitionItem> {

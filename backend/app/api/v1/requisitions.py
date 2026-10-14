@@ -571,6 +571,30 @@ def close_requisition(
     return req.to_dict()
 
 
+class RequisitionResumeRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+@router.post("/{req_id}/resume")
+def resume_requisition(
+    req_id: int,
+    payload: RequisitionResumeRequest,
+    current_user: User = Depends(require_permission("requisition:close")),
+    db: Session = Depends(get_db)
+):
+    """Re-open a paused requisition (back to approved). Postings closed by the pause stay closed — republish them explicitly."""
+    req = _get_or_404(db, req_id)
+    if req.status != "paused":
+        raise HTTPException(status_code=409, detail=f"Chỉ mở lại được tờ trình đang tạm dừng (hiện tại '{req.status}').")
+    _transition(db, req, "paused", {"status": "approved"})
+    db.add(RequisitionApprovalLog(requisition_id=req.id, approver_id=current_user.id, step_name="Mở lại tuyển dụng",
+                                  action="resumed", comment=payload.reason))
+    _audit(db, current_user, "REQUISITION_RESUME", req, {"from": "paused", "to": "approved", "reason": payload.reason})
+    db.commit()
+    db.refresh(req)
+    return req.to_dict()
+
+
 # Sao chép yêu cầu tuyển dụng (S3-05)
 @router.post("/{req_id}/copy", status_code=201)
 def copy_requisition(

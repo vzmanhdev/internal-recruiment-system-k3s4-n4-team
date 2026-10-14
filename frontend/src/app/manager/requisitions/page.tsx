@@ -9,6 +9,7 @@ import { managerApi, type ManagerRequisitionItem } from '@/features/manager/api'
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { ApiError } from '@/lib/api-client';
+import { masterDataService } from '@/services/master-data.service';
 import {
   FileCheck,
   Search,
@@ -72,6 +73,26 @@ function RequisitionsContent() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
+  // Job titles (with their department) for a requisition created from scratch
+  const { data: titleData } = useApiData(async () => {
+    const [titles, depts] = await Promise.all([masterDataService.jobTitles(), masterDataService.departments(false)]);
+    return { titles: titles.filter((t) => t.is_active), depts };
+  }, []);
+  const [newTitleId, setNewTitleId] = useState('');
+  const chosenTitle = titleData?.titles.find((t) => String(t.id) === newTitleId);
+  const isCreateMode = isDuplicateModalOpen && !selectedReqForDuplicate;
+
+  // "+ Tạo Yêu Cầu Mới": the same form, empty, without a source requisition
+  const handleOpenCreateModal = () => {
+    setSelectedReqForDuplicate(null);
+    setNewTitleId('');
+    setDuplicateForm({
+      title: '', department: '', level: '', salaryRange: '', targetCount: 1, targetDate: '',
+      description: '', requirements: '', reason: '',
+    });
+    setIsDuplicateModalOpen(true);
+  };
+
   // Open modal with pre-filled requisition data
   const handleOpenDuplicateModal = (req: ManagerRequisitionItem) => {
     setSelectedReqForDuplicate(req);
@@ -103,7 +124,35 @@ function RequisitionsContent() {
   // Submit Duplicate Requisition (Trình duyệt)
   const handleSubmitDuplicate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedReqForDuplicate) return;
+    if (!selectedReqForDuplicate) {
+      // create from scratch
+      const deptId = chosenTitle?.department_id ?? titleData?.depts[0]?.id;
+      if (!chosenTitle || !deptId) {
+        showToast('Vui lòng chọn chức danh (thuộc một phòng ban) cho yêu cầu tuyển dụng.');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const created = await managerApi.createAndSubmit({
+          title: duplicateForm.title.trim() || chosenTitle.name,
+          department_id: deptId,
+          job_title_id: chosenTitle.id,
+          quantity: Number(duplicateForm.targetCount) || 1,
+          target_onboard_date: duplicateForm.targetDate || undefined,
+          job_description: duplicateForm.description,
+          requirements: duplicateForm.requirements,
+          reason_detail: duplicateForm.reason,
+        });
+        setData((prev) => [created, ...(prev || [])]);
+        setIsDuplicateModalOpen(false);
+        showToast(`Đã tạo và trình duyệt yêu cầu ${created.id}: ${created.title}`);
+      } catch (err) {
+        showToast(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu tuyển dụng.');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     setSubmitting(true);
     try {
       const result = await managerApi.copyAndSubmit(selectedReqForDuplicate.dbId, {
@@ -185,7 +234,7 @@ function RequisitionsContent() {
         </div>
 
         <button
-          onClick={() => handleOpenDuplicateModal(requisitions[0])}
+          onClick={handleOpenCreateModal}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95 shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -391,10 +440,12 @@ function RequisitionsContent() {
                 </div>
                 <div>
                   <h3 className="font-black text-base text-slate-900 tracking-tight">
-                    Tạo yêu cầu mới (Bản sao)
+                    {isCreateMode ? 'Tạo yêu cầu mới' : 'Tạo yêu cầu mới (Bản sao)'}
                   </h3>
                   <p className="text-xs text-slate-400 font-medium">
-                    Sao chép toàn bộ tiêu chuẩn từ yêu cầu {selectedReqForDuplicate?.id}
+                    {isCreateMode
+                      ? 'Yêu cầu sẽ được gửi vào luồng phê duyệt ngay sau khi tạo'
+                      : `Sao chép toàn bộ tiêu chuẩn từ yêu cầu ${selectedReqForDuplicate?.id}`}
                   </p>
                 </div>
               </div>
@@ -435,7 +486,22 @@ function RequisitionsContent() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Level */}
                 <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">Chức danh <span className="font-normal text-slate-400">(kế thừa)</span></label>
+                  <label className="block font-bold text-slate-700">Chức danh {isCreateMode ? '*' : <span className="font-normal text-slate-400">(kế thừa)</span>}</label>
+                  {isCreateMode ? (
+                    <select
+                      required
+                      value={newTitleId}
+                      onChange={(e) => setNewTitleId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600"
+                    >
+                      <option value="">-- Chọn chức danh --</option>
+                      {(titleData?.titles || []).map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}{t.department_id ? ` — ${titleData?.depts.find((d) => d.id === t.department_id)?.name || ''}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
                   <input
                     type="text"
                     value={duplicateForm.level}
@@ -443,14 +509,19 @@ function RequisitionsContent() {
                     title="Kế thừa từ tờ trình gốc; sửa trong bản nháp sau khi tạo nếu cần."
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600"
                   />
+                  )}
                 </div>
 
                 {/* Salary Range */}
                 <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">Dải lương đề xuất <span className="font-normal text-slate-400">(kế thừa)</span></label>
+                  <label className="block font-bold text-slate-700">Dải lương đề xuất <span className="font-normal text-slate-400">{isCreateMode ? '(theo chức danh)' : '(kế thừa)'}</span></label>
                   <input
                     type="text"
-                    value={duplicateForm.salaryRange}
+                    value={isCreateMode
+                      ? (chosenTitle?.min_salary && chosenTitle?.max_salary
+                        ? `${Math.round(chosenTitle.min_salary / 1_000_000)} - ${Math.round(chosenTitle.max_salary / 1_000_000)} Triệu`
+                        : 'Theo khung lương của chức danh')
+                      : duplicateForm.salaryRange}
                     readOnly
                     title="Kế thừa từ tờ trình gốc; sửa trong bản nháp sau khi tạo nếu cần."
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-emerald-700 focus:outline-none focus:border-blue-600"

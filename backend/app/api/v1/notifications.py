@@ -28,15 +28,18 @@ class PreferencesUpdate(BaseModel):
 def list_my_notifications(
     unread_only: bool = False,
     limit: int = 50,
+    offset: int = 0,
     current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db),
 ):
     query = db.query(Notification).filter(Notification.recipient_id == current_user.id)
     if unread_only:
         query = query.filter(Notification.is_read == False)  # noqa: E712
-    items = query.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(max(1, min(limit, 200))).all()
+    total = query.count()
+    limit, offset = max(1, min(limit, 200)), max(0, offset)
+    items = query.order_by(Notification.created_at.desc(), Notification.id.desc()).offset(offset).limit(limit).all()
     unread = db.query(Notification).filter(Notification.recipient_id == current_user.id, Notification.is_read == False).count()  # noqa: E712
-    return {"items": [n.to_dict() for n in items], "unread_count": unread}
+    return {"items": [n.to_dict() for n in items], "unread_count": unread, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/unread-count")
@@ -45,6 +48,7 @@ def unread_count(current_user: User = Depends(get_current_user_obj), db: Session
     return {"unread_count": count}
 
 
+@router.patch("/{notification_id}/read")
 @router.post("/{notification_id}/read")
 def mark_read(notification_id: int, current_user: User = Depends(get_current_user_obj), db: Session = Depends(get_db)):
     item = db.query(Notification).filter(Notification.id == notification_id, Notification.recipient_id == current_user.id).first()

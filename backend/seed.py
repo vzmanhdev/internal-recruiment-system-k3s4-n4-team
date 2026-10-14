@@ -74,13 +74,6 @@ def reset_and_seed_database():
                 "code": "NV-HRM-02"
             },
             {
-                "email": "manager@company.com",
-                "full_name": "Lê Trưởng Nhóm Tech",
-                "role": "hiring_manager",
-                "phone": "0923456789",
-                "code": "NV-HM-03"
-            },
-            {
                 "email": "truongbophan@company.com",
                 "full_name": "Trần Trưởng Bộ Phận",
                 "role": "hiring_manager",

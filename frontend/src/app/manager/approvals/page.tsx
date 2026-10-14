@@ -109,11 +109,11 @@ export default function ApprovalsPage() {
     async () => toApprovalItems((await requisitionService.getRequisitions()).filter((r) => isAdmin || r.created_by_id === user?.id)),
     [user?.id, isAdmin],
   );
-  const MOCK_APPROVALS: ApprovalItem[] = data || [];
+  const approvalItems: ApprovalItem[] = data || [];
   const [activeItemId, setActiveItemId] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const filteredItems = MOCK_APPROVALS.filter((item) => {
+  const filteredItems = approvalItems.filter((item) => {
     if (selectedType !== 'ALL' && item.type !== selectedType) return false;
     if (selectedStatus !== 'ALL' && item.overallStatus !== selectedStatus) return false;
     return true;
@@ -135,9 +135,9 @@ export default function ApprovalsPage() {
     return filteredItems.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredItems, currentPage]);
 
-  const activeItem = MOCK_APPROVALS.find((i) => i.id === activeItemId) || MOCK_APPROVALS[0] || null;
-  const pendingCount = MOCK_APPROVALS.filter((i) => i.overallStatus === 'PENDING').length;
-  const overdueCount = MOCK_APPROVALS.filter((i) => i.slaStatus === 'OVERDUE').length;
+  const activeItem = approvalItems.find((i) => i.id === activeItemId) || approvalItems[0] || null;
+  const pendingCount = approvalItems.filter((i) => i.overallStatus === 'PENDING').length;
+  const overdueCount = approvalItems.filter((i) => i.slaStatus === 'OVERDUE').length;
 
   const handleSendReminder = async (approverName: string) => {
     if (!activeItem) return;

@@ -1,6 +1,11 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { requisitionService, type RequisitionItem } from "@/services/requisition.service";
+import { masterDataService } from "@/services/master-data.service";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
+import { ApiError } from "@/lib/api-client";
 import Link from "next/link";
 import {
   FileCheck,
@@ -87,234 +92,94 @@ export interface WorkflowRule {
 }
 
 // =============================================================================
-// INITIAL MOCK DATA
+// REAL REQUISITIONS / BUDGETS / APPROVAL FLOWS -> PAGE MODELS
 // =============================================================================
-
-const INITIAL_REQUISITIONS: Requisition[] = [
-  {
-    id: "REQ-001",
-    code: "REQ-2026-001",
-    title: "Senior Backend Developer (Python/Go)",
-    department: "Khối Công Nghệ (Tech Hub)",
-    headcount: 3,
-    salaryMin: 35000000,
-    salaryMax: 50000000,
-    salaryRangeDisplay: "35 - 50 Triệu VNĐ",
-    targetDate: "15/10/2026",
-    status: "in_progress",
-    slaStatus: "normal",
-    delayDays: 0,
-    pendingSinceDays: 1,
-    primaryRecruiter: "Nguyễn Văn Hùng",
-    createdAt: "01/10/2026",
-    urgency: "Chiến lược",
-  },
-  {
-    id: "REQ-002",
-    code: "REQ-2026-002",
-    title: "Senior DevOps / Cloud Infrastructure",
-    department: "Khối Công Nghệ (Tech Hub)",
-    headcount: 2,
-    salaryMin: 40000000,
-    salaryMax: 60000000,
-    salaryRangeDisplay: "40 - 60 Triệu VNĐ",
-    targetDate: "30/09/2026",
-    status: "pending_approval",
-    slaStatus: "overdue",
-    delayDays: 5,
-    pendingSinceDays: 5, // Kẹt quá 3 ngày chưa duyệt
-    primaryRecruiter: "Chưa phân công",
-    createdAt: "15/09/2026",
-    urgency: "Khẩn cấp",
-  },
-  {
-    id: "REQ-003",
-    code: "REQ-2026-003",
-    title: "Trưởng nhóm Data Analyst & BI Lead",
-    department: "Khối Dữ Liệu & Phân Tích",
-    headcount: 1,
-    salaryMin: 30000000,
-    salaryMax: 45000000,
-    salaryRangeDisplay: "30 - 45 Triệu VNĐ",
-    targetDate: "02/10/2026",
-    status: "pending_approval",
-    slaStatus: "overdue",
-    delayDays: 4,
-    pendingSinceDays: 4, // Kẹt 4 ngày
-    primaryRecruiter: "Lê Thị Mai",
-    createdAt: "18/09/2026",
-    urgency: "Khẩn cấp",
-  },
-  {
-    id: "REQ-004",
-    code: "REQ-2026-004",
-    title: "Chuyên viên Digital Growth Marketing",
-    department: "Khối Kinh Doanh & Tăng Trưởng",
-    headcount: 2,
-    salaryMin: 18000000,
-    salaryMax: 25000000,
-    salaryRangeDisplay: "18 - 25 Triệu VNĐ",
-    targetDate: "20/10/2026",
-    status: "in_progress",
-    slaStatus: "normal",
-    delayDays: 0,
-    pendingSinceDays: 0,
-    primaryRecruiter: "Trần Hoàng Nam",
-    createdAt: "03/10/2026",
-    urgency: "Bình thường",
-  },
-  {
-    id: "REQ-005",
-    code: "REQ-2026-005",
-    title: "Chuyên viên Tuyển Dụng Nội Bộ (TA Specialist)",
-    department: "Khối Quản Trị Nhân Sự (HR Hub)",
-    headcount: 1,
-    salaryMin: 16000000,
-    salaryMax: 22000000,
-    salaryRangeDisplay: "16 - 22 Triệu VNĐ",
-    targetDate: "25/10/2026",
-    status: "paused",
-    slaStatus: "normal",
-    delayDays: 0,
-    pendingSinceDays: 0,
-    primaryRecruiter: "Đặng Thanh Vân",
-    createdAt: "05/10/2026",
-    urgency: "Bình thường",
-  },
-  {
-    id: "REQ-006",
-    code: "REQ-2026-006",
-    title: "Product Manager (Enterprise Solutions)",
-    department: "Khối Kinh Doanh & Tăng Trưởng",
-    headcount: 1,
-    salaryMin: 45000000,
-    salaryMax: 65000000,
-    salaryRangeDisplay: "45 - 65 Triệu VNĐ",
-    targetDate: "05/11/2026",
-    status: "pending_approval",
-    slaStatus: "warning",
-    delayDays: 2,
-    pendingSinceDays: 2,
-    primaryRecruiter: "Nguyễn Văn Hùng",
-    createdAt: "08/10/2026",
-    urgency: "Chiến lược",
-  },
-];
-
-const INITIAL_DEPARTMENT_BUDGETS: DepartmentBudget[] = [
-  {
-    id: "bgt-1",
-    departmentName: "Khối Công Nghệ (Tech Hub)",
-    code: "TECH-HUB",
-    managerName: "Vũ Hải Đăng (CTO)",
-    allocatedHeadcount: 15,
-    currentStaff: 11,
-    openRequisitionsCount: 6, // 11 + 6 = 17 -> VƯỢT ĐỊNH BIÊN 2 NGƯỜI
-    monthlyBudgetVND: 650000000,
-    currentSalaryUsedVND: 510000000,
-  },
-  {
-    id: "bgt-2",
-    departmentName: "Khối Dữ Liệu & Phân Tích",
-    code: "DATA-HUB",
-    managerName: "Lê Hoàng Cường (Data Lead)",
-    allocatedHeadcount: 8,
-    currentStaff: 6,
-    openRequisitionsCount: 2, // 6 + 2 = 8 -> ĐẠT 100% ĐỊNH BIÊN
-    monthlyBudgetVND: 320000000,
-    currentSalaryUsedVND: 250000000,
-  },
-  {
-    id: "bgt-3",
-    departmentName: "Khối Kinh Doanh & Tăng Trưởng",
-    code: "BIZ-HUB",
-    managerName: "Bùi Quốc Đạt (CCO)",
-    allocatedHeadcount: 12,
-    currentStaff: 7,
-    openRequisitionsCount: 3, // 7 + 3 = 10 -> CÒN TRỐNG 2
-    monthlyBudgetVND: 400000000,
-    currentSalaryUsedVND: 245000000,
-  },
-  {
-    id: "bgt-4",
-    departmentName: "Khối Quản Trị Nhân Sự (HR Hub)",
-    code: "HR-HUB",
-    managerName: "Trần Thị Bích (HR Director)",
-    allocatedHeadcount: 6,
-    currentStaff: 5,
-    openRequisitionsCount: 1, // 5 + 1 = 6 -> ĐẠT CHỈ TIÊU
-    monthlyBudgetVND: 180000000,
-    currentSalaryUsedVND: 150000000,
-  },
-];
-
-const RECRUITER_LIST = [
-  "Nguyễn Văn Hùng",
-  "Lê Thị Mai",
-  "Trần Hoàng Nam",
-  "Đặng Thanh Vân",
-  "Chưa phân công",
-];
-
-const INITIAL_WORKFLOW_RULES: WorkflowRule[] = [
-  {
-    id: "rule-1",
-    name: "Luồng Duyệt Chuẩn (Lương ≤ 20 Triệu & Trong định biên)",
-    conditionDescription: "Áp dụng khi Mức lương đề xuất ≤ 20 Triệu VNĐ VÀ Không vượt định biên Headcount",
-    salaryThresholdMax: 20000000,
-    isHeadcountExceededTrigger: false,
-    steps: [
-      {
-        stepNumber: 1,
-        approverRole: "Trưởng phòng Chuyên môn (Hiring Manager)",
-        approverName: "Manager tương ứng",
-        slaHours: 24,
-      },
-      {
-        stepNumber: 2,
-        approverRole: "Trưởng phòng Nhân sự (HR Manager)",
-        approverName: "Trần Thị Bích",
-        slaHours: 24,
-      },
-    ],
-  },
-  {
-    id: "rule-2",
-    name: "Luồng Duyệt Nâng Cao (Lương > 20 Triệu HOẶC Vượt định biên)",
-    conditionDescription: "Áp dụng khi Mức lương đề xuất > 20 Triệu VNĐ HOẶC Yêu cầu tuyển vượt định biên quỹ lương",
-    salaryThresholdMax: 999000000,
-    isHeadcountExceededTrigger: true,
-    steps: [
-      {
-        stepNumber: 1,
-        approverRole: "Trưởng phòng Chuyên môn (Hiring Manager)",
-        approverName: "Manager tương ứng",
-        slaHours: 24,
-      },
-      {
-        stepNumber: 2,
-        approverRole: "Trưởng phòng Nhân sự (HR Manager)",
-        approverName: "Trần Thị Bích",
-        slaHours: 24,
-      },
-      {
-        stepNumber: 3,
-        approverRole: "Giám đốc Tài chính (CFO) - Thẩm định ngân sách",
-        approverName: "Phạm Hải Long (CFO)",
-        slaHours: 48,
-      },
-      {
-        stepNumber: 4,
-        approverRole: "Tổng Giám Đốc (CEO) - Phê duyệt cuối cùng",
-        approverName: "Nguyễn Thế Hùng (CEO)",
-        slaHours: 48,
-      },
-    ],
-  },
-];
 
 function formatVND(amount: number) {
   return new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(amount);
+}
+
+const UNASSIGNED = "Chưa phân công";
+// an approval waiting longer than this is flagged on this board (same threshold as the overdue filter)
+const APPROVAL_REMINDER_DAYS = 3;
+const DAY_MS = 86_400_000;
+const STEP_ROLE: Record<string, string> = {
+  manager: "Trưởng phòng Chuyên môn (Hiring Manager)", hr: "Trưởng phòng Nhân sự (HR Manager)", executive: "Ban Giám Đốc (Executive)",
+};
+
+function toStatus(st: string): Requisition["status"] {
+  if (st === "approved") return "in_progress";
+  if (st === "paused") return "paused";
+  if (st === "filled") return "completed";
+  if (st === "cancelled" || st === "rejected") return "cancelled";
+  return "pending_approval"; // draft, changes_requested, pending_*
+}
+
+function toRequisition(r: RequisitionItem & { updated_at?: string | null; days_remaining?: number | null; priority?: string | null }, now: number): Requisition {
+  const status = toStatus(r.status);
+  const since = r.updated_at || r.created_at;
+  const pendingSinceDays = status === "pending_approval" && since ? Math.floor((now - new Date(since).getTime()) / DAY_MS) : 0;
+  const remaining = r.days_remaining ?? null;
+  const fmt = (n?: number | null) => (n ? `${Math.round(n / 1_000_000)}` : "?");
+  const primary = (r.recruiters || []).find((x) => x.assignment_type === "primary") || (r.recruiters || [])[0];
+  return {
+    id: String(r.id),
+    code: r.code,
+    title: r.title,
+    department: r.department_name || "",
+    headcount: r.quantity,
+    salaryMin: r.min_salary || 0,
+    salaryMax: r.max_salary || 0,
+    salaryRangeDisplay: r.is_salary_negotiable ? "Thỏa thuận" : `${fmt(r.min_salary)} - ${fmt(r.max_salary)} Triệu`,
+    targetDate: r.target_onboard_date || "",
+    status,
+    slaStatus: r.is_overdue ? "overdue" : remaining !== null && remaining <= 7 ? "warning" : "normal",
+    delayDays: remaining !== null && remaining < 0 ? -remaining : 0,
+    pendingSinceDays,
+    primaryRecruiter: primary?.full_name || UNASSIGNED,
+    createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : "",
+    urgency: r.priority === "urgent" || r.priority === "high" ? "Khẩn cấp" : r.priority === "strategic" ? "Chiến lược" : "Bình thường",
+  };
+}
+
+async function loadBoard() {
+  const year = new Date().getFullYear();
+  const [reqs, depts, budgets, flows, recruiters] = await Promise.all([
+    requisitionService.getRequisitions(),
+    masterDataService.departments(false) as Promise<Array<{ id: number; name: string; code: string; head_name?: string | null; member_count?: number }>>,
+    masterDataService.headcounts().catch(() => []),
+    masterDataService.approvalFlows().catch(() => []),
+    masterDataService.people("recruiter").catch(() => []),
+  ]);
+  const open = new Set(["pending_manager", "pending_hr", "pending_executive", "approved"]);
+  const departmentBudgets: DepartmentBudget[] = budgets.filter((b) => b.year === year && b.budget_quantity > 0).map((b) => {
+    const d = depts.find((x) => x.id === b.department_id);
+    const deptReqs = reqs.filter((r) => r.department_id === b.department_id && open.has(r.status));
+    return {
+      id: `bgt-${b.id}`,
+      departmentName: d?.name || `#${b.department_id}`,
+      code: d?.code || "",
+      managerName: d?.head_name || "Chưa gán",
+      allocatedHeadcount: b.budget_quantity,
+      currentStaff: d?.member_count || 0,
+      openRequisitionsCount: deptReqs.reduce((n, r) => n + (r.quantity || 0), 0),
+      // salary cost range of the open requisitions (approved bands)
+      monthlyBudgetVND: deptReqs.reduce((n, r) => n + (r.max_salary || 0) * (r.quantity || 0), 0),
+      currentSalaryUsedVND: deptReqs.reduce((n, r) => n + (r.min_salary || 0) * (r.quantity || 0), 0),
+    };
+  });
+  const workflowRules: WorkflowRule[] = flows.filter((f) => f.status === "active").map((f) => {
+    const dept = depts.find((d) => d.id === f.department_id)?.name;
+    return {
+      id: `rule-${f.id}`,
+      name: f.name,
+      conditionDescription: `Áp dụng khi mức lương đề xuất từ ${Math.round(f.min_salary_threshold / 1_000_000)} đến ${Math.round(f.max_salary_threshold / 1_000_000)} Triệu VNĐ${dept ? ` — phòng ban ${dept}` : " — toàn doanh nghiệp"}`,
+      salaryThresholdMax: f.max_salary_threshold,
+      isHeadcountExceededTrigger: false,
+      steps: f.steps.map((code, i) => ({ stepNumber: i + 1, approverRole: STEP_ROLE[code] || code, approverName: "Theo phân quyền", slaHours: APPROVAL_REMINDER_DAYS * 24 })),
+    };
+  });
+  return { reqs, departmentBudgets, workflowRules, recruiters, now: Date.now() };
 }
 
 // =============================================================================
@@ -325,17 +190,19 @@ export default function HRRequisitionsPage() {
   const [activeTab, setActiveTab] = useState<"requisitions" | "headcount">("requisitions");
 
   // Requisitions data
-  const [requisitions, setRequisitions] = useState<Requisition[]>(INITIAL_REQUISITIONS);
+  const { data: board, error, loading, reload } = useApiData(loadBoard, []);
+  const requisitions: Requisition[] = useMemo(() => (board?.reqs || []).map((r) => toRequisition(r, board?.now || 0)), [board]);
+  const RECRUITER_LIST = useMemo(() => [...(board?.recruiters || []).map((u) => u.full_name), UNASSIGNED], [board]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedDept, setSelectedDept] = useState<string>("all");
   const [selectedRecruiter, setSelectedRecruiter] = useState<string>("all");
 
   // Headcount data
-  const [budgets, setBudgets] = useState<DepartmentBudget[]>(INITIAL_DEPARTMENT_BUDGETS);
+  const budgets = board?.departmentBudgets || [];
 
   // Workflow data & modal
-  const [workflowRules, setWorkflowRules] = useState<WorkflowRule[]>(INITIAL_WORKFLOW_RULES);
+  const workflowRules = board?.workflowRules || [];
   const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false);
 
   // Status Change Modal (Tạm dừng / Hủy / Đổi trạng thái)
@@ -351,33 +218,32 @@ export default function HRRequisitionsPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Handle assign recruiter dropdown change
-  const handleAssignRecruiter = (reqId: string, newRecruiter: string) => {
-    setRequisitions((prev) =>
-      prev.map((r) =>
-        r.id === reqId ? { ...r, primaryRecruiter: newRecruiter } : r
-      )
-    );
-    showToast(`Đã phân công Recruiter "${newRecruiter}" cho yêu cầu!`, "success");
-  };
-
-  // Handle immediate status change
-  const handleQuickStatusChange = (req: Requisition, newStatus: Requisition["status"]) => {
-    if (newStatus === "paused" || newStatus === "cancelled") {
-      setSelectedReqForStatus(req);
-      setTargetStatus(newStatus);
-      setStatusReason("");
-      setIsStatusModalOpen(true);
-    } else {
-      setRequisitions((prev) =>
-        prev.map((r) => (r.id === req.id ? { ...r, status: newStatus } : r))
-      );
-      showToast(`Đã chuyển trạng thái REQ sang: "${newStatus === "in_progress" ? "Đang tuyển dụng" : "Hoàn thành"}"!`, "success");
+  // Handle assign recruiter dropdown change (primary recruiter, S3-06)
+  const handleAssignRecruiter = async (reqId: string, newRecruiter: string) => {
+    const person = board?.recruiters.find((u) => u.full_name === newRecruiter);
+    if (!person) {
+      showToast("Chọn một recruiter cụ thể để phân công.", "error");
+      return;
+    }
+    try {
+      await requisitionService.assignRecruiter(Number(reqId), person.id, "primary");
+      showToast(`Đã phân công Recruiter "${newRecruiter}" cho yêu cầu!`, "success");
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không phân công được recruiter.", "error");
     }
   };
 
+  // Every status change asks for a reason (kept in the approval history)
+  const handleQuickStatusChange = (req: Requisition, newStatus: Requisition["status"]) => {
+    setSelectedReqForStatus(req);
+    setTargetStatus(newStatus);
+    setStatusReason("");
+    setIsStatusModalOpen(true);
+  };
+
   // Submit status modal change with reason
-  const handleSubmitStatusModal = (e: React.FormEvent) => {
+  const handleSubmitStatusModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedReqForStatus) return;
 
@@ -385,22 +251,34 @@ export default function HRRequisitionsPage() {
       showToast("Vui lòng nhập lý do thay đổi trạng thái!", "error");
       return;
     }
-
-    setRequisitions((prev) =>
-      prev.map((r) =>
-        r.id === selectedReqForStatus.id ? { ...r, status: targetStatus } : r
-      )
-    );
-
-    const actionText =
-      targetStatus === "paused"
-        ? "Tạm dừng tuyển dụng"
-        : targetStatus === "cancelled"
-        ? "Hủy yêu cầu tuyển dụng"
-        : "Đã tuyển đủ";
-
-    showToast(`Đã ${actionText} cho tờ trình ${selectedReqForStatus.code}! Lý do: ${statusReason}`, "success");
-    setIsStatusModalOpen(false);
+    const id = Number(selectedReqForStatus.id);
+    try {
+      if (targetStatus === "in_progress") {
+        await requisitionService.resumeRequisition(id, statusReason.trim());
+      } else {
+        const target = targetStatus === "paused" ? "paused" : targetStatus === "cancelled" ? "cancelled" : "filled";
+        try {
+          await requisitionService.closeRequisition(id, target, statusReason.trim());
+        } catch (err) {
+          // candidates still in the pipeline: ask once, then close with explicit confirmation
+          if (err instanceof ApiError && err.status === 409 && err.code === "ACTIVE_CANDIDATES_IN_PIPELINE"
+              && confirm(`${err.message}\nVẫn tiếp tục?`)) {
+            await requisitionService.closeRequisition(id, target, statusReason.trim(), true);
+          } else {
+            throw err;
+          }
+        }
+      }
+      const actionText =
+        targetStatus === "paused" ? "Tạm dừng tuyển dụng"
+          : targetStatus === "cancelled" ? "Hủy yêu cầu tuyển dụng"
+            : targetStatus === "in_progress" ? "Mở lại tuyển dụng" : "Đóng tờ trình (đã tuyển đủ)";
+      showToast(`Đã ${actionText} cho tờ trình ${selectedReqForStatus.code}! Lý do: ${statusReason}`, "success");
+      setIsStatusModalOpen(false);
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không đổi được trạng thái.", "error");
+    }
   };
 
   // Filtered requisitions list
@@ -436,6 +314,9 @@ export default function HRRequisitionsPage() {
       (r) => (r.status === "pending_approval" && r.pendingSinceDays >= 3) || r.slaStatus === "overdue"
     ).length;
   }, [requisitions]);
+
+  if (loading) return <LoadingState />;
+  if (error || !board) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">

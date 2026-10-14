@@ -1,54 +1,107 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { KeyRound, Loader2, Save, Upload } from "lucide-react";
+import {
+  User as UserIcon,
+  Mail,
+  Phone,
+  Building,
+  Shield,
+  KeyRound,
+  CheckCircle2,
+  Lock,
+  Eye,
+  EyeOff,
+  Briefcase,
+  Calendar,
+  Camera,
+  Save,
+  Loader2,
+  ShieldCheck,
+  Check,
+  Info,
+  Clock,
+  Sparkles,
+  AlertCircle,
+} from "lucide-react";
 import { authService, type UserItem } from "@/features/auth/services/auth.service";
 import { uploadFile, fileUrl } from "@/services/file.service";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/providers/auth-provider";
 import { ErrorState, LoadingState } from "@/components/ui/DataStates";
+import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
+import clsx from "clsx";
 
-type Me = UserItem & { job_title?: string | null; department?: string | null; date_of_birth?: string | null; gender?: string | null; bio?: string | null };
+type Me = UserItem & {
+  job_title?: string | null;
+  department?: string | null;
+  date_of_birth?: string | null;
+  gender?: string | null;
+  bio?: string | null;
+};
 
-const input = "w-full h-10 px-3 rounded-lg border border-[#E2E8F0] bg-white text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/20 focus:border-[#2563EB] disabled:bg-slate-50 disabled:text-[#64748B]";
-const label = "block text-xs font-semibold text-[#334155] mb-1";
-const card = "bg-white border border-[#E2E8F0] rounded-2xl p-5";
-
-/**
- * The signed-in user's profile (S2-02, S2-03, S1-04): real /auth/me data, self-editable fields only
- * (email, department and roles are read-only), avatar via the validated upload API, password change.
- */
 export function ProfileView() {
   const { refresh } = useAuth();
+  const [activeTab, setActiveTab] = useState<"info" | "password" | "roles">("info");
   const [me, setMe] = useState<Me | null>(null);
-  const [form, setForm] = useState({ full_name: "", phone: "", job_title: "", date_of_birth: "", gender: "", bio: "" });
+  const [form, setForm] = useState({
+    full_name: "",
+    phone: "",
+    job_title: "",
+    date_of_birth: "",
+    gender: "",
+    bio: "",
+  });
   const [loadError, setLoadError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // Avatar Modal State
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
+
+  // Password state
   const [pw, setPw] = useState({ current_password: "", new_password: "", confirm: "" });
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
   const [pwNotice, setPwNotice] = useState<{ ok: boolean; text: string } | null>(null);
-  const [uploading, setUploading] = useState(false);
+
+  // Toast alert
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   const load = () =>
-    authService.getCurrentUser()
+    authService
+      .getCurrentUser()
       .then((u) => {
         const m = u as Me;
         setMe(m);
         setForm({
-          full_name: m.full_name || "", phone: m.phone || "", job_title: m.job_title || "",
-          date_of_birth: m.date_of_birth || "", gender: m.gender || "", bio: m.bio || "",
+          full_name: m.full_name || "",
+          phone: m.phone || "",
+          job_title: m.job_title || "",
+          date_of_birth: m.date_of_birth || "",
+          gender: m.gender || "",
+          bio: m.bio || "",
         });
         setLoadError(null);
       })
       .catch(setLoadError);
 
-  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const save = async (e: React.FormEvent) => {
+  // Save profile information
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true); setNotice(null); setFieldErrors({});
+    setSaving(true);
+    setFieldErrors({});
     try {
       const updated = await authService.updateProfile({
         full_name: form.full_name.trim(),
@@ -59,44 +112,81 @@ export function ProfileView() {
         bio: form.bio,
       });
       setMe((prev) => ({ ...(prev as Me), ...(updated as Me) }));
-      setNotice({ ok: true, text: "Đã lưu hồ sơ cá nhân." });
+      showToast("Đã lưu thông tin hồ sơ cá nhân thành công!");
       void refresh();
     } catch (err) {
       if (err instanceof ApiError) {
         setFieldErrors(err.fieldErrors || {});
-        setNotice({ ok: false, text: err.message });
-      } else setNotice({ ok: false, text: "Không lưu được hồ sơ." });
+        showToast(err.message, "error");
+      } else {
+        showToast("Không thể lưu thông tin hồ sơ.", "error");
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  const changeAvatar = async (file: File) => {
-    setUploading(true); setNotice(null);
+  // Save Avatar (from AvatarCropModal or file upload)
+  const handleSaveAvatar = async (newAvatarUrl: string) => {
     try {
-      const stored = await uploadFile("avatar", file); // PNG/JPG ≤ 2 MB, checked by the server
-      await authService.updateProfile({ avatar_url: stored.url });
+      await authService.updateProfile({ avatar_url: newAvatarUrl });
+      localStorage.setItem("user_avatar_url", newAvatarUrl);
+      window.dispatchEvent(new Event("avatar_updated"));
       await load();
       void refresh();
-      setNotice({ ok: true, text: "Đã cập nhật ảnh đại diện." });
-    } catch (err) {
-      setNotice({ ok: false, text: err instanceof ApiError ? err.message : "Không tải được ảnh lên." });
-    } finally {
-      setUploading(false);
+      setIsAvatarModalOpen(false);
+      showToast("Cập nhật ảnh đại diện thành công!");
+    } catch (err: any) {
+      showToast(err?.message || "Không thể cập nhật ảnh đại diện.", "error");
     }
   };
 
-  const changePassword = async (e: React.FormEvent) => {
+  // Password strength calculator
+  const getPasswordStrength = (pwd: string) => {
+    if (!pwd) return { score: 0, label: "", color: "bg-slate-200", text: "" };
+    let score = 0;
+    if (pwd.length >= 8) score += 1;
+    if (/[A-Z]/.test(pwd)) score += 1;
+    if (/[0-9]/.test(pwd)) score += 1;
+    if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
+
+    if (score <= 1) return { score: 25, label: "Yếu", color: "bg-rose-500", text: "text-rose-600" };
+    if (score === 2 || score === 3)
+      return { score: 65, label: "Trung bình", color: "bg-amber-500", text: "text-amber-600" };
+    return { score: 100, label: "Mạnh (An toàn)", color: "bg-emerald-500", text: "text-emerald-600" };
+  };
+
+  // Change password
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwNotice(null);
-    if (pw.new_password !== pw.confirm) { setPwNotice({ ok: false, text: "Mật khẩu xác nhận không khớp." }); return; }
+
+    if (pw.new_password !== pw.confirm) {
+      setPwNotice({ ok: false, text: "Mật khẩu xác nhận không khớp với mật khẩu mới." });
+      return;
+    }
+    if (pw.new_password.length < 8) {
+      setPwNotice({ ok: false, text: "Mật khẩu mới phải có tối thiểu 8 ký tự." });
+      return;
+    }
+
     setPwBusy(true);
     try {
-      const r = await authService.changePassword({ current_password: pw.current_password, new_password: pw.new_password });
+      const r = await authService.changePassword({
+        current_password: pw.current_password,
+        new_password: pw.new_password,
+      });
       setPw({ current_password: "", new_password: "", confirm: "" });
-      setPwNotice({ ok: true, text: r.message || "Đã đổi mật khẩu. Các phiên đăng nhập khác đã bị thu hồi." });
+      setPwNotice({
+        ok: true,
+        text: r.message || "Đã đổi mật khẩu thành công. Các phiên đăng nhập khác đã được thu hồi.",
+      });
+      showToast("Đổi mật khẩu tài khoản thành công!");
     } catch (err) {
-      setPwNotice({ ok: false, text: err instanceof ApiError ? err.message : "Không đổi được mật khẩu." });
+      setPwNotice({
+        ok: false,
+        text: err instanceof ApiError ? err.message : "Không thể đổi mật khẩu. Vui lòng kiểm tra lại mật khẩu hiện tại.",
+      });
     } finally {
       setPwBusy(false);
     }
@@ -105,86 +195,535 @@ export function ProfileView() {
   if (loadError) return <ErrorState error={loadError} onRetry={() => void load()} />;
   if (!me) return <LoadingState />;
 
-  const roles = (me.roles || []).map((r) => (typeof r === "string" ? r : r.name)).join(", ");
+  const roles = (me.roles || []).map((r) => (typeof r === "string" ? r : r.name));
+  const roleDisplay = roles.join(", ");
   const avatar = me.avatar_url ? fileUrl(me.avatar_url) : null;
+  const strengthInfo = getPasswordStrength(pw.new_password);
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-bold text-[#0F172A]">Hồ sơ cá nhân</h1>
-        <p className="text-sm text-[#64748B] mt-1">Email, phòng ban và vai trò do Quản trị hệ thống quản lý nên không thể tự thay đổi.</p>
-      </div>
+    <div className="space-y-6">
+      {/* Avatar Crop Modal */}
+      <AvatarCropModal
+        isOpen={isAvatarModalOpen}
+        onClose={() => setIsAvatarModalOpen(false)}
+        currentAvatarUrl={avatar}
+        onSaveAvatar={handleSaveAvatar}
+        userName={me.full_name}
+      />
 
-      {notice && (
-        <div className={`text-sm rounded-xl px-4 py-3 border ${notice.ok ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-700"}`} role="status">
-          {notice.text}
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div
+          className={clsx(
+            "fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl shadow-2xl border text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200",
+            toast.type === "success"
+              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+              : "bg-rose-50 text-rose-800 border-rose-200"
+          )}
+        >
+          {toast.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <section className={`${card} space-y-4`}>
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-[#2563EB] text-white text-lg font-bold flex items-center justify-center overflow-hidden">
-              {avatar ? <img src={avatar} alt="" className="w-full h-full object-cover" /> : (me.full_name || "?").split(" ").slice(-1)[0][0]}
-            </div>
-            <div className="min-w-0">
-              <div className="font-semibold text-[#0F172A] truncate">{me.full_name}</div>
-              <div className="text-xs text-[#64748B] truncate">{me.email}</div>
-            </div>
-          </div>
-          <label className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-[#E2E8F0] text-[13px] font-semibold cursor-pointer hover:bg-slate-50">
-            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Đổi ảnh đại diện
-            <input type="file" accept="image/png,image/jpeg" className="hidden" disabled={uploading}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void changeAvatar(f); e.target.value = ""; }} />
-          </label>
-          <p className="text-[11px] text-[#64748B]">PNG hoặc JPG, tối đa 2MB.</p>
-          <dl className="text-sm space-y-2 pt-2 border-t border-[#E2E8F0]">
-            <div><dt className="text-xs text-[#64748B]">Vai trò</dt><dd className="font-medium">{roles || "—"}</dd></div>
-            <div><dt className="text-xs text-[#64748B]">Phòng ban</dt><dd className="font-medium">{me.department || "—"}</dd></div>
-            <div><dt className="text-xs text-[#64748B]">Mã nhân viên</dt><dd className="font-medium">{me.employee_code || "—"}</dd></div>
-          </dl>
-        </section>
+      {/* Header & Breadcrumb */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+            <UserIcon className="w-7 h-7 text-[#4285F4]" />
+            <span>Hồ Sơ Cá Nhân</span>
+          </h1>
+          <p className="text-xs text-slate-500 font-medium mt-1">
+            Quản lý thông tin định danh, chức danh phòng ban và thiết lập bảo mật tài khoản người dùng.
+          </p>
+        </div>
 
-        <form onSubmit={save} className={`${card} lg:col-span-2 space-y-4`}>
-          <h2 className="text-sm font-bold text-[#0F172A]">Thông tin cá nhân</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div><label className={label}>Họ và tên *</label><input className={input} required minLength={2} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-              {fieldErrors.full_name && <p className="text-xs text-red-600 mt-1">{fieldErrors.full_name}</p>}</div>
-            <div><label className={label}>Số điện thoại</label><input className={input} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="09xxxxxxxx" />
-              {fieldErrors.phone && <p className="text-xs text-red-600 mt-1">{fieldErrors.phone}</p>}</div>
-            <div><label className={label}>Chức danh hiển thị</label><input className={input} value={form.job_title} onChange={(e) => setForm({ ...form, job_title: e.target.value })} /></div>
-            <div><label className={label}>Email</label><input className={input} value={me.email} disabled /></div>
-            <div><label className={label}>Ngày sinh</label><input type="date" className={input} value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} /></div>
-            <div><label className={label}>Giới tính</label>
-              <select className={input} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
-                <option value="">—</option><option value="Nam">Nam</option><option value="Nữ">Nữ</option><option value="Khác">Khác</option>
-              </select></div>
-          </div>
-          <div><label className={label}>Giới thiệu bản thân</label>
-            <textarea className={`${input} h-auto py-2`} rows={3} maxLength={1000} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} /></div>
-          <div className="flex justify-end">
-            <button type="submit" disabled={saving} className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50 cursor-pointer">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Lưu thay đổi
-            </button>
-          </div>
-        </form>
+        <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium bg-white px-3.5 py-1.5 rounded-xl border border-slate-200/80 shadow-xs">
+          <span>Hệ thống</span>
+          <span>&rsaquo;</span>
+          <span className="text-slate-700 font-bold">Hồ sơ cá nhân</span>
+        </div>
       </div>
 
-      <form onSubmit={changePassword} className={`${card} space-y-4 max-w-2xl`}>
-        <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2"><KeyRound className="w-4 h-4 text-[#2563EB]" /> Đổi mật khẩu</h2>
-        {pwNotice && <div className={`text-sm rounded-xl px-4 py-3 border ${pwNotice.ok ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-700"}`}>{pwNotice.text}</div>}
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div><label className={label}>Mật khẩu hiện tại</label><input type="password" className={input} required value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} autoComplete="current-password" /></div>
-          <div><label className={label}>Mật khẩu mới</label><input type="password" className={input} required minLength={8} value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} autoComplete="new-password" /></div>
-          <div><label className={label}>Xác nhận mật khẩu mới</label><input type="password" className={input} required value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} autoComplete="new-password" /></div>
+      {/* 4-COLUMN MAIN GRID LAYOUT */}
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 items-start">
+        {/* CỘT 1 (BÊN TRÁI - 1/4 GRID): KHỐI AVATAR & THÔNG TIN CƠ BẢN */}
+        <div className="xl:col-span-1 space-y-4">
+          <div className="bg-white rounded-2xl shadow-xs p-6 border border-slate-100 text-center space-y-5">
+            {/* Avatar Circle with Camera Button */}
+            <div className="relative inline-block mx-auto group">
+              {avatar ? (
+                <img
+                  src={avatar}
+                  alt={me.full_name}
+                  className="w-28 h-28 rounded-full object-cover border-4 border-blue-50 shadow-md ring-2 ring-blue-100"
+                />
+              ) : (
+                <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-[#4285F4] to-indigo-600 text-white font-black text-3xl flex items-center justify-center border-4 border-blue-50 shadow-md">
+                  {(me.full_name || "?").split(" ").slice(-1)[0][0]}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsAvatarModalOpen(true)}
+                className="absolute bottom-0 right-0 p-2.5 rounded-full bg-slate-900 text-white hover:bg-slate-800 shadow-md transition-transform group-hover:scale-110 cursor-pointer border-2 border-white"
+                title="Thay đổi ảnh đại diện"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Name & Status Badges */}
+            <div className="space-y-1.5">
+              <h2 className="text-lg font-black text-slate-900">{me.full_name}</h2>
+              <p className="text-xs text-slate-400 font-medium truncate">{me.email}</p>
+
+              <div className="pt-2 flex flex-col items-center gap-1.5">
+                {/* Status Badge: Active */}
+                <span className="px-3 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold inline-flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Đang hoạt động
+                </span>
+
+                {/* Primary Role Badge */}
+                <span className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[11px] font-bold">
+                  {roles[0] || "Người dùng nội bộ"}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Meta List */}
+            <div className="border-t border-slate-100 pt-4 text-left space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium flex items-center gap-2">
+                  <UserIcon className="w-4 h-4 text-slate-400" />
+                  Mã nhân viên
+                </span>
+                <span className="font-bold text-slate-800 font-mono">
+                  {me.employee_code || `ID-${me.id}`}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium flex items-center gap-2">
+                  <Building className="w-4 h-4 text-slate-400" />
+                  Phòng ban
+                </span>
+                <span className="font-bold text-slate-800 truncate max-w-[150px]">
+                  {me.department || "Nội bộ"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-slate-400" />
+                  Chức danh
+                </span>
+                <span className="font-bold text-slate-800 truncate max-w-[150px]">
+                  {me.job_title || "Nhân viên"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-slate-400" />
+                  Ngày tham gia
+                </span>
+                <span className="font-bold text-slate-800">
+                  {me.created_at ? new Date(me.created_at).toLocaleDateString("vi-VN") : "—"}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
-        <p className="text-[11px] text-[#64748B]">Tối thiểu 8 ký tự, gồm chữ và số. Sau khi đổi, các phiên đăng nhập khác sẽ bị thu hồi.</p>
-        <div className="flex justify-end">
-          <button type="submit" disabled={pwBusy} className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg border border-[#E2E8F0] text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
-            {pwBusy && <Loader2 className="w-4 h-4 animate-spin" />} Đổi mật khẩu
-          </button>
+
+        {/* CỘT 2 (BÊN PHẢI - 3/4 GRID): CÁC TAB CÀI ĐẶT CHI TIẾT */}
+        <div className="xl:col-span-3 space-y-5">
+          {/* Navigation Tabs Bar */}
+          <div className="flex items-center gap-2 border-b border-gray-100 pb-3 bg-white p-2 rounded-2xl shadow-xs">
+            <button
+              type="button"
+              onClick={() => setActiveTab("info")}
+              className={clsx(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                activeTab === "info"
+                  ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/20"
+                  : "text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              <UserIcon className="w-4 h-4" />
+              <span>Thông Tin Cá Nhân</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("password")}
+              className={clsx(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                activeTab === "password"
+                  ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/20"
+                  : "text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>Đổi Mật Khẩu</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("roles")}
+              className={clsx(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer",
+                activeTab === "roles"
+                  ? "bg-[#4285F4] text-white shadow-md shadow-blue-500/20"
+                  : "text-slate-600 hover:bg-slate-50"
+              )}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Vai Trò & Quyền Hạn</span>
+            </button>
+          </div>
+
+          {/* TAB 1: THÔNG TIN CÁ NHÂN */}
+          {activeTab === "info" && (
+            <div className="bg-white rounded-2xl shadow-xs border border-slate-100 p-6 md:p-8 space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Chi Tiết Hồ Sơ Cá Nhân</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Cập nhật họ tên, số điện thoại và thông tin cá nhân. Email và phòng ban do Quản trị viên cấp.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveProfile} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Họ và tên */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <UserIcon className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Họ và tên *</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      minLength={2}
+                      value={form.full_name}
+                      onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                      placeholder="Nhập họ và tên đầy đủ"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                    />
+                    {fieldErrors.full_name && (
+                      <p className="text-xs text-rose-600 font-medium">{fieldErrors.full_name}</p>
+                    )}
+                  </div>
+
+                  {/* Số điện thoại */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Số điện thoại</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      placeholder="0901234567"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                    />
+                    {fieldErrors.phone && (
+                      <p className="text-xs text-rose-600 font-medium">{fieldErrors.phone}</p>
+                    )}
+                  </div>
+
+                  {/* Email (Readonly) */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Email đăng nhập</span>
+                      <Lock className="w-3 h-3 text-slate-400 ml-auto" />
+                    </label>
+                    <input
+                      type="text"
+                      value={me.email}
+                      disabled
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-500 cursor-not-allowed"
+                    />
+                    <span className="text-[10px] text-slate-400">Email công ty do IT/Admin quản lý</span>
+                  </div>
+
+                  {/* Chức danh hiển thị */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Briefcase className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Chức danh hiển thị</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.job_title}
+                      onChange={(e) => setForm({ ...form, job_title: e.target.value })}
+                      placeholder="Ví dụ: Senior Software Engineer"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                    />
+                  </div>
+
+                  {/* Ngày sinh */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Ngày sinh</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={form.date_of_birth}
+                      onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                    />
+                  </div>
+
+                  {/* Giới tính */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700">Giới tính</label>
+                    <select
+                      value={form.gender}
+                      onChange={(e) => setForm({ ...form, gender: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer"
+                    >
+                      <option value="">— Chọn giới tính —</option>
+                      <option value="Nam">Nam</option>
+                      <option value="Nữ">Nữ</option>
+                      <option value="Khác">Khác</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Giới thiệu bản thân */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">Giới thiệu bản thân</label>
+                  <textarea
+                    rows={3}
+                    maxLength={1000}
+                    value={form.bio}
+                    onChange={(e) => setForm({ ...form, bio: e.target.value })}
+                    placeholder="Mô tả ngắn gọn về kinh nghiệm, định hướng làm việc hoặc chuyên môn..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                  />
+                </div>
+
+                {/* Submit Action */}
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#4285F4] hover:bg-blue-600 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    <span>Lưu Thay Đổi Hồ Sơ</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 2: ĐỔI MẬT KHẨU */}
+          {activeTab === "password" && (
+            <div className="bg-white rounded-2xl shadow-xs border border-slate-100 p-6 md:p-8 space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                    <KeyRound className="w-5 h-5 text-blue-600" />
+                    <span>Thiết Lập Mật Khẩu Tài Khoản</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Để bảo mật dữ liệu nhân sự, vui lòng đặt mật khẩu mạnh tối thiểu 8 ký tự và kết hợp số.
+                  </p>
+                </div>
+              </div>
+
+              {pwNotice && (
+                <div
+                  className={clsx(
+                    "p-4 rounded-xl text-xs font-semibold border flex items-start gap-2.5",
+                    pwNotice.ok
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                      : "bg-rose-50 border-rose-200 text-rose-800"
+                  )}
+                >
+                  {pwNotice.ok ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <span>{pwNotice.text}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleChangePassword} className="space-y-5 max-w-xl">
+                {/* Current Password */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">Mật khẩu hiện tại *</label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPw ? "text" : "password"}
+                      required
+                      value={pw.current_password}
+                      onChange={(e) => setPw({ ...pw, current_password: e.target.value })}
+                      placeholder="Nhập mật khẩu hiện tại"
+                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPw(!showCurrentPw)}
+                      className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* New Password */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">Mật khẩu mới *</label>
+                  <div className="relative">
+                    <input
+                      type={showNewPw ? "text" : "password"}
+                      required
+                      minLength={8}
+                      value={pw.new_password}
+                      onChange={(e) => setPw({ ...pw, new_password: e.target.value })}
+                      placeholder="Nhập mật khẩu mới (tối thiểu 8 ký tự)"
+                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPw(!showNewPw)}
+                      className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  {/* Password Strength Indicator */}
+                  {pw.new_password && (
+                    <div className="space-y-1 pt-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400 font-medium">Độ an toàn:</span>
+                        <span className={clsx("font-extrabold", strengthInfo.text)}>
+                          {strengthInfo.label}
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className={clsx("h-full transition-all duration-300", strengthInfo.color)}
+                          style={{ width: `${strengthInfo.score}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Confirm Password */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">Xác nhận mật khẩu mới *</label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPw ? "text" : "password"}
+                      required
+                      value={pw.confirm}
+                      onChange={(e) => setPw({ ...pw, confirm: e.target.value })}
+                      placeholder="Nhập lại mật khẩu mới"
+                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPw(!showConfirmPw)}
+                      className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Requirements Checklist */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-600 space-y-1">
+                  <span className="font-bold text-slate-800 block">Tiêu chí mật khẩu bảo mật:</span>
+                  <div className="flex items-center gap-1.5">
+                    <Check className={clsx("w-3.5 h-3.5", pw.new_password.length >= 8 ? "text-emerald-600" : "text-slate-300")} />
+                    <span>Ít nhất 8 ký tự</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Check className={clsx("w-3.5 h-3.5", /[0-9]/.test(pw.new_password) ? "text-emerald-600" : "text-slate-300")} />
+                    <span>Chứa ít nhất một chữ số (0-9)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Check className={clsx("w-3.5 h-3.5", /[A-Z]/.test(pw.new_password) ? "text-emerald-600" : "text-slate-300")} />
+                    <span>Chứa chữ in hoa (A-Z)</span>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="submit"
+                    disabled={pwBusy}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#4285F4] hover:bg-blue-600 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                  >
+                    {pwBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                    <span>Xác Nhận Đổi Mật Khẩu</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 3: VAI TRÒ & QUYỀN HẠN */}
+          {activeTab === "roles" && (
+            <div className="bg-white rounded-2xl shadow-xs border border-slate-100 p-6 md:p-8 space-y-6">
+              <div className="border-b border-slate-100 pb-4">
+                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                  <span>Vai Trò & Phạm Vi Quyền Hạn Trong Hệ Thống</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Phân quyền theo mô hình chuẩn RBAC. Quản trị viên hệ thống là người có quyền phân quyền vai trò.
+                </p>
+              </div>
+
+              {/* Roles Badge Cloud */}
+              <div className="space-y-3">
+                <span className="text-xs font-bold text-slate-700 block">Các vai trò đang được cấp:</span>
+                <div className="flex flex-wrap gap-2">
+                  {roles.map((r, i) => (
+                    <span
+                      key={i}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200/80 shadow-xs flex items-center gap-1.5"
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                      {r}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Info Notice */}
+              <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-100 text-xs text-blue-900 space-y-1">
+                <span className="font-bold flex items-center gap-1.5 text-blue-800">
+                  <Info className="w-4 h-4 text-blue-600" /> Quản Trị Phân Quyền Tập Trung:
+                </span>
+                <p className="text-[11px] text-blue-800/80 leading-relaxed">
+                  Nếu bạn cần mở rộng quyền hạn (ví dụ phê duyệt tờ trình tuyển dụng hoặc chấm điểm phỏng vấn), vui lòng liên hệ quản trị viên (Admin) hoặc Trưởng bộ phận Nhân sự để được cấu hình qua màn hình Quản lý người dùng.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-      </form>
+      </div>
     </div>
   );
 }

@@ -28,19 +28,17 @@ import {
   Layers,
   ArrowRight,
 } from 'lucide-react';
-import {
-  getCandidateJobById,
-  CANDIDATE_JOBS,
-} from '@/features/candidate/data/candidateJobsData';
+import { careerApi, type CandidateJob } from '@/features/candidate/api';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 
 export default function CandidateJobDetailPage() {
   const params = useParams();
   const router = useRouter();
   const jobId = (params?.id as string) || '';
 
-  const job = useMemo(() => {
-    return getCandidateJobById(jobId);
-  }, [jobId]);
+  const { data: job, loading: jobLoading } = useApiData(() => careerApi.get(jobId), [jobId]);
 
   // Modal State: Ứng tuyển nhanh (Không cần tài khoản)
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
@@ -54,6 +52,7 @@ export default function CandidateJobDetailPage() {
   const [phone, setPhone] = useState('');
   const [cvLink, setCvLink] = useState('');
   const [cvFileName, setCvFileName] = useState('');
+  const [cvFile, setCvFile] = useState<File | null>(null);
   const [coverNote, setCoverNote] = useState('');
   const [formError, setFormError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -74,10 +73,11 @@ export default function CandidateJobDetailPage() {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setCvFileName(file.name);
+      setCvFile(file);
     }
   };
 
-  const handleApplySubmit = (e: React.FormEvent) => {
+  const handleApplySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
@@ -86,20 +86,25 @@ export default function CandidateJobDetailPage() {
       return;
     }
 
-    if (!cvFileName && !cvLink.trim()) {
-      setFormError('Vui lòng tải lên tệp CV (.pdf, .docx) hoặc dán đường dẫn CV.');
+    if (!cvFile) {
+      setFormError('Vui lòng tải lên tệp CV (.pdf, .docx) — hồ sơ phải được lưu trên hệ thống tuyển dụng.');
       return;
     }
+    if (!job) return;
 
     setIsSubmitting(true);
-
-    // Mô phỏng gửi hồ sơ lên hệ thống tuyển dụng
-    setTimeout(() => {
-      const generatedId = `APP-2026-${Math.floor(100 + Math.random() * 900)}`;
-      setAppliedAppId(generatedId);
-      setIsSubmitting(false);
+    try {
+      const created = await careerApi.apply(job, {
+        full_name: fullName.trim(), email: email.trim(), phone: phone.trim(), file: cvFile,
+        cover_letter: [coverNote.trim(), cvLink.trim() && `Liên kết hồ sơ bổ sung: ${cvLink.trim()}`].filter(Boolean).join('\n'),
+      });
+      setAppliedAppId(created.tracking_code);
       setIsSubmitSuccess(true);
-    }, 1000);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Không gửi được hồ sơ. Vui lòng thử lại.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCloseModal = () => {
@@ -111,9 +116,12 @@ export default function CandidateJobDetailPage() {
       setPhone('');
       setCvLink('');
       setCvFileName('');
+      setCvFile(null);
       setCoverNote('');
     }
   };
+
+  if (jobLoading) return <LoadingState />;
 
   // Trường hợp không tìm thấy Job
   if (!job) {
@@ -589,7 +597,7 @@ export default function CandidateJobDetailPage() {
                     </div>
 
                     {/* Hoặc Dán link CV Google Drive */}
-                    <div className="text-[11px] text-slate-400 text-center">Hoặc dán liên kết CV trực tuyến:</div>
+                    <div className="text-[11px] text-slate-400 text-center">Liên kết hồ sơ trực tuyến bổ sung (không bắt buộc):</div>
                     <input
                       type="url"
                       value={cvLink}

@@ -6,6 +6,14 @@ import {
   Edit2, Trash2, ShieldCheck, Check
 } from 'lucide-react';
 import { CreateJobTitleModal, JobTitleFormData } from '@/features/hr/components/CreateJobTitleModal';
+import { masterDataService } from '@/services/master-data.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
+
+const M = 1_000_000;
+// the short code entered in the form is kept at the start of the description: "[SWE-SR] ..."
+const codeOf = (description?: string | null) => /^\[([^\]]+)\]/.exec(description || '')?.[1] || '';
 
 interface PositionItem {
   id: string;
@@ -23,61 +31,44 @@ export default function HRPositionsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const [positions, setPositions] = useState<PositionItem[]>([
-    {
-      id: "POS-001",
-      code: "SWE-SR",
-      title: "Senior Backend Engineer",
-      department: "Công Nghệ Thông Tin",
-      level: "Level 4 (Senior)",
-      min_salary: 35,
-      mid_salary: 42.5,
-      max_salary: 50,
-      status: "active"
-    },
-    {
-      id: "POS-002",
-      code: "DEVOPS-SR",
-      title: "Senior DevOps / Cloud Architect",
-      department: "Công Nghệ Thông Tin",
-      level: "Level 5 (Lead/Architect)",
-      min_salary: 40,
-      mid_salary: 50,
-      max_salary: 60,
-      status: "active"
-    },
-    {
-      id: "POS-003",
-      code: "BI-LEAD",
-      title: "Trưởng nhóm Data Analyst & BI Specialist",
-      department: "Khối Dữ Liệu & Phân Tích (Data & BI)",
-      level: "Level 5 (Manager/Lead)",
-      min_salary: 45,
-      mid_salary: 50,
-      max_salary: 55,
-      status: "active"
-    }
-  ]);
+  const { data, error, loading, reload } = useApiData(async () => {
+    const [titles, depts] = await Promise.all([masterDataService.jobTitles(), masterDataService.departments(false)]);
+    return { titles, depts };
+  }, []);
+  const deptName = (id: number | null) => data?.depts.find((d) => d.id === id)?.name || 'Tất cả phòng ban';
+  const positions: PositionItem[] = (data?.titles || []).map((t) => ({
+    id: String(t.id),
+    code: codeOf(t.description) || `JT-${t.id}`,
+    title: t.name,
+    department: deptName(t.department_id),
+    level: t.level,
+    min_salary: Math.round(((t.min_salary || 0) / M) * 10) / 10,
+    mid_salary: Math.round((((t.min_salary || 0) + (t.max_salary || 0)) / 2 / M) * 10) / 10,
+    max_salary: Math.round(((t.max_salary || 0) / M) * 10) / 10,
+    status: t.is_active ? 'active' : 'inactive',
+  }));
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  const handleCreatePosition = (data: JobTitleFormData) => {
-    const newPos: PositionItem = {
-      id: `POS-00${positions.length + 1}`,
-      code: data.code,
-      title: data.title,
-      department: data.department,
-      level: data.level,
-      min_salary: data.minSalary,
-      mid_salary: data.midSalary,
-      max_salary: data.maxSalary,
-      status: data.status,
-    };
-
-    setPositions([newPos, ...positions]);
+  const handleCreatePosition = async (form: JobTitleFormData) => {
+    try {
+      await masterDataService.saveJobTitle({
+        name: form.title,
+        department_id: data?.depts.find((d) => d.name === form.department)?.id ?? null,
+        level: form.level,
+        min_salary: form.minSalary * M,
+        max_salary: form.maxSalary * M,
+        description: form.code ? `[${form.code.toUpperCase()}]` : undefined,
+      });
+      reload();
+    } catch (err) {
+      setToastMessage(err instanceof ApiError ? err.message : 'Không lưu được chức danh.');
+      return;
+    }
+    const data_ = form;
     setIsModalOpen(false);
 
-    setToastMessage(`Đã thêm chức danh "${data.title} (${data.code})" với dải lương ${data.minSalary} - ${data.maxSalary} TR VNĐ thành công!`);
+    setToastMessage(`Đã thêm chức danh "${data_.title} (${data_.code})" với dải lương ${data_.minSalary} - ${data_.maxSalary} TR VNĐ thành công!`);
     setTimeout(() => {
       setToastMessage(null);
     }, 4000);
@@ -88,6 +79,9 @@ export default function HRPositionsPage() {
          p.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
          p.department.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -219,6 +213,7 @@ export default function HRPositionsPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleCreatePosition}
+        departmentOptions={(data?.depts || []).map((d) => d.name)}
       />
     </div>
   );

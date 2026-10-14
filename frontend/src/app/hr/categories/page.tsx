@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { Suspense, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import { masterDataService, type Department, type JobTitle, type Category } from "@/services/master-data.service";
+import { requisitionService } from "@/services/requisition.service";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
+import { ApiError } from "@/lib/api-client";
 import {
   Network,
   Award,
@@ -71,244 +77,60 @@ export interface DictionaryItem {
 }
 
 // =============================================================================
-// INITIAL MOCK DATA
+// REAL MASTER DATA -> PAGE MODELS
 // =============================================================================
 
-const INITIAL_ORG_DATA: DepartmentNode[] = [
-  {
-    id: "dept-1",
-    name: "Ban Giám Đốc & Điều Hành (BOD)",
-    code: "BOD-00",
-    managerName: "Nguyễn Thế Hùng (CEO)",
-    managerEmail: "hung.nguyen@company.com",
-    currentMembers: 5,
-    targetHeadcount: 6,
-    description: "Cơ quan điều hành cao nhất toàn công ty",
-    children: [
-      {
-        id: "dept-2",
-        name: "Khối Công Nghệ & Kỹ Thuật (Tech Hub)",
-        code: "TECH-HUB",
-        parentId: "dept-1",
-        managerName: "Vũ Hải Đăng (CTO)",
-        managerEmail: "dang.vu@company.com",
-        currentMembers: 68,
-        targetHeadcount: 85,
-        description: "Phát triển nền tảng kỹ thuật và kiến trúc hệ thống",
-        children: [
-          {
-            id: "dept-2-1",
-            name: "Phòng Kỹ Thuật Phần Mềm (Software Engineering)",
-            code: "SE-DEPT",
-            parentId: "dept-2",
-            managerName: "Lê Hoàng Cường (Engineering Director)",
-            managerEmail: "cuong.le@company.com",
-            currentMembers: 42,
-            targetHeadcount: 50,
-            description: "Đội ngũ Backend, Frontend và Mobile Apps",
-            children: [
-              {
-                id: "dept-2-1-1",
-                name: "Team Backend & Cloud Infrastructure",
-                code: "TEAM-BE",
-                parentId: "dept-2-1",
-                managerName: "Phạm Minh Đức (Tech Lead)",
-                managerEmail: "duc.pham@company.com",
-                currentMembers: 18,
-                targetHeadcount: 22,
-                description: "Kiến trúc Microservices, Python, Go và AWS/GCP",
-              },
-              {
-                id: "dept-2-1-2",
-                name: "Team Frontend & User Experience",
-                code: "TEAM-FE",
-                parentId: "dept-2-1",
-                managerName: "Hoàng Ngọc Ánh (Lead Frontend)",
-                managerEmail: "anh.hoang@company.com",
-                currentMembers: 16,
-                targetHeadcount: 20,
-                description: "Phát triển giao diện React, Next.js và Tailwind CSS",
-              },
-            ],
-          },
-          {
-            id: "dept-2-2",
-            name: "Phòng Quản Lý Chất Lượng & QA/QC",
-            code: "QA-DEPT",
-            parentId: "dept-2",
-            managerName: "Trần Thị Mai (QA Manager)",
-            managerEmail: "mai.tran@company.com",
-            currentMembers: 14,
-            targetHeadcount: 18,
-            description: "Kiểm thử tự động hóa Automation Test và Security",
-          },
-        ],
-      },
-      {
-        id: "dept-3",
-        name: "Khối Quản Trị Nguồn Nhân Lực (HR Hub)",
-        code: "HR-HUB",
-        parentId: "dept-1",
-        managerName: "Trần Thị Bích (HR Director)",
-        managerEmail: "bich.tran@company.com",
-        currentMembers: 16,
-        targetHeadcount: 20,
-        description: "Quản trị toàn diện trải nghiệm nhân viên và tuyển dụng nội bộ",
-        children: [
-          {
-            id: "dept-3-1",
-            name: "Phòng Tuyển Dụng & Thu Hút Nhân Tài (Talent Acquisition)",
-            code: "TA-DEPT",
-            parentId: "dept-3",
-            managerName: "Nguyễn Văn An (TA Manager)",
-            managerEmail: "an.nguyen@company.com",
-            currentMembers: 8,
-            targetHeadcount: 10,
-            description: "Săn đầu người, tuyển dụng nội bộ và quan hệ đại học",
-          },
-          {
-            id: "dept-3-2",
-            name: "Phòng Đào Tạo & Phát Triển Văn Hóa (L&D)",
-            code: "LND-DEPT",
-            parentId: "dept-3",
-            managerName: "Đỗ Thùy Dung (L&D Lead)",
-            managerEmail: "dung.do@company.com",
-            currentMembers: 5,
-            targetHeadcount: 6,
-            description: "Khung năng lực, lộ trình thăng tiến và Onboarding",
-          },
-        ],
-      },
-      {
-        id: "dept-4",
-        name: "Khối Kinh Doanh & Tăng Trưởng (Business Growth)",
-        code: "BIZ-HUB",
-        parentId: "dept-1",
-        managerName: "Bùi Quốc Đạt (Chief Commercial Officer)",
-        managerEmail: "dat.bui@company.com",
-        currentMembers: 34,
-        targetHeadcount: 40,
-        description: "Kinh doanh giải pháp, đối tác chiến lược và tiếp thị số",
-      },
-    ],
-  },
-];
+type DeptRow = Department & { head_name?: string | null; member_count?: number };
+type CategoryRow = Category & { usage_count?: number };
+const LEVELS: JobPosition["level"][] = ["Intern", "Junior", "Middle", "Senior", "Lead", "Manager", "Director"];
+// dictionary tab -> shared category type used by the workflow
+const DICT_TYPES = { sources: "candidate_source", reasons: "rejection_reason", contractTypes: "contract_type" } as const;
+const codeOf = (description?: string | null) => /^\[([^\]]+)\]/.exec(description || "")?.[1] || "";
+const slug = (name: string) => name.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Đ/g, "D").replace(/[^A-Z0-9]+/g, "_").slice(0, 20);
 
-const INITIAL_JOB_POSITIONS: JobPosition[] = [
-  {
-    id: "pos-1",
-    title: "Senior Backend Developer (Python / Go)",
-    code: "TECH-BE-SR",
-    level: "Senior",
-    department: "Team Backend & Cloud Infrastructure",
-    minSalary: 35000000,
-    maxSalary: 55000000,
-    isOfferLocked: true,
-    activeOpenings: 3,
-  },
-  {
-    id: "pos-2",
-    title: "Technical Lead (Cloud Infrastructure)",
-    code: "TECH-TL-01",
-    level: "Lead",
-    department: "Team Backend & Cloud Infrastructure",
-    minSalary: 55000000,
-    maxSalary: 80000000,
-    isOfferLocked: true,
-    activeOpenings: 1,
-  },
-  {
-    id: "pos-3",
-    title: "Senior Frontend Engineer (Next.js & React)",
-    code: "TECH-FE-SR",
-    level: "Senior",
-    department: "Team Frontend & User Experience",
-    minSalary: 32000000,
-    maxSalary: 48000000,
-    isOfferLocked: true,
-    activeOpenings: 2,
-  },
-  {
-    id: "pos-4",
-    title: "Automation Test Lead (QA/QC)",
-    code: "QA-LEAD-01",
-    level: "Lead",
-    department: "Phòng Quản Lý Chất Lượng & QA/QC",
-    minSalary: 38000000,
-    maxSalary: 52000000,
-    isOfferLocked: true,
-    activeOpenings: 1,
-  },
-  {
-    id: "pos-5",
-    title: "Senior Talent Acquisition Specialist",
-    code: "HR-TA-SR",
-    level: "Senior",
-    department: "Phòng Tuyển Dụng & Thu Hút Nhân Tài (Talent Acquisition)",
-    minSalary: 22000000,
-    maxSalary: 35000000,
-    isOfferLocked: true,
-    activeOpenings: 2,
-  },
-  {
-    id: "pos-6",
-    title: "Product Manager (Enterprise Solutions)",
-    code: "BIZ-PM-01",
-    level: "Manager",
-    department: "Khối Kinh Doanh & Tăng Trưởng (Business Growth)",
-    minSalary: 45000000,
-    maxSalary: 65000000,
-    isOfferLocked: true,
-    activeOpenings: 1,
-  },
-  {
-    id: "pos-7",
-    title: "Middle DevOps / SRE Engineer",
-    code: "TECH-SRE-MD",
-    level: "Middle",
-    department: "Team Backend & Cloud Infrastructure",
-    minSalary: 25000000,
-    maxSalary: 38000000,
-    isOfferLocked: true,
-    activeOpenings: 2,
-  },
-  {
-    id: "pos-8",
-    title: "L&D Specialist (Đào Tạo & Khung Năng Lực)",
-    code: "HR-LND-MD",
-    level: "Middle",
-    department: "Phòng Đào Tạo & Phát Triển Văn Hóa (L&D)",
-    minSalary: 18000000,
-    maxSalary: 28000000,
-    isOfferLocked: true,
-    activeOpenings: 1,
-  },
-];
+function buildTree(rows: DeptRow[], budgets: Map<number, number>): DepartmentNode[] {
+  const byParent = new Map<number | null, DeptRow[]>();
+  const ids = new Set(rows.map((d) => d.id));
+  rows.forEach((d) => {
+    const key = d.parent_id && ids.has(d.parent_id) ? d.parent_id : null;
+    byParent.set(key, [...(byParent.get(key) || []), d]);
+  });
+  const node = (d: DeptRow): DepartmentNode => ({
+    id: String(d.id),
+    name: d.name,
+    code: d.code,
+    parentId: d.parent_id ? String(d.parent_id) : "",
+    managerName: d.head_name || "Chưa gán",
+    managerEmail: "",
+    currentMembers: d.member_count || 0,
+    targetHeadcount: budgets.get(d.id) || 0,
+    description: "",
+    children: (byParent.get(d.id) || []).map(node),
+  });
+  return (byParent.get(null) || []).map(node);
+}
 
-const INITIAL_DICTIONARIES = {
-  sources: [
-    { id: "src-1", name: "LinkedIn Talent Solutions", code: "LINKEDIN", description: "Kênh tuyển dụng chuyên gia trực tuyến", usageCount: 142, isActive: true },
-    { id: "src-2", name: "Giới thiệu nội bộ (Employee Referral)", code: "REFERRAL", description: "Nhân viên công ty giới thiệu có thưởng", usageCount: 98, isActive: true },
-    { id: "src-3", name: "VietnamWorks Enterprise", code: "VIETNAMWORKS", description: "Trang tuyển dụng nhân sự cấp trung/cao", usageCount: 76, isActive: true },
-    { id: "src-4", name: "TopCV Recruitment Partner", code: "TOPCV", description: "Nền tảng hồ sơ ứng viên công nghệ", usageCount: 65, isActive: true },
-    { id: "src-5", name: "Facebook Tech Community", code: "FACEBOOK", description: "Các nhóm công nghệ & diễn đàn nhân sự", usageCount: 38, isActive: true },
-    { id: "src-6", name: "Ngày hội Việc làm & Đại học (Job Fair)", code: "JOB_FAIR", description: "Sự kiện tuyển dụng sinh viên IT tốt nghiệp", usageCount: 24, isActive: true },
-  ],
-  reasons: [
-    { id: "rs-1", name: "Kỹ năng chuyên môn chưa đáp ứng yêu cầu", code: "TECH_MISMATCH", description: "Điểm test kỹ thuật hoặc phỏng vấn dưới mức chuẩn", usageCount: 84, isActive: true },
-    { id: "rs-2", name: "Mức lương kỳ vọng vượt ngân sách phê duyệt", code: "SALARY_OVER_BUDGET", description: "Mức offer mong muốn cao hơn dải lương Max được duyệt", usageCount: 46, isActive: true },
-    { id: "rs-3", name: "Chưa phù hợp với văn hóa & nhịp độ doanh nghiệp", code: "CULTURE_MISFIT", description: "Phong cách làm việc chưa đồng điệu với giá trị cốt lõi", usageCount: 31, isActive: true },
-    { id: "rs-4", name: "Ứng viên chủ động từ chối thư mời (Decline Offer)", code: "CANDIDATE_DECLINED", description: "Ứng viên nhận được offer khác hoặc giữ nguyên công việc cũ", usageCount: 22, isActive: true },
-    { id: "rs-5", name: "Không tham gia phỏng vấn (No-show)", code: "NO_SHOW", description: "Ứng viên vắng mặt không thông báo trước", usageCount: 15, isActive: true },
-    { id: "rs-6", name: "Kinh nghiệm thực tế chưa đủ thâm niên quy định", code: "INSUFFICIENT_EXP", description: "Thời gian làm việc và quy mô dự án chưa tương xứng cấp bậc", usageCount: 29, isActive: true },
-  ],
-  contractTypes: [
-    { id: "ct-1", name: "Hợp đồng thử việc (2 tháng)", code: "PROBATION_2M", description: "Áp dụng cho nhân sự mới theo quy định Luật Lao động", usageCount: 95, isActive: true },
-    { id: "ct-2", name: "Hợp đồng xác định thời hạn (12 tháng)", code: "FIXED_12M", description: "Hợp đồng chính thức sau khi đạt thử việc", usageCount: 160, isActive: true },
-    { id: "ct-3", name: "Hợp đồng không xác định thời hạn", code: "INDEFINITE", description: "Dành cho nhân sự cống hiến lâu năm và cấp quản lý", usageCount: 110, isActive: true },
-    { id: "ct-4", name: "Hợp đồng cộng tác viên / Chuyên gia tư vấn", code: "FREELANCE_CONSULTANT", description: "Hợp đồng dịch vụ theo dự án ngắn hạn", usageCount: 18, isActive: true },
-  ],
-};
+function toDictItem(c: CategoryRow): DictionaryItem {
+  return { id: String(c.id), name: c.name, code: slug(c.name), description: "", usageCount: c.usage_count || 0, isActive: c.is_active };
+}
+
+async function loadMasterData() {
+  const year = new Date().getFullYear();
+  const [depts, titles, categories, budgets, reqs, hm, hr] = await Promise.all([
+    masterDataService.departments(true) as Promise<DeptRow[]>,
+    masterDataService.jobTitles(),
+    masterDataService.categories() as Promise<CategoryRow[]>,
+    masterDataService.headcounts().catch(() => []),
+    requisitionService.getRequisitions().catch(() => []),
+    masterDataService.people("hiring_manager").catch(() => []),
+    masterDataService.people("hr_manager").catch(() => []),
+  ]);
+  return {
+    year, depts, titles, categories, reqs,
+    budgets: new Map(budgets.filter((b) => b.year === year).map((b) => [b.department_id, b.budget_quantity])),
+    managers: [...hm, ...hr.filter((u) => !hm.some((x) => x.id === u.id))],
+  };
+}
 
 // Format Currency Utility
 function formatVND(amount: number) {
@@ -319,17 +141,16 @@ function formatVND(amount: number) {
 // MAIN COMPONENT
 // =============================================================================
 
-export default function HRCategoriesPage() {
-  const [activeTab, setActiveTab] = useState<"org" | "salary" | "dictionary">("org");
+function HRCategoriesContent() {
+  // ?type=<category_type> (from the lookup overview) opens the dictionary tab for that group
+  const requestedType = useSearchParams().get("type");
+  const [activeTab, setActiveTab] = useState<"org" | "salary" | "dictionary">(requestedType ? "dictionary" : "org");
+  const { data: md, error, loading, reload } = useApiData(loadMasterData, []);
+  const [saving, setSaving] = useState(false);
 
   // State: Tab 1 (Sơ đồ phòng ban)
-  const [orgData, setOrgData] = useState<DepartmentNode[]>(INITIAL_ORG_DATA);
-  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({
-    "dept-1": true,
-    "dept-2": true,
-    "dept-2-1": true,
-    "dept-3": true,
-  });
+  const orgData = useMemo(() => (md ? buildTree(md.depts, md.budgets) : []), [md]);
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [deptSearch, setDeptSearch] = useState("");
   const [isDeptModalOpen, setIsDeptModalOpen] = useState(false);
   const [deptModalMode, setDeptModalMode] = useState<"create" | "edit">("create");
@@ -337,7 +158,7 @@ export default function HRCategoriesPage() {
   const [deptFormData, setDeptFormData] = useState({
     name: "",
     code: "",
-    parentId: "dept-1",
+    parentId: "",
     managerName: "",
     managerEmail: "",
     targetHeadcount: 10,
@@ -345,7 +166,17 @@ export default function HRCategoriesPage() {
   });
 
   // State: Tab 2 (Chức danh & Dải lương)
-  const [jobPositions, setJobPositions] = useState<JobPosition[]>(INITIAL_JOB_POSITIONS);
+  const jobPositions: JobPosition[] = useMemo(() => (md?.titles || []).map((t: JobTitle) => ({
+    id: String(t.id),
+    title: t.name,
+    code: codeOf(t.description) || `JT-${t.id}`,
+    level: (LEVELS.find((l) => t.level.toLowerCase().includes(l.toLowerCase())) || "Middle"),
+    department: md?.depts.find((d) => d.id === t.department_id)?.name || "Tất cả phòng ban",
+    minSalary: t.min_salary || 0,
+    maxSalary: t.max_salary || 0,
+    isOfferLocked: true, // offers outside the band always need the escalation approval (S7-04)
+    activeOpenings: (md?.reqs || []).filter((r) => r.job_title_id === t.id && r.status === "approved").reduce((n, r) => n + (r.quantity || 0), 0),
+  })), [md]);
   const [posSearch, setPosSearch] = useState("");
   const [posLevelFilter, setPosLevelFilter] = useState("all");
   const [isPosModalOpen, setIsPosModalOpen] = useState(false);
@@ -355,16 +186,21 @@ export default function HRCategoriesPage() {
     title: "",
     code: "",
     level: "Senior" as JobPosition["level"],
-    department: "Team Backend & Cloud Infrastructure",
-    minSalary: 30000000,
-    maxSalary: 45000000,
+    department: "",
+    minSalary: 0,
+    maxSalary: 0,
     isOfferLocked: true,
   });
   const [posFormError, setPosFormError] = useState<string | null>(null);
 
   // State: Tab 3 (Danh mục chung)
-  const [activeDictionaryType, setActiveDictionaryType] = useState<"sources" | "reasons" | "contractTypes">("sources");
-  const [dictionaries, setDictionaries] = useState(INITIAL_DICTIONARIES);
+  const [activeDictionaryType, setActiveDictionaryType] = useState<"sources" | "reasons" | "contractTypes">(
+    requestedType === "rejection_reason" ? "reasons" : requestedType === "contract_type" ? "contractTypes" : "sources",
+  );
+  const dictionaries = useMemo(() => {
+    const of = (type: string) => (md?.categories || []).filter((c) => c.category_type === type).map(toDictItem);
+    return { sources: of(DICT_TYPES.sources), reasons: of(DICT_TYPES.reasons), contractTypes: of(DICT_TYPES.contractTypes) };
+  }, [md]);
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineEditValue, setInlineEditValue] = useState({ name: "", code: "", description: "" });
   const [quickAddName, setQuickAddName] = useState("");
@@ -395,12 +231,12 @@ export default function HRCategoriesPage() {
   };
 
   const collapseAll = () => {
-    setExpandedNodes({ "dept-1": true });
+    setExpandedNodes({});
   };
 
   // Flattened department options for Parent Dept selector
   const allDepartmentsFlat = useMemo(() => {
-    const list: { id: string; name: string }[] = [];
+    const list: { id: string; name: string }[] = [{ id: "", name: "— Trực thuộc công ty (cấp 1) —" }];
     const traverse = (nodes: DepartmentNode[]) => {
       nodes.forEach((n) => {
         list.push({ id: n.id, name: n.name });
@@ -411,74 +247,46 @@ export default function HRCategoriesPage() {
     return list;
   }, [orgData]);
 
-  // Handle Save Department
-  const handleSaveDepartment = (e: React.FormEvent) => {
+  // Handle Save Department (head of department must be an existing manager account)
+  const handleSaveDepartment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!deptFormData.name || !deptFormData.code || !deptFormData.managerName) {
       showToast("Vui lòng điền đầy đủ các thông tin bắt buộc (*)", "error");
       return;
     }
-
-    if (deptModalMode === "create") {
-      const newNode: DepartmentNode = {
-        id: `dept-${Date.now()}`,
-        name: deptFormData.name,
-        code: deptFormData.code.toUpperCase(),
-        parentId: deptFormData.parentId,
-        managerName: deptFormData.managerName,
-        managerEmail: deptFormData.managerEmail || `${deptFormData.code.toLowerCase()}@company.com`,
-        currentMembers: 0,
-        targetHeadcount: Number(deptFormData.targetHeadcount) || 10,
-        description: deptFormData.description,
-      };
-
-      // Add to parent node
-      const addRecursively = (nodes: DepartmentNode[]): DepartmentNode[] => {
-        return nodes.map((n) => {
-          if (n.id === deptFormData.parentId) {
-            return { ...n, children: [...(n.children || []), newNode] };
-          }
-          if (n.children) {
-            return { ...n, children: addRecursively(n.children) };
-          }
-          return n;
-        });
-      };
-
-      setOrgData((prev) => addRecursively(prev));
-      setExpandedNodes((prev) => ({ ...prev, [deptFormData.parentId]: true }));
-      showToast(`Đã thêm mới phòng ban "${newNode.name}" thành công!`, "success");
-    } else if (editingDept) {
-      // Update existing
-      const updateRecursively = (nodes: DepartmentNode[]): DepartmentNode[] => {
-        return nodes.map((n) => {
-          if (n.id === editingDept.id) {
-            return {
-              ...n,
-              name: deptFormData.name,
-              code: deptFormData.code.toUpperCase(),
-              managerName: deptFormData.managerName,
-              managerEmail: deptFormData.managerEmail,
-              targetHeadcount: Number(deptFormData.targetHeadcount),
-              description: deptFormData.description,
-            };
-          }
-          if (n.children) {
-            return { ...n, children: updateRecursively(n.children) };
-          }
-          return n;
-        });
-      };
-
-      setOrgData((prev) => updateRecursively(prev));
-      showToast(`Đã cập nhật phòng ban "${deptFormData.name}" thành công!`, "success");
+    const wanted = deptFormData.managerName.trim().toLowerCase();
+    const head = deptFormData.managerName === "Chưa gán" ? null
+      : (md?.managers || []).find((u) => u.full_name.toLowerCase() === wanted || u.email.toLowerCase() === wanted);
+    if (deptFormData.managerName !== "Chưa gán" && !head) {
+      showToast("Không tìm thấy Trưởng phòng / Hiring Manager có tên hoặc email này trong hệ thống.", "error");
+      return;
     }
-
-    setIsDeptModalOpen(false);
+    setSaving(true);
+    try {
+      const saved = await masterDataService.saveDepartment({
+        name: deptFormData.name.trim(),
+        code: deptFormData.code.trim().toUpperCase(),
+        parent_id: deptFormData.parentId ? Number(deptFormData.parentId) : null,
+        head_user_id: head ? head.id : null,
+        sort_order: 0,
+        is_active: true,
+      }, deptModalMode === "edit" && editingDept ? Number(editingDept.id) : undefined);
+      if (md && deptFormData.targetHeadcount > 0 && deptFormData.targetHeadcount !== md.budgets.get(saved.id)) {
+        await masterDataService.saveHeadcount({ department_id: saved.id, year: md.year, budget_quantity: deptFormData.targetHeadcount });
+      }
+      if (deptFormData.parentId) setExpandedNodes((prev) => ({ ...prev, [deptFormData.parentId]: true }));
+      showToast(deptModalMode === "create" ? `Đã thêm mới phòng ban "${saved.name}" thành công!` : `Đã cập nhật phòng ban "${saved.name}" thành công!`, "success");
+      setIsDeptModalOpen(false);
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không lưu được phòng ban.", "error");
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Handle Save Job Position (with Min < Max check)
-  const handleSavePosition = (e: React.FormEvent) => {
+  const handleSavePosition = async (e: React.FormEvent) => {
     e.preventDefault();
     setPosFormError(null);
 
@@ -500,41 +308,26 @@ export default function HRCategoriesPage() {
       return;
     }
 
-    if (posModalMode === "create") {
-      const newPos: JobPosition = {
-        id: `pos-${Date.now()}`,
-        title: posFormData.title,
-        code: posFormData.code.toUpperCase(),
+    setSaving(true);
+    try {
+      await masterDataService.saveJobTitle({
+        name: posFormData.title.trim(),
         level: posFormData.level,
-        department: posFormData.department,
-        minSalary: min,
-        maxSalary: max,
-        isOfferLocked: posFormData.isOfferLocked,
-        activeOpenings: 1,
-      };
-      setJobPositions([newPos, ...jobPositions]);
-      showToast(`Đã thiết lập chức danh "${newPos.title}" với dải lương được phê duyệt!`, "success");
-    } else if (editingPos) {
-      setJobPositions((prev) =>
-        prev.map((p) =>
-          p.id === editingPos.id
-            ? {
-                ...p,
-                title: posFormData.title,
-                code: posFormData.code.toUpperCase(),
-                level: posFormData.level,
-                department: posFormData.department,
-                minSalary: min,
-                maxSalary: max,
-                isOfferLocked: posFormData.isOfferLocked,
-              }
-            : p
-        )
-      );
-      showToast(`Cập nhật dải lương chức danh "${posFormData.title}" thành công!`, "success");
+        department_id: md?.depts.find((d) => d.name === posFormData.department)?.id ?? null,
+        min_salary: min,
+        max_salary: max,
+        description: `[${posFormData.code.trim().toUpperCase()}]`,
+      }, posModalMode === "edit" && editingPos ? Number(editingPos.id) : undefined);
+      showToast(posModalMode === "create"
+        ? `Đã thiết lập chức danh "${posFormData.title}" với dải lương được phê duyệt!`
+        : `Cập nhật dải lương chức danh "${posFormData.title}" thành công!`, "success");
+      setIsPosModalOpen(false);
+      reload();
+    } catch (err) {
+      setPosFormError(err instanceof ApiError ? err.message : "Không lưu được chức danh.");
+    } finally {
+      setSaving(false);
     }
-
-    setIsPosModalOpen(false);
   };
 
   // Filtered Positions
@@ -552,67 +345,47 @@ export default function HRCategoriesPage() {
   }, [jobPositions, posSearch, posLevelFilter]);
 
   // Tab 3: Quick Add item to active dictionary
-  const handleQuickAddDictionary = (e: React.FormEvent) => {
+  const handleQuickAddDictionary = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickAddName.trim()) return;
-
-    const generatedCode =
-      quickAddCode.trim().toUpperCase() ||
-      quickAddName
-        .trim()
-        .toUpperCase()
-        .replace(/\s+/g, "_")
-        .slice(0, 15);
-
-    const newItem: DictionaryItem = {
-      id: `dict-${Date.now()}`,
-      name: quickAddName.trim(),
-      code: generatedCode,
-      description: "Được khởi tạo trực tiếp bởi HR Manager",
-      usageCount: 0,
-      isActive: true,
-    };
-
-    setDictionaries((prev) => ({
-      ...prev,
-      [activeDictionaryType]: [newItem, ...prev[activeDictionaryType]],
-    }));
-
-    setQuickAddName("");
-    setQuickAddCode("");
-    showToast(`Đã thêm mới mục "${newItem.name}" vào từ điển hệ thống!`, "success");
+    const type = activeDictionaryType === "sources" && requestedType && !Object.values(DICT_TYPES).includes(requestedType as never)
+      ? requestedType : DICT_TYPES[activeDictionaryType];
+    try {
+      const created = await masterDataService.createCategory({
+        category_type: type, name: quickAddName.trim(), sort_order: dictionaries[activeDictionaryType].length,
+      });
+      setQuickAddName("");
+      setQuickAddCode("");
+      showToast(`Đã thêm mới mục "${created.name}" vào từ điển hệ thống!`, "success");
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không thêm được mục.", "error");
+    }
   };
 
-  // Tab 3: Inline edit save
-  const handleSaveInlineEdit = (id: string) => {
+  // Tab 3: Inline edit save (renaming is blocked by the server while the value is referenced)
+  const handleSaveInlineEdit = async (id: string) => {
     if (!inlineEditValue.name.trim()) return;
-
-    setDictionaries((prev) => ({
-      ...prev,
-      [activeDictionaryType]: prev[activeDictionaryType].map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              name: inlineEditValue.name.trim(),
-              code: inlineEditValue.code.trim().toUpperCase() || item.code,
-              description: inlineEditValue.description || item.description,
-            }
-          : item
-      ),
-    }));
-
-    setInlineEditingId(null);
-    showToast("Cập nhật thông tin từ điển thành công!", "success");
+    const current = dictionaries[activeDictionaryType].find((i) => i.id === id);
+    try {
+      await masterDataService.updateCategory(Number(id), { name: inlineEditValue.name.trim(), is_active: current?.isActive ?? true });
+      setInlineEditingId(null);
+      showToast("Cập nhật thông tin từ điển thành công!", "success");
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không cập nhật được mục.", "error");
+    }
   };
 
-  // Tab 3: Delete dictionary item
-  const handleDeleteDictionaryItem = (id: string, name: string) => {
-    if (confirm(`Bạn có chắc chắn muốn xóa mục "${name}" khỏi từ điển không?`)) {
-      setDictionaries((prev) => ({
-        ...prev,
-        [activeDictionaryType]: prev[activeDictionaryType].filter((i) => i.id !== id),
-      }));
+  // Tab 3: Delete dictionary item (values in use cannot be deleted — deactivate them instead)
+  const handleDeleteDictionaryItem = async (id: string, name: string) => {
+    if (!confirm(`Bạn có chắc chắn muốn xóa mục "${name}" khỏi từ điển không?`)) return;
+    try {
+      await masterDataService.deleteCategory(Number(id));
       showToast(`Đã xóa mục "${name}"!`, "success");
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không xóa được mục.", "error");
     }
   };
 
@@ -741,7 +514,7 @@ export default function HRCategoriesPage() {
                   setDeptFormData({
                     name: node.name,
                     code: node.code,
-                    parentId: node.parentId || "dept-1",
+                    parentId: node.parentId || "",
                     managerName: node.managerName,
                     managerEmail: node.managerEmail,
                     targetHeadcount: node.targetHeadcount,
@@ -768,6 +541,9 @@ export default function HRCategoriesPage() {
       </div>
     );
   };
+
+  if (loading) return <LoadingState />;
+  if (error || !md) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">
@@ -890,7 +666,7 @@ export default function HRCategoriesPage() {
                   setDeptFormData({
                     name: "",
                     code: "",
-                    parentId: "dept-1",
+                    parentId: "",
                     managerName: "",
                     managerEmail: "",
                     targetHeadcount: 10,
@@ -1076,9 +852,10 @@ export default function HRCategoriesPage() {
                             <button
                               type="button"
                               onClick={() => {
-                                if (confirm(`Bạn có chắc muốn xóa chức danh "${p.title}" không?`)) {
-                                  setJobPositions((prev) => prev.filter((item) => item.id !== p.id));
-                                  showToast(`Đã xóa chức danh "${p.title}"!`, "success");
+                                if (confirm(`Bạn có chắc muốn ngừng áp dụng chức danh "${p.title}" không?`)) {
+                                  masterDataService.deactivateJobTitle(Number(p.id))
+                                    .then(() => { showToast(`Đã ngừng áp dụng chức danh "${p.title}"!`, "success"); reload(); })
+                                    .catch((err) => showToast(err instanceof ApiError ? err.message : "Không cập nhật được chức danh.", "error"));
                                 }
                               }}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
@@ -1555,7 +1332,7 @@ export default function HRCategoriesPage() {
                   <select
                     value={posFormData.level}
                     onChange={(e) =>
-                      setPosFormData({ ...posFormData, level: e.target.value as any })
+                      setPosFormData({ ...posFormData, level: e.target.value as JobPosition["level"] })
                     }
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:border-blue-600"
                   >
@@ -1673,5 +1450,14 @@ export default function HRCategoriesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// useSearchParams (?type=) needs a Suspense boundary for static rendering
+export default function HRCategoriesPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <HRCategoriesContent />
+    </Suspense>
   );
 }

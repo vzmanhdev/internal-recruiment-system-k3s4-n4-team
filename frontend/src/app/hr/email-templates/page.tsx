@@ -28,6 +28,9 @@ import {
   Play,
   RotateCcw,
 } from "lucide-react";
+import { apiRequest, ApiError } from "@/lib/api-client";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
 
 // =============================================================================
 // TYPES & DATA STRUCTURES
@@ -68,113 +71,65 @@ const AVAILABLE_VARIABLES: InterpolationVariable[] = [
   { key: "[Portal Link]", label: "[Portal Link]", sampleValue: "https://careers.company.com/portal/my-application", description: "Đường dẫn tra cứu kết quả ứng tuyển" },
 ];
 
-const INITIAL_TEMPLATES: EmailTemplateItem[] = [
-  {
-    id: "tpl-1",
-    code: "EMAIL-ACK",
-    name: "Thư Cảm Ơn Đã Ứng Tuyển (Application Acknowledgment)",
-    category: "Thư cảm ơn",
-    subject: "Xác nhận tiếp nhận hồ sơ ứng tuyển vị trí [Tên vị trí] - [Tên công ty]",
-    body: `Kính gửi [Tên ứng viên],
-
-Cảm ơn bạn đã quan tâm và gửi hồ sơ ứng tuyển cho vị trí [Tên vị trí] tại [Tên công ty].
-
-Hồ sơ của bạn đã được chuyển đến Đội ngũ Tuyển dụng để tiến hành đánh giá mức độ phù hợp. Chúng tôi sẽ phản hồi kết quả sàng lọc sơ bộ đến bạn trong vòng 3 - 5 ngày làm việc.
-
-Bạn có thể theo dõi tiến độ hồ sơ của mình tại cổng tuyển dụng: [Portal Link]
-
-Chúc bạn một tuần làm việc nhiều năng lượng!
-
-Trân trọng,
-Phòng Tuyển Dụng & Phát Triển Nhân Tài
-[Tên công ty]`,
-    isAutoSend: true,
-    triggerEvent: "Tự động gửi ngay khi ứng viên nộp hồ sơ thành công trên Career Portal",
-    updatedAt: "10/10/2026",
-  },
-  {
-    id: "tpl-2",
-    code: "EMAIL-INTERVIEW",
-    name: "Thư Mời Tham Gia Phỏng Vấn (Interview Invitation)",
-    category: "Mời phỏng vấn",
-    subject: "Thư mời phỏng vấn vị trí [Tên vị trí] - [Tên công ty]",
-    body: `Chào [Tên ứng viên],
-
-Chúc mừng bạn đã vượt qua vòng sàng lọc hồ sơ cho vị trí [Tên vị trí] tại [Tên công ty].
-
-Chúng tôi trân trọng mời bạn tham gia buổi phỏng vấn trực tiếp cùng Hội đồng Kỹ thuật với thông tin chi tiết như sau:
-
-- Thời gian: [Giờ phỏng vấn]
-- Hình thức / Địa điểm: [Địa điểm / Link họp]
-- Người phỏng vấn: [Người phỏng vấn]
-
-Vui lòng xác nhận sự có mặt của bạn bằng cách phản hồi lại email này trước 24 giờ diễn ra phỏng vấn. Nếu cần điều chỉnh lịch hẹn, bạn hãy thông báo sớm để HR kịp thời hỗ trợ.
-
-Hẹn gặp bạn tại buổi trao đổi!
-
-Trân trọng,
-Đội ngũ Tuyển dụng [Tên công ty]`,
-    isAutoSend: true,
-    triggerEvent: "Tự động gửi khi Recruiter tạo lịch phỏng vấn trên hệ thống",
-    updatedAt: "08/10/2026",
-  },
-  {
-    id: "tpl-3",
-    code: "EMAIL-OFFER",
-    name: "Thư Mời Nhận Việc Chính Thức (Job Offer Letter)",
-    category: "Thư Offer",
-    subject: "Thư mời nhận việc (Job Offer Letter) - Vị trí [Tên vị trí] tại [Tên công ty]",
-    body: `Kính gửi [Tên ứng viên],
-
-Đại diện [Tên công ty], chúng tôi rất vui mừng thông báo bạn đã chính thức trúng tuyển vị trí [Tên vị trí] sau các vòng phỏng vấn vừa qua.
-
-Tóm tắt các điều khoản đãi ngộ chính:
-- Vị trí công tác: [Tên vị trí]
-- Mức lương khởi điểm: [Mức lương Offer]
-- Thời hạn phản hồi xác nhận: [Hạn phản hồi Offer]
-
-Chi tiết thư mời nhận việc và phụ lục hợp đồng đính kèm file PDF trong email này. Bạn vui lòng ký xác nhận điện tử trước thời hạn quy định.
-
-Chào mừng bạn gia nhập đại gia đình [Tên công ty]!
-
-Trân trọng,
-Giám Đốc Nhân Sự
-[Tên công ty]`,
-    isAutoSend: false,
-    triggerEvent: "Gửi thủ công sau khi Offer được Giám đốc Nhân sự & BOD phê duyệt",
-    updatedAt: "05/10/2026",
-  },
-  {
-    id: "tpl-4",
-    code: "EMAIL-REJECT",
-    name: "Thư Từ Chối Lịch Thiệp & Giữ Kết Nối (Keep in Touch)",
-    category: "Thư từ chối",
-    subject: "Thông báo kết quả phỏng vấn vị trí [Tên vị trí] - [Tên công ty]",
-    body: `Kính gửi [Tên ứng viên],
-
-Cảm ơn bạn đã dành thời gian và sự nhiệt huyết tham gia các vòng trao đổi vị trí [Tên vị trí] cùng [Tên công ty].
-
-Hội đồng phỏng vấn đánh giá rất cao năng lực và trải nghiệm chuyên môn của bạn. Tuy nhiên, ở giai đoạn hiện tại, chúng tôi đã lựa chọn một ứng viên khác có định hướng kinh nghiệm khớp hơn với dự án trước mắt.
-
-Chúng tôi xin phép được lưu giữ thông tin của bạn trong Kho ứng viên tiềm năng (Talent Pool) và sẽ chủ động kết nối lại ngay khi có cơ hội mới phù hợp.
-
-Chúc bạn luôn gặt hái nhiều thành công rực rỡ trên con đường sự nghiệp!
-
-Thân ái,
-Phòng Nhân Sự [Tên công ty]`,
-    isAutoSend: false,
-    triggerEvent: "Gửi khi chuyển trạng thái ứng viên sang Loại / Đưa vào Talent Pool",
-    updatedAt: "01/10/2026",
-  },
+// editor placeholder <-> variable used by the e-mail engine ({candidate_name}, ...)
+const VAR_MAP: Array<[string, string]> = [
+  ["[Tên ứng viên]", "{candidate_name}"], ["[Tên vị trí]", "{job_title}"], ["[Tên công ty]", "{company_name}"],
+  ["[Giờ phỏng vấn]", "{interview_time}"], ["[Địa điểm / Link họp]", "{interview_location}"], ["[Người phỏng vấn]", "{interviewer_name}"],
+  ["[Mức lương Offer]", "{offer_salary}"], ["[Hạn phản hồi Offer]", "{offer_deadline}"], ["[Portal Link]", "{portal_link}"],
 ];
+const TEMPLATE_META: Record<string, { category: EmailTemplateItem["category"]; trigger: string }> = {
+  CONFIRM_APPLICATION: { category: "Thư cảm ơn", trigger: "Gửi ngay khi ứng viên nộp hồ sơ thành công" },
+  THANK_INTERVIEW: { category: "Thư cảm ơn", trigger: "Gửi sau buổi phỏng vấn (thủ công hoặc hàng loạt)" },
+  INVITE_INTERVIEW: { category: "Mời phỏng vấn", trigger: "Gửi khi đặt / dời lịch phỏng vấn" },
+  INTERVIEW_CANCELLED: { category: "Mời phỏng vấn", trigger: "Gửi khi hủy lịch phỏng vấn" },
+  OFFER_LETTER: { category: "Thư Offer", trigger: "Gửi khi recruiter phát hành offer đã được duyệt" },
+  REJECT_CANDIDATE: { category: "Thư từ chối", trigger: "Gửi khi loại ứng viên (thủ công hoặc hàng loạt)" },
+  REQ_APPROVED: { category: "Onboarding", trigger: "Gửi khi tờ trình tuyển dụng được phê duyệt" },
+};
+const CATEGORIES: EmailTemplateItem["category"][] = ["Thư cảm ơn", "Mời phỏng vấn", "Thư Offer", "Thư từ chối", "Onboarding"];
+
+/** Stored HTML -> editable text with [placeholders]; and back (escaped, paragraphs). */
+function toEditor(html: string): string {
+  let text = html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>\s*/gi, "\n\n").replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+  VAR_MAP.forEach(([ui, api]) => { text = text.split(api).join(ui); });
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+function toStored(text: string, html: boolean): string {
+  let out = text;
+  if (html) {
+    out = out.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    out = out.split(/\n{2,}/).map((para) => `<p>${para.replace(/\n/g, "<br>")}</p>`).join("");
+  }
+  VAR_MAP.forEach(([ui, api]) => { out = out.split(ui).join(api); });
+  return out;
+}
+
+interface ApiTemplate { id: number; code: string; name: string; category: string; subject: string; body_html: string; is_auto_send: boolean; is_active: boolean; updated_at?: string | null }
+
+function toItem(t: ApiTemplate): EmailTemplateItem {
+  const meta = TEMPLATE_META[t.code];
+  return {
+    id: String(t.id),
+    code: t.code,
+    name: t.name,
+    category: meta?.category || (CATEGORIES.find((c) => c === t.category) ?? "Onboarding"),
+    subject: toEditor(t.subject),
+    body: toEditor(t.body_html),
+    isAutoSend: t.is_auto_send,
+    triggerEvent: meta?.trigger || "Gửi thủ công từ hồ sơ ứng viên",
+    updatedAt: t.updated_at ? new Date(t.updated_at).toLocaleDateString("vi-VN") : "",
+  };
+}
 
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
 export default function HREmailTemplatesPage() {
-  const [templates, setTemplates] = useState<EmailTemplateItem[]>(INITIAL_TEMPLATES);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("tpl-2");
+  const { data: rows, error, loading, reload, setData } = useApiData(() => apiRequest<ApiTemplate[]>("/email-automation/templates"), []);
+  const templates: EmailTemplateItem[] = useMemo(() => (rows || []).map(toItem), [rows]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [activeCategoryFilter, setActiveCategoryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -185,17 +140,22 @@ export default function HREmailTemplatesPage() {
   const activeTemplate = useMemo(() => {
     return templates.find((t) => t.id === selectedTemplateId) || templates[0];
   }, [templates, selectedTemplateId]);
+  // the editor follows the active template until the user starts typing
+  const [draft, setDraft] = useState<{ id: string; subject: string; body: string } | null>(null);
 
   // Form State for active editing
-  const [editSubject, setEditSubject] = useState(activeTemplate?.subject || "");
-  const [editBody, setEditBody] = useState(activeTemplate?.body || "");
+  const editing = draft && draft.id === activeTemplate?.id ? draft : null;
+  const editSubject = editing ? editing.subject : activeTemplate?.subject || "";
+  const editBody = editing ? editing.body : activeTemplate?.body || "";
+  const setEditSubject = (v: string) => setDraft({ id: activeTemplate?.id || "", subject: v, body: editBody });
+  const setEditBody = (v: string | ((prev: string) => string)) =>
+    setDraft({ id: activeTemplate?.id || "", subject: editSubject, body: typeof v === "function" ? v(editBody) : v });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Synchronize when switching template
   const handleSelectTemplate = (tpl: EmailTemplateItem) => {
     setSelectedTemplateId(tpl.id);
-    setEditSubject(tpl.subject);
-    setEditBody(tpl.body);
+    setDraft(null);
   };
 
   // Toast feedback
@@ -206,11 +166,16 @@ export default function HREmailTemplatesPage() {
   };
 
   // Toggle Auto-send trigger
-  const handleToggleAutoSend = (id: string) => {
-    setTemplates((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, isAutoSend: !t.isAutoSend } : t))
-    );
-    showToast("Đã cập nhật trạng thái tự động gửi!");
+  const handleToggleAutoSend = async (id: string) => {
+    const current = rows?.find((t) => String(t.id) === id);
+    if (!current) return;
+    try {
+      const updated = await apiRequest<ApiTemplate>(`/email-automation/templates/${id}`, { method: "PUT", body: JSON.stringify({ is_auto_send: !current.is_auto_send }) });
+      setData((prev) => (prev || []).map((t) => (t.id === updated.id ? updated : t)));
+      showToast("Đã cập nhật trạng thái tự động gửi!");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không cập nhật được mẫu email.", "error");
+    }
   };
 
   // Insert Variable at Cursor or End of textarea
@@ -243,21 +208,19 @@ export default function HREmailTemplatesPage() {
   };
 
   // Save changes to active template
-  const handleSaveTemplate = (e: React.FormEvent) => {
+  const handleSaveTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setTemplates((prev) =>
-      prev.map((t) =>
-        t.id === selectedTemplateId
-          ? {
-              ...t,
-              subject: editSubject,
-              body: editBody,
-              updatedAt: "Hôm nay",
-            }
-          : t
-      )
-    );
-    showToast(`Đã lưu thay đổi cho mẫu "${activeTemplate.name}"!`, "success");
+    if (!activeTemplate) return;
+    try {
+      const updated = await apiRequest<ApiTemplate>(`/email-automation/templates/${activeTemplate.id}`, {
+        method: "PUT", body: JSON.stringify({ subject: toStored(editSubject, false), body_html: toStored(editBody, true) }),
+      });
+      setData((prev) => (prev || []).map((t) => (t.id === updated.id ? updated : t)));
+      setDraft(null);
+      showToast(`Đã lưu thay đổi cho mẫu "${activeTemplate.name}"!`, "success");
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không lưu được mẫu email.", "error");
+    }
   };
 
   // Dynamic Real-time Preview Renderer
@@ -287,6 +250,9 @@ export default function HREmailTemplatesPage() {
       return matchSearch && matchCat;
     });
   }, [templates, searchQuery, activeCategoryFilter]);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">

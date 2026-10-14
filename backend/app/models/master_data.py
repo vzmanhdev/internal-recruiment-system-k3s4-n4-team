@@ -52,10 +52,16 @@ class CompetencyCriterion(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     weight = Column(Integer, nullable=False, default=0)  # percent; a framework's weights sum to 100
+    # optional rating guide shown to interviewers (group + what a 1 / 3 / 5 looks like)
+    category = Column(String(60), nullable=True)
+    benchmark_low = Column(Text, nullable=True)
+    benchmark_mid = Column(Text, nullable=True)
+    benchmark_high = Column(Text, nullable=True)
 
     def to_dict(self):
         return {"id": self.id, "framework_id": self.framework_id, "code": self.code, "name": self.name,
-                "description": self.description, "weight": self.weight}
+                "description": self.description, "weight": self.weight, "category": self.category,
+                "benchmark_low": self.benchmark_low, "benchmark_mid": self.benchmark_mid, "benchmark_high": self.benchmark_high}
 
 
 class InterviewQuestion(Base):
@@ -225,3 +231,19 @@ class AskedQuestion(Base):
     interview_id = Column(Integer, ForeignKey("interview_schedules.id"), nullable=True)
     asked_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class CareerPageSettings(Base):
+    """Public career page content edited by HR (single row, id = 1)."""
+    __tablename__ = "career_page_settings"
+
+    id = Column(Integer, primary_key=True)
+    data_json = Column(Text, nullable=False, default="{}")
+    updated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def data(self) -> dict:
+        try:
+            return json.loads(self.data_json or "{}")
+        except ValueError:
+            return {}

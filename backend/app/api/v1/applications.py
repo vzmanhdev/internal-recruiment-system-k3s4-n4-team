@@ -198,7 +198,7 @@ def _create_application(db: Session, payload: ApplicationCreate, job: JobPosting
         {JobPosting.applications_count: JobPosting.applications_count + 1}, synchronize_session=False)
     db.flush()
     footer = (f'<p style="font-size:12px;color:#64748b">Mã tra cứu hồ sơ: <strong>{app.tracking_code}</strong>. '
-              f'Nếu muốn rút hồ sơ: <a href="{frontend_link("/candidate/withdraw", raw_token)}">rút hồ sơ</a>.</p>')
+              f'Nếu muốn rút hồ sơ: <a href="{frontend_link("/candidate/withdraw/link", raw_token)}">rút hồ sơ</a>.</p>')
     queue_template_email(db, "CONFIRM_APPLICATION", app.email, app.full_name,
                          {"candidate_name": app.full_name, "job_title": job.title, "tracking_code": app.tracking_code},
                          related_entity="APPLICATION", related_id=app.id, footer_html=footer)

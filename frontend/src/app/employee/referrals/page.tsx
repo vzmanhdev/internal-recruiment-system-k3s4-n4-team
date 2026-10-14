@@ -23,6 +23,35 @@ import {
   Check,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { referralService, type ReferralItem } from '@/services/referral.service';
+import { jobService } from '@/services/job.service';
+import { uploadFile } from '@/services/file.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
+
+const vnd = (n: number) => `${n.toLocaleString('vi-VN')} VNĐ`;
+
+// The referrer only sees the general status of the referred person (S4-07 AC3)
+function toReferral(r: ReferralItem): ReferralCandidate & { earned: boolean; closed: boolean } {
+  const hired = r.status === 'hired' || r.payout_status === 'eligible' || r.payout_status === 'paid';
+  const closed = !hired && r.candidate_status === 'Kết thúc';
+  const step: StepKey = hired ? 'hired' : r.candidate_status === 'Mời phỏng vấn' ? 'interviewing' : 'applied';
+  return {
+    id: `REF-${r.id}`,
+    name: r.candidate_name,
+    position: r.job_title || '',
+    department: '',
+    appliedDate: r.created_at ? new Date(r.created_at).toLocaleDateString('vi-VN') : '',
+    currentStep: step,
+    stepIndex: PROGRESS_STEPS.findIndex((x) => x.key === step),
+    bonus: vnd(r.bonus_amount) + (r.payout_status === 'paid' ? ' (Đã nhận)' : ''),
+    note: closed ? 'Quy trình tuyển dụng của ứng viên đã kết thúc.' : r.candidate_status ? `Trạng thái: ${r.candidate_status}` : (r.relationship_note || ''),
+    cvFileName: r.cv_url ? r.cv_url.split('/').pop() : undefined,
+    earned: hired,
+    closed,
+  };
+}
 
 // 4 Progress Steps: Đã nộp -> Đang phỏng vấn -> Offer -> Đã nhận việc
 const PROGRESS_STEPS = [
@@ -57,67 +86,22 @@ export default function EmployeeReferralsPage() {
     candidateName: '',
     email: '',
     phone: '',
-    position: 'Senior Backend Engineer (Go/Python)',
+    position: '', // job posting id
     note: '',
     cvFile: null as File | null,
   });
+  const [cvUrl, setCvUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const { data: openJobs } = useApiData(() => jobService.getJobs(), []);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Mock Referrals Data
-  const [referrals, setReferrals] = useState<ReferralCandidate[]>([
-    {
-      id: 'REF-001',
-      name: 'Nguyễn Thị Mai',
-      position: 'UX/UI Designer Senior',
-      department: 'Phòng Phát Triển Sản Phẩm',
-      appliedDate: '12/10/2026',
-      currentStep: 'interviewing',
-      stepIndex: 1,
-      bonus: '5.000.000 VNĐ',
-      note: 'Đã hoàn thành vòng 1, chuẩn bị làm bài Test thiết kế.',
-      cvFileName: 'CV_NguyenThiMai_UXUI.pdf',
-    },
-    {
-      id: 'REF-002',
-      name: 'Lê Hoàng Minh',
-      position: 'Senior Backend Engineer (Go/Python)',
-      department: 'Khối Công Nghệ & Phần Mềm',
-      appliedDate: '02/10/2026',
-      currentStep: 'offer',
-      stepIndex: 2,
-      bonus: '10.000.000 VNĐ',
-      note: 'Đã hoàn tất phỏng vấn kỹ thuật và đang thảo luận mức lương Offer.',
-      cvFileName: 'LeHoangMinh_SeniorBackend.pdf',
-    },
-    {
-      id: 'REF-003',
-      name: 'Phạm Thu Hà',
-      position: 'Frontend React Lead',
-      department: 'Khối Công Nghệ & Phần Mềm',
-      appliedDate: '15/09/2026',
-      currentStep: 'hired',
-      stepIndex: 3,
-      bonus: '10.000.000 VNĐ (Đã nhận)',
-      note: 'Đã ký hợp đồng và onboard chính thức vào ngày 01/10/2026.',
-      cvFileName: 'PhamThuHa_Frontend_Lead.pdf',
-    },
-    {
-      id: 'REF-004',
-      name: 'Trần Văn Bách',
-      position: 'DevOps / Cloud Engineer',
-      department: 'Khối Vận Hành & Hạ Tầng',
-      appliedDate: '08/10/2026',
-      currentStep: 'applied',
-      stepIndex: 0,
-      bonus: '8.000.000 VNĐ',
-      note: 'Hồ sơ mới nộp, HR đang sàng lọc sơ bộ.',
-      cvFileName: 'TranVanBach_DevOps.pdf',
-    },
-  ]);
+  const { data, error, loading, reload } = useApiData(() => referralService.getReferrals(), []);
+  const referrals = (data || []).map(toReferral);
+  const expectedBonus = (data || []).filter((r, i) => !referrals[i].closed).reduce((sum, r) => sum + (r.bonus_amount || 0), 0);
 
   const filteredReferrals = referrals.filter(
     (r) =>
@@ -125,35 +109,38 @@ export default function EmployeeReferralsPage() {
       r.position.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleSubmitReferral = (e: React.FormEvent) => {
+  const handleSubmitReferral = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.candidateName) return;
-
-    const newRef: ReferralCandidate = {
-      id: `REF-00${referrals.length + 1}`,
-      name: form.candidateName,
-      position: form.position,
-      department: 'Khối Công Nghệ & Phần Mềm',
-      appliedDate: 'Hôm nay',
-      currentStep: 'applied',
-      stepIndex: 0,
-      bonus: '8.000.000 VNĐ',
-      note: form.note || 'Hồ sơ vừa được gửi bởi nhân viên nội bộ.',
-      cvFileName: form.cvFile ? form.cvFile.name : 'CV_UngVien_UngTuyen.pdf',
-    };
-
-    setReferrals([newRef, ...referrals]);
-    setIsModalOpen(false);
-    setForm({
-      candidateName: '',
-      email: '',
-      phone: '',
-      position: 'Senior Backend Engineer (Go/Python)',
-      note: '',
-      cvFile: null,
-    });
-    showToast('Giới thiệu ứng viên thành công! HR sẽ sớm xem xét hồ sơ.');
+    if (!form.candidateName.trim() || !form.position) return;
+    setSaving(true);
+    try {
+      let url = cvUrl;
+      if (form.cvFile && !url) {
+        url = (await uploadFile('cv', form.cvFile)).url;
+        setCvUrl(url);
+      }
+      await referralService.createReferral({
+        candidate_name: form.candidateName.trim(),
+        candidate_email: form.email.trim(),
+        candidate_phone: form.phone.trim(),
+        job_posting_id: Number(form.position),
+        cv_url: url || undefined,
+        relationship_note: form.note.trim() || undefined,
+      });
+      setIsModalOpen(false);
+      setForm({ candidateName: '', email: '', phone: '', position: '', note: '', cvFile: null });
+      setCvUrl(null);
+      reload();
+      showToast('Giới thiệu ứng viên thành công! HR sẽ sớm xem xét hồ sơ.');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không gửi được giới thiệu.');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) return <EmployeeAppShell activeTab="my-referrals"><LoadingState /></EmployeeAppShell>;
+  if (error) return <EmployeeAppShell activeTab="my-referrals"><ErrorState error={error} onRetry={reload} /></EmployeeAppShell>;
 
   return (
     <EmployeeAppShell activeTab="my-referrals">
@@ -214,7 +201,7 @@ export default function EmployeeReferralsPage() {
           </div>
           <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs space-y-1">
             <span className="text-[11px] font-semibold text-slate-400">Thưởng tích lũy dự kiến</span>
-            <div className="text-2xl font-black text-blue-600">25.000.000 đ</div>
+            <div className="text-2xl font-black text-blue-600">{expectedBonus.toLocaleString('vi-VN')} đ</div>
           </div>
         </div>
 
@@ -425,17 +412,15 @@ export default function EmployeeReferralsPage() {
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Chọn vị trí đang tuyển *</label>
                 <select
+                  required
                   value={form.position}
                   onChange={(e) => setForm({ ...form, position: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-blue-600 font-semibold"
                 >
-                  <option value="Senior Backend Engineer (Go/Python)">
-                    Senior Backend Engineer (Go/Python) - Thưởng 10M
-                  </option>
-                  <option value="Frontend React Lead">Frontend React Lead - Thưởng 10M</option>
-                  <option value="Product Owner / BA Lead">Product Owner / BA Lead - Thưởng 8M</option>
-                  <option value="UI/UX Designer Senior">UI/UX Designer Senior - Thưởng 5M</option>
-                  <option value="DevOps / Cloud Engineer">DevOps / Cloud Engineer - Thưởng 8M</option>
+                  <option value="">-- Chọn vị trí đang tuyển --</option>
+                  {(openJobs || []).map((j) => (
+                    <option key={j.id} value={j.id}>{j.title}</option>
+                  ))}
                 </select>
               </div>
 
@@ -448,6 +433,7 @@ export default function EmployeeReferralsPage() {
                     onChange={(e) => {
                       if (e.target.files && e.target.files[0]) {
                         setForm({ ...form, cvFile: e.target.files[0] });
+                        setCvUrl(null);
                       }
                     }}
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
@@ -483,6 +469,7 @@ export default function EmployeeReferralsPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving}
                   className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-md shadow-blue-500/20 cursor-pointer active:scale-95"
                 >
                   Gửi Giới Thiệu

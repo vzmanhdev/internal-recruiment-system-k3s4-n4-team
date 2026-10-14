@@ -16,6 +16,7 @@ import {
   UserCheck,
   FileText
 } from "lucide-react";
+import { apiRequest, ApiError } from "@/lib/api-client";
 
 interface EmailLog {
   id: number;
@@ -49,54 +50,45 @@ export default function EmailLogsPage() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      let url = "http://localhost:8000/api/v1/email-automation/logs";
       const params = new URLSearchParams();
       if (statusFilter !== "ALL") params.append("status", statusFilter.toLowerCase());
       if (search) params.append("search", search);
-
-      if (params.toString()) url += `?${params.toString()}`;
-
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setLogs(data);
-      }
+      setLogs(await apiRequest<EmailLog[]>(`/email-automation/logs${params.toString() ? `?${params.toString()}` : ""}`));
     } catch (err) {
-      console.error(err);
+      showToast(err instanceof ApiError ? err.message : "Không tải được nhật ký email.", "error");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLogs();
-  }, [statusFilter, search]);
+    queueMicrotask(() => void fetchLogs());
+  }, [statusFilter, search]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRetry = async (log: EmailLog) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/email-automation/logs/${log.id}/retry`, {
-        method: "POST"
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-        if (selectedLog?.id === updated.id) {
-          setSelectedLog(updated);
-        }
-        showToast(`Đã gửi lại thành công email tới ${log.recipient_email}!`);
+      const updated = await apiRequest<EmailLog>(`/email-automation/logs/${log.id}/retry`, { method: "POST" });
+      setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      if (selectedLog?.id === updated.id) {
+        setSelectedLog(updated);
       }
+      // the server returns the real outcome of the new attempt
+      showToast(
+        updated.status === "sent" ? `Đã gửi lại thành công email tới ${log.recipient_email}!` : `Gửi lại chưa thành công (trạng thái: ${updated.status}).`,
+        updated.status === "sent" ? "success" : "error",
+      );
     } catch (err) {
-      showToast("Gửi lại email thất bại!", "error");
+      showToast(err instanceof ApiError ? err.message : "Gửi lại email thất bại!", "error");
     }
   };
 
   const sentCount = logs.filter((l) => l.status === "sent").length;
   const failedCount = logs.filter((l) => l.status === "failed").length;
-  const pendingCount = logs.filter((l) => l.status === "pending").length;
+  const pendingCount = logs.filter((l) => l.status === "pending" || l.status === "queued").length;
   const successRate = logs.length > 0 ? Math.round((sentCount / logs.length) * 100) : 100;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-6">
+    <div className="w-full space-y-5 antialiased">
       {/* Toast Alert */}
       {toast && (
         <div
@@ -215,11 +207,13 @@ export default function EmailLogsPage() {
       )}
 
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-1">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Send className="w-7 h-7 text-[#2563EB]" />
-            Nhật Ký Gửi Email (Email Delivery Logs)
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-2xs">
+              <Send className="w-5 h-5" />
+            </div>
+            <span>Nhật Ký Gửi Email (Email Delivery Logs)</span>
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">
             Theo dõi lịch sử gửi email tự động bất đồng bộ, kiểm tra trạng thái và xử lý gửi lại khi xảy ra lỗi (S8-02).
@@ -229,7 +223,7 @@ export default function EmailLogsPage() {
         <button
           type="button"
           onClick={fetchLogs}
-          className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-slate-700 hover:bg-slate-50 font-bold text-xs shadow-2xs flex items-center gap-2 cursor-pointer"
+          className="px-4 py-2.5 rounded-xl bg-white border border-slate-200/80 text-slate-700 hover:text-slate-900 hover:bg-slate-50 font-bold text-xs shadow-2xs flex items-center gap-2 cursor-pointer transition-all active:scale-95"
         >
           <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
           <span>Làm mới nhật ký</span>
@@ -237,68 +231,77 @@ export default function EmailLogsPage() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#2563EB] flex items-center justify-center font-bold">
-            <Mail className="w-5 h-5" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+        {/* Total Sent */}
+        <div className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <Mail className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-lg font-black text-slate-900">{logs.length}</div>
-            <div className="text-[11px] text-slate-400 font-medium">Tổng email đã phát</div>
+            <div className="text-2xl font-black text-slate-900 tracking-tight">{logs.length}</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Tổng email đã phát</div>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-            <CheckCircle2 className="w-5 h-5" />
+        {/* Success */}
+        <div className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-lg font-black text-slate-900">{sentCount}</div>
-            <div className="text-[11px] text-slate-400 font-medium">Thành công ({successRate}%)</div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-black text-slate-900 tracking-tight">{sentCount}</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                {successRate}%
+              </span>
+            </div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Thành công ({successRate}%)</div>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
-            <XCircle className="w-5 h-5" />
+        {/* Failed */}
+        <div className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+            <XCircle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-lg font-black text-slate-900">{failedCount}</div>
-            <div className="text-[11px] text-slate-400 font-medium">Lỗi kết nối / Thất bại</div>
+            <div className="text-2xl font-black text-slate-900 tracking-tight">{failedCount}</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Lỗi kết nối / Thất bại</div>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-            <Clock className="w-5 h-5" />
+        {/* Pending Queue */}
+        <div className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+            <Clock className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-lg font-black text-slate-900">{pendingCount}</div>
-            <div className="text-[11px] text-slate-400 font-medium">Đang chờ trong hàng đợi</div>
+            <div className="text-2xl font-black text-slate-900 tracking-tight">{pendingCount}</div>
+            <div className="text-xs text-slate-500 font-semibold mt-0.5">Đang chờ trong hàng đợi</div>
           </div>
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
+      {/* Filter & Search Bar Card */}
+      <div className="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="relative flex-1 min-w-[260px]">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Tìm theo người nhận, email, tiêu đề..."
-            className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-medium focus:outline-none focus:border-[#2563EB]"
+            className="w-full pl-9 pr-3.5 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-[#2563EB] focus:bg-white transition-all"
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2 self-end sm:self-auto">
           <Filter className="w-4 h-4 text-slate-400 shrink-0" />
           <span className="text-xs font-bold text-slate-600">Trạng thái:</span>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-gray-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#2563EB]"
+            className="px-3 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-[#2563EB] cursor-pointer"
           >
             <option value="ALL">Tất cả trạng thái</option>
             <option value="SENT">Gửi Thành Công</option>
@@ -308,18 +311,32 @@ export default function EmailLogsPage() {
         </div>
       </div>
 
-      {/* Email Logs Table */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-xs overflow-hidden">
+      {/* Email Logs Table Card */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-slate-400 text-xs font-medium flex items-center justify-center gap-2">
-            <RefreshCw className="w-4 h-4 animate-spin text-[#2563EB]" />
+          <div className="py-20 text-center text-slate-400 text-xs font-medium flex flex-col items-center justify-center gap-2.5">
+            <RefreshCw className="w-6 h-6 animate-spin text-[#2563EB]" />
             <span>Đang truy xuất nhật ký email...</span>
           </div>
         ) : logs.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 text-xs space-y-2">
-            <Send className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="font-bold text-slate-700">Không có bản ghi nhật ký phù hợp</p>
-            <p>Thử điều chỉnh từ khóa tìm kiếm hoặc bỏ lọc trạng thái.</p>
+          <div className="py-20 px-4 text-center space-y-3">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50/80 text-blue-600 flex items-center justify-center mx-auto shadow-2xs">
+              <Send className="w-7 h-7" />
+            </div>
+            <p className="font-extrabold text-sm text-slate-800">Không có bản ghi nhật ký phù hợp</p>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+              Hệ thống sẽ tự động ghi lại lịch sử các đợt phát email kích hoạt tài khoản, lời mời phỏng vấn và thông báo offer.
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={fetchLogs}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Làm mới dữ liệu</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">

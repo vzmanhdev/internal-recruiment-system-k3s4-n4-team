@@ -15,56 +15,8 @@ export interface CandidateOfferOption {
   maxBandDisplay: string;
 }
 
-export const PASSED_CANDIDATES: CandidateOfferOption[] = [
-  {
-    id: "cand-1",
-    name: "Đỗ Hoàng Long",
-    position: "Senior Backend Engineer",
-    department: "Công Nghệ Thông Tin",
-    maxBandSalary: 50000000,
-    maxBandDisplay: "50.000.000 VNĐ",
-  },
-  {
-    id: "cand-2",
-    name: "Nguyễn Thu Thủy",
-    position: "Trưởng nhóm Data Analyst",
-    department: "Khối Phân Tích Dữ Liệu",
-    maxBandSalary: 42000000,
-    maxBandDisplay: "42.000.000 VNĐ",
-  },
-  {
-    id: "cand-3",
-    name: "Trần Mai Phương",
-    position: "Senior UI/UX Designer",
-    department: "Khối Phát Triển Sản Phẩm",
-    maxBandSalary: 35000000,
-    maxBandDisplay: "35.000.000 VNĐ",
-  },
-  {
-    id: "cand-4",
-    name: "Đặng Quốc Bảo",
-    position: "Senior Frontend Engineer",
-    department: "Khối Công Nghệ",
-    maxBandSalary: 45000000,
-    maxBandDisplay: "45.000.000 VNĐ",
-  },
-  {
-    id: "cand-5",
-    name: "Phạm Văn Minh",
-    position: "Senior DevOps Engineer",
-    department: "Khối Hạ Tầng",
-    maxBandSalary: 60000000,
-    maxBandDisplay: "60.000.000 VNĐ",
-  },
-  {
-    id: "cand-6",
-    name: "Lê Thị Thảo Trang",
-    position: "AI / LLM Engineer",
-    department: "Khối R&D Trí Tuệ Nhân Tạo",
-    maxBandSalary: 55000000,
-    maxBandDisplay: "55.000.000 VNĐ",
-  },
-];
+// no built-in sample candidates: the page passes the real offer-eligible applications
+export const PASSED_CANDIDATES: CandidateOfferOption[] = [];
 
 export interface CreateOfferFormData {
   candidateId: string;
@@ -84,24 +36,27 @@ interface CreateOfferModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: CreateOfferFormData) => void;
+  /** Applications that may receive an offer, with the approved salary band. */
+  candidates?: CandidateOfferOption[];
 }
 
 export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
+  candidates,
 }) => {
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string>(PASSED_CANDIDATES[0].id);
-  const [proposedSalaryInput, setProposedSalaryInput] = useState<string>("52000000");
-  const [startDate, setStartDate] = useState<string>("2026-10-25");
-  const [deadlineDate, setDeadlineDate] = useState<string>("2026-10-18");
-  const [allowanceNotes, setAllowanceNotes] = useState<string>(
-    "Phụ cấp ăn trưa: 1.000.000 VNĐ/tháng. Phụ cấp gửi xe tòa nhà. Cấp Macbook Pro 16 M3 Max, màn hình 4K."
-  );
+  const options = candidates ?? PASSED_CANDIDATES;
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string>("");
+  const [proposedSalaryInput, setProposedSalaryInput] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [deadlineDate, setDeadlineDate] = useState<string>("");
+  const [allowanceNotes, setAllowanceNotes] = useState<string>("");
 
   if (!isOpen) return null;
 
-  const currentCandidate = PASSED_CANDIDATES.find(c => c.id === selectedCandidateId) || PASSED_CANDIDATES[0];
+  const currentCandidate: CandidateOfferOption = options.find(c => c.id === selectedCandidateId) || options[0]
+    || { id: "", name: "", position: "", department: "", maxBandSalary: 0, maxBandDisplay: "—" };
   
   // Parse proposed salary to VND
   const rawNum = parseFloat(proposedSalaryInput.replace(/[^0-9]/g, '')) || 0;
@@ -182,14 +137,15 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                 onChange={(e) => {
                   const newId = e.target.value;
                   setSelectedCandidateId(newId);
-                  const cand = PASSED_CANDIDATES.find(c => c.id === newId);
+                  const cand = options.find(c => c.id === newId);
                   if (cand) {
                     setProposedSalaryInput(cand.maxBandSalary.toString());
                   }
                 }}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
               >
-                {PASSED_CANDIDATES.map((cand) => (
+                {options.length === 0 && <option value="">Không có ứng viên nào đủ điều kiện nhận offer</option>}
+                {options.map((cand) => (
                   <option key={cand.id} value={cand.id}>
                     {cand.name} — {cand.position} ({cand.department})
                   </option>

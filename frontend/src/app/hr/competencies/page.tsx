@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { masterDataService, type Framework } from "@/services/master-data.service";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
+import { ApiError } from "@/lib/api-client";
 import {
   UserCheck,
   Award,
@@ -67,195 +71,38 @@ export interface InterviewQuestion {
 }
 
 // =============================================================================
-// INITIAL MOCK DATA
+// REAL FRAMEWORKS / QUESTION BANK -> PAGE MODELS
 // =============================================================================
 
-const INITIAL_POSITIONS: JobPosition[] = [
-  {
-    id: "pos-1",
-    title: "Senior Backend Developer",
-    code: "TECH-BE-SR",
-    department: "Phòng Kỹ Thuật Phần Mềm",
-    level: "Senior",
-  },
-  {
-    id: "pos-2",
-    title: "Technical Lead (Cloud Infrastructure)",
-    code: "TECH-TL-01",
-    department: "Phòng Kỹ Thuật Phần Mềm",
-    level: "Lead",
-  },
-  {
-    id: "pos-3",
-    title: "Senior Frontend Engineer (React/Next.js)",
-    code: "TECH-FE-SR",
-    department: "Phòng Kỹ Thuật Phần Mềm",
-    level: "Senior",
-  },
-  {
-    id: "pos-4",
-    title: "QA Automation Lead",
-    code: "QA-LEAD-01",
-    department: "Phòng Quản Lý Chất Lượng QA",
-    level: "Lead",
-  },
-  {
-    id: "pos-5",
-    title: "Product Manager (Enterprise SaaS)",
-    code: "BIZ-PM-01",
-    department: "Khối Kinh Doanh & Tăng Trưởng",
-    level: "Manager",
-  },
-  {
-    id: "pos-6",
-    title: "Senior Talent Acquisition Specialist",
-    code: "HR-TA-SR",
-    department: "Phòng Tuyển Dụng & Thu Hút Nhân Tài",
-    level: "Senior",
-  },
-];
+const LEVELS: JobPosition["level"][] = ["Junior", "Middle", "Senior", "Lead", "Manager"];
+const codeOf = (description?: string | null) => /^\[([^\]]+)\]/.exec(description || "")?.[1] || "";
+const DIFF_TO_API: Record<InterviewQuestion["difficulty"], string> = { "Cơ bản": "easy", "Trung cấp": "medium", "Nâng cao": "hard" };
+const DIFF_FROM_API: Record<string, InterviewQuestion["difficulty"]> = { easy: "Cơ bản", medium: "Trung cấp", hard: "Nâng cao" };
+// the question type is carried by the question code prefix (TECH-/BEH-/SIT-)
+const TYPE_PREFIX: Record<InterviewQuestion["type"], string> = { "Kỹ thuật (Technical)": "TECH", "Hành vi (Behavioral)": "BEH", "Tình huống (Situational)": "SIT" };
+const typeOf = (code: string): InterviewQuestion["type"] =>
+  code.startsWith("BEH") ? "Hành vi (Behavioral)" : code.startsWith("SIT") ? "Tình huống (Situational)" : "Kỹ thuật (Technical)";
 
-const INITIAL_CRITERIA: CompetencyCriterion[] = [
-  // pos-1: Senior Backend Developer
-  {
-    id: "crit-1",
-    positionId: "pos-1",
-    name: "Kiến trúc hệ thống & Microservices (System Design)",
-    category: "Chuyên môn",
-    weight: 5,
-    description: "Khả năng phân tách service, thiết kế CSDL phân tán, caching và chống nghẽn bottleneck.",
-    benchmark1: "Chỉ viết được code CRUD đơn giản, chưa hiểu caching và message queue.",
-    benchmark3: "Thiết kế được luồng xử lý bất đồng bộ, sử dụng Redis/Kafka đúng bài toán.",
-    benchmark5: "Kiến trúc được hệ thống chịu tải cao (High Concurrency), tối ưu hóa DB shard/partition.",
-  },
-  {
-    id: "crit-2",
-    positionId: "pos-1",
-    name: "Tư duy giải quyết sự cố & Debugging (Troubleshooting)",
-    category: "Chuyên môn",
-    weight: 4,
-    description: "Truy vết nguyên nhân gốc rễ (Root cause), phân tích log, profiling bộ nhớ và tối ưu I/O.",
-    benchmark1: "Thao túng dữ liệu thủ công, phụ thuộc vào hướng dẫn từng bước của cấp trên.",
-    benchmark3: "Tự đọc profiling và APM logs để cô lập module phát sinh lỗi.",
-    benchmark5: "Thiết lập hệ thống tự động cảnh báo (Observability), giải quyết sự cố ngầm (silent failure).",
-  },
-  {
-    id: "crit-3",
-    positionId: "pos-1",
-    name: "Tư duy logic & Thuật toán thực chiến",
-    category: "Kỹ năng mềm",
-    weight: 4,
-    description: "Khả năng cấu trúc hóa vấn đề phức tạp, phân tích độ phức tạp thời gian & không gian.",
-    benchmark1: "Không nắm được cấu trúc dữ liệu cơ bản, viết giải thuật lặp vô hạn hoặc O(n^3).",
-    benchmark3: "Lựa chọn cấu trúc dữ liệu phù hợp (HashMap, B-Tree, Queue), viết code sạch.",
-    benchmark5: "Đề xuất thuật toán tối ưu đột phá, cân bằng hoàn hảo giữa hiệu năng và chi phí hạ tầng.",
-  },
-  {
-    id: "crit-4",
-    positionId: "pos-1",
-    name: "Giao tiếp & Hướng dẫn đội ngũ (Mentorship)",
-    category: "Kỹ năng mềm",
-    weight: 3,
-    description: "Truyền đạt rõ ràng kiến trúc kỹ thuật, review code mang tính xây dựng cho Junior.",
-    benchmark1: "Khó diễn đạt ý tưởng, code review chỉ bắt lỗi cú pháp bề ngoài.",
-    benchmark3: "Giao tiếp chủ động, giải thích dễ hiểu lý do thiết kế, hỗ trợ đồng nghiệp hoàn thành task.",
-    benchmark5: "Dẫn dắt tiêu chuẩn công nghệ toàn team, xây dựng văn hóa chia sẻ kiến thức liên tục.",
-  },
-  {
-    id: "crit-5",
-    positionId: "pos-1",
-    name: "Tinh thần chịu trách nhiệm & Ownership",
-    category: "Văn hóa & Thái độ",
-    weight: 4,
-    description: "Tận tâm theo đuổi chất lượng đến production, sẵn sàng On-call và khắc phục sự cố.",
-    benchmark1: "Đổ lỗi cho môi trường hoặc bộ phận khác khi sản phẩm có lỗi.",
-    benchmark3: "Chủ động theo dõi tính năng sau khi deploy, khắc phục nhanh chóng phát sinh.",
-    benchmark5: "Tự giác tìm kiếm điểm yếu hệ thống để tái cấu trúc trước khi sự cố xảy ra.",
-  },
+/** Relative 1–5 weights <-> framework percentages (the server requires a total of exactly 100%). */
+function toPercents(weights: number[]): number[] {
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
+  const pct = weights.map((w) => Math.max(1, Math.floor((w / total) * 100)));
+  let rest = 100 - pct.reduce((a, b) => a + b, 0);
+  for (let i = 0; rest !== 0 && pct.length; i = (i + 1) % pct.length) {
+    const step = rest > 0 ? 1 : -1;
+    if (pct[i] + step >= 1) { pct[i] += step; rest -= step; }
+  }
+  return pct;
+}
+const toScale = (percent: number, n: number) => Math.min(5, Math.max(1, Math.round(((percent * n) / 100) * 3)));
 
-  // pos-2: Technical Lead
-  {
-    id: "crit-6",
-    positionId: "pos-2",
-    name: "Chiến lược công nghệ & DevOps/Cloud",
-    category: "Chuyên môn",
-    weight: 5,
-    description: "Định hình Stack công nghệ, triển khai Kubernetes, IaC và tối ưu chi phí hạ tầng Cloud.",
-    benchmark1: "Cấu hình thủ công trên Console, chưa có kiến thức về CI/CD pipeline.",
-    benchmark3: "Xây dựng CI/CD tự động, giám sát hạ tầng với Prometheus/Grafana.",
-    benchmark5: "Quy hoạch Multi-region, DR (Disaster Recovery), tối ưu hóa hóa đơn Cloud >30%.",
-  },
-  {
-    id: "crit-7",
-    positionId: "pos-2",
-    name: "Lãnh đạo kỹ thuật & Quản lý xung đột (Tech Leadership)",
-    category: "Kỹ năng mềm",
-    weight: 5,
-    description: "Đưa ra quyết định kỹ thuật dứt khoát khi có nhiều phương án đối nghịch.",
-    benchmark1: "Tránh né quyết định hoặc áp đặt ý kiến cá nhân không có dữ liệu chứng minh.",
-    benchmark3: "Lắng nghe đội ngũ, đánh giá Trade-off công bằng và chịu trách nhiệm với quyết định.",
-    benchmark5: "Tạo cảm hứng công nghệ, đào tạo ra các thế hệ Tech Lead kế cận.",
-  },
-];
+async function loadCompetencyData() {
+  const [titles, depts, frameworks, questions] = await Promise.all([
+    masterDataService.jobTitles(), masterDataService.departments(false), masterDataService.frameworks(), masterDataService.questions(),
+  ]);
+  return { titles: titles.filter((t) => t.is_active), depts, frameworks: frameworks.filter((f) => f.status === "active"), questions };
+}
 
-const INITIAL_QUESTIONS: InterviewQuestion[] = [
-  {
-    id: "q-1",
-    content: "Khi một dịch vụ Microservice đột ngột bị nghẽn (Connection Pool Exhausted), bạn sẽ thực hiện các bước điều tra và khắc phục như thế nào?",
-    criterionId: "crit-1",
-    criterionName: "Kiến trúc hệ thống & Microservices (System Design)",
-    type: "Tình huống (Situational)",
-    difficulty: "Nâng cao",
-    evaluationRubric: "Điểm tốt: Đề cập việc kiểm tra Slow Query, Leak Connection, cấu hình Timeout hợp lý, Circuit Breaker và cơ chế fallback. Red flag: Chỉ biết khởi động lại service mà không tìm nguyên nhân.",
-  },
-  {
-    id: "q-2",
-    content: "Hãy phân tích ưu/nhược điểm giữa Event-driven Architecture (Kafka/RabbitMQ) và Synchronous REST trong bài toán xử lý đơn hàng Thương mại điện tử?",
-    criterionId: "crit-1",
-    criterionName: "Kiến trúc hệ thống & Microservices (System Design)",
-    type: "Kỹ thuật (Technical)",
-    difficulty: "Trung cấp",
-    evaluationRubric: "Điểm tốt: Hiểu tính nhất quán cuối cùng (Eventual Consistency), Idempotency, Outbox Pattern. Red flag: Nghĩ rằng Event-driven luôn tốt hơn REST trong mọi trường hợp.",
-  },
-  {
-    id: "q-3",
-    content: "Hãy kể lại sự cố Production nghiêm trọng nhất bạn từng xử lý. Nguyên nhân gốc rễ là gì và bạn đã làm gì để sự cố không lặp lại?",
-    criterionId: "crit-2",
-    criterionName: "Tư duy giải quyết sự cố & Debugging (Troubleshooting)",
-    type: "Hành vi (Behavioral)",
-    difficulty: "Trung cấp",
-    evaluationRubric: "Điểm tốt: Trình bày cấu trúc STAR rõ ràng, nhận trách nhiệm, nêu bài học và hành động cụ thể (thêm alert, test case). Red flag: Đổ lỗi cho tester hoặc khách hàng.",
-  },
-  {
-    id: "q-4",
-    content: "Nếu bộ phận Kinh doanh yêu cầu một tính năng gấp trong 2 ngày nhưng kiến trúc hiện tại sẽ phát sinh nợ kỹ thuật (Technical Debt) lớn, bạn sẽ xử lý thế nào?",
-    criterionId: "crit-4",
-    criterionName: "Giao tiếp & Hướng dẫn đội ngũ (Mentorship)",
-    type: "Tình huống (Situational)",
-    difficulty: "Nâng cao",
-    evaluationRubric: "Điểm tốt: Thương lượng giải pháp phân kỳ (Phase 1 giải quyết nhu cầu gấp, Phase 2 refactor), cảnh báo rủi ro minh bạch bằng ngôn ngữ kinh doanh. Red flag: Đối đầu gay gắt hoặc chấp nhận làm cẩu thả âm thầm.",
-  },
-  {
-    id: "q-5",
-    content: "Bạn làm thế nào để đảm bảo code của một thành viên mới gia nhập nhóm tuân thủ đúng các nguyên tắc Clean Code và Security?",
-    criterionId: "crit-4",
-    criterionName: "Giao tiếp & Hướng dẫn đội ngũ (Mentorship)",
-    type: "Hành vi (Behavioral)",
-    difficulty: "Cơ bản",
-    evaluationRubric: "Điểm tốt: Sử dụng Linter/SonarQube tự động trong CI, xây dựng tài liệu Coding Conventions, thực hiện Pair Programming và Code Review tôn trọng. Red flag: Chỉ trích cá nhân gay gắt.",
-  },
-  {
-    id: "q-6",
-    content: "Mô tả một trường hợp bạn chủ động đề xuất giải pháp cải tiến hiệu năng hoặc quy trình mà không có ai yêu cầu từ trước?",
-    criterionId: "crit-5",
-    criterionName: "Tinh thần chịu trách nhiệm & Ownership",
-    type: "Hành vi (Behavioral)",
-    difficulty: "Trung cấp",
-    evaluationRubric: "Điểm tốt: Thể hiện tính chủ động (Proactive), có số liệu chứng minh hiệu quả trước/sau khi cải tiến. Red flag: Chỉ làm đúng những gì được giao trong ticket.",
-  },
-];
-
-// Bộ từ điển năng lực chuẩn gợi ý sẵn
 const STANDARD_DICTIONARY_TEMPLATES = [
   { name: "Chuyên môn kỹ thuật sâu (Technical Expertise)", category: "Chuyên môn" as const, weight: 5, description: "Nắm vững lý thuyết cốt lõi, ngôn ngữ lập trình và các Best Practices hiện đại." },
   { name: "Kiến trúc hệ thống & Khả năng mở rộng", category: "Chuyên môn" as const, weight: 5, description: "Thiết kế kiến trúc module hóa, microservices, tối ưu hiệu năng hạ tầng." },
@@ -274,13 +121,48 @@ export default function HRCompetenciesPage() {
   const [activeTab, setActiveTab] = useState<"framework" | "questions">("framework");
 
   // State: Positions & Criteria
-  const [positions] = useState<JobPosition[]>(INITIAL_POSITIONS);
-  const [selectedPositionId, setSelectedPositionId] = useState<string>("pos-1");
-  const [criteria, setCriteria] = useState<CompetencyCriterion[]>(INITIAL_CRITERIA);
+  const { data: cd, error, loading, reload } = useApiData(loadCompetencyData, []);
+  const positions: JobPosition[] = useMemo(() => (cd?.titles || []).map((t) => ({
+    id: String(t.id),
+    title: t.name,
+    code: codeOf(t.description) || `JT-${t.id}`,
+    department: cd?.depts.find((d) => d.id === t.department_id)?.name || "Tất cả phòng ban",
+    level: LEVELS.find((l) => t.level.toLowerCase().includes(l.toLowerCase())) || "Middle",
+  })), [cd]);
+  const [selectedPositionId, setSelectedPositionId] = useState<string>("");
+  // the framework applied to a job title (by title name, S2-06)
+  const frameworkFor = (positionId: string): Framework | undefined => {
+    const title = positions.find((p) => p.id === positionId)?.title;
+    return title ? cd?.frameworks.find((f) => f.applied_job_titles.includes(title)) : undefined;
+  };
+  const criteria: CompetencyCriterion[] = useMemo(() => positions.flatMap((pos) => {
+    const fw = cd?.frameworks.find((f) => f.applied_job_titles.includes(pos.title));
+    if (!fw) return [];
+    return fw.criteria.map((c) => ({
+      id: c.id || c.code,
+      positionId: pos.id,
+      name: c.name,
+      category: (c.category as CompetencyCriterion["category"]) || "Chuyên môn",
+      weight: toScale(c.weight, fw.criteria.length),
+      description: c.description || "",
+      benchmark1: c.benchmark_low || "",
+      benchmark3: c.benchmark_mid || "",
+      benchmark5: c.benchmark_high || "",
+    }));
+  }), [cd, positions]);
+  const [saving, setSaving] = useState(false);
   const [posSearch, setPosSearch] = useState("");
 
   // State: Questions
-  const [questions, setQuestions] = useState<InterviewQuestion[]>(INITIAL_QUESTIONS);
+  const questions: InterviewQuestion[] = useMemo(() => (cd?.questions || []).map((q) => ({
+    id: q.id,
+    content: q.content,
+    criterionId: q.criteria_id,
+    criterionName: q.criteria_name || "",
+    type: typeOf(q.code),
+    difficulty: DIFF_FROM_API[q.difficulty] || "Trung cấp",
+    evaluationRubric: q.suggested_answer || "",
+  })), [cd]);
   const [questionSearch, setQuestionSearch] = useState("");
   const [filterCriterionId, setFilterCriterionId] = useState("all");
   const [filterDifficulty, setFilterDifficulty] = useState("all");
@@ -312,7 +194,7 @@ export default function HRCompetenciesPage() {
 
   // State: Scorecard Preview Modal
   const [isScorecardOpen, setIsScorecardOpen] = useState(false);
-  const [mockCandidateName] = useState("Nguyễn Văn Tuấn (Ứng viên Senior Backend)");
+  const mockCandidateName = "Ứng viên mẫu (xem trước phiếu chấm)";
   const [scorecardRatings, setScorecardRatings] = useState<Record<string, number>>({});
   const [scorecardNotes, setScorecardNotes] = useState<Record<string, string>>({});
   const [recommendation, setRecommendation] = useState<"Strong Hire" | "Hire" | "Hold" | "No Hire">("Hire");
@@ -337,13 +219,13 @@ export default function HRCompetenciesPage() {
   }, [positions, posSearch]);
 
   const selectedPosition = useMemo(() => {
-    return positions.find((p) => p.id === selectedPositionId) || positions[0];
+    return positions.find((p) => p.id === selectedPositionId) || positions[0] || { id: "", title: "", code: "", department: "", level: "Middle" as const };
   }, [positions, selectedPositionId]);
 
   // Criteria for selected position
   const currentPositionCriteria = useMemo(() => {
-    return criteria.filter((c) => c.positionId === selectedPositionId);
-  }, [criteria, selectedPositionId]);
+    return criteria.filter((c) => c.positionId === selectedPosition.id);
+  }, [criteria, selectedPosition.id]);
 
   // Total weight indicator (1-5 scale)
   const averageWeight = useMemo(() => {
@@ -369,104 +251,100 @@ export default function HRCompetenciesPage() {
     });
   }, [questions, questionSearch, filterCriterionId, filterDifficulty]);
 
+  // Persist the selected title's criteria as its framework (created on first criterion)
+  const saveCriteria = async (list: CompetencyCriterion[]) => {
+    const pos = selectedPosition;
+    const fw = frameworkFor(pos.id);
+    if (!list.length) throw new ApiError(422, "Khung năng lực phải có ít nhất một tiêu chí.");
+    const pct = toPercents(list.map((c) => c.weight));
+    const payload = {
+      code: fw?.code || `FW-${pos.code}`.slice(0, 50),
+      name: fw?.name || `Khung năng lực - ${pos.title}`,
+      department: fw?.department || pos.department,
+      applied_job_titles: fw?.applied_job_titles || [pos.title],
+      criteria: list.map((c, i) => ({
+        id: fw?.criteria.some((x) => x.id === c.id) ? c.id : undefined,
+        code: fw?.criteria.find((x) => x.id === c.id)?.code || `C${i + 1}-${Date.now() % 100000}`,
+        name: c.name, description: c.description, weight: pct[i], category: c.category,
+        benchmark_low: c.benchmark1, benchmark_mid: c.benchmark3, benchmark_high: c.benchmark5,
+      })),
+    };
+    await masterDataService.saveFramework(payload, fw?.id);
+    reload();
+  };
+
   // Handle Save Criterion
-  const handleSaveCriterion = (e: React.FormEvent) => {
+  const handleSaveCriterion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!criteriaFormData.name.trim()) {
       showToast("Vui lòng nhập tên tiêu chí đánh giá", "error");
       return;
     }
-
-    if (criteriaModalMode === "create") {
-      const newCrit: CompetencyCriterion = {
-        id: `crit-${Date.now()}`,
-        positionId: selectedPositionId,
-        name: criteriaFormData.name.trim(),
-        category: criteriaFormData.category,
-        weight: Number(criteriaFormData.weight),
-        description: criteriaFormData.description.trim() || "Tiêu chí đánh giá năng lực ứng viên",
-        benchmark1: criteriaFormData.benchmark1.trim() || "Chưa đạt kỳ vọng cơ bản",
-        benchmark3: criteriaFormData.benchmark3.trim() || "Đáp ứng tốt yêu cầu công việc",
-        benchmark5: criteriaFormData.benchmark5.trim() || "Vượt trội, xuất sắc",
-      };
-
-      setCriteria([...criteria, newCrit]);
-      showToast(`Đã thêm tiêu chí "${newCrit.name}" cho ${selectedPosition.title}!`);
-    } else if (editingCriterion) {
-      setCriteria(
-        criteria.map((c) =>
-          c.id === editingCriterion.id
-            ? {
-                ...c,
-                name: criteriaFormData.name.trim(),
-                category: criteriaFormData.category,
-                weight: Number(criteriaFormData.weight),
-                description: criteriaFormData.description.trim(),
-                benchmark1: criteriaFormData.benchmark1.trim(),
-                benchmark3: criteriaFormData.benchmark3.trim(),
-                benchmark5: criteriaFormData.benchmark5.trim(),
-              }
-            : c
-        )
-      );
-      showToast("Cập nhật tiêu chí đánh giá thành công!");
+    const edited: CompetencyCriterion = {
+      id: criteriaModalMode === "edit" && editingCriterion ? editingCriterion.id : `new-${Date.now()}`,
+      positionId: selectedPosition.id,
+      name: criteriaFormData.name.trim(),
+      category: criteriaFormData.category,
+      weight: Number(criteriaFormData.weight),
+      description: criteriaFormData.description.trim(),
+      benchmark1: criteriaFormData.benchmark1.trim(),
+      benchmark3: criteriaFormData.benchmark3.trim(),
+      benchmark5: criteriaFormData.benchmark5.trim(),
+    };
+    const list = criteriaModalMode === "edit" && editingCriterion
+      ? currentPositionCriteria.map((c) => (c.id === editingCriterion.id ? edited : c))
+      : [...currentPositionCriteria, edited];
+    setSaving(true);
+    try {
+      await saveCriteria(list);
+      showToast(criteriaModalMode === "edit" ? "Cập nhật tiêu chí đánh giá thành công!" : `Đã thêm tiêu chí "${edited.name}" cho ${selectedPosition.title}!`);
+      setIsCriteriaModalOpen(false);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không lưu được tiêu chí.", "error");
+    } finally {
+      setSaving(false);
     }
-
-    setIsCriteriaModalOpen(false);
   };
 
-  // Handle Delete Criterion
-  const handleDeleteCriterion = (id: string, name: string) => {
-    if (confirm(`Bạn có chắc muốn xóa tiêu chí "${name}"? Các câu hỏi gắn với tiêu chí này sẽ cần cập nhật lại.`)) {
-      setCriteria(criteria.filter((c) => c.id !== id));
+  // Handle Delete Criterion (blocked by the server while questions reference it)
+  const handleDeleteCriterion = async (id: string, name: string) => {
+    if (!confirm(`Bạn có chắc muốn xóa tiêu chí "${name}"? Các câu hỏi gắn với tiêu chí này sẽ cần cập nhật lại.`)) return;
+    try {
+      await saveCriteria(currentPositionCriteria.filter((c) => c.id !== id));
       showToast(`Đã xóa tiêu chí "${name}"!`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không xóa được tiêu chí.", "error");
     }
   };
 
   // Handle Save Question
-  const handleSaveQuestion = (e: React.FormEvent) => {
+  const handleSaveQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!questionFormData.content.trim() || !questionFormData.criterionId) {
       showToast("Vui lòng điền nội dung câu hỏi và chọn tiêu chí năng lực gắn kết", "error");
       return;
     }
-
-    const matchedCrit = criteria.find((c) => c.id === questionFormData.criterionId);
-    const critName = matchedCrit ? matchedCrit.name : "Năng lực chung";
-
-    if (questionModalMode === "create") {
-      const newQ: InterviewQuestion = {
-        id: `q-${Date.now()}`,
+    const prefix = TYPE_PREFIX[questionFormData.type];
+    const existingCode = editingQuestion ? cd?.questions.find((q) => q.id === editingQuestion.id)?.code : undefined;
+    const code = existingCode && existingCode.startsWith(prefix) ? existingCode : `${prefix}-${Date.now() % 1000000}`;
+    setSaving(true);
+    try {
+      await masterDataService.saveQuestion({
+        code,
         content: questionFormData.content.trim(),
-        criterionId: questionFormData.criterionId,
-        criterionName: critName,
-        type: questionFormData.type,
-        difficulty: questionFormData.difficulty,
-        evaluationRubric: questionFormData.evaluationRubric.trim() || "Đánh giá mức độ tự tin, logic và chiều sâu kiến thức.",
-      };
-
-      setQuestions([newQ, ...questions]);
-      showToast("Đã bổ sung câu hỏi mới vào Ngân hàng phỏng vấn!");
-    } else if (editingQuestion) {
-      setQuestions(
-        questions.map((q) =>
-          q.id === editingQuestion.id
-            ? {
-                ...q,
-                content: questionFormData.content.trim(),
-                criterionId: questionFormData.criterionId,
-                criterionName: critName,
-                type: questionFormData.type,
-                difficulty: questionFormData.difficulty,
-                evaluationRubric: questionFormData.evaluationRubric.trim(),
-              }
-            : q
-        )
-      );
-      showToast("Cập nhật câu hỏi phỏng vấn thành công!");
+        criteria_id: questionFormData.criterionId,
+        job_title: selectedPosition.title || undefined,
+        difficulty: DIFF_TO_API[questionFormData.difficulty],
+        suggested_answer: questionFormData.evaluationRubric.trim() || undefined,
+      }, questionModalMode === "edit" && editingQuestion ? editingQuestion.id : undefined);
+      showToast(questionModalMode === "edit" ? "Cập nhật câu hỏi phỏng vấn thành công!" : "Đã bổ sung câu hỏi mới vào Ngân hàng phỏng vấn!");
+      setIsQuestionModalOpen(false);
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không lưu được câu hỏi.", "error");
+    } finally {
+      setSaving(false);
     }
-
-    setIsQuestionModalOpen(false);
   };
 
   // Scorecard Weighted Score calculation
@@ -483,6 +361,9 @@ export default function HRCompetenciesPage() {
 
     return totalWeight > 0 ? (totalScore / totalWeight).toFixed(2) : "0.00";
   }, [currentPositionCriteria, scorecardRatings]);
+
+  if (loading) return <LoadingState />;
+  if (error || !cd) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">
@@ -633,7 +514,7 @@ export default function HRCompetenciesPage() {
               {/* Danh sách các nút chức danh */}
               <div className="space-y-2 max-h-[580px] overflow-y-auto pr-1">
                 {filteredPositions.map((pos) => {
-                  const isSelected = pos.id === selectedPositionId;
+                  const isSelected = pos.id === selectedPosition.id;
                   const critCount = criteria.filter((c) => c.positionId === pos.id).length;
 
                   return (
@@ -747,7 +628,7 @@ export default function HRCompetenciesPage() {
                     Chưa có tiêu chí đánh giá nào cho chức danh này
                   </div>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Bấm nút "Thêm tiêu chí" để chọn từ bộ từ điển chuẩn hoặc tạo tiêu chí đánh giá mới.
+                    Bấm nút &quot;Thêm tiêu chí&quot; để chọn từ bộ từ điển chuẩn hoặc tạo tiêu chí đánh giá mới.
                   </p>
                 </div>
               ) : (
@@ -1031,9 +912,10 @@ export default function HRCompetenciesPage() {
                             <button
                               type="button"
                               onClick={() => {
-                                if (confirm("Bạn có chắc chắn muốn xóa câu hỏi này khỏi ngân hàng?")) {
-                                  setQuestions(questions.filter((item) => item.id !== q.id));
-                                  showToast("Đã xóa câu hỏi!");
+                                if (confirm("Bạn có chắc chắn muốn ngừng sử dụng câu hỏi này?")) {
+                                  masterDataService.deactivateQuestion(q.id)
+                                    .then(() => { showToast("Đã ngừng sử dụng câu hỏi!"); reload(); })
+                                    .catch((err) => showToast(err instanceof ApiError ? err.message : "Không cập nhật được câu hỏi.", "error"));
                                 }
                               }}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"

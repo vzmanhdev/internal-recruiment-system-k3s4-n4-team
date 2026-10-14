@@ -1,6 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { masterDataService } from '@/services/master-data.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+
+// Known lookup groups used by the workflow (S2-08); any other category_type is shown with its code
+const LOOKUP_GROUPS: Record<string, { name: string; description: string }> = {
+  candidate_source: { name: 'Nguồn Tuyển Dụng (Candidate Sources)', description: 'Các kênh thu hút hồ sơ ứng viên' },
+  tag: { name: 'Nhãn Ứng Viên (Tags)', description: 'Nhãn dùng để gắn và lọc hồ sơ ứng viên' },
+  rejection_reason: { name: 'Lý Do Loại Hồ Sơ', description: 'Danh mục lý do bắt buộc khi loại ứng viên' },
+  skill: { name: 'Danh Mục Kỹ Năng (Skill Tags)', description: 'Các kỹ năng chuyên môn chuẩn phục vụ tìm kiếm & lọc hồ sơ' },
+};
 import { 
   Layers, Plus, Tag, MapPin, Share2, HelpCircle, CheckCircle2, Search, Check
 } from 'lucide-react';
@@ -23,53 +35,30 @@ export default function HRLookupsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [categories, setCategories] = useState<LookupCategory[]>([
-    {
-      id: "CAT-01",
-      name: "Danh Mục Kỹ Năng (Skill Tags)",
-      code: "SKILLS",
-      description: "Các kỹ năng chuyên môn chuẩn phục vụ tìm kiếm & lọc hồ sơ",
-      items_count: 42,
-      sample_items: ["Python", "FastAPI", "React.js", "Docker", "K8s", "SQL"],
-      status: "active"
-    },
-    {
-      id: "CAT-02",
-      name: "Nguồn Tuyển Dụng (Candidate Sources)",
-      code: "SOURCES",
-      description: "Các kênh thu hút hồ sơ ứng viên",
-      items_count: 8,
-      sample_items: ["Website Công Khai", "Giới Thiệu Nội Bộ", "LinkedIn", "TopCV", "Headhunter"],
-      status: "active"
-    },
-    {
-      id: "CAT-03",
-      name: "Lý Do Từ Chối / Đóng Tuyển Dụng",
-      code: "REASONS",
-      description: "Lý do trượt ứng viên hoặc dừng tờ trình",
-      items_count: 12,
-      sample_items: ["Không Đạt Chuyên Môn", "Kỳ Vọng Lương Vượt Band", "Từ Chối Offer", "Đã Tuyển Đủ"],
-      status: "active"
-    }
-  ]);
-
-  const handleCreateCategory = (data: NewLookupCategoryData) => {
-    const newCategory: LookupCategory = {
-      id: `CAT-0${categories.length + 1}`,
-      name: data.name,
-      code: data.code,
-      description: data.description || 'Chưa có mô tả chi tiết',
-      items_count: 0,
-      sample_items: ["(Chưa có phần tử con)"],
-      status: data.status,
+  const router = useRouter();
+  const { data, error, loading, reload } = useApiData(() => masterDataService.categories(), []);
+  const categories: LookupCategory[] = Array.from(new Set((data || []).map((c) => c.category_type))).map((type) => {
+    const items = (data || []).filter((c) => c.category_type === type);
+    return {
+      id: type,
+      code: type.toUpperCase(),
+      name: LOOKUP_GROUPS[type]?.name || type,
+      description: LOOKUP_GROUPS[type]?.description || 'Nhóm danh mục do HR khai báo',
+      items_count: items.length,
+      sample_items: items.filter((c) => c.is_active).slice(0, 6).map((c) => c.name),
+      status: items.some((c) => c.is_active) ? 'active' : 'inactive',
     };
+  });
 
-    setCategories([newCategory, ...categories]);
-    setSuccessMessage(`Đã tạo thành công danh mục "${data.name}" (${data.code})`);
-    setTimeout(() => {
-      setSuccessMessage(null);
-    }, 4000);
+  // A group exists once it has its first value: continue in the category editor with the new group selected
+  const handleCreateCategory = (form: NewLookupCategoryData) => {
+    const code = form.code.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
+    setSuccessMessage(`Nhóm "${form.name}" (${code}) đã sẵn sàng — hãy thêm giá trị đầu tiên cho nhóm.`);
+    router.push(`/hr/categories?type=${encodeURIComponent(code)}`);
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">

@@ -1,7 +1,7 @@
 /**
  * Candidate data layer for recruiter screens: real applications grouped per person (person_key / email),
  * the unified profile (notes, tags, timeline, previous applications) and real actions.
- * Replaces features/candidates/mockCandidates.ts.
+ * (Replaced the former mock candidate list.)
  */
 import { apiRequest, API_BASE_URL, ApiError } from "@/lib/api-client";
 import type { CandidateApplication, CandidateEmailLog, CandidateNote, UnifiedCandidate } from "./types";
@@ -157,6 +157,13 @@ export const candidatesApi = {
   async addNote(appId: number, content: string) {
     return apiRequest<{ id: number; content: string; author_name?: string; created_at?: string }>(`/applications/${appId}/notes`, {
       method: "POST", body: JSON.stringify({ content }),
+    });
+  },
+
+  /** Direct recruiter → candidate e-mail, queued in the outbox (real status in the e-mail log). */
+  async sendEmail(appId: number, subject: string, body: string) {
+    return apiRequest<{ id: number; status: string; subject: string; sent_at?: string | null }>(`/applications/${appId}/email`, {
+      method: "POST", body: JSON.stringify({ subject, body }),
     });
   },
 

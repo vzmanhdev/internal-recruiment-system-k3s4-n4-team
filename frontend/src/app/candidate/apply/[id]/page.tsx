@@ -26,19 +26,17 @@ import {
   FileCheck,
   X,
 } from 'lucide-react';
-import {
-  getCandidateJobById,
-  CANDIDATE_JOBS,
-} from '@/features/candidate/data/candidateJobsData';
+import { careerApi, type CandidateJob } from '@/features/candidate/api';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 
 export default function CandidateApplyPage() {
   const params = useParams();
   const router = useRouter();
   const jobId = (params?.id as string) || '';
 
-  const job = useMemo(() => {
-    return getCandidateJobById(jobId);
-  }, [jobId]);
+  const { data: job, loading: jobLoading } = useApiData(() => careerApi.get(jobId), [jobId]);
 
   // Form states (Tối ưu cảm ứng điện thoại)
   const [fullName, setFullName] = useState('');
@@ -88,7 +86,7 @@ export default function CandidateApplyPage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
@@ -105,24 +103,29 @@ export default function CandidateApplyPage() {
       setFormError('Vui lòng nhập số điện thoại để nhà tuyển dụng liên hệ.');
       return;
     }
-    if (!selectedFile && !cvLink.trim()) {
-      setFormError('Vui lòng tải lên tệp CV (PDF/DOCX) hoặc dán liên kết CV trực tuyến.');
+    if (!selectedFile) {
+      setFormError('Vui lòng tải lên tệp CV (PDF/DOCX) — hồ sơ phải được lưu trên hệ thống tuyển dụng.');
       return;
     }
+    if (!job) return;
 
     setIsSubmitting(true);
-
-    // Mô phỏng quá trình nộp hồ sơ
-    setTimeout(() => {
-      // Sinh mã ngẫu nhiên dạng APP-2026-XXX
-      const randomNum = Math.floor(100 + Math.random() * 900);
-      const generatedCode = `APP-2026-${randomNum}`;
-      setTrackingCode(generatedCode);
-      setIsSubmitting(false);
+    try {
+      const created = await careerApi.apply(job, {
+        full_name: fullName.trim(), email: email.trim(), phone: phone.trim(), file: selectedFile,
+        cover_letter: [coverNote.trim(), cvLink.trim() && `Liên kết hồ sơ bổ sung: ${cvLink.trim()}`].filter(Boolean).join('\n'),
+      });
+      setTrackingCode(created.tracking_code);
       setIsSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 1200);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Không gửi được hồ sơ. Vui lòng thử lại.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (jobLoading) return <LoadingState />;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-12 antialiased">
@@ -453,7 +456,7 @@ export default function CandidateApplyPage() {
               {/* Hoặc Dán liên kết CV trực tuyến */}
               <div className="pt-2 space-y-1.5">
                 <div className="text-[11px] text-slate-400 font-medium text-center">
-                  --- Hoặc dán đường dẫn CV trực tuyến ---
+                  --- Liên kết hồ sơ trực tuyến bổ sung (không bắt buộc) ---
                 </div>
                 <div className="relative">
                   <LinkIcon className="w-5 h-5 text-slate-400 absolute left-4 top-4" />

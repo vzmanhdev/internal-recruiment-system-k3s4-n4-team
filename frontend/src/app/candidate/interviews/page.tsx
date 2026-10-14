@@ -12,6 +12,12 @@ import {
   Send,
   ExternalLink,
 } from 'lucide-react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { interviewService, type InterviewItem as ApiInterview } from '@/services/interview.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+
+const pad = (n: number) => String(n).padStart(2, '0');
 
 interface InterviewItem {
   id: string;
@@ -28,6 +34,32 @@ interface InterviewItem {
   interviewers: { name: string; role: string }[];
   status: 'pending_confirmation' | 'confirmed' | 'completed';
   note: string;
+  interviewId: number;
+}
+
+/** The applicant's own interviews (limited view from the API: no panel feedback or interviewer contacts). */
+function toItem(i: ApiInterview, now: number): InterviewItem {
+  const start = new Date(i.scheduled_time);
+  const end = new Date(start.getTime() + i.duration_minutes * 60_000);
+  const finished = i.status !== 'scheduled' || end.getTime() < now;
+  return {
+    id: `IV-${i.id}`,
+    interviewId: i.id,
+    position: i.job_title || '',
+    department: '',
+    round: i.round_name,
+    dateDisplay: start.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }),
+    timeDisplay: `${pad(start.getHours())}:${pad(start.getMinutes())} - ${pad(end.getHours())}:${pad(end.getMinutes())} (GMT+7)`,
+    duration: `${i.duration_minutes} phút`,
+    type: i.meeting_link ? 'online' : 'offline',
+    locationOrUrl: i.meeting_link ? 'Phỏng vấn trực tuyến' : i.location,
+    meetUrl: i.meeting_link || undefined,
+    address: i.meeting_link ? undefined : i.location,
+    interviewers: [],
+    status: finished ? 'completed' : i.candidate_response === 'confirmed' ? 'confirmed' : 'pending_confirmation',
+    note: i.status === 'cancelled' ? 'Buổi phỏng vấn đã bị hủy.'
+      : i.candidate_response === 'reschedule_requested' ? 'Bạn đã gửi đề nghị đổi lịch — bộ phận tuyển dụng sẽ liên hệ lại.' : '',
+  };
 }
 
 export default function CandidateInterviewsPage() {
@@ -39,44 +71,17 @@ export default function CandidateInterviewsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const [interviews, setInterviews] = useState<InterviewItem[]>([
-    {
-      id: 'IV-2026-88',
-      position: 'Senior Backend Engineer (Go/Python)',
-      department: 'Khối Công Nghệ & Phần Mềm',
-      round: 'Vòng 2: Phỏng vấn Kỹ thuật',
-      dateDisplay: 'Thứ Sáu, 16/10/2026',
-      timeDisplay: '14:30 - 15:30 (GMT+7)',
-      duration: '60 phút',
-      type: 'online',
-      locationOrUrl: 'Google Meet',
-      meetUrl: 'https://meet.google.com/abc-defg-hij',
-      interviewers: [
-        { name: 'Nguyễn Tiến Dũng', role: 'Engineering Director' },
-        { name: 'Phạm Văn Tuấn', role: 'Backend Tech Lead' },
-      ],
-      status: 'pending_confirmation',
-      note: 'Vui lòng chuẩn bị webcam, microphone và môi trường yên tĩnh.',
-    },
-    {
-      id: 'IV-2026-92',
-      position: 'Senior Frontend Engineer (React/Next.js)',
-      department: 'Khối Công Nghệ & Trải Nghiệm Số',
-      round: 'Vòng 1: Phỏng vấn Văn hóa Doanh nghiệp',
-      dateDisplay: 'Thứ Hai, 19/10/2026',
-      timeDisplay: '10:00 - 11:00 (GMT+7)',
-      duration: '60 phút',
-      type: 'offline',
-      locationOrUrl: 'Văn phòng Trụ sở chính',
-      address: 'Phòng Meeting 802, Tầng 8, Tòa nhà Tech Tower, 19 Duy Tân, Cầu Giấy, Hà Nội',
-      interviewers: [
-        { name: 'Lê Hoàng Long', role: 'Head of Product' },
-        { name: 'Vũ Thùy Linh', role: 'HR Manager' },
-      ],
-      status: 'confirmed',
-      note: 'Khi đến tòa nhà, vui lòng xuất trình CCCD tại quầy Lễ tân tầng 1.',
-    },
-  ]);
+  const { data, error, loading, reload } = useApiData(async () => {
+    const rows = await interviewService.getInterviews();
+    const now = Date.now();
+    return rows.filter((i) => i.is_own_application).map((i) => toItem(i, now));
+  }, []);
+  const [answered, setAnswered] = useState<Record<number, InterviewItem['status']>>({});
+  const interviews = (data || []).map((i) => (answered[i.interviewId] ? { ...i, status: answered[i.interviewId] } : i));
+  const toast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   const filteredInterviews = interviews.filter((item) => {
     if (activeTab === 'all') return true;
@@ -85,29 +90,44 @@ export default function CandidateInterviewsPage() {
     return true;
   });
 
-  const handleConfirmAttendance = (id: string) => {
-    setInterviews((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: 'confirmed' } : item))
-    );
-    setToastMessage('Xác nhận tham gia phỏng vấn thành công!');
-    setTimeout(() => setToastMessage(null), 3500);
+  const answer = (interviewId: number, response: 'confirmed' | 'reschedule_requested', note?: string) =>
+    apiRequest(`/interviews/${interviewId}/candidate-response`, { method: 'POST', body: JSON.stringify({ response, note }) });
+
+  const handleConfirmAttendance = async (id: string) => {
+    const item = interviews.find((x) => x.id === id);
+    if (!item) return;
+    try {
+      await answer(item.interviewId, 'confirmed');
+      setAnswered((prev) => ({ ...prev, [item.interviewId]: 'confirmed' }));
+      toast('Xác nhận tham gia phỏng vấn thành công!');
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Không gửi được xác nhận.');
+    }
   };
 
-  const handleSubmitReschedule = (e: React.FormEvent) => {
+  const handleSubmitReschedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rescheduleReason.trim()) return;
+    if (!rescheduleReason.trim() || !rescheduleModalItem) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setToastMessage(`Đã gửi yêu cầu đổi lịch cho buổi phỏng vấn ${rescheduleModalItem?.id}.`);
+    try {
+      const when = [rescheduleDate, rescheduleTime].filter(Boolean).join(' ');
+      await answer(rescheduleModalItem.interviewId, 'reschedule_requested', `${when ? `Đề nghị đổi sang ${when}: ` : ''}${rescheduleReason.trim()}`);
+      toast(`Đã gửi yêu cầu đổi lịch cho buổi phỏng vấn ${rescheduleModalItem.round}.`);
       setRescheduleModalItem(null);
       setRescheduleDate('');
       setRescheduleTime('');
       setRescheduleReason('');
-      setTimeout(() => setToastMessage(null), 3500);
-    }, 600);
+      reload();
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Không gửi được yêu cầu đổi lịch.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-8 pb-12">

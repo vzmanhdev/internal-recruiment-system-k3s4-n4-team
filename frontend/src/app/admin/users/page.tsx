@@ -254,7 +254,7 @@ export default function AdminUsersManagementPage() {
         </div>
 
         {/* 1. THANH CÔNG CỤ TRÊN CÙNG (TOP ACTION BAR) */}
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
+        <div className="flex flex-col xl:flex-row items-center justify-between gap-4">
           {/* Ô Search input lớn tìm kiếm theo Tên, Email hoặc Mã nhân viên */}
           <div className="relative flex-1 w-full">
             <Search className="w-5 h-5 text-slate-400 absolute left-4 top-3.5 pointer-events-none" />
@@ -276,7 +276,7 @@ export default function AdminUsersManagementPage() {
           </div>
 
           {/* Bộ lọc kết hợp & Nút hành động */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto shrink-0 justify-end">
+          <div className="flex flex-wrap xl:flex-nowrap items-center gap-3 w-full xl:w-auto shrink-0 justify-end">
             {/* Lọc Vai trò */}
             <select
               value={roleFilter}

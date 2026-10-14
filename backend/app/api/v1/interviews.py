@@ -43,6 +43,7 @@ class InterviewUpdate(BaseModel):
     meeting_link: Optional[str] = None
     interviewer_ids: List[int] = Field(..., min_length=1)
     override_conflict_reason: Optional[str] = None
+    reason: Optional[str] = Field(default=None, max_length=500)  # why the slot moved (kept in the application history)
 
 
 class InterviewCancel(BaseModel):
@@ -59,6 +60,11 @@ class BulkSchedule(BaseModel):
     meeting_link: Optional[str] = None
     interviewer_ids: List[int] = Field(..., min_length=1)
     confirm: bool = False
+
+
+class CandidateReply(BaseModel):
+    response: str  # confirmed, reschedule_requested
+    note: Optional[str] = Field(default=None, max_length=1000)
 
 
 class InterviewFeedbackUpdate(BaseModel):
@@ -134,7 +140,7 @@ def _invite(db: Session, interview: InterviewSchedule, app: JobApplication, inte
     interview.candidate_response = None
     names = ", ".join(u.full_name for u in db.query(User).filter(User.id.in_(interviewer_ids)).all())
     when = interview.scheduled_time.strftime("%H:%M - %d/%m/%Y")
-    link = frontend_link("/candidate/interview", raw)
+    link = frontend_link("/candidate/interview/link", raw)
     queue_template_email(db, "INVITE_INTERVIEW", app.email, app.full_name, {
         "candidate_name": app.full_name, "job_title": app.job_posting.title if app.job_posting else "",
         "interview_time": when, "interview_location": interview.meeting_link or interview.location,
@@ -319,6 +325,10 @@ def reschedule_interview(interview_id: int, payload: InterviewUpdate, current_us
     db.flush()
     db.refresh(interview)
     _invite(db, interview, interview.application, sorted(set(interviewer_ids) | previous), changed=True)
+    app = interview.application
+    db.add(ApplicationLog(application_id=app.id, changed_by_id=current_user.id, from_status=app.status, to_status=app.status,
+                          comment=f"Dời lịch {interview.round_name} sang {start.strftime('%H:%M %d/%m/%Y')}"
+                                  + (f": {payload.reason.strip()}" if (payload.reason or "").strip() else "")))
     db.commit()
     db.refresh(interview)
     return interview.to_dict()
@@ -344,6 +354,27 @@ def cancel_interview(interview_id: int, payload: InterviewCancel, current_user: 
     db.commit()
     db.refresh(interview)
     return interview.to_dict()
+
+
+@router.post("/{interview_id}/candidate-response")
+def candidate_response(interview_id: int, payload: CandidateReply, current_user: User = Depends(get_current_user_obj),
+                       db: Session = Depends(get_db)):
+    """S6-05 for a signed-in applicant: confirm or ask to reschedule their own interview (same rules as the e-mail link)."""
+    if payload.response not in ("confirmed", "reschedule_requested"):
+        raise HTTPException(status_code=422, detail="Phản hồi chỉ nhận 'confirmed' hoặc 'reschedule_requested'.")
+    interview = _get_interview(db, interview_id)
+    app = interview.application
+    if not app or app.candidate_id is None or app.candidate_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Bạn chỉ có thể phản hồi lịch phỏng vấn của chính mình.")
+    if interview.status != "scheduled" or interview.scheduled_time < datetime.now():
+        raise HTTPException(status_code=409, detail="Lịch phỏng vấn này không còn nhận phản hồi.")
+    interview.candidate_response, interview.candidate_response_note = payload.response, payload.note
+    interview.candidate_responded_at = datetime.utcnow()
+    notify(db, [interview.created_by_id], "interview_response",
+           f"{app.full_name} {'xác nhận tham dự' if payload.response == 'confirmed' else 'đề nghị đổi lịch'} phỏng vấn",
+           payload.note or "", link=f"/hr/interviews?interview={interview.id}", entity_type="INTERVIEW", entity_id=interview.id)
+    db.commit()
+    return {"id": interview.id, "candidate_response": interview.candidate_response}
 
 
 @router.put("/{interview_id}/feedback")
