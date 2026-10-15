@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict
 
 from app.api.v1.auth import require_roles
 from app.core.security import decode_access_token
@@ -302,9 +303,11 @@ def submit_offer(offer_id: int, authorization: Optional[str] = Header(None), db:
     if outside_band(offer.application, offer.offered_salary) and len((offer.salary_exception_reason or '').strip()) < 10:
         raise HTTPException(422, 'Cần giải trình cho lương ngoài dải')
     steps = json.loads(offer.approval_history or '[]')
-    chain = [('manager', 'Trưởng bộ phận'), ('hr_manager', 'Trưởng phòng Nhân sự')]
+    chain = [('manager', 'Trưởng bộ phận')]
     if outside_band(offer.application, offer.offered_salary):
         chain.append(('approver', 'Ban phê duyệt ngoại lệ lương'))
+    else:
+        chain.append(('hr_manager', 'Trưởng phòng Nhân sự'))
     for step in steps:
         if step['status'] in {'pending', 'waiting'}:
             step['status'] = 'cancelled'
@@ -342,6 +345,8 @@ def approve_offer(offer_id: int, payload: OfferStatusUpdate, authorization: Opti
     permitted = {active['role'], 'admin'} | ({'hiring_manager'} if active['role'] == 'manager' else set())
     if not roles.intersection(permitted):
         raise HTTPException(403, f"Đang chờ {active['label']} phê duyệt")
+    if payload.status == 'approved' and active['role'] == 'hr_manager' and outside_band(offer.application, offer.offered_salary):
+        raise HTTPException(403, 'HR chỉ duyệt offer trong dải chuẩn. Yêu cầu bổ sung và trình lại để chuyển cấp ngoại lệ')
     if payload.status not in {'approved', 'rejected', 'changes_requested'}:
         raise HTTPException(422, 'Thao tác phê duyệt không hợp lệ')
     if payload.status != 'approved' and len((payload.notes or '').strip()) < 5:
@@ -412,6 +417,10 @@ def update_onboarding(
     ob = db.query(OnboardingChecklist).filter(OnboardingChecklist.id == onboarding_id).first()
     if not ob:
         raise HTTPException(status_code=404, detail="Không tìm thấy danh mục Onboarding")
+    return save_onboarding(db, ob, payload)
+
+
+def save_onboarding(db, ob, payload):
 
     if payload.welcome_email_sent is not None:
         ob.welcome_email_sent = payload.welcome_email_sent
@@ -443,3 +452,37 @@ def update_onboarding(
     db.refresh(ob)
 
     return ob.to_dict()
+
+
+def candidate_checklists(db, user):
+    accepted = db.query(JobOffer.application_id).filter(JobOffer.status == 'accepted')
+    return db.query(OnboardingChecklist).join(JobApplication, OnboardingChecklist.application_id == JobApplication.id).filter(
+        or_(JobApplication.candidate_id == user.id, JobApplication.email == user.email.lower()),
+        JobApplication.id.in_(accepted))
+
+
+@router.get('/onboarding/my', response_model=PaginatedOnboardingResponse)
+def my_onboarding(application_id: Optional[int] = None, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+                  authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_current_user(authorization, db)
+    query = candidate_checklists(db, user)
+    if application_id is not None:
+        query = query.filter(OnboardingChecklist.application_id == application_id)
+    total = query.count()
+    items = query.order_by(OnboardingChecklist.created_at.desc()).offset((page-1)*page_size).limit(page_size).all()
+    return dict(items=[item.to_dict() for item in items], total=total, page=page, page_size=page_size, pages=max(1, ceil(total/page_size)))
+
+
+class CandidateOnboardingUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    documents_submitted: bool
+
+
+@router.put('/onboarding/{onboarding_id}/candidate', response_model=OnboardingResponse)
+def candidate_update_onboarding(onboarding_id: int, payload: CandidateOnboardingUpdate,
+                                authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_current_user(authorization, db)
+    checklist = candidate_checklists(db, user).filter(OnboardingChecklist.id == onboarding_id).with_for_update().first()
+    if not checklist:
+        raise HTTPException(404, 'Không tìm thấy checklist nhận việc của bạn')
+    return save_onboarding(db, checklist, OnboardingUpdate(documents_submitted=payload.documents_submitted))

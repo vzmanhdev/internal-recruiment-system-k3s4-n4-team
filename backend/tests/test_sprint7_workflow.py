@@ -95,13 +95,14 @@ def test_salary_exception_and_revision_history(data):
     updated={**payload,'offered_salary':40000000,'salary_exception_reason':'Bổ sung: chuyên gia có kinh nghiệm phù hợp'}
     assert client.put(url,headers=headers['recruiter'],json=updated).status_code==200
     client.post(url+'/submit',headers=headers['recruiter'])
-    for role in ['manager','hr_manager']:
+    for role in ['manager']:
         result=client.post(url+'/review',headers=headers[role],json={'status':'approved'})
         assert result.status_code==200, result.text
     assert result.json()['status']=='pending_approval'
+    assert client.post(url+'/review',headers=headers['hr_manager'],json={'status':'approved'}).status_code==403
     assert client.post(url+'/status',headers=headers['admin'],json={'status':'sent'}).status_code==409
     assert client.post(url+'/review',headers=headers['approver'],json={'status':'approved'}).json()['status']=='approved'
-    assert len(client.get(url,headers=headers['admin']).json()['approvals'])==6
+    assert len(client.get(url,headers=headers['admin']).json()['approvals'])==4
 
 
 def test_invalid_dates_expired_offer_and_access(data):
@@ -130,3 +131,68 @@ def test_questions_persist_per_panel_and_block_outsiders(data):
     assert client.get(url,headers=headers['interviewer']).json()['questions'][0]['asked'] is True
     assert client.put(url,headers=headers['interviewer'],json={'question_id':-1,'asked':True}).status_code==422
     assert client.put(url,headers=headers['interviewer'],json={'question_id':criterion_id,'asked':False}).json()['questions'][0]['asked'] is False
+
+
+def test_hiring_manager_multiround_decisions_and_scope(data):
+    from app.models.referral_eval import CandidateEvaluation
+    db, headers, payload, interview_id, _ = data
+    application_id = payload['application_id']
+    url=f'/api/v1/hiring/applications/{application_id}'
+    assert client.get(url, headers=headers['candidate']).status_code==403
+    assert client.put(url+'/decision',headers=headers['recruiter'],json={'decision':'selected','note':'Đồng ý tuyển'}).status_code==403
+    assert client.put(url+'/decision',headers=headers['manager'],json={'decision':'selected','note':'Đồng ý tuyển'}).status_code==409
+    manager_id = db.query(User).filter(User.email.like('manager-%')).order_by(User.id.desc()).first().id
+    outsider = User(email=f'other-{uuid4().hex}@example.com',full_name='Quản lý khác',role='manager',is_active=True,hashed_password=hash_password('Test12345'))
+    db.add(outsider);db.flush()
+    other_headers={'Authorization':f'Bearer {create_access_token(outsider.id)}'}
+    panel_id=db.query(InterviewInterviewer).filter_by(interview_id=interview_id).first().interviewer_id
+    db.add(CandidateEvaluation(application_id=application_id,interview_id=interview_id,evaluator_id=panel_id,overall_score=4,competency_score=4,culture_fit_score=4,recommendation='hire',feedback='Chuyên môn phù hợp'))
+    second=InterviewSchedule(application_id=application_id,title='Vòng hai',round_number=2,start_time=datetime.utcnow()+timedelta(days=3),end_time=datetime.utcnow()+timedelta(days=3,hours=1),location_or_link='Phòng 2')
+    db.add(second);db.flush()
+    db.add(CandidateEvaluation(application_id=application_id,interview_id=second.id,evaluator_id=manager_id,overall_score=5,competency_score=5,culture_fit_score=5,recommendation='strong_hire',feedback='Kết quả vòng cuối tốt'))
+    db.commit()
+    assert client.get(url,headers=other_headers).status_code==404
+    assert client.put(url+'/decision',headers=other_headers,json={'decision':'selected','note':'Tuyển nhầm phòng'}).status_code==404
+    details=client.get(url,headers=headers['manager']).json()
+    assert len(details['rounds'])==2 and details['evaluation_count']==2 and details['average_score']==4.5
+    assert client.put(url+'/decision',headers=headers['manager'],json={'decision':'selected','note':'     '}).status_code==422
+    selected=client.put(url+'/decision',headers=headers['manager'],json={'decision':'selected','note':'Phù hợp qua hai vòng đánh giá'})
+    assert selected.status_code==200, selected.text
+    assert selected.json()['hiring_decision']['decision']=='selected'
+    assert selected.json()['status']=='interviewing'
+    offer_id=create(data)
+    assert client.post(f'/api/v1/offers/{offer_id}/submit',headers=headers['recruiter']).status_code==200
+    rejected=client.put(url+'/decision',headers=headers['manager'],json={'decision':'rejected','note':'Thay đổi nhu cầu, chưa tuyển vị trí này'})
+    assert rejected.status_code==200 and rejected.json()['status']=='rejected'
+    assert client.get(f'/api/v1/offers/{offer_id}',headers=headers['admin']).json()['status']=='rejected'
+    assert client.post('/api/v1/offers',headers=headers['recruiter'],json=payload).status_code==409
+    assert client.get('/api/v1/hiring/applications?decision=rejected',headers=headers['manager']).json()['total']>=1
+
+
+def test_candidate_onboarding_ownership_and_task_permissions(data):
+    db,headers,payload,_,_=data
+    offer_id=create(data)
+    url=f'/api/v1/offers/{offer_id}'
+    assert client.get('/api/v1/onboarding/my',headers=headers['candidate']).json()['total']==0
+    client.post(url+'/submit',headers=headers['admin'])
+    for _ in range(2):
+        assert client.post(url+'/review',headers=headers['admin'],json={'status':'approved'}).status_code==200
+    client.post(url+'/status',headers=headers['admin'],json={'status':'sent'})
+    assert client.post(url+'/respond',headers=headers['candidate'],json={'status':'accepted'}).status_code==200
+    checklist=client.get(f"/api/v1/onboarding/my?application_id={payload['application_id']}",headers=headers['candidate']).json()['items'][0]
+    candidate_url=f"/api/v1/onboarding/{checklist['id']}/candidate"
+    other=User(email=f'other-candidate-{uuid4().hex}@example.com',full_name='Ứng viên khác',role='candidate',is_active=True,hashed_password=hash_password('Test12345'))
+    db.add(other);db.commit()
+    other_headers={'Authorization':f'Bearer {create_access_token(other.id)}'}
+    assert client.get('/api/v1/onboarding/my',headers=other_headers).json()['total']==0
+    assert client.put(candidate_url,headers=other_headers,json={'documents_submitted':True}).status_code==404
+    assert client.put(candidate_url,headers=headers['recruiter'],json={'documents_submitted':True}).status_code==404
+    assert client.put(candidate_url,headers=headers['candidate'],json={'documents_submitted':True,'equipment_prepared':True}).status_code==422
+    assert client.put(candidate_url,headers=headers['candidate'],json={'documents_submitted':True,'status':'completed'}).status_code==422
+    updated=client.put(candidate_url,headers=headers['candidate'],json={'documents_submitted':True})
+    assert updated.status_code==200 and updated.json()['status']=='in_progress'
+    assert client.get('/api/v1/onboarding/my',headers=headers['candidate']).json()['items'][0]['documents_submitted'] is True
+    internal=client.get('/api/v1/onboarding/manage/all',headers=headers['recruiter']).json()['items']
+    assert next(item for item in internal if item['id']==checklist['id'])['documents_submitted'] is True
+    assert client.put(candidate_url,headers=headers['candidate'],json={'documents_submitted':False}).json()['status']=='pending'
+    assert client.put(candidate_url,json={'documents_submitted':True}).status_code==401

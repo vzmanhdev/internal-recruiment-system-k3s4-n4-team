@@ -23,6 +23,11 @@ import {
 import { apiRequest } from "@/lib/api-client";
 import { EvaluationSummary } from "@/features/offers/components/EvaluationSummary";
 const nav = [
+  {
+    href: "/manager/hiring-decisions",
+    label: "Tổng hợp kết quả tuyển",
+    icon: ClipboardCheck,
+  },
   { href: "/hr/offers", label: "Quyết định & thư mời", icon: Gift },
   { href: "/interviewer", label: "Phỏng vấn & đánh giá", icon: ClipboardCheck },
 ];
@@ -144,8 +149,8 @@ export default function OffersPage() {
               Thư mời & phê duyệt offer
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Trưởng bộ phận → Trưởng phòng Nhân sự → duyệt ngoại lệ lương (nếu
-              có).
+              Trong dải: Trưởng bộ phận → Trưởng phòng Nhân sự. Ngoài dải:
+              Trưởng bộ phận → Ban phê duyệt ngoại lệ.
             </p>
           </div>
           {canEdit && (

@@ -14,6 +14,7 @@ import { apiRequest } from "@/lib/api-client";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CandidateOnboarding } from "@/features/offers/components/CandidateOnboarding";
 export default function OfferResponsePage({
   params,
 }: {
@@ -87,6 +88,9 @@ export default function OfferResponsePage({
         {offer ? (
           <>
             <OfferPreview offer={offer} />
+            {offer.status === "accepted" && (
+              <CandidateOnboarding applicationId={offer.application_id} />
+            )}
             {offer.status === "sent" && !expired ? (
               <Card>
                 <form onSubmit={submit} className="space-y-4">

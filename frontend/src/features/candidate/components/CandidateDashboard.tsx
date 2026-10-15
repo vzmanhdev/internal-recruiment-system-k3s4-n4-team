@@ -76,7 +76,7 @@ export function CandidateDashboard() {
         <p className="text-sm font-semibold text-blue-600">Cổng thông tin ứng viên</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Xin chào, {session.full_name}</h1>
         <p className="mt-2 text-sm text-slate-500">Theo dõi toàn bộ hành trình ứng tuyển, lịch phỏng vấn và thư mời của bạn.</p>
-        <div className="mt-5 flex flex-wrap gap-3"><Button href="/jobs" variant="secondary">Xem việc làm</Button><Button href="/profile" variant="outline">Cập nhật hồ sơ</Button></div>
+        <div className="mt-5 flex flex-wrap gap-3"><Button href="/jobs" variant="secondary">Xem việc làm</Button><Button href="/profile" variant="outline">Cập nhật hồ sơ</Button><Button href="/candidate/onboarding" variant="outline">Checklist nhận việc</Button></div>
       </section>
 
       {error && <Alert variant="error">{error}</Alert>}

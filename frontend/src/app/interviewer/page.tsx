@@ -35,6 +35,11 @@ const recommendationLabels: Record<string, string> = {
   reject: "Không phù hợp",
 };
 const navItems = [
+  {
+    href: "/manager/hiring-decisions",
+    label: "Tổng hợp & quyết định tuyển",
+    icon: BarChart3,
+  },
   { href: "/interviewer", label: "Lịch & đánh giá", icon: ClipboardCheck },
   { href: "/hr/offers", label: "Quyết định & offer", icon: Gift },
 ];
@@ -89,19 +94,33 @@ export default function InterviewerWorkspacePage() {
       title="Hội đồng phỏng vấn"
       description="Phiếu theo khung năng lực và so sánh vòng cuối"
       icon={ClipboardCheck}
-      items={navItems.filter(
-        (item) =>
-          item.href !== "/hr/offers" ||
-          roles.some((role) =>
-            [
-              "admin",
-              "hr_manager",
-              "recruiter",
-              "manager",
-              "hiring_manager",
-            ].includes(role),
-          ),
-      )}
+      items={navItems
+        .filter(
+          (item) =>
+            item.href !== "/manager/hiring-decisions" ||
+            roles.some((role) =>
+              [
+                "admin",
+                "manager",
+                "hiring_manager",
+                "hr_manager",
+                "recruiter",
+              ].includes(role),
+            ),
+        )
+        .filter(
+          (item) =>
+            item.href !== "/hr/offers" ||
+            roles.some((role) =>
+              [
+                "admin",
+                "hr_manager",
+                "recruiter",
+                "manager",
+                "hiring_manager",
+              ].includes(role),
+            ),
+        )}
       allowedRoles={[
         "admin",
         "hr_manager",

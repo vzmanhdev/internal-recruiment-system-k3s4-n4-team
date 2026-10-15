@@ -18,6 +18,7 @@ from app.api.v1.headcount import router as headcount_router
 from app.api.v1.interview import router as interview_router
 from app.api.v1.job import router as job_router
 from app.api.v1.offer_onboarding import router as offer_onboarding_router
+from app.api.v1.hiring_decision import router as hiring_decision_router
 from app.api.v1.referral_eval import router as referral_eval_router
 from app.api.v1.requisition import router as requisition_router
 from app.core.config import settings
@@ -297,6 +298,7 @@ app.include_router(application_router, prefix="/api/v1/applications", tags=["Job
 app.include_router(referral_eval_router, prefix="/api/v1", tags=["Internal Referrals & Evaluations"])
 app.include_router(interview_router, prefix="/api/v1", tags=["Interview Scheduling & Panel"])
 app.include_router(offer_onboarding_router, prefix="/api/v1", tags=["Offer Management & Onboarding"])
+app.include_router(hiring_decision_router, prefix="/api/v1", tags=["Hiring decisions"])
 app.include_router(analytics_router, prefix="/api/v1", tags=["Recruitment Analytics & Reports"])
 
 # Keep existing service contracts while sharing the canonical database models.
