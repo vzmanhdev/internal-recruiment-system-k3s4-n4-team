@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api-client";
+import { apiRequest, API_BASE_URL } from "@/lib/api-client";
 import type { LoginRequest, RegisterRequest } from "../types/auth.types";
 
 export interface UserItem {
@@ -6,7 +6,15 @@ export interface UserItem {
   email: string;
   full_name: string;
   phone?: string;
+  employee_code?: string;
+  avatar_url?: string;
+  job_title?: string | null;
   role: string;
+  /** /auth/me returns role objects; legacy payloads may contain plain codes. Display only — never an authority. */
+  roles?: Array<string | { code: string; name: string }>;
+  /** Effective permissions computed by the backend (UNION of all roles; admin = all). */
+  permissions?: string[];
+  redirect_url?: string;
   is_active: boolean;
   account_status?: string;
   lock_reason?: string;
@@ -16,6 +24,7 @@ export interface UserItem {
 export interface AuthResponse {
   access_token: string;
   token_type: string;
+  redirect_url?: string;
   user: UserItem;
 }
 
@@ -116,6 +125,22 @@ export const authService = {
     });
   },
 
+  async updateProfile(payload: { full_name?: string; phone?: string; avatar_url?: string; job_title?: string; date_of_birth?: string; gender?: string; bio?: string }): Promise<UserItem> {
+    const res = await apiRequest<UserItem>("/auth/me", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    if (res) {
+      const currentUser = this.getUserInfo() || ({} as any);
+      const updatedUser = { ...currentUser, ...res };
+      localStorage.setItem("user_info", JSON.stringify(updatedUser));
+      if (res.avatar_url) {
+        localStorage.setItem("user_avatar_url", res.avatar_url);
+      }
+    }
+    return res;
+  },
+
   async getAllUsers(): Promise<UserItem[]> {
     return await apiRequest<UserItem[]>("/auth/users", {
       method: "GET",
@@ -146,10 +171,43 @@ export const authService = {
     });
   },
 
-  logout() {
+  getToken(): string | null {
     if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_info");
+      return localStorage.getItem("access_token");
+    }
+    return null;
+  },
+
+  getUserInfo(): UserItem | null {
+    if (typeof window !== "undefined") {
+      const raw = localStorage.getItem("user_info");
+      if (raw) {
+        try {
+          return JSON.parse(raw);
+        } catch (e) {
+          return null;
+        }
+      }
+    }
+    return null;
+  },
+
+  /** Revokes the server-side session (and the HttpOnly cookies), then clears local state. */
+  async logout(): Promise<void> {
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem("access_token");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user_info");
+    if (!token) return;
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        keepalive: true,
+      });
+    } catch {
+      // network failure: the local session is gone anyway; the server session expires on its own
     }
   }
 };

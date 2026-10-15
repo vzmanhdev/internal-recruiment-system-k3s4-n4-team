@@ -10,19 +10,16 @@ from alembic import context
 # Add current directory to path
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..")))
 
-# Import Base and models
+# Import Base and ALL models so autogenerate/baseline see the complete metadata
+from app.core.config import settings
 from app.db.session import Base
-from app.models.user import User
-from app.models.hr import Department
-from app.models.requisition import JobRequisition, RequisitionApprovalLog
-from app.models.job import JobPosting
-from app.models.application import JobApplication, ApplicationLog
-from app.models.interview import InterviewSchedule, InterviewInterviewer
-from app.models.offer_onboarding import JobOffer, OnboardingChecklist
-from app.models.referral_eval import InternalReferral, CandidateEvaluation
-from app.models.password_reset import PasswordResetSession
+import app.models  # noqa: F401
+import app.models.rbac, app.models.auth_session, app.models.password_reset  # noqa: F401,E401
 
 config = context.config
+# The migration target is the application's configured DATABASE_URL (override with "-x url=...").
+_x_url = context.get_x_argument(as_dictionary=True).get("url")
+config.set_main_option("sqlalchemy.url", (_x_url or settings.DATABASE_URL).replace("%", "%%"))
 
 if config.config_file_name:
     fileConfig(config.config_file_name)

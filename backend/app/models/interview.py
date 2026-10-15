@@ -20,6 +20,13 @@ class InterviewSchedule(Base):
     feedback_notes = Column(Text, nullable=True)
     score = Column(Integer, nullable=True) # 1-10 rating
     passed = Column(Boolean, nullable=True)
+    # S6-04/S6-05/S6-06
+    confirmation_token_hash = Column(String(128), nullable=True)
+    candidate_response = Column(String(30), nullable=True)  # confirmed, reschedule_requested
+    candidate_response_note = Column(Text, nullable=True)
+    candidate_responded_at = Column(DateTime, nullable=True)
+    cancel_reason = Column(Text, nullable=True)
+    override_reason = Column(Text, nullable=True)
     
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

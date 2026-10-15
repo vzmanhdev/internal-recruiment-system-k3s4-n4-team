@@ -78,10 +78,9 @@ export default function ForgotPasswordPage() {
       setStep(3); // Jump directly to Step 3: OTP Input Form
     } catch (err: any) {
       if (err instanceof ApiError) {
-        setErrorMsg(err.message || "Không thể khởi tạo yêu cầu. Vui lòng thử lại.");
-        if (err.fieldErrors?.email) {
-          setFieldError(err.fieldErrors.email);
-        }
+        const msg = err.message || "Email không hợp lệ.";
+        setErrorMsg(msg);
+        setFieldError(err.fieldErrors?.email || msg);
       } else {
         setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng thử lại sau.");
       }

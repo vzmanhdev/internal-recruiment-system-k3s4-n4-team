@@ -28,6 +28,11 @@ class JobPosting(Base):
     applications_count = Column(Integer, default=0, nullable=False)
     
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    published_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # S5-09 mandatory criteria
+    min_years_experience = Column(Integer, nullable=True)
+    required_skills_json = Column(Text, nullable=True)
+    published_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -35,6 +40,8 @@ class JobPosting(Base):
     requisition = relationship("JobRequisition")
     department = relationship("Department")
     applications = relationship("JobApplication", back_populates="job_posting", cascade="all, delete-orphan")
+
+    review_note = Column(Text, nullable=True)  # HR Manager's change request when a posting is sent back (S3-10)
 
     def to_dict(self):
         return {
@@ -56,9 +63,12 @@ class JobPosting(Base):
             "requirements": self.requirements,
             "benefits": self.benefits,
             "status": self.status,
+            "review_note": self.review_note,
             "views_count": self.views_count,
             "applications_count": len(self.applications) if self.applications else self.applications_count,
             "created_by_id": self.created_by_id,
+            "published_by_id": self.published_by_id,
+            "published_at": self.published_at.isoformat() if self.published_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

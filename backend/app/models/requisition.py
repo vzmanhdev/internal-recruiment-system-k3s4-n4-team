@@ -30,6 +30,11 @@ class JobRequisition(Base):
     status = Column(String(50), default="draft", nullable=False)
     current_approval_step = Column(String(50), default="manager", nullable=False)
     reject_reason = Column(Text, nullable=True)
+    # Snapshot of the approval chain taken at submission (S3-01 AC4: config changes don't affect running flows)
+    approval_chain_json = Column(Text, nullable=True)
+    approval_step_index = Column(Integer, default=0, nullable=False)
+    headcount_overridden = Column(Boolean, default=False, nullable=False)
+    salary_justification = Column(Text, nullable=True)  # S2-10 AC3
     
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -38,6 +43,29 @@ class JobRequisition(Base):
     creator = relationship("User", foreign_keys=[created_by_id])
     department = relationship("Department")
     approval_logs = relationship("RequisitionApprovalLog", back_populates="requisition", cascade="all, delete-orphan")
+
+    def approval_chain(self):
+        import json
+        try:
+            chain = json.loads(self.approval_chain_json) if self.approval_chain_json else None
+        except ValueError:
+            chain = None
+        return chain or ["manager", "hr"]
+
+    def timeline_metrics(self):
+        """S3-08: days open and days remaining until the needed-by date."""
+        from datetime import date
+        today = date.today()
+        opened = (today - self.created_at.date()).days if self.created_at else None
+        remaining = None
+        if self.target_onboard_date:
+            try:
+                remaining = (date.fromisoformat(self.target_onboard_date[:10]) - today).days
+            except ValueError:
+                remaining = None
+        open_states = {"draft", "changes_requested", "pending_manager", "pending_hr", "pending_executive", "approved", "paused"}
+        return {"days_open": opened, "days_remaining": remaining,
+                "is_overdue": bool(remaining is not None and remaining < 0 and self.status in open_states)}
 
     def to_dict(self):
         return {
@@ -63,6 +91,11 @@ class JobRequisition(Base):
             "benefits": self.benefits,
             "status": self.status,
             "current_approval_step": self.current_approval_step,
+            "approval_chain": self.approval_chain(),
+            "approval_step_index": self.approval_step_index,
+            "headcount_overridden": bool(self.headcount_overridden),
+            "salary_justification": self.salary_justification,
+            **self.timeline_metrics(),
             "reject_reason": self.reject_reason,
             "created_by_id": self.created_by_id,
             "creator_name": self.creator.full_name if self.creator else None,

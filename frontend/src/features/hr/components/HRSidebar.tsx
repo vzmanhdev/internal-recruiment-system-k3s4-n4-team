@@ -1,0 +1,142 @@
+'use client';
+
+import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { 
+  LayoutDashboard, FileCheck, ShieldCheck, Briefcase, Users, Calendar, 
+  FileText, Award, Layers, Target, Mail, Send, BarChart3, History, 
+  ChevronRight, Sparkles, Building2, UserCheck, Sparkle, UserPlus, Globe
+} from 'lucide-react';
+import clsx from 'clsx';
+
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  badge?: string;
+}
+
+interface NavGroup {
+  groupName: string;
+  items: NavItem[];
+}
+
+const hrNavigationGroups: NavGroup[] = [
+  {
+    groupName: "TỔNG QUAN",
+    items: [
+      { label: "Dashboard Control Center", href: "/hr/dashboard", icon: LayoutDashboard },
+    ]
+  },
+  {
+    groupName: "TUYỂN DỤNG & CỔNG CAREER",
+    items: [
+      { label: "Yêu cầu tuyển dụng (REQ)", href: "/hr/requisitions", icon: FileCheck, badge: "SLA" },
+      { label: "Trung tâm Phê duyệt", href: "/hr/approvals", icon: ShieldCheck, badge: "3 cấp" },
+      { label: "Duyệt & Xuất bản tin", href: "/hr/jobs", icon: Briefcase, badge: "Portal" },
+      { label: "Cấu hình Career Page", href: "/hr/career-page-config", icon: Globe },
+      { label: "Ứng viên & Pipeline", href: "/hr/candidates", icon: Users },
+      { label: "Kho tiềm năng (Talent Pool)", href: "/hr/talent-pool", icon: Sparkles },
+      { label: "Lịch phỏng vấn", href: "/hr/interviews", icon: Calendar },
+      { label: "Offer thư mời", href: "/hr/offers", icon: FileText },
+      { label: "Checklist Onboarding", href: "/hr/onboarding", icon: UserPlus },
+    ]
+  },
+  {
+    groupName: "QUẢN TRỊ NGHIỆP VỤ",
+    items: [
+      { label: "Danh Mục & Cơ Cấu Tổ Chức", href: "/hr/categories", icon: Building2, badge: "Hub" },
+      { label: "Cơ cấu phòng ban", href: "/hr/master-data/departments", icon: Building2 },
+      { label: "Chức danh & Dải lương", href: "/hr/master-data/positions", icon: Award },
+      { label: "Ngân sách Headcount", href: "/hr/master-data/headcount", icon: Target, badge: "Override" },
+      { label: "Luồng phê duyệt động", href: "/hr/master-data/approval-flows", icon: Layers },
+      { label: "Khung năng lực & Đánh giá", href: "/hr/competencies", icon: UserCheck, badge: "Scorecard" },
+      { label: "Danh mục dùng chung", href: "/hr/master-data/lookups", icon: Layers },
+    ]
+  },
+  {
+    groupName: "TỰ ĐỘNG HÓA",
+    items: [
+      { label: "Cấu hình Mẫu Email", href: "/hr/email-templates", icon: Mail },
+      { label: "Nhật ký gửi Email", href: "/hr/automation/email-logs", icon: Send },
+    ]
+  },
+  {
+    groupName: "BÁO CÁO & HỆ THỐNG",
+    items: [
+      { label: "Báo cáo Analytics & Excel", href: "/hr/reports", icon: BarChart3, badge: "Excel" },
+      { label: "Nhật ký hệ thống Audit", href: "/hr/audit-logs", icon: History },
+    ]
+  }
+];
+
+export const HRSidebar: React.FC = () => {
+  const pathname = usePathname();
+
+  return (
+    <aside className="ml-6 mt-6 w-64 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col h-[calc(100vh-100px)] overflow-y-auto p-4 justify-between select-none sticky top-20 z-40">
+      <div className="space-y-6">
+        {hrNavigationGroups.map((group, idx) => (
+          <div key={idx} className="space-y-1.5">
+            <div className="px-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+              {group.groupName}
+            </div>
+            <div className="space-y-1">
+              {group.items.map((item, itemIdx) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href || (item.href !== '/hr/dashboard' && pathname?.startsWith(item.href));
+                
+                return (
+                  <Link
+                    key={itemIdx}
+                    href={item.href}
+                    className={clsx(
+                      // 1. Cấu trúc chung (Base style): flex, gap-3, px-4 py-3, font-medium, transition mượt, rounded-full
+                      "flex items-center justify-between gap-3 px-4 py-3 font-medium transition-all duration-200 ease-in-out rounded-full text-xs cursor-pointer group",
+                      // 2. Trạng thái Đang chọn (Active) vs Chưa chọn (Inactive)
+                      isActive
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                        : "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon 
+                        className={clsx(
+                          "w-4 h-4 transition-colors shrink-0",
+                          isActive ? "text-white" : "text-slate-400 group-hover:text-slate-600"
+                        )} 
+                      />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.badge && (
+                      <span 
+                        className={clsx(
+                          "text-[9px] font-extrabold px-2 py-0.5 rounded-full transition-colors",
+                          isActive 
+                            ? "bg-white/20 text-white border border-white/20" 
+                            : "bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700"
+                        )}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer System Status */}
+      <div className="pt-4 border-t border-slate-100 px-3 text-[11px] text-slate-400 space-y-1">
+        <div className="flex items-center justify-between">
+          <span>Enterprise ATS v3.4</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        </div>
+        <p className="text-[10px]">Hệ thống Tuyển dụng Nội bộ</p>
+      </div>
+    </aside>
+  );
+};

@@ -1,59 +1,226 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Search, Menu, X } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { Search, Menu, X, LogOut, User, LayoutDashboard, ShieldCheck } from "lucide-react";
 import { BrandLogo } from "./BrandLogo";
 import { Container } from "./Container";
 import { Button } from "@/components/ui/Button";
+import { useActiveSection } from "@/hooks/useActiveSection";
+
+interface UserProfile {
+  id: number;
+  email: string;
+  full_name: string;
+  role: string;
+  employee_code?: string;
+}
+
+export const NAV_SECTIONS = [
+  { id: "home", label: "Trang chủ" },
+  { id: "jobs", label: "Cơ hội nghề nghiệp" },
+  { id: "career-path", label: "Lộ trình phát triển" },
+  { id: "process", label: "Quy trình" },
+  { id: "news", label: "Tin tức nội bộ" },
+  { id: "faq", label: "FAQ" },
+];
 
 export function Header() {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const isHomePage = pathname === "/";
 
-  const navLinks = [
-    { label: "Trang chủ", href: "/" },
-    { label: "Cơ hội nghề nghiệp", href: "#jobs" },
-    { label: "Lộ trình phát triển", href: "#development" },
-    { label: "Tin tức nội bộ", href: "#news" },
-    { label: "Quy trình", href: "#process" },
-    { label: "FAQ", href: "#faq" },
-  ];
+  // Active section tracking via IntersectionObserver
+  const activeSection = useActiveSection(
+    NAV_SECTIONS.map((s) => s.id),
+    95
+  );
+
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadAvatar = () => {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("user_avatar_url");
+        if (saved) setAvatarUrl(saved);
+      }
+    };
+    loadAvatar();
+    window.addEventListener("avatar_updated", loadAvatar);
+    return () => window.removeEventListener("avatar_updated", loadAvatar);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("access_token");
+      const uStr = localStorage.getItem("user_info");
+      if (token && uStr) {
+        try {
+          const u = JSON.parse(uStr);
+          setUser(u);
+          if (u.avatar_url && !localStorage.getItem("user_avatar_url")) {
+            setAvatarUrl(u.avatar_url);
+          }
+        } catch (e) {
+          console.error("Failed to parse user_info", e);
+        }
+      }
+    }
+  }, []);
+
+  const handleLogout = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user_info");
+    }
+    setUser(null);
+    router.push("/login");
+  };
+
+  const getRoleLabel = (role: string) => {
+    const roles = role.split(",");
+    if (roles.includes("admin")) return "Quản Trị Viên";
+    if (roles.includes("hr_manager") || roles.includes("hr")) return "Trưởng Phòng HR";
+    if (roles.includes("recruiter")) return "Nhân Viên Tuyển Dụng";
+    if (roles.includes("hiring_manager") || roles.includes("manager")) return "Trưởng Bộ Phận";
+    if (roles.includes("interviewer")) return "Người Phỏng Vấn";
+    if (roles.includes("approver")) return "Người Duyệt";
+    return "Ứng Viên / Nhân Viên";
+  };
+
+  const getWorkspaceUrl = (role: string) => {
+    const roles = role.split(",");
+    if (roles.includes("admin")) return "/admin";
+    if (roles.includes("hr_manager") || roles.includes("hr")) return "/hr/dashboard";
+    if (roles.includes("recruiter")) return "/recruiter";
+    if (roles.includes("hiring_manager") || roles.includes("manager")) return "/manager";
+    if (roles.includes("interviewer")) return "/interviewer";
+    if (roles.includes("approver")) return "/approver";
+    if (roles.includes("employee")) return "/employee";
+    return "/jobs";
+  };
+
+  // Smooth scroll handler for one-page navigation
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    if (isHomePage) {
+      e.preventDefault();
+      const element = document.getElementById(id);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth" });
+        window.history.pushState(null, "", `#${id}`);
+      }
+      setIsMobileMenuOpen(false);
+    }
+  };
+
+  const handleSearchClick = () => {
+    if (isHomePage) {
+      const el = document.getElementById("jobs");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth" });
+        window.history.pushState(null, "", "#jobs");
+      }
+    } else {
+      router.push("/#jobs");
+    }
+  };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-[var(--color-border)] transition-all">
+    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[var(--color-border)] shadow-sm transition-all">
       <Container className="max-w-[1400px]">
         <div className="flex items-center justify-between h-20">
           {/* Brand Logo */}
           <BrandLogo size="md" href="/" />
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-8">
-            {navLinks.map((link) => (
-              <Link
-                key={link.label}
-                href={link.href}
-                className="text-sm font-semibold text-[var(--color-body)] hover:text-[var(--color-primary)] transition-colors"
-              >
-                {link.label}
-              </Link>
-            ))}
+          {/* Desktop Navigation Links with Active State & Smooth Scrolling */}
+          <nav className="hidden lg:flex items-center gap-1.5 xl:gap-2">
+            {NAV_SECTIONS.map((item) => {
+              const isActive = isHomePage && activeSection === item.id;
+              return (
+                <Link
+                  key={item.id}
+                  href={isHomePage ? `#${item.id}` : `/#${item.id}`}
+                  onClick={(e) => handleNavClick(e, item.id)}
+                  className={`relative px-3.5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                    isActive
+                      ? "text-blue-600 bg-blue-50/80 shadow-xs"
+                      : "text-slate-600 hover:text-blue-600 hover:bg-slate-50/80"
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  {isActive && (
+                    <span className="absolute bottom-0 left-3.5 right-3.5 h-[2.5px] bg-blue-600 rounded-full" />
+                  )}
+                </Link>
+              );
+            })}
           </nav>
 
           {/* Desktop Actions */}
           <div className="hidden lg:flex items-center gap-4">
             <button
               type="button"
-              aria-label="Tìm kiếm"
-              className="p-2.5 text-slate-500 hover:text-[var(--color-primary)] rounded-full hover:bg-slate-100 transition-colors"
+              aria-label="Tìm kiếm cơ hội nghề nghiệp"
+              onClick={handleSearchClick}
+              className="p-2.5 text-slate-500 hover:text-blue-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Tìm kiếm vị trí tuyển dụng"
             >
               <Search className="w-5 h-5" />
             </button>
-            <Button variant="ghost" href="/login">
-              Đăng nhập
-            </Button>
-            <Button variant="primary" href="/register">
-              Đăng ký
-            </Button>
+
+            {user ? (
+              <div className="flex items-center gap-3">
+                <Link
+                  href={getWorkspaceUrl(user.role)}
+                  className="flex items-center gap-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 px-3.5 py-1.5 rounded-full transition-all group cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs shadow-sm overflow-hidden">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt={user.full_name} className="w-full h-full object-cover" />
+                    ) : (
+                      user.full_name ? user.full_name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() : "NV"
+                    )}
+                  </div>
+                  <div className="text-left">
+                    <span className="font-bold text-slate-800 text-xs block leading-none group-hover:text-blue-600 transition-colors">
+                      {user.full_name}
+                    </span>
+                    <span className="text-[10px] font-semibold text-blue-600">
+                      {getRoleLabel(user.role)}
+                    </span>
+                  </div>
+                </Link>
+
+                <Link
+                  href={getWorkspaceUrl(user.role)}
+                  className="px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  title="Đến Không gian làm việc"
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span>Workspace</span>
+                </Link>
+
+                <button
+                  onClick={handleLogout}
+                  className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                  title="Đăng xuất"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <Button variant="ghost" href="/login">
+                  Đăng nhập
+                </Button>
+                <Button variant="primary" href="/register">
+                  Đăng ký
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -62,7 +229,7 @@ export function Header() {
               type="button"
               aria-label="Toggle Navigation"
               onClick={() => setIsMobileMenuOpen((prev) => !prev)}
-              className="p-2 text-slate-600 hover:text-[var(--color-heading)] rounded-lg hover:bg-slate-100"
+              className="p-2 text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 cursor-pointer"
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -71,26 +238,62 @@ export function Header() {
 
         {/* Mobile Navigation Drawer */}
         {isMobileMenuOpen && (
-          <div className="lg:hidden py-4 border-t border-slate-100 space-y-3">
-            <nav className="flex flex-col gap-2">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.label}
-                  href={link.href}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="px-4 py-2.5 text-sm font-semibold text-[var(--color-body)] hover:bg-slate-50 hover:text-[var(--color-primary)] rounded-lg transition-colors"
-                >
-                  {link.label}
-                </Link>
-              ))}
+          <div className="lg:hidden py-4 border-t border-slate-100 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+            <nav className="flex flex-col gap-1.5">
+              {NAV_SECTIONS.map((item) => {
+                const isActive = isHomePage && activeSection === item.id;
+                return (
+                  <Link
+                    key={item.id}
+                    href={isHomePage ? `#${item.id}` : `/#${item.id}`}
+                    onClick={(e) => handleNavClick(e, item.id)}
+                    className={`flex items-center justify-between px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer ${
+                      isActive
+                        ? "bg-blue-50 text-blue-600 font-bold border-l-4 border-blue-600 shadow-xs"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-blue-600"
+                    }`}
+                  >
+                    <span>{item.label}</span>
+                    {isActive && (
+                      <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                    )}
+                  </Link>
+                );
+              })}
             </nav>
             <div className="flex flex-col gap-2 pt-3 border-t border-slate-100 px-4">
-              <Button variant="outline" href="/login" className="w-full">
-                Đăng nhập
-              </Button>
-              <Button variant="primary" href="/register" className="w-full">
-                Đăng ký
-              </Button>
+              {user ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                    <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm">
+                      {user.full_name ? user.full_name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() : "NV"}
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-800 text-xs">{user.full_name}</div>
+                      <div className="text-[10px] text-blue-600 font-semibold">{getRoleLabel(user.role)}</div>
+                    </div>
+                  </div>
+                  <Button variant="primary" href={getWorkspaceUrl(user.role)} className="w-full">
+                    Đến Không gian làm việc ({getRoleLabel(user.role)})
+                  </Button>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full py-2.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Đăng xuất</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <Button variant="outline" href="/login" className="w-full">
+                    Đăng nhập
+                  </Button>
+                  <Button variant="primary" href="/register" className="w-full">
+                    Đăng ký
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         )}

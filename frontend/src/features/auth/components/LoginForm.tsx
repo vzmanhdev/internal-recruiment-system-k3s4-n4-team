@@ -12,6 +12,7 @@ import { Alert } from "@/components/ui/Alert";
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { authService } from "../services/auth.service";
 import { saveAuthSession } from "../lib/auth-session";
+import { notifyPermissionsChanged } from "@/providers/auth-provider";
 import { ApiError } from "@/lib/api-client";
 
 export function LoginForm() {
@@ -34,13 +35,13 @@ export function LoginForm() {
     const errors: Record<string, string> = {};
 
     if (!cleanEmail) {
-      errors["email"] = "Vui lòng nhập email công việc.";
+      errors["email"] = "";
     } else if (!cleanEmail.includes("@")) {
       errors["email"] = "Email không đúng định dạng (Ví dụ: name@company.com).";
     }
 
     if (!password) {
-      errors["password"] = "Vui lòng nhập mật khẩu.";
+      errors["password"] = "";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -57,84 +58,24 @@ export function LoginForm() {
         password: password,
       });
 
-      // Lưu phiên hiển thị cho Header
-      saveAuthSession({ displayName: res.user?.full_name || "Admin System" });
+      // Lưu thông tin phiên đăng nhập
+      saveAuthSession({ displayName: res.user?.full_name || "User" });
+      notifyPermissionsChanged(); // the persistent AuthProvider loads the new user + permissions
 
-      const isAdmin =
-        res.user?.role === "admin" ||
-        cleanEmail.toLowerCase() === "admin@company.com" ||
-        cleanEmail.toLowerCase() === "admin@gmail.com";
-
-      const isManager =
-        res.user?.role === "department_manager" ||
-        res.user?.role === "hiring_manager" ||
-        cleanEmail.toLowerCase() === "truongbophan@company.com";
+      // Destination: the page the proxy sent us from (?next=, same-origin paths only), otherwise the
+      // landing page computed by the backend from database roles. No role/email checks here.
+      const nextParam = new URLSearchParams(window.location.search).get("next");
+      const safeNext = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.startsWith("/login") ? nextParam : null;
+      const targetUrl = safeNext || res.redirect_url || res.user?.redirect_url || "/workspace";
 
       setSuccessMsg(
-        isAdmin
-          ? "Đăng nhập thành công với quyền Quản trị hệ thống! Đang chuyển hướng..."
-          : isManager
-          ? "Đăng nhập thành công với quyền Trưởng bộ phận! Đang chuyển hướng..."
-          : "Đăng nhập thành công! Đang chuyển hướng..."
+        `Đăng nhập thành công! Đang chuyển hướng dựa theo cấu hình vai trò từ hệ thống...`
       );
 
       setTimeout(() => {
-        if (isAdmin) {
-          router.push("/admin");
-        } else if (isManager) {
-          router.push("/manager");
-        } else {
-          router.push("/");
-        }
-      }, 1000);
-    } catch (err: any) {
-      // Phương án dự phòng nếu máy chủ Backend gặp sự cố mạng:
-      // 1. Tự động cấp quyền truy cập hợp lệ cho tài khoản admin@company.com / company123
-      const isTestAdminEmail =
-        cleanEmail.toLowerCase() === "admin@company.com" ||
-        cleanEmail.toLowerCase() === "admin@gmail.com";
-      if (isTestAdminEmail && password === "company123") {
-        const mockAdminUser = {
-          id: 1,
-          email: cleanEmail.toLowerCase(),
-          full_name: "Admin System",
-          role: "admin",
-          is_active: true,
-        };
-        localStorage.setItem("access_token", "admin-system-session-token");
-        localStorage.setItem("user_info", JSON.stringify(mockAdminUser));
-        saveAuthSession({ displayName: "Admin System" });
-
-        setSuccessMsg("Đăng nhập thành công (Admin System)! Đang chuyển hướng đến trang Quản trị...");
-        setTimeout(() => {
-          router.push("/admin");
-        }, 1000);
-        return;
-      }
-
-      // 2. Tự động cấp quyền truy cập hợp lệ cho Trưởng bộ phận: truongbophan@company.com / company123
-      if (
-        cleanEmail.toLowerCase() === "truongbophan@company.com" &&
-        (password === "company123" || password === "truongbophan123")
-      ) {
-        const mockManagerUser = {
-          id: 2,
-          email: "truongbophan@company.com",
-          full_name: "Lê Trưởng Nhóm",
-          role: "department_manager",
-          is_active: true,
-        };
-        localStorage.setItem("access_token", "manager-system-session-token");
-        localStorage.setItem("user_info", JSON.stringify(mockManagerUser));
-        saveAuthSession({ displayName: "Lê Trưởng Nhóm" });
-
-        setSuccessMsg("Đăng nhập thành công (Trưởng bộ phận)! Đang chuyển hướng đến trang Quản lý tuyển dụng...");
-        setTimeout(() => {
-          router.push("/manager");
-        }, 1000);
-        return;
-      }
-
+        router.push(targetUrl);
+      }, 800);
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
         if (err.fieldErrors) {

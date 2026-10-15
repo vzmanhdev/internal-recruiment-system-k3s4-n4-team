@@ -1,53 +1,106 @@
-# Node / Next.js
-node_modules/
-.next/
-out/
-build/
-dist/
-*.log
-*.tsbuildinfo
+# ==============================================================================
+# Git Ignore Configuration - Internal Recruitment System
+# ==============================================================================
 
-# Python / FastAPI
+# ------------------------------------------------------------------------------
+# 1. Folders excluded per user request (Ngoại trừ theo yêu cầu)
+# ------------------------------------------------------------------------------
+.agents/
+reports/
+tmp_test/
+.tmp_test/
+/tmp/
+
+# ------------------------------------------------------------------------------
+# 2. Environment Variables & Credentials (Biến môi trường & Bí mật)
+# ------------------------------------------------------------------------------
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+*.env
+
+# Cho phép commit file mẫu .env.example
+!.env.example
+!.env.*.example
+
+# ------------------------------------------------------------------------------
+# 3. Python & Backend (FastAPI / SQLAlchemy / Pytest)
+# ------------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
-.venv/
+*.so
+.Python
+env/
 venv/
+.venv/
 ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 .pytest_cache/
 .coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# ------------------------------------------------------------------------------
+# 4. Node.js & Frontend (Next.js / TypeScript)
+# ------------------------------------------------------------------------------
+node_modules/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Database
+# Next.js Build Output & TypeScript build cache
+.next/
+.next-e2e/
+out/
+*.tsbuildinfo
+
+# ------------------------------------------------------------------------------
+# 5. Databases & SQLite files (Dữ liệu cục bộ)
+# ------------------------------------------------------------------------------
+*.db
+*.db-journal
 *.sqlite
 *.sqlite3
 
-# Temporary & Scratch scripts in root
-analyze_excel_and_code.py
-check_headers.py
-code_files_list.txt
-codebase_files.txt
-cross_analysis_result.txt
-cross_reference.py
-deep_check_completion.py
-detailed_excel_analysis.py
-doc_extracted.txt
-excel_dump.json
-excel_items_dump.txt
-full_excel_breakdown.txt
-generate_full_report.py
-match_code_and_tasks.py
-tmp_output.txt
-tmp_parse_xlsx.py
+# ------------------------------------------------------------------------------
+# 6. Logs & Dumps
+# ------------------------------------------------------------------------------
+*.log
+*.dump
+*.json_dump
+*.swp
+*.swo
+*~
 
-# IDE / OS
+# ------------------------------------------------------------------------------
+# 7. OS & IDE Files
+# ------------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+Desktop.ini
 .vscode/
+!.vscode/extensions.json
 .idea/
+*.sublime-project
+*.sublime-workspace

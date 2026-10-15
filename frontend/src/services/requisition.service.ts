@@ -1,5 +1,16 @@
 import { apiRequest } from "@/lib/api-client";
 
+export interface RequisitionApprovalLog {
+  id: number;
+  requisition_id: number;
+  approver_id?: number | null;
+  approver_name?: string | null;
+  step_name?: string | null;
+  action: string;
+  comment?: string | null;
+  created_at?: string;
+}
+
 export interface RequisitionItem {
   id: number;
   code: string;
@@ -26,7 +37,16 @@ export interface RequisitionItem {
   creator_name?: string;
   created_at?: string;
   updated_at?: string;
-  approval_logs?: any[];
+  approval_logs?: RequisitionApprovalLog[];
+  approval_chain?: string[];
+  approval_step_index?: number;
+  days_open?: number | null;
+  days_remaining?: number | null;
+  is_overdue?: boolean;
+  job_title_name?: string | null;
+  job_title_id?: number | null;
+  salary_justification?: string | null;
+  recruiters?: Array<{ recruiter_id: number; full_name: string; assignment_type: string }>;
 }
 
 export const requisitionService = {
@@ -46,10 +66,49 @@ export const requisitionService = {
     });
   },
 
-  async approveRequisition(id: number, action: "approved" | "rejected", comment?: string): Promise<RequisitionItem> {
+  async approveRequisition(id: number, action: "approved" | "rejected" | "changes_requested", comment?: string): Promise<RequisitionItem> {
     return apiRequest<RequisitionItem>(`/requisitions/${id}/approve`, {
       method: "POST",
       body: JSON.stringify({ action, comment }),
     });
-  }
+  },
+
+  async updateRequisition(id: number, data: Partial<RequisitionItem>): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}`, { method: "PUT", body: JSON.stringify(data) });
+  },
+
+  async submitRequisition(id: number): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}/submit`, { method: "POST" });
+  },
+
+  async closeRequisition(id: number, status: "filled" | "paused" | "cancelled", reason: string, confirm_active_candidates = false): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}/close`, {
+      method: "POST",
+      body: JSON.stringify({ status, reason, confirm_active_candidates }),
+    });
+  },
+
+  async assignRecruiter(id: number, recruiter_id: number, assignment_type: "primary" | "secondary" = "primary"): Promise<{ success: boolean; message: string }> {
+    return apiRequest(`/requisitions/${id}/assign-recruiters`, {
+      method: "POST",
+      body: JSON.stringify({ recruiter_id, assignment_type }),
+    });
+  },
+
+  async resumeRequisition(id: number, reason: string): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}/resume`, { method: "POST", body: JSON.stringify({ reason }) });
+  },
+
+  async copyRequisition(id: number): Promise<RequisitionItem> {
+    return apiRequest<RequisitionItem>(`/requisitions/${id}/copy`, { method: "POST" });
+  },
+
+  /** Nudge the approvers of the current step (creator only, once per day). */
+  async remind(id: number): Promise<{ sent: number }> {
+    return apiRequest(`/requisitions/${id}/remind`, { method: "POST" });
+  },
+
+  async deleteDraft(id: number): Promise<{ success: boolean }> {
+    return apiRequest(`/requisitions/${id}`, { method: "DELETE" });
+  },
 };

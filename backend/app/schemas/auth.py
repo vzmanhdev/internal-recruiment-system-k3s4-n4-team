@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 
 class UserRegister(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100, description="Họ và tên người dùng")
@@ -80,9 +80,15 @@ class ChangePasswordRequest(BaseModel):
         return value
 
 class ProfileUpdateRequest(BaseModel):
-    full_name: str = Field(..., min_length=2, max_length=100)
+    full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
     avatar_url: Optional[str] = Field(None, max_length=4_000_000)
+    date_of_birth: Optional[str] = Field(None, max_length=50)
+    dob: Optional[str] = Field(None, max_length=50)
+    gender: Optional[str] = Field(None, max_length=20)
+    job_title: Optional[str] = Field(None, max_length=255)
+    department: Optional[str] = Field(None, max_length=255)
+    bio: Optional[str] = Field(None, max_length=1000)
 
     @field_validator("phone")
     @classmethod
@@ -97,17 +103,46 @@ class UserResponse(BaseModel):
     full_name: str
     phone: Optional[str] = None
     employee_code: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    dob: Optional[str] = None
+    gender: Optional[str] = None
+    job_title: Optional[str] = None
+    department: Optional[str] = None
+    bio: Optional[str] = None
     role: str
-    roles: List[str] = Field(default_factory=list)
+    roles: Optional[Any] = None
+    permissions: List[str] = Field(default_factory=list)
+    effective_permissions: List[str] = Field(default_factory=list)
+    redirect_url: Optional[str] = None
     is_active: bool
     account_status: str = "active"
     lock_reason: Optional[str] = None
     avatar_url: Optional[str] = None
     created_at: Optional[str] = None
 
+
+class RefreshRequest(BaseModel):
+    refresh_token: Optional[str] = Field(None, description="Refresh Token (nếu không dùng HttpOnly Cookie)")
+
+class SessionResponse(BaseModel):
+    id: str
+    user_id: int
+    device_name: str
+    browser: str
+    os: str
+    ip_address: str
+    created_at: Optional[str] = None
+    last_active_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    is_revoked: bool = False
+    revoke_reason: Optional[str] = None
+    current: bool = False
+
 class Token(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
+    redirect_url: str = "/"
     user: UserResponse
 
 class RegistrationResponse(BaseModel):
@@ -118,3 +153,15 @@ class ErrorResponse(BaseModel):
     detail: str
     error_code: Optional[str] = None
     field_errors: Optional[Dict[str, str]] = None
+
+class ApiErrorDetail(BaseModel):
+    code: str
+    message: str
+    details: Optional[Dict] = None
+    field_errors: Optional[Dict[str, str]] = None
+
+class StandardErrorResponse(BaseModel):
+    success: bool = False
+    error: ApiErrorDetail
+    request_id: Optional[str] = None
+

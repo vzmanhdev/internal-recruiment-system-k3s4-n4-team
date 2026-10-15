@@ -17,6 +17,11 @@ export interface InterviewItem {
   score?: number;
   passed?: boolean;
   interviewers?: any[];
+  cv_url?: string | null;
+  candidate_response?: string | null;
+  my_evaluation_submitted?: boolean;
+  is_my_interview?: boolean;
+  is_own_application?: boolean;
 }
 
 export const interviewService = {
@@ -52,5 +57,25 @@ export const interviewService = {
       method: "PUT",
       body: JSON.stringify(data),
     });
-  }
+  },
+
+  async getMine(): Promise<InterviewItem[]> {
+    return apiRequest<InterviewItem[]>("/interviews?mine=true");
+  },
+
+  async scorecardTemplate(id: number): Promise<{ framework: { id: string; name: string } | null; criteria: Array<{ id: string; code: string; name: string; description?: string; weight: number }> }> {
+    return apiRequest(`/interviews/${id}/scorecard-template`);
+  },
+
+  async questionSuggestions(id: number): Promise<Array<{ id: string; code: string; content: string; criteria_name?: string; difficulty?: string; suggested_answer?: string; already_asked: boolean }>> {
+    return apiRequest(`/interviews/${id}/question-suggestions`);
+  },
+
+  async markAsked(id: number, question_id: string): Promise<{ success: boolean }> {
+    return apiRequest(`/interviews/${id}/asked-questions`, { method: "POST", body: JSON.stringify({ question_id }) });
+  },
+
+  async cancel(id: number, reason: string): Promise<InterviewItem> {
+    return apiRequest(`/interviews/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
+  },
 };

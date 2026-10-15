@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -16,7 +17,7 @@ from app.models.interview import InterviewSchedule, InterviewInterviewer
 from app.models.offer_onboarding import JobOffer, OnboardingChecklist
 from app.models.referral_eval import InternalReferral, CandidateEvaluation
 
-TEST_DB_FILE = "./test_recruitment.db"
+TEST_DB_FILE = os.path.join(os.environ.get("TEST_TMP_DIR", "."), "test_recruitment.db").replace("\\", "/")
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -144,13 +145,17 @@ def test_full_e2e_recruitment_lifecycle():
     cand_token = cand_login.json()["access_token"]
     cand_headers = {"Authorization": f"Bearer {cand_token}"}
 
+    # S4-03: the CV is a real uploaded PDF (type detected from content), not an arbitrary URL
+    cv = client.post("/api/v1/files", data={"kind": "cv"},
+                     files={"file": ("cv.pdf", b"%PDF-1.4 Nguyen Van Candidate candidate@test.com %%EOF", "application/pdf")})
+    assert cv.status_code == 201, cv.text
     app_payload = {
         "job_posting_id": job_id,
         "full_name": "Nguyễn Văn Candidate",
         "email": "candidate@test.com",
         "phone": "0912345678",
         "years_of_experience": 3,
-        "cv_url": "https://storage.example.com/cv.pdf"
+        "cv_url": cv.json()["url"]
     }
     app_resp = client.post("/api/v1/applications", json=app_payload, headers=cand_headers)
     assert app_resp.status_code == 201
@@ -170,7 +175,7 @@ def test_full_e2e_recruitment_lifecycle():
         "application_id": app_id,
         "round_number": 1,
         "round_name": "Vòng Phỏng Vấn Chuyên Môn",
-        "scheduled_time": "2026-10-10T09:00:00",
+        "scheduled_time": (datetime.now() + timedelta(days=3)).replace(microsecond=0).isoformat(),
         "duration_minutes": 60,
         "location": "Google Meet",
         "meeting_link": "https://meet.google.com/test-meet",
@@ -200,10 +205,23 @@ def test_full_e2e_recruitment_lifecycle():
     off_resp = client.post("/api/v1/offers", json=offer_payload, headers=headers)
     assert off_resp.status_code == 201
     off_id = off_resp.json()["id"]
+    # S7-04/S7-05: an offer starts in the approval workflow and cannot be accepted before approval + sending.
+    assert off_resp.json()["status"] == "pending_approval"
+    early_accept = client.put(f"/api/v1/offers/{off_id}/status", json={"status": "accepted"}, headers=headers)
+    assert early_accept.status_code == 409
 
-    off_accept = client.put(f"/api/v1/offers/{off_id}/status", json={"status": "accepted"}, headers=headers)
-    assert off_accept.status_code == 200
+    approve = client.post(f"/api/v1/offers/{off_id}/decision", json={"action": "approved"}, headers=headers)
+    assert approve.status_code == 200, approve.text
+    assert approve.json()["status"] == "approved"
+    sent = client.post(f"/api/v1/offers/{off_id}/send", headers=headers)
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["status"] == "sent"
+
+    off_accept = client.post(f"/api/v1/offers/{off_id}/respond", json={"decision": "accepted"}, headers=cand_headers)
+    assert off_accept.status_code == 200, off_accept.text
     assert off_accept.json()["status"] == "accepted"
+    assert len(off_accept.json()["onboarding"]) == 5
+    assert client.get(f"/api/v1/applications/{app_id}", headers=headers).json()["status"] == "hired"
 
     # 10. Analytics Dashboard Audit
     analytics_resp = client.get("/api/v1/analytics/overview", headers=headers)

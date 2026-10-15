@@ -22,24 +22,103 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-def create_access_token(subject: Any, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    subject: Any, 
+    session_id: Optional[str] = None, 
+    security_version: int = 1, 
+    expires_delta: Optional[timedelta] = None
+) -> str:
+    now = datetime.utcnow()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode = {"exp": expire, "sub": str(subject), "purpose": "access"}
+    to_encode = {
+        "sub": str(subject),
+        "sid": str(session_id) if session_id else "",
+        "typ": "access",
+        "ver": int(security_version),
+        "iat": int(now.timestamp()),
+        "exp": expire
+    }
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-def decode_access_token(token: str) -> Optional[str]:
+def decode_access_token(token: str, verify_exp: bool = True) -> Optional[dict]:
+    """Verify signature + type. ``verify_exp=False`` is only for route-access decisions, where the
+    server-side session (revocation, absolute/idle expiry, security version) is the authority."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        if payload.get("purpose") != "access":
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM],
+                             options={"verify_exp": verify_exp})
+        # Backwards compatibility check: support legacy tokens with purpose="access" or typ="access"
+        token_typ = payload.get("typ") or payload.get("purpose")
+        if token_typ != "access":
             return None
-        return payload.get("sub")
+        return payload
     except JWTError:
         return None
+
+def generate_refresh_token() -> str:
+    """Generates a 64-character cryptographically secure random hex string for Refresh Token."""
+    return secrets.token_hex(32)
+
+def hash_token(token: str) -> str:
+    """Calculates HMAC-SHA256 digest of refresh token for safe DB storage."""
+    if not token:
+        return ""
+    return hmac.new(settings.SECRET_KEY.encode('utf-8'), token.strip().encode('utf-8'), hashlib.sha256).hexdigest()
+
+def parse_user_agent(user_agent_str: Optional[str]) -> dict:
+    """Simple User-Agent parser extracting device, browser, and OS names."""
+    if not user_agent_str:
+        return {
+            "device_name": "Thiết bị không xác định",
+            "browser": "Trình duyệt Web",
+            "os": "Hệ điều hành Web"
+        }
+    
+    ua = user_agent_str.lower()
+    
+    # Extract OS
+    os_name = "Hệ điều hành Web"
+    if "windows" in ua:
+        os_name = "Windows PC"
+    elif "macintosh" in ua or "mac os" in ua:
+        os_name = "macOS"
+    elif "iphone" in ua or "ipad" in ua:
+        os_name = "iOS Mobile"
+    elif "android" in ua:
+        os_name = "Android Mobile"
+    elif "linux" in ua:
+        os_name = "Linux"
+
+    # Extract Browser
+    browser_name = "Trình duyệt Web"
+    if "edg/" in ua or "edge/" in ua:
+        browser_name = "Microsoft Edge"
+    elif "chrome/" in ua and "safari/" in ua and "edg" not in ua:
+        browser_name = "Google Chrome"
+    elif "firefox/" in ua:
+        browser_name = "Mozilla Firefox"
+    elif "safari/" in ua and "chrome" not in ua:
+        browser_name = "Apple Safari"
+    elif "opera" in ua or "opr/" in ua:
+        browser_name = "Opera"
+
+    # Extract Device Name
+    device = "Desktop PC"
+    if "mobile" in ua or "iphone" in ua or "android" in ua:
+        device = "Điện thoại Di động"
+    elif "ipad" in ua or "tablet" in ua:
+        device = "Máy tính bảng"
+
+    return {
+        "device_name": device,
+        "browser": browser_name,
+        "os": os_name
+    }
+
 
 # =========================================================================
 # OTP & PASSWORD RESET CRYPTOGRAPHIC HELPERS
