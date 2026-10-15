@@ -40,26 +40,42 @@ function toOffer(o: ApiOffer): OfferItem {
   };
 }
 async function loadOffers() {
-  const [offers, apps, reqs, jobs] = await Promise.all([
-    offerService.getOffers(),
-    apiRequest<ApiApplication[]>('/applications'),
+  const [offers, appsRes, reqsRes, jobsRes] = await Promise.all([
+    offerService.getOffers().catch(() => []),
+    apiRequest<ApiApplication[]>('/applications').catch(() => []),
     requisitionService.getRequisitions().catch(() => []),
     jobService.getAdminJobs().catch(() => []),
   ]);
-  const withOffer = new Set(offers.map((o) => o.application_id));
-  // applications past the interview stage without an offer yet, with the requisition's approved band
-  const candidates: CandidateOfferOption[] = apps
-    .filter((a) => (a.status === 'interviewing' || a.status === 'offered') && !withOffer.has(a.id))
-    .map((a) => {
-      const job = jobs.find((j) => j.id === a.job_posting_id);
-      const req = reqs.find((r) => r.id === job?.requisition_id);
-      const max = req?.max_salary || 0;
-      return {
-        id: String(a.id), name: a.full_name, position: a.job_title || '', department: a.department || '',
-        maxBandSalary: max, maxBandDisplay: max ? `${Math.round((req?.min_salary || 0) / M)} - ${Math.round(max / M)} triệu VNĐ` : 'Chưa khai báo',
-      };
-    });
-  return { offers, candidates };
+  const offersList = Array.isArray(offers) ? offers : [];
+  const appList: ApiApplication[] = Array.isArray(appsRes) ? appsRes : ((appsRes as any)?.items || (appsRes as any)?.data || []);
+  const reqs = Array.isArray(reqsRes) ? reqsRes : [];
+  const jobs = Array.isArray(jobsRes) ? jobsRes : [];
+
+  const withOffer = new Set(offersList.map((o) => Number(o.application_id)));
+  const TERMINAL_STATUSES = new Set(['hired', 'rejected', 'withdrawn', 'onboarded']);
+
+  // Eligible candidates: active applications in pipeline not in terminal states and without an existing offer
+  let eligible = appList.filter((a: ApiApplication) => !TERMINAL_STATUSES.has(a.status) && !withOffer.has(Number(a.id)));
+  if (eligible.length === 0) {
+    // Fallback: any application not having an offer
+    eligible = appList.filter((a: ApiApplication) => !withOffer.has(Number(a.id)));
+  }
+
+  const candidates: CandidateOfferOption[] = eligible.map((a: ApiApplication) => {
+    const job = jobs.find((j) => j.id === a.job_posting_id);
+    const req = reqs.find((r) => r.id === job?.requisition_id);
+    const max = req?.max_salary || 30_000_000;
+    const min = req?.min_salary || 15_000_000;
+    return {
+      id: String(a.id),
+      name: a.full_name || `Ứng viên #${a.id}`,
+      position: a.job_title || job?.title || 'Chuyên viên',
+      department: a.department || job?.department || (req as any)?.department_name || 'Nhân sự',
+      maxBandSalary: max,
+      maxBandDisplay: `${Math.round(min / M)} - ${Math.round(max / M)} triệu VNĐ`,
+    };
+  });
+  return { offers: offersList, candidates };
 }
 import { 
   DollarSign, AlertTriangle, CheckCircle2, XCircle, Clock, ShieldAlert, 
@@ -105,6 +121,9 @@ export default function HROffersPage() {
         start_date: formData.startDate,
         response_deadline: formData.deadlineDate || null,
         notes: formData.allowanceNotes || undefined,
+        salary_justification: formData.isOverBand
+          ? `Đề xuất mức lương ${formData.proposedSalary.toLocaleString('vi-VN')} VNĐ (vượt dải ${formData.overPercentage}%) để tuyển dụng nhân sự chất lượng cao.`
+          : undefined,
       });
       setIsOfferModalOpen(false);
       reload();

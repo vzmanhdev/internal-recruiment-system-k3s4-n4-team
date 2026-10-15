@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   X, DollarSign, AlertTriangle, CheckCircle2, Calendar, 
   FileText, ShieldCheck, Sparkles 
@@ -52,6 +52,33 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
   const [startDate, setStartDate] = useState<string>("");
   const [deadlineDate, setDeadlineDate] = useState<string>("");
   const [allowanceNotes, setAllowanceNotes] = useState<string>("");
+
+  // Auto-sync candidate and pre-fill default start/deadline dates when modal opens or options change
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (options.length > 0) {
+      const exists = options.some((c) => c.id === selectedCandidateId);
+      if (!selectedCandidateId || !exists) {
+        const first = options[0];
+        setSelectedCandidateId(first.id);
+        if (!proposedSalaryInput) {
+          setProposedSalaryInput(first.maxBandSalary > 0 ? first.maxBandSalary.toString() : "25000000");
+        }
+      }
+    }
+
+    if (!startDate) {
+      const d = new Date();
+      d.setDate(d.getDate() + 14);
+      setStartDate(d.toISOString().split("T")[0]);
+    }
+    if (!deadlineDate) {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      setDeadlineDate(d.toISOString().split("T")[0]);
+    }
+  }, [isOpen, options, selectedCandidateId, proposedSalaryInput, startDate, deadlineDate]);
 
   if (!isOpen) return null;
 
