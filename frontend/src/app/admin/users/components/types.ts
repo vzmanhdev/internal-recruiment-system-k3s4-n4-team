@@ -31,18 +31,32 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
     badgeClass: "bg-purple-50 text-purple-700 border-purple-200",
   },
   {
+    code: "hr_manager",
+    name: "Trưởng phòng Nhân sự",
+    shortName: "HR Manager",
+    description: "Quản lý tổng quan tuyển dụng, định biên, phê duyệt và quy trình nhân sự.",
+    badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
+  },
+  {
+    code: "recruiter",
+    name: "Chuyên viên Tuyển dụng",
+    shortName: "Recruiter",
+    description: "Đăng tin tuyển dụng, sàng lọc hồ sơ, điều phối phỏng vấn và phát hành offer.",
+    badgeClass: "bg-sky-50 text-sky-700 border-sky-200",
+  },
+  {
+    code: "approver",
+    name: "Người phê duyệt",
+    shortName: "Approver",
+    description: "Phê duyệt các yêu cầu tuyển dụng (Requisition) và đề xuất thư mời nhận việc (Offer).",
+    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  {
     code: "hiring_manager",
     name: "Trưởng bộ phận",
     shortName: "Hiring Manager",
     description: "Tạo và duyệt yêu cầu tuyển dụng, tham gia phỏng vấn chuyên môn phòng ban.",
     badgeClass: "bg-amber-50 text-amber-700 border-amber-200",
-  },
-  {
-    code: "recruiter",
-    name: "HR / Tuyển dụng",
-    shortName: "HR",
-    description: "Đăng tin, sàng lọc hồ sơ ứng viên, điều phối phỏng vấn và phát hành offer.",
-    badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
   },
   {
     code: "interviewer",
@@ -53,16 +67,20 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
   },
   {
     code: "employee",
-    name: "Nhân viên",
-    shortName: "Nhân viên",
+    name: "Nhân viên nội bộ",
+    shortName: "Employee",
     description: "Xem tin nội bộ, giới thiệu ứng viên (Referral) và nộp đơn ứng tuyển nội bộ.",
     badgeClass: "bg-slate-50 text-slate-700 border-slate-200",
   },
 ];
 
 export const getRoleMeta = (roleCode: string): RoleDefinition => {
+  const code = (roleCode || "").toLowerCase().trim();
+  if (code === "hr") {
+    return ROLE_DEFINITIONS.find((r) => r.code === "hr_manager")!;
+  }
   const found = ROLE_DEFINITIONS.find(
-    (r) => r.code === roleCode || r.code === roleCode.toLowerCase()
+    (r) => r.code === roleCode || r.code === code
   );
   if (found) return found;
 
