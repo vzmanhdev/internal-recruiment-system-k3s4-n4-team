@@ -2,7 +2,7 @@ from app.models.user import User
 from app.models.auth_session import AuthSession
 from app.models.rbac import Role, UserRole
 from app.models.password_reset import PasswordResetSession
-from app.models.hr import Competency, Department, JobTitle, SharedCategory
+from app.models.hr import Competency, Department, JobTitle, SharedCategory, ApprovalFlow, ApprovalFlowVersion
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
 from app.models.job import JobPosting
 from app.models.application import JobApplication, ApplicationLog

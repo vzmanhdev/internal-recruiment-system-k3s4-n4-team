@@ -5,9 +5,9 @@ requisitions); salary bands are only returned to HR (S2-05 AC3). All writes requ
 """
 import json
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union, Tuple
 
-from fastapi import APIRouter, Header, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Header, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -15,7 +15,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import authenticate_bearer
 from app.db.session import get_db
 from app.models.user import User
-from app.models.hr import ApprovalFlow, Competency, Department, HeadcountBudget, JobTitle, SharedCategory
+from app.models.hr import ApprovalFlow, ApprovalFlowVersion, Competency, Department, HeadcountBudget, JobTitle, SharedCategory
+from app.models.rbac import Role
+from app.models.audit import AuditLog
 from app.models.master_data import (
     CompetencyCriterion, CompetencyFramework, InterviewQuestion, OnboardingTemplate, SlaRule,
 )
@@ -540,23 +542,73 @@ def upsert_headcount(payload: HeadcountIn, authorization: Optional[str] = Header
     return _headcount_out(db, item)
 
 
-# ------------------------------------------------------------------ approval flows (S3-01)
+# ------------------------------------------------------------------ approval flows (S3-01 Dynamic Versioning)
 class ApprovalFlowIn(BaseModel):
     name: str = Field(..., min_length=2, max_length=150)
     department_id: Optional[int] = None
-    steps: List[str] = Field(..., min_length=1)
+    approval_type: Optional[str] = "job_requisition"
+    steps: List[Union[str, dict]] = Field(..., min_length=1)
     min_salary_threshold: float = Field(0, ge=0)
     max_salary_threshold: float = Field(100_000_000_000, ge=0)
+    status: Optional[str] = "active"
+    description: Optional[str] = None
 
-    @field_validator("steps")
-    @classmethod
-    def valid_steps(cls, steps):
-        bad = [s for s in steps if s not in APPROVAL_STEPS]
-        if bad:
-            raise ValueError(f"Cấp duyệt không hợp lệ: {', '.join(bad)} (chỉ chấp nhận manager, hr, executive).")
-        if len(set(steps)) != len(steps):
-            raise ValueError("Một cấp duyệt không được lặp lại trong chuỗi.")
-        return steps
+
+def _parse_and_validate_steps(raw_steps: List[Union[str, dict]]) -> Tuple[List[dict], List[str]]:
+    parsed = []
+    canonical_codes = []
+    
+    role_label_map = {
+        "hiring_manager": ("HIRING_MANAGER", "Trưởng phòng chuyên môn đề xuất & xác nhận nhu cầu tuyển dụng"),
+        "manager": ("HIRING_MANAGER", "Trưởng phòng chuyên môn đề xuất & xác nhận nhu cầu tuyển dụng"),
+        "hr_manager": ("HR_MANAGER", "Trưởng phòng Nhân sự thẩm định định biên, SLA và ngân sách"),
+        "hr": ("HR_MANAGER", "Trưởng phòng Nhân sự thẩm định định biên, SLA và ngân sách"),
+        "approver": ("EXECUTIVE", "Ban Giám Đốc phê duyệt cuối cùng"),
+        "executive": ("EXECUTIVE", "Ban Giám Đốc phê duyệt cuối cùng"),
+        "director": ("EXECUTIVE", "Ban Giám Đốc phê duyệt cuối cùng"),
+        "cfo": ("EXECUTIVE", "Ban Giám Đốc phê duyệt cuối cùng"),
+        "ceo": ("EXECUTIVE", "Ban Giám Đốc phê duyệt cuối cùng"),
+        "recruiter": ("RECRUITER", "Chuyên viên Tuyển dụng điều phối"),
+        "admin": ("SYSTEM_ADMIN", "Quản trị hệ thống phê duyệt"),
+    }
+
+    for i, item in enumerate(raw_steps):
+        if isinstance(item, dict):
+            role_raw = str(item.get("role", "HIRING_MANAGER")).strip()
+            desc = str(item.get("description", "")).strip()
+            step_num = item.get("step_num", i + 1)
+        else:
+            role_raw = str(item).strip()
+            desc = ""
+            step_num = i + 1
+
+        lower_key = role_raw.lower()
+        if lower_key in ("hiring_manager", "manager"):
+            canon = "manager"
+        elif lower_key in ("hr_manager", "hr"):
+            canon = "hr"
+        elif lower_key in ("approver", "executive", "director", "cfo", "ceo"):
+            canon = "executive"
+        else:
+            canon = lower_key
+
+        if canon not in APPROVAL_STEPS and lower_key not in ("recruiter", "admin"):
+            raise HTTPException(status_code=422, detail=f"Cấp duyệt '{role_raw}' không hợp lệ (chỉ chấp nhận các vai trò thẩm quyền trong hệ thống).")
+
+        default_role_code, default_desc = role_label_map.get(lower_key, (role_raw.upper(), f"Cấp phê duyệt số {i + 1}"))
+        final_desc = desc if desc else default_desc
+
+        parsed.append({
+            "step_num": step_num,
+            "role": default_role_code,
+            "description": final_desc
+        })
+        canonical_codes.append(canon)
+
+    if len(set(canonical_codes)) != len(canonical_codes):
+        raise HTTPException(status_code=422, detail="Một cấp duyệt không được lặp lại trong chuỗi.")
+    
+    return parsed, canonical_codes
 
 
 def _validate_flow(db: Session, payload: ApprovalFlowIn):
@@ -566,47 +618,476 @@ def _validate_flow(db: Session, payload: ApprovalFlowIn):
         raise HTTPException(status_code=422, detail="Phòng ban không tồn tại")
 
 
+def _check_flow_conflict(
+    db: Session,
+    flow_id: Optional[int],
+    department_id: Optional[int],
+    approval_type: str,
+    min_salary: float,
+    max_salary: float,
+    status: str
+):
+    """Checks whether an active flow overlaps with an existing active flow for the same scope."""
+    if status != "active":
+        return
+
+    query = db.query(ApprovalFlow).filter(
+        ApprovalFlow.is_deleted == False,
+        ApprovalFlow.status == "active",
+        ApprovalFlow.approval_type == approval_type,
+        ApprovalFlow.department_id == department_id
+    )
+    if flow_id:
+        query = query.filter(ApprovalFlow.id != flow_id)
+
+    existing_flows = query.all()
+    for f in existing_flows:
+        f_min = f.min_salary_threshold or 0.0
+        f_max = f.max_salary_threshold or float("inf")
+        # Overlapping condition: min_salary < f_max and max_salary > f_min
+        if min_salary < f_max and max_salary > f_min:
+            f_min_str = f"{int(f_min):,}".replace(",", ".") + " ₫"
+            f_max_str = f"{int(f_max):,}".replace(",", ".") + " ₫" if f_max < 1e12 else "Vô cực"
+            raise HTTPException(
+                status_code=422,
+                detail=f"Xung đột quy tắc: Dải giá trị áp dụng bị giao nhau với luồng đang áp dụng '{f.name}' ({f_min_str} - {f_max_str}). Vui lòng điều chỉnh dải tiền hoặc ngừng áp dụng luồng cũ."
+            )
+
+
+@router.get("/approval-types")
+def list_approval_types(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """Dynamic approval types loaded from system categories."""
+    _authenticated(authorization, db)
+    cats = db.query(SharedCategory).filter(
+        SharedCategory.category_type == "approval_type",
+        SharedCategory.is_active == True
+    ).order_by(SharedCategory.sort_order.asc(), SharedCategory.id.asc()).all()
+
+    if not cats:
+        defaults = [
+            {"code": "job_requisition", "name": "Tuyển dụng (Job Requisition)", "description": "Quy trình phê duyệt yêu cầu tuyển dụng mới"},
+            {"code": "offer", "name": "Offer thư mời nhận việc", "description": "Quy trình duyệt đề xuất và thư mời nhận việc"},
+            {"code": "headcount", "name": "Ngân sách tuyển dụng (Headcount)", "description": "Quy trình duyệt vượt định biên hoặc ngân sách"},
+            {"code": "salary_exception", "name": "Ngoại lệ lương (Salary Exception)", "description": "Quy trình phê duyệt mức lương ngoài dải chuẩn"},
+        ]
+        return defaults
+
+    def _canonical_code(name: str) -> str:
+        nl = name.lower()
+        if "headcount" in nl or "ngân sách" in nl or "định biên" in nl:
+            return "headcount"
+        if "salary" in nl or "ngoại lệ" in nl or "lương" in nl:
+            return "salary_exception"
+        if "offer" in nl or "thư mời" in nl:
+            return "offer"
+        if "requisition" in nl or "tuyển dụng" in nl:
+            return "job_requisition"
+        return nl.replace(" ", "_")
+
+    seen_codes = set()
+    result = []
+    for c in cats:
+        code = _canonical_code(c.name)
+        if code not in seen_codes:
+            seen_codes.add(code)
+            result.append({"code": code, "name": c.name, "description": ""})
+    return result
+
+
+@router.get("/approval-roles")
+def list_approval_roles(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """System roles available for workflow approval steps."""
+    _authenticated(authorization, db)
+    db_roles = db.query(Role).all()
+    role_meta = {
+        "hiring_manager": {
+            "name": "HIRING_MANAGER (Trưởng phòng chuyên môn)",
+            "description": "Đề xuất & xác nhận nhu cầu tuyển dụng"
+        },
+        "hr_manager": {
+            "name": "HR_MANAGER (Trưởng phòng Nhân sự)",
+            "description": "Thẩm định định biên, SLA và ngân sách"
+        },
+        "approver": {
+            "name": "EXECUTIVE (Ban Giám Đốc)",
+            "description": "Ban Giám Đốc phê duyệt cuối cùng"
+        },
+        "recruiter": {
+            "name": "RECRUITER (Chuyên viên Tuyển dụng)",
+            "description": "Quản lý tiếp nhận và điều phối quy trình"
+        },
+        "admin": {
+            "name": "SYSTEM_ADMIN (Quản trị hệ thống)",
+            "description": "Phê duyệt các trường hợp đặc biệt"
+        }
+    }
+    results = []
+    seen = set()
+    for r in db_roles:
+        code_key = r.code.lower()
+        if code_key in role_meta:
+            meta = role_meta[code_key]
+            results.append({
+                "code": r.code.upper(),
+                "role_key": code_key,
+                "name": meta["name"],
+                "description": meta["description"]
+            })
+            seen.add(code_key)
+        elif r.code not in ("candidate", "employee"):
+            results.append({
+                "code": r.code.upper(),
+                "role_key": code_key,
+                "name": f"{r.code.upper()} ({r.name})",
+                "description": r.description or ""
+            })
+            seen.add(code_key)
+
+    for k, meta in role_meta.items():
+        if k not in seen:
+            results.append({
+                "code": k.upper(),
+                "role_key": k,
+                "name": meta["name"],
+                "description": meta["description"]
+            })
+    return results
+
+
 @router.get("/approval-flows")
-def list_approval_flows(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+def list_approval_flows(
+    search: Optional[str] = None,
+    department_id: Optional[int] = None,
+    approval_type: Optional[str] = None,
+    status: Optional[str] = None,
+    sort_by: Optional[str] = "updated_desc",
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=100),
+    response: Response = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
     authorize(authorization, db)
-    return [item.to_dict() for item in db.query(ApprovalFlow).order_by(ApprovalFlow.id.asc()).all()]
+    query = db.query(ApprovalFlow).filter(ApprovalFlow.is_deleted == False)
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        query = query.filter(ApprovalFlow.name.ilike(term))
+
+    if department_id is not None:
+        query = query.filter(ApprovalFlow.department_id == department_id)
+
+    if approval_type and approval_type != "all":
+        query = query.filter(ApprovalFlow.approval_type == approval_type)
+
+    if status and status != "all":
+        query = query.filter(ApprovalFlow.status == status)
+
+    total_count = query.count()
+    if response:
+        response.headers["X-Total-Count"] = str(total_count)
+
+    # Sorting
+    if sort_by == "name_asc":
+        query = query.order_by(ApprovalFlow.name.asc())
+    elif sort_by == "name_desc":
+        query = query.order_by(ApprovalFlow.name.desc())
+    elif sort_by == "updated_asc":
+        query = query.order_by(ApprovalFlow.updated_at.asc(), ApprovalFlow.id.asc())
+    elif sort_by == "threshold_asc":
+        query = query.order_by(ApprovalFlow.min_salary_threshold.asc())
+    elif sort_by == "threshold_desc":
+        query = query.order_by(ApprovalFlow.max_salary_threshold.desc())
+    else:
+        query = query.order_by(ApprovalFlow.updated_at.desc(), ApprovalFlow.id.desc())
+
+    if page is not None:
+        ps = page_size or 10
+        total_pages = max(1, (total_count + ps - 1) // ps)
+        items = query.offset((page - 1) * ps).limit(ps).all()
+        return {
+            "items": [item.to_dict() for item in items],
+            "total": total_count,
+            "page": page,
+            "page_size": ps,
+            "total_pages": total_pages
+        }
+
+    if page_size is not None:
+        query = query.limit(page_size)
+
+    return [item.to_dict() for item in query.all()]
 
 
 @router.post("/approval-flows", status_code=201)
 def create_approval_flow(payload: ApprovalFlowIn, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    authorize(authorization, db)
+    current_user = authorize(authorization, db)
     _validate_flow(db, payload)
-    item = ApprovalFlow(name=payload.name, department_id=payload.department_id, max_levels=len(payload.steps),
-                        min_salary_threshold=payload.min_salary_threshold, max_salary_threshold=payload.max_salary_threshold,
-                        steps_json=json.dumps(payload.steps), status="active")
-    db.add(item); db.commit(); db.refresh(item)
+    parsed_steps, canonical_codes = _parse_and_validate_steps(payload.steps)
+
+    flow_status = payload.status or "active"
+    app_type = payload.approval_type or "job_requisition"
+
+    # Conflict detection
+    _check_flow_conflict(db, None, payload.department_id, app_type, payload.min_salary_threshold, payload.max_salary_threshold, flow_status)
+
+    now = datetime.utcnow()
+    item = ApprovalFlow(
+        name=payload.name,
+        department_id=payload.department_id,
+        approval_type=app_type,
+        version="v1.0",
+        max_levels=len(parsed_steps),
+        min_salary_threshold=payload.min_salary_threshold,
+        max_salary_threshold=payload.max_salary_threshold,
+        steps_json=json.dumps(parsed_steps),
+        status=flow_status,
+        is_active=(flow_status == "active"),
+        description=payload.description or "",
+        updated_by_id=current_user.id,
+        updated_at=now,
+        created_at=now
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    # Initial version record
+    v_rec = ApprovalFlowVersion(
+        flow_id=item.id,
+        version="v1.0",
+        snapshot_json=json.dumps(item.to_dict()),
+        created_by_id=current_user.id,
+        change_reason="Khởi tạo luồng phê duyệt",
+        created_at=now
+    )
+    db.add(v_rec)
+
+    # Audit log
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="CREATE_APPROVAL_FLOW",
+        target_entity="approval_flow",
+        target_id=str(item.id),
+        payload_json=json.dumps({
+            "name": item.name,
+            "version": item.version,
+            "status": item.status,
+            "approval_type": item.approval_type,
+            "actor_name": current_user.full_name
+        }),
+        created_at=now
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(item)
     return item.to_dict()
 
 
 @router.put("/approval-flows/{flow_id}")
 def update_approval_flow(flow_id: int, payload: ApprovalFlowIn, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     """Running requisitions keep the chain snapshot taken at submission (S3-01 AC4)."""
-    authorize(authorization, db)
-    item = db.query(ApprovalFlow).filter(ApprovalFlow.id == flow_id).first()
+    current_user = authorize(authorization, db)
+    item = db.query(ApprovalFlow).filter(ApprovalFlow.id == flow_id, ApprovalFlow.is_deleted == False).first()
     if not item:
         raise HTTPException(status_code=404, detail="Không tìm thấy luồng duyệt")
+
     _validate_flow(db, payload)
-    item.name, item.department_id = payload.name, payload.department_id
-    item.steps_json, item.max_levels = json.dumps(payload.steps), len(payload.steps)
-    item.min_salary_threshold, item.max_salary_threshold = payload.min_salary_threshold, payload.max_salary_threshold
-    db.commit(); db.refresh(item)
+    parsed_steps, canonical_codes = _parse_and_validate_steps(payload.steps)
+
+    target_status = payload.status or item.status
+    app_type = payload.approval_type or item.approval_type
+
+    # Conflict detection
+    _check_flow_conflict(db, item.id, payload.department_id, app_type, payload.min_salary_threshold, payload.max_salary_threshold, target_status)
+
+    now = datetime.utcnow()
+
+    # Save snapshot of previous state to versions table
+    v_prev = ApprovalFlowVersion(
+        flow_id=item.id,
+        version=item.version or "v1.0",
+        snapshot_json=json.dumps(item.to_dict()),
+        created_by_id=current_user.id,
+        change_reason=f"Chỉnh sửa từ phiên bản {item.version}",
+        created_at=now
+    )
+    db.add(v_prev)
+
+    # Increment version if flow was active
+    new_version = item.version or "v1.0"
+    if item.status == "active":
+        try:
+            curr_str = new_version.lstrip("v")
+            parts = curr_str.split(".")
+            major = int(parts[0])
+            minor = int(parts[1]) if len(parts) > 1 else 0
+            if len(parsed_steps) != item.max_levels:
+                new_version = f"v{major + 1}.0"
+            else:
+                new_version = f"v{major}.{minor + 1}"
+        except Exception:
+            new_version = "v1.1"
+
+    item.name = payload.name
+    item.department_id = payload.department_id
+    item.approval_type = app_type
+    item.version = new_version
+    item.steps_json = json.dumps(parsed_steps)
+    item.max_levels = len(parsed_steps)
+    item.min_salary_threshold = payload.min_salary_threshold
+    item.max_salary_threshold = payload.max_salary_threshold
+    item.status = target_status
+    item.is_active = (target_status == "active")
+    item.description = payload.description or ""
+    item.updated_by_id = current_user.id
+    item.updated_at = now
+
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="UPDATE_APPROVAL_FLOW",
+        target_entity="approval_flow",
+        target_id=str(item.id),
+        payload_json=json.dumps({
+            "name": item.name,
+            "version": item.version,
+            "status": item.status,
+            "actor_name": current_user.full_name
+        }),
+        created_at=now
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(item)
     return item.to_dict()
 
 
 @router.post("/approval-flows/{flow_id}/deactivate")
 def deactivate_approval_flow(flow_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    authorize(authorization, db)
-    item = db.query(ApprovalFlow).filter(ApprovalFlow.id == flow_id).first()
+    """Soft deactivation: sets status to inactive and logs audit, no hard delete."""
+    current_user = authorize(authorization, db)
+    item = db.query(ApprovalFlow).filter(ApprovalFlow.id == flow_id, ApprovalFlow.is_deleted == False).first()
     if not item:
         raise HTTPException(status_code=404, detail="Không tìm thấy luồng duyệt")
+    now = datetime.utcnow()
     item.status = "inactive"
-    db.commit(); db.refresh(item)
+    item.is_active = False
+    item.updated_by_id = current_user.id
+    item.updated_at = now
+
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="DEACTIVATE_APPROVAL_FLOW",
+        target_entity="approval_flow",
+        target_id=str(item.id),
+        payload_json=json.dumps({"name": item.name, "status": "inactive", "actor_name": current_user.full_name}),
+        created_at=now
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(item)
     return item.to_dict()
+
+
+@router.post("/approval-flows/{flow_id}/activate")
+def activate_approval_flow(flow_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """Re-activates a flow after checking rule conflict with existing active flows."""
+    current_user = authorize(authorization, db)
+    item = db.query(ApprovalFlow).filter(ApprovalFlow.id == flow_id, ApprovalFlow.is_deleted == False).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Không tìm thấy luồng duyệt")
+
+    _check_flow_conflict(db, item.id, item.department_id, item.approval_type, item.min_salary_threshold, item.max_salary_threshold, "active")
+
+    now = datetime.utcnow()
+    item.status = "active"
+    item.is_active = True
+    item.updated_by_id = current_user.id
+    item.updated_at = now
+
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="ACTIVATE_APPROVAL_FLOW",
+        target_entity="approval_flow",
+        target_id=str(item.id),
+        payload_json=json.dumps({"name": item.name, "status": "active", "actor_name": current_user.full_name}),
+        created_at=now
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(item)
+    return item.to_dict()
+
+
+@router.get("/approval-flows/{flow_id}/versions")
+def list_approval_flow_versions(flow_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    authorize(authorization, db)
+    versions = db.query(ApprovalFlowVersion).filter(ApprovalFlowVersion.flow_id == flow_id).order_by(ApprovalFlowVersion.created_at.desc()).all()
+    return [v.to_dict() for v in versions]
+
+
+@router.delete("/approval-flows/{flow_id}")
+def delete_approval_flow(flow_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """PHASE 5: Safely delete or archive an approval flow.
+    - Active flows cannot be deleted if in use or active; user must deactivate first.
+    - Referenced by active requisitions in approval: blocked with 409.
+    - Soft-deletes: is_deleted=True, is_active=False, records audit log and preserves version snapshots.
+    """
+    current_user = authorize(authorization, db)
+    item = db.query(ApprovalFlow).filter(ApprovalFlow.id == flow_id, ApprovalFlow.is_deleted == False).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Không tìm thấy luồng phê duyệt hoặc luồng đã bị xóa")
+
+    if item.status == "active":
+        raise HTTPException(
+            status_code=409,
+            detail="Không thể xóa luồng phê duyệt đang áp dụng. Vui lòng chuyển trạng thái sang 'Ngừng áp dụng' trước khi thực hiện xóa."
+        )
+
+    # Check if any requisition is currently active/pending approval in this department or scope
+    active_reqs = db.query(JobRequisition.id).filter(
+        JobRequisition.status.in_(["pending_manager", "pending_hr", "pending_executive"])
+    )
+    if item.department_id is not None:
+        active_reqs = active_reqs.filter(JobRequisition.department_id == item.department_id)
+    if active_reqs.first():
+        raise HTTPException(
+            status_code=409,
+            detail="Không thể xóa luồng phê duyệt vì có yêu cầu tuyển dụng đang trong quá trình phê duyệt liên kết với luồng này."
+        )
+
+    now = datetime.utcnow()
+    item.is_deleted = True
+    item.is_active = False
+    item.status = "deleted"
+    item.deleted_at = now
+    item.deleted_by_id = current_user.id
+    item.updated_at = now
+    item.updated_by_id = current_user.id
+
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="DELETE_APPROVAL_FLOW",
+        target_entity="approval_flow",
+        target_id=str(item.id),
+        payload_json=json.dumps({
+            "name": item.name,
+            "version": item.version,
+            "approval_type": item.approval_type,
+            "status": "deleted",
+            "actor_name": current_user.full_name
+        }),
+        created_at=now
+    )
+    db.add(audit)
+    db.commit()
+    return {"success": True, "message": f"Đã xóa luồng phê duyệt '{item.name}' thành công", "id": item.id}
+
 
 
 # ------------------------------------------------------------------ onboarding templates (S7-08)

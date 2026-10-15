@@ -148,7 +148,7 @@ def resolve_approval_chain(db: Session, req: JobRequisition) -> list:
     """S3-01: pick the active flow for the department and proposed salary; department-specific flows win,
     then the flow with the highest matching salary threshold (so higher salaries escalate automatically)."""
     salary = req.max_salary or req.min_salary or 0
-    flows = db.query(ApprovalFlow).filter(ApprovalFlow.status == "active").all()
+    flows = db.query(ApprovalFlow).filter(ApprovalFlow.status == "active", ApprovalFlow.is_deleted == False).all()
     matching = [f for f in flows
                 if (f.department_id in (None, req.department_id))
                 and (f.min_salary_threshold or 0) <= salary < (f.max_salary_threshold or float("inf"))]

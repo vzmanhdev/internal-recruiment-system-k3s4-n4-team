@@ -7,7 +7,6 @@ import {
   Sparkles,
   ShieldCheck,
   TrendingUp,
-  Compass,
   Target,
   GraduationCap,
   ArrowRight,
@@ -30,11 +29,86 @@ import {
   ChevronDown,
   Newspaper,
   Calendar,
+  Settings,
+  Coffee,
+  Laptop,
+  Plane,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Container } from "@/components/layout/Container";
 import { jobService, JobPostingItem } from "@/services/job.service";
+
+interface CareerBenefit {
+  title: string;
+  description: string;
+  icon?: string;
+}
+
+interface CareerSettings {
+  configured?: boolean;
+  company_name?: string;
+  slogan?: string;
+  logo_url?: string;
+  banner_url?: string;
+  about_us?: string;
+  benefits?: CareerBenefit[];
+  updated_at?: string;
+}
+
+const DEFAULT_CAREER_SETTINGS: CareerSettings = {
+  company_name: "Tập Đoàn Doanh Nghiệp Enterprise",
+  slogan: "Cùng nhau tạo nên những điều lớn lao và bứt phá nấc thang sự nghiệp",
+  banner_url:
+    "https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop",
+  about_us:
+    "Về danh tiếng và thị trường, công ty là điểm tựa vững chắc cho sự nghiệp của bạn. Chúng tôi tin rằng tài sản quý giá nhất chính là đội ngũ nhân sự. Sứ mệnh của chúng tôi là tạo nên không gian làm việc mở, công bằng và cơ hội phát triển không giới hạn cho mọi nhân viên.",
+  benefits: [
+    {
+      title: "Bảo hiểm toàn diện",
+      description: "Bảo hiểm toàn diện nhân lương, bảo hiểm y tế mở rộng cho cả gia đình.",
+      icon: "ShieldCheck",
+    },
+    {
+      title: "Đào tạo chuyên sâu",
+      description: "Đào tạo chuyên sâu các kỹ năng mới, hỗ trợ 100% học bổng chứng chỉ quốc tế.",
+      icon: "GraduationCap",
+    },
+    {
+      title: "Thưởng thâm niên",
+      description: "Thưởng thâm niên và các chế độ đãi ngộ vượt bậc khi cống hiến lâu dài.",
+      icon: "Award",
+    },
+  ],
+};
+
+function resolveBenefitIcon(iconName?: string) {
+  switch (iconName?.toLowerCase()) {
+    case "award":
+      return Award;
+    case "graduationcap":
+      return GraduationCap;
+    case "shieldcheck":
+      return ShieldCheck;
+    case "zap":
+      return Zap;
+    case "coffee":
+      return Coffee;
+    case "laptop":
+      return Laptop;
+    case "plane":
+      return Plane;
+    case "users":
+      return Users;
+    case "hearthandshake":
+    case "heart":
+      return HeartHandshake;
+    case "trendingup":
+      return TrendingUp;
+    default:
+      return ShieldCheck;
+  }
+}
 
 export default function LandingPage() {
   // Search & Filter State
@@ -47,6 +121,10 @@ export default function LandingPage() {
   const [jobs, setJobs] = useState<JobPostingItem[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
 
+  // Dynamic Career Page Settings (CMS by HR)
+  const [careerSettings, setCareerSettings] = useState<CareerSettings>(DEFAULT_CAREER_SETTINGS);
+  const [isHRUser, setIsHRUser] = useState(false);
+
   // Active step hovered on timeline
   const [hoveredStep, setHoveredStep] = useState<number | null>(null);
 
@@ -55,76 +133,59 @@ export default function LandingPage() {
 
   useEffect(() => {
     let isMounted = true;
+
+    // Check if logged-in user is HR/Recruiter/Admin
+    try {
+      const rawUser = localStorage.getItem("user");
+      if (rawUser) {
+        const parsed = JSON.parse(rawUser);
+        const roles: string[] = parsed.roles || [];
+        if (
+          roles.includes("hr") ||
+          roles.includes("hrm") ||
+          roles.includes("admin") ||
+          roles.includes("recruiter")
+        ) {
+          setIsHRUser(true);
+        }
+      }
+    } catch { }
+
+    // Load CMS Career Page Settings
+    fetch("/api/v1/public/career-page")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (isMounted && data && data.configured !== false && data.company_name) {
+          setCareerSettings({
+            company_name: data.company_name,
+            slogan: data.slogan || DEFAULT_CAREER_SETTINGS.slogan,
+            banner_url: data.banner_url || DEFAULT_CAREER_SETTINGS.banner_url,
+            about_us: data.about_us || DEFAULT_CAREER_SETTINGS.about_us,
+            benefits:
+              data.benefits && data.benefits.length > 0
+                ? data.benefits
+                : DEFAULT_CAREER_SETTINGS.benefits,
+            configured: true,
+          });
+        }
+      })
+      .catch(() => { });
+
+    // Load Real Job Postings from Database API
     jobService
       .getJobs()
       .then((data) => {
         if (isMounted) {
-          if (data && data.length > 0) {
-            setJobs(data);
-          } else {
-            // Fallback demo data if DB is initially empty
-            setJobs([
-              {
-                id: 1,
-                slug: "senior-backend-engineer",
-                title: "Senior Backend Engineer (Python / FastAPI)",
-                department_id: 1,
-                department: "Khối Công Nghệ Thông Tin",
-                department_name: "Khối Công Nghệ Thông Tin",
-                location: "Hà Nội",
-                type: "Toàn thời gian",
-                level: "Senior",
-                salary_range: "25 - 35 Triệu",
-                description:
-                  "Tham gia thiết kế kiến trúc Backend microservices, tối ưu API tuyển dụng nội bộ quy mô lớn.",
-                requirements: "Python, FastAPI, SQLAlchemy, PostgreSQL, Docker",
-                status: "published",
-                views_count: 142,
-                applications_count: 8,
-              },
-              {
-                id: 2,
-                slug: "hr-recruitment-lead",
-                title: "Trưởng Nhóm Tuyển Dụng & Đào Tạo (HR Lead)",
-                department_id: 2,
-                department: "Khối Nhân Sự & Đào Tạo",
-                department_name: "Khối Nhân Sự & Đào Tạo",
-                location: "Hà Nội",
-                type: "Toàn thời gian",
-                level: "Trưởng nhóm",
-                salary_range: "20 - 30 Triệu",
-                description:
-                  "Điều phối toàn bộ quy trình tuyển mộ nhân tài nội bộ và thiết lập chương trình phát triển năng lực.",
-                requirements: "3+ năm kinh nghiệm quản lý tuyển dụng, kỹ năng giao tiếp xuất sắc",
-                status: "published",
-                views_count: 98,
-                applications_count: 5,
-              },
-              {
-                id: 3,
-                slug: "product-manager",
-                title: "Chuyên Viên Quản Lý Sản Phẩm (Product Manager)",
-                department_id: 3,
-                department: "Khối Sản Phẩm & Thiết Kế",
-                department_name: "Khối Sản Phẩm & Thiết Kế",
-                location: "Hồ Chí Minh",
-                type: "Toàn thời gian",
-                level: "Mid - Senior",
-                salary_range: "28 - 40 Triệu",
-                description:
-                  "Dẫn dắt lộ trình phát triển sản phẩm SaaS, phân tích dữ liệu hành vi người dùng và tối ưu trải nghiệm.",
-                requirements: "Kinh nghiệm Agile/Scrum, tư duy sản phẩm hướng dữ liệu, UX/UI mindset",
-                status: "published",
-                views_count: 115,
-                applications_count: 6,
-              },
-            ]);
-          }
+          setJobs(data || []);
           setLoadingJobs(false);
         }
       })
-      .catch(() => {
-        if (isMounted) setLoadingJobs(false);
+      .catch((err) => {
+        console.error("Failed to load real jobs:", err);
+        if (isMounted) {
+          setJobs([]);
+          setLoadingJobs(false);
+        }
       });
 
     return () => {
@@ -133,39 +194,52 @@ export default function LandingPage() {
   }, []);
 
   const categories = [
-    { id: "all", label: `Tất cả vị trí (${jobs.length})` },
-    { id: "it", label: "Công nghệ thông tin" },
-    { id: "hr", label: "Nhân sự & Đào tạo" },
-    { id: "product", label: "Sản phẩm & Quản trị" },
-    { id: "finance", label: "Tài chính & Kinh doanh" },
+    { id: "all", label: "Tất Cả" },
+    { id: "it", label: "Công Nghệ Thông Tin" },
+    { id: "product", label: "Kinh Doanh & Marketing" },
+    { id: "hr", label: "Nhân Sự" },
+    { id: "finance", label: "Tài Chính" },
+    { id: "operation", label: "Vận Hành" },
   ];
 
   const filteredJobs = jobs.filter((job) => {
+    const deptStr = (job.department_name || job.department || "").toLowerCase();
+    const titleStr = (job.title || "").toLowerCase();
+    const locStr = (job.location || "").toLowerCase();
+
     const matchesCategory =
       activeCategory === "all" ||
       (activeCategory === "it" &&
-        (job.department.toLowerCase().includes("công nghệ") ||
-          job.department.toLowerCase().includes("it"))) ||
-      (activeCategory === "hr" && job.department.toLowerCase().includes("nhân sự")) ||
+        (deptStr.includes("công nghệ") ||
+          deptStr.includes("it") ||
+          titleStr.includes("backend") ||
+          titleStr.includes("frontend") ||
+          titleStr.includes("data"))) ||
+      (activeCategory === "hr" &&
+        (deptStr.includes("nhân sự") ||
+          titleStr.includes("hr") ||
+          titleStr.includes("tuyển dụng"))) ||
       (activeCategory === "product" &&
-        (job.department.toLowerCase().includes("sản phẩm") ||
-          job.title.toLowerCase().includes("product"))) ||
+        (deptStr.includes("sản phẩm") ||
+          deptStr.includes("thiết kế") ||
+          deptStr.includes("marketing") ||
+          titleStr.includes("product"))) ||
       (activeCategory === "finance" &&
-        (job.department.toLowerCase().includes("tài chính") ||
-          job.department.toLowerCase().includes("kinh doanh")));
+        (deptStr.includes("tài chính") || deptStr.includes("kế toán"))) ||
+      (activeCategory === "operation" &&
+        (deptStr.includes("vận hành") || deptStr.includes("khách hàng")));
 
     const matchesKeyword =
       !searchKeyword ||
-      job.title.toLowerCase().includes(searchKeyword.toLowerCase()) ||
-      job.department.toLowerCase().includes(searchKeyword.toLowerCase());
+      titleStr.includes(searchKeyword.toLowerCase()) ||
+      deptStr.includes(searchKeyword.toLowerCase()) ||
+      locStr.includes(searchKeyword.toLowerCase());
 
     const matchesDept =
-      selectedDept === "all" ||
-      job.department.toLowerCase().includes(selectedDept.toLowerCase());
+      selectedDept === "all" || deptStr.includes(selectedDept.toLowerCase());
 
     const matchesLoc =
-      selectedLocation === "all" ||
-      job.location.toLowerCase().includes(selectedLocation.toLowerCase());
+      selectedLocation === "all" || locStr.includes(selectedLocation.toLowerCase());
 
     return matchesCategory && matchesKeyword && matchesDept && matchesLoc;
   });
@@ -177,11 +251,11 @@ export default function LandingPage() {
     },
     {
       q: "Tôi có cần thông báo cho Quản lý trực tiếp trước khi nộp hồ sơ không?",
-      a: "Hệ thống bảo đảm tính bảo mật trong giai đoạn đầu tiếp nhận hồ sơ. Tuy nhiên, trước vòng phỏng vấn chuyên sâu hoặc khi nhận đề nghị thử việc (Offer), HR sẽ đồng hành cùng bạn để trao đổi với Quản lý hiện tại nhằm chuẩn bị kế hoạch bàn giao chu đáo.",
+      a: "Hệ thống bảo đảm tính bảo mật trong giai đoạn đầu tiếp nhận hồ sơ. Trước vòng phỏng vấn chuyên sâu hoặc khi nhận đề nghị thử việc (Offer), HR sẽ đồng hành cùng bạn để trao đổi với Quản lý hiện tại nhằm chuẩn bị kế hoạch bàn giao chu đáo nhất.",
     },
     {
       q: "Thông tin ứng tuyển của tôi có được bảo mật không?",
-      a: "Tuyệt đối bảo mật. Hồ sơ của bạn chỉ được truy cập bởi Chuyên viên Tuyển dụng (HR Recruiter) và Người phụ trách duyệt tuyển dụng chuyên môn của vị trí ứng tuyển.",
+      a: "Tuyệt đối bảo mật 100%. Hồ sơ của bạn chỉ được truy cập bởi Chuyên viên Tuyển dụng (HR Recruiter) và Người duyệt tuyển dụng chuyên môn của vị trí ứng tuyển.",
     },
     {
       q: "Nếu chưa trúng tuyển đợt này, vị trí hiện tại của tôi có bị ảnh hưởng không?",
@@ -189,269 +263,181 @@ export default function LandingPage() {
     },
     {
       q: "Chế độ thâm niên, phép năm và đãi ngộ được tính thế nào khi chuyển bộ phận?",
-      a: "Toàn bộ thâm niên làm việc, ngày phép tích lũy và các phúc lợi cốt lõi được giữ nguyên 100%. Lương và phụ cấp chuyên môn sẽ được điều chỉnh tương ứng theo dải đãi ngộ của vị trí mới.",
+      a: "Toàn bộ thâm niên làm việc, ngày phép tích lũy và các phúc lợi cốt lõi được bảo lưu 100%. Lương và phụ cấp chuyên môn sẽ được điều chỉnh tương ứng theo dải đãi ngộ của vị trí mới.",
     },
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50/50 text-slate-800 font-sans selection:bg-blue-500 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-white text-slate-800 font-sans selection:bg-blue-500 selection:text-white">
       {/* Top Global Navigation */}
       <Header />
 
       <main className="flex-1">
         {/* ========================================================================= */}
-        {/* SECTION 1: TRANG CHỦ (HERO) - ID: home */}
+        {/* SECTION 1: HERO - Translucent with Blurry Photo & Vibrant Animated Aurora Mesh */}
         {/* ========================================================================= */}
         <section
           id="home"
-          className="relative pt-12 pb-20 lg:pt-20 lg:pb-32 overflow-hidden bg-grid-pattern bg-white/70 scroll-mt-20"
+          className="relative -mt-20 pt-36 pb-24 lg:pt-40 lg:pb-32 overflow-hidden scroll-mt-20 text-center"
         >
-          {/* Ambient Glowing Blobs in Background */}
-          <div className="absolute top-[-10%] left-[-5%] w-[450px] h-[450px] rounded-full bg-gradient-to-tr from-blue-400/25 via-indigo-400/20 to-purple-400/10 blur-3xl pointer-events-none animate-glow-pulse" />
-          <div
-            className="absolute top-[20%] right-[-10%] w-[550px] h-[550px] rounded-full bg-gradient-to-bl from-cyan-400/20 via-blue-400/20 to-indigo-400/10 blur-3xl pointer-events-none animate-glow-pulse"
-            style={{ animationDelay: "2.5s" }}
-          />
+          {/* Background Layer 1: Modern Corporate Office Photo with Blurry Translucent Depth */}
+          <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+            <Image
+              src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=1600&auto=format&fit=crop"
+              alt="Môi trường làm việc"
+              fill
+              priority
+              className="object-cover object-center filter blur-[10px] scale-105 opacity-[0.25]"
+            />
+          </div>
+
+          {/* Background Layer 2: Vibrant Animated Aurora Gradient Mesh in Daylight Blue & Cyan (No Pink) */}
+          {/* Left Orb: Rich Pastel Cyan / Aqua / Turquoise Aura */}
+          <div className="absolute -top-16 -left-36 w-[700px] h-[700px] lg:w-[900px] lg:h-[900px] rounded-full bg-gradient-to-tr from-cyan-400/80 via-sky-300/70 to-teal-200/40 blur-[80px] pointer-events-none animate-mesh-drift-1" />
+
+          {/* Right Orb: Luminous Sky Blue / Royal Blue / Soft Ice Blue Aura */}
+          <div className="absolute -top-12 -right-36 w-[700px] h-[700px] lg:w-[900px] lg:h-[900px] rounded-full bg-gradient-to-bl from-blue-400/65 via-sky-300/55 to-cyan-200/35 blur-[85px] pointer-events-none animate-mesh-drift-2" />
+
+          {/* Lower Left / Center Accent Orb: Soft Glowing Teal / Sky */}
+          <div className="absolute -bottom-24 left-1/4 w-[550px] h-[550px] rounded-full bg-gradient-to-tr from-teal-300/60 via-cyan-200/45 to-transparent blur-[75px] pointer-events-none animate-mesh-drift-3" />
+
+          {/* Background Layer 3: Satin Frosted Glass Overlay */}
+          <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-white/40 to-white/90 backdrop-blur-[3px] pointer-events-none" />
 
           <Container>
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
-              {/* Left Column: Brand Statement & CTA */}
-              <div className="lg:col-span-7 space-y-7 z-10">
-                {/* Glowing Pill Chip */}
-                <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full text-xs font-bold bg-white/90 backdrop-blur-md text-blue-700 border border-blue-200/90 shadow-xs shadow-blue-500/10 hover:border-blue-400 transition-all">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600" />
-                  </span>
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                  <span>CỔNG TUYỂN DỤNG & PHÁT TRIỂN NỘI BỘ ENTERPRISE</span>
-                </div>
-
-                {/* Main Headline with Gradient Text */}
-                <h1 className="text-4xl sm:text-5xl lg:text-[62px] font-black text-slate-900 tracking-tight leading-[1.12]">
-                  Cùng nhau tạo nên{" "}
-                  <span className="block mt-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600">
-                    những điều lớn lao
-                  </span>
-                </h1>
-
-                <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-2xl font-normal">
-                  Chủ động kiến tạo nấc thang sự nghiệp kế tiếp ngay tại doanh nghiệp bạn đang gắn bó.
-                  Minh bạch tiêu chuẩn, công bằng cơ hội và đồng hành bứt phá năng lực.
-                </p>
-
-                {/* Uiverse Action Buttons */}
-                <div className="flex flex-wrap items-center gap-4 pt-2">
-                  {/* Primary Button: Shimmer Sweep + Glowing Shadow */}
-                  <a
-                    href="#jobs"
-                    className="relative group overflow-hidden px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white font-bold text-sm sm:text-base shadow-lg shadow-blue-500/30 hover:shadow-blue-500/50 hover:scale-[1.03] active:scale-[0.98] transition-all duration-300 flex items-center gap-2.5 before:absolute before:inset-0 before:-translate-x-full hover:before:translate-x-full before:bg-gradient-to-r before:from-transparent before:via-white/30 before:to-transparent before:transition-transform before:duration-700 cursor-pointer"
-                  >
-                    <span>Xem vị trí đang tuyển</span>
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </a>
-
-                  {/* Secondary Button: Glassmorphic Border */}
-                  <a
-                    href="#process"
-                    className="px-7 py-4 rounded-2xl bg-white/90 backdrop-blur-md border border-slate-200 text-slate-700 font-bold text-sm sm:text-base hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/50 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 shadow-xs cursor-pointer"
-                  >
-                    Quy trình 5 bước
-                  </a>
-                </div>
-
-                {/* Micro Highlights Pill Row */}
-                <div className="pt-6 border-t border-slate-200/80 grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200/60 flex items-center justify-center shrink-0 shadow-xs">
-                      <ShieldCheck className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800">Minh bạch 100%</p>
-                      <p className="text-[11px] text-slate-500">Mọi cấp bậc & tiêu chí</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 border border-blue-200/60 flex items-center justify-center shrink-0 shadow-xs">
-                      <TrendingUp className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800">Lộ trình rõ ràng</p>
-                      <p className="text-[11px] text-slate-500">Không mất thâm niên</p>
-                    </div>
-                  </div>
-
-                  <div className="hidden sm:flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 border border-purple-200/60 flex items-center justify-center shrink-0 shadow-xs">
-                      <Award className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800">Đãi ngộ xứng tầm</p>
-                      <p className="text-[11px] text-slate-500">Thưởng & ghi nhận</p>
-                    </div>
-                  </div>
-                </div>
+            <div className="max-w-5xl xl:max-w-6xl mx-auto space-y-8 relative z-10">
+              {/* Centered Pill Badge matching Mockup */}
+              <div className="inline-flex items-center gap-2 px-6 py-2 rounded-full text-xs sm:text-sm font-bold bg-sky-200/85 text-sky-800 border border-sky-300/80 shadow-xs mx-auto backdrop-blur-sm hover:scale-105 transition-all">
+                <Sparkles className="w-4 h-4 text-sky-600 animate-spin-slow" />
+                <span>Khám phá 117+ vị trí tuyển dụng nội bộ</span>
               </div>
 
-              {/* Right Column: Visual Showcase (Floating + Deep Offset Shadow) */}
-              <div className="lg:col-span-5 relative">
-                <div className="relative mx-auto max-w-md lg:max-w-none">
-                  {/* Glowing background halo */}
-                  <div className="absolute -inset-4 bg-gradient-to-r from-blue-500/20 via-indigo-500/25 to-purple-500/20 rounded-[32px] blur-2xl -z-10" />
+              {/* Centered Main Headline with Expansive Breathing Room */}
+              <h1 className="text-4xl sm:text-5xl lg:text-[56px] xl:text-[62px] font-black text-slate-900 tracking-tight leading-[1.15] drop-shadow-2xs max-w-4xl mx-auto">
+                Khám Phá Cơ Hội & Tự Hào<br />Đồng Hành Cùng Doanh Nghiệp
+              </h1>
 
-                  {/* Floating Container */}
-                  <div className="animate-uiverse-float relative rounded-3xl overflow-hidden border-4 border-white bg-slate-100 shadow-[0_25px_60px_-15px_rgba(59,130,246,0.3)] aspect-[4/3] sm:aspect-[4/3]">
-                    <Image
-                      src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop"
-                      alt="Đội ngũ nhân sự hợp tác chuyên nghiệp"
-                      fill
-                      priority
-                      className="object-cover transition-transform duration-700 hover:scale-105"
-                      sizes="(max-width: 768px) 100vw, 45vw"
-                    />
+              {/* Centered Expansive Pill Search Bar */}
+              <div className="relative flex items-center max-w-3xl lg:max-w-4xl mx-auto mt-6 w-full hero-search-bar rounded-full">
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm cơ hội việc làm nội bộ, chức danh, phòng ban..."
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      document.getElementById("jobs")?.scrollIntoView({ behavior: "smooth" });
+                    }
+                  }}
+                  className="w-full h-15 sm:h-16 pl-7 pr-18 bg-transparent rounded-full focus:outline-none text-sm sm:text-base font-medium text-slate-800 placeholder:text-slate-400"
+                />
+                <button
+                  type="button"
+                  aria-label="Tìm kiếm vị trí"
+                  onClick={() => {
+                    document.getElementById("jobs")?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="absolute right-2.5 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-sky-400 via-cyan-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white flex items-center justify-center hover:scale-105 active:scale-95 shadow-md shadow-cyan-400/35 transition-all cursor-pointer"
+                  style={{ color: "#ffffff" }}
+                >
+                  <Search className="w-5 h-5 text-white" />
+                </button>
+              </div>
 
-                    {/* Gradient Overlay for photo depth */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/40 via-transparent to-transparent pointer-events-none" />
-                  </div>
-
-                  {/* Handwriting floating callout banner */}
-                  <div className="absolute -top-6 -right-3 sm:-right-6 bg-white/95 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-blue-200/90 shadow-xl shadow-blue-500/10 rotate-2 z-20">
-                    <p className="font-handwriting text-2xl font-bold text-blue-600 leading-tight">
-                      Better People ✨<br />
-                      <span className="text-indigo-600">Brighter Tomorrow</span>
-                    </p>
-                  </div>
-
-                  {/* Floating Glassmorphic Stat Chip */}
-                  <div className="absolute -bottom-5 -left-3 sm:-left-6 bg-white/95 backdrop-blur-md px-4 py-3 rounded-2xl border border-slate-200/90 shadow-xl shadow-slate-900/10 z-20 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-400 to-amber-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/20">
-                      <Star className="w-5 h-5 fill-white" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-900">95% Tỷ lệ thành công</p>
-                      <p className="text-[11px] text-slate-500">Đồng đội chuyển vị trí hài lòng</p>
-                    </div>
-                  </div>
-                </div>
+              {/* Trust & Key Advantage Badges Row to Expand Width Harmoniously */}
+              <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10 pt-2 text-xs sm:text-sm font-semibold text-slate-600">
+                <span className="inline-flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-sky-500" />
+                  <span>117+ vị trí tuyển dụng nội bộ</span>
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-blue-500" />
+                  <span>Bảo mật hồ sơ 100%</span>
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-indigo-500" />
+                  <span>Lộ trình thăng tiến minh bạch</span>
+                </span>
               </div>
             </div>
           </Container>
+        </section>
 
-          {/* Glassmorphic Search & Quick Filter Bar */}
-          <Container className="relative mt-16 z-20">
-            <div className="bg-white/90 backdrop-blur-xl border border-slate-200/90 rounded-3xl p-4 sm:p-6 shadow-[0_20px_50px_rgba(15,23,42,0.08)] transition-all hover:shadow-[0_25px_60px_rgba(59,130,246,0.12)]">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 sm:gap-4 items-center">
-                {/* Search text input */}
-                <div className="lg:col-span-5 relative flex items-center">
-                  <Search className="w-5 h-5 text-slate-400 absolute left-4 pointer-events-none" />
-                  <input
-                    type="text"
-                    placeholder="Tìm vị trí tuyển dụng, kỹ năng, chuyên môn..."
-                    value={searchKeyword}
-                    onChange={(e) => setSearchKeyword(e.target.value)}
-                    className="w-full h-13 pl-12 pr-4 bg-slate-50/80 hover:bg-slate-50 focus:bg-white border border-slate-200 focus:border-blue-500 rounded-2xl text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
+        {/* ========================================================================= */}
+        {/* SECTION 2: VỀ CHÚNG TÔI & MÔI TRƯỜNG LÀM VIỆC - Exactly matching Mockup 2 */}
+        {/* ========================================================================= */}
+        <section id="about" className="py-20 bg-white relative scroll-mt-20 border-b border-slate-100">
+          <Container>
+            {/* Centered Heading matching Mockup 2 */}
+            <div className="text-center max-w-2xl mx-auto space-y-3 mb-14">
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+                Về Chúng Tôi & Môi Trường Làm Việc
+              </h2>
+              <p className="text-sm sm:text-base text-slate-500">
+                Khám phá văn hóa gắn kết và hành trình phát triển không ngừng tại {careerSettings.company_name || "Doanh nghiệp"}
+              </p>
+            </div>
+
+            {/* Top Row: Photo on Left, Story on Right matching Mockup 2 */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center mb-16">
+              {/* Photo on Left */}
+              <div className="lg:col-span-5 relative">
+                <div className="relative rounded-3xl overflow-hidden border-4 border-white shadow-xl shadow-sky-500/10 aspect-[4/3] group">
+                  <Image
+                    src={careerSettings.banner_url || DEFAULT_CAREER_SETTINGS.banner_url!}
+                    alt="Môi trường làm việc"
+                    fill
+                    className="object-cover transition-transform duration-700 group-hover:scale-105"
                   />
                 </div>
+              </div>
 
-                {/* Department Select */}
-                <div className="lg:col-span-3 relative flex items-center">
-                  <Building2 className="w-5 h-5 text-slate-400 absolute left-4 pointer-events-none" />
-                  <select
-                    value={selectedDept}
-                    onChange={(e) => setSelectedDept(e.target.value)}
-                    className="w-full h-13 pl-12 pr-8 bg-slate-50/80 hover:bg-slate-50 focus:bg-white border border-slate-200 focus:border-blue-500 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all cursor-pointer appearance-none"
-                  >
-                    <option value="all">Tất cả phòng ban</option>
-                    <option value="công nghệ">Khối Công Nghệ</option>
-                    <option value="nhân sự">Khối Nhân Sự</option>
-                    <option value="sản phẩm">Khối Sản Phẩm</option>
-                    <option value="tài chính">Khối Tài Chính</option>
-                  </select>
+              {/* Story on Right */}
+              <div className="lg:col-span-7 space-y-5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-2xl font-bold text-slate-900">
+                    Giới thiệu công ty
+                  </h3>
+                  {isHRUser && (
+                    <Link
+                      href="/hr/career-page-config"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition-all"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                      <span>Chỉnh sửa trang này (HR)</span>
+                    </Link>
+                  )}
                 </div>
 
-                {/* Location Select */}
-                <div className="lg:col-span-2 relative flex items-center">
-                  <MapPin className="w-5 h-5 text-slate-400 absolute left-4 pointer-events-none" />
-                  <select
-                    value={selectedLocation}
-                    onChange={(e) => setSelectedLocation(e.target.value)}
-                    className="w-full h-13 pl-12 pr-8 bg-slate-50/80 hover:bg-slate-50 focus:bg-white border border-slate-200 focus:border-blue-500 rounded-2xl text-sm font-medium text-slate-800 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all cursor-pointer appearance-none"
-                  >
-                    <option value="all">Mọi địa điểm</option>
-                    <option value="Hà Nội">Hà Nội</option>
-                    <option value="Hồ Chí Minh">Hồ Chí Minh</option>
-                    <option value="Đà Nẵng">Đà Nẵng</option>
-                  </select>
-                </div>
+                <p className="text-slate-600 leading-relaxed text-sm sm:text-base">
+                  {careerSettings.about_us || DEFAULT_CAREER_SETTINGS.about_us}
+                </p>
 
-                {/* Search Button (Uiverse Shimmer) */}
-                <div className="lg:col-span-2">
-                  <a
-                    href="#jobs"
-                    className="relative group w-full h-13 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all overflow-hidden cursor-pointer"
-                  >
-                    <Search className="w-4 h-4" />
-                    <span>Tìm ({filteredJobs.length})</span>
-                    <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 pointer-events-none" />
-                  </a>
-                </div>
+                <p className="text-slate-500 leading-relaxed text-sm">
+                  Sứ mệnh của chúng tôi là tạo nên một không gian làm việc nơi mỗi thành viên đều được trao quyền phát triển tối đa, công nhận đóng góp và bảo tồn toàn bộ quyền lợi khi chuyển đổi vai trò.
+                </p>
               </div>
             </div>
-          </Container>
 
-          {/* Business Metrics Row */}
-          <Container className="mt-12">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                {
-                  value: "500+",
-                  label: "Nhân sự nội bộ",
-                  desc: "Đồng hành và phát triển bền vững",
-                  icon: Users,
-                  color: "text-blue-600 bg-blue-50 border-blue-100",
-                },
-                {
-                  value: "120+",
-                  label: "Vị trí phát triển",
-                  desc: "Mở ra cơ hội thăng tiến mới",
-                  icon: Briefcase,
-                  color: "text-emerald-600 bg-emerald-50 border-emerald-100",
-                },
-                {
-                  value: "12",
-                  label: "Phòng ban / Khối",
-                  desc: "Môi trường kết nối linh hoạt",
-                  icon: Building2,
-                  color: "text-indigo-600 bg-indigo-50 border-indigo-100",
-                },
-                {
-                  value: "95%",
-                  label: "Hài lòng phát triển",
-                  desc: "Tỉ lệ hài lòng về lộ trình",
-                  icon: Award,
-                  color: "text-purple-600 bg-purple-50 border-purple-100",
-                },
-              ].map((m, idx) => {
-                const IconComp = m.icon;
+            {/* Directly Underneath: Benefit Cards in a Row matching Mockup 2! */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
+              {(careerSettings.benefits || DEFAULT_CAREER_SETTINGS.benefits!).slice(0, 3).map((b, idx) => {
+                const IconComponent = resolveBenefitIcon(b.icon);
                 return (
                   <div
                     key={idx}
-                    className="group relative rounded-3xl p-[1px] bg-gradient-to-b from-slate-200 to-slate-100 hover:from-blue-400 hover:via-indigo-400 hover:to-cyan-400 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:shadow-blue-500/10"
+                    className="rounded-2xl p-6 bg-white border border-sky-200/90 shadow-sm hover:shadow-md hover:border-sky-400 transition-all flex flex-col justify-between"
                   >
-                    <div className="h-full bg-white rounded-[23px] p-6 flex items-start gap-4">
-                      <div
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${m.color} group-hover:scale-110 transition-transform`}
-                      >
-                        <IconComp className="w-6 h-6" />
+                    <div className="space-y-3">
+                      <div className="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
+                        <IconComponent className="w-6 h-6" />
                       </div>
-                      <div>
-                        <h3 className="text-3xl font-black text-slate-900 tracking-tight">
-                          {m.value}
-                        </h3>
-                        <p className="text-sm font-bold text-slate-700 mt-0.5">{m.label}</p>
-                        <p className="text-xs text-slate-500 mt-1">{m.desc}</p>
-                      </div>
+                      <h4 className="text-base font-bold text-slate-900">
+                        {b.title}
+                      </h4>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        {b.description}
+                      </p>
                     </div>
                   </div>
                 );
@@ -461,56 +447,41 @@ export default function LandingPage() {
         </section>
 
         {/* ========================================================================= */}
-        {/* SECTION 2: CƠ HỘI NGHỀ NGHIỆP - ID: jobs */}
+        {/* SECTION 3: VỊ TRÍ ĐANG TUYỂN DỤNG NỘI BỘ - Exactly matching Mockup 2 */}
         {/* ========================================================================= */}
-        <section
-          id="jobs"
-          className="py-20 bg-slate-50/70 border-y border-slate-200/60 relative scroll-mt-20"
-        >
+        <section id="jobs" className="py-20 bg-slate-50/60 relative scroll-mt-20 border-b border-slate-100">
           <Container>
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
-              <div className="space-y-3">
-                <div className="inline-flex items-center gap-1.5 text-xs font-extrabold text-blue-600 tracking-wider uppercase">
-                  <Briefcase className="w-4 h-4" />
-                  CƠ HỘI MỞ RỘNG DÀNH CHO BẠN
-                </div>
-                <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-                  Những vị trí đang tuyển dụng nội bộ
-                </h2>
-                <p className="text-base text-slate-600 max-w-xl">
-                  Khám phá các vị trí chiến lược và ứng tuyển nhanh chóng với quy trình tối ưu cho
-                  nhân sự hiện tại.
-                </p>
-              </div>
-
-              <Link
-                href="/jobs"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-700 hover:border-blue-400 hover:text-blue-600 hover:shadow-md transition-all shrink-0 cursor-pointer"
-              >
-                <span>Xem toàn bộ vị trí</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
+            {/* Centered Heading matching Mockup 2 */}
+            <div className="text-center max-w-2xl mx-auto space-y-2 mb-10">
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+                Vị Trí Đang Tuyển Dụng Nội Bộ
+              </h2>
+              <p className="text-sm text-slate-500">
+                Khám phá các cơ hội phát triển sự nghiệp hấp dẫn
+              </p>
             </div>
 
-            {/* Category Filter Tabs with Smooth Active Pills */}
-            <div className="flex items-center gap-2.5 overflow-x-auto pb-4 mb-8 no-scrollbar">
+            {/* Filter Pills matching Mockup 2 */}
+            <div className="flex items-center justify-center gap-2.5 flex-wrap mb-10">
               {categories.map((cat) => (
                 <button
                   key={cat.id}
                   type="button"
                   onClick={() => setActiveCategory(cat.id)}
-                  className={`px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-300 cursor-pointer ${
-                    activeCategory === cat.id
-                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25 scale-[1.02]"
-                      : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200"
-                  }`}
+                  className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-200 cursor-pointer ${activeCategory === cat.id
+                    ? "bg-blue-600 text-white !text-white shadow-md shadow-blue-500/25"
+                    : "bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900 border border-slate-200"
+                    }`}
+                  style={activeCategory === cat.id ? { color: "#ffffff", backgroundColor: "#2563eb" } : undefined}
                 >
-                  {cat.label}
+                  <span style={activeCategory === cat.id ? { color: "#ffffff" } : undefined}>
+                    {cat.label}
+                  </span>
                 </button>
               ))}
             </div>
 
-            {/* Job Grid with Uiverse Card Glow */}
+            {/* Job Grid matching Mockup 2 */}
             {loadingJobs ? (
               <div className="text-center py-16 text-slate-500 font-medium">
                 Đang đồng bộ dữ liệu vị trí tuyển dụng...
@@ -520,249 +491,71 @@ export default function LandingPage() {
                 {filteredJobs.map((job) => (
                   <div
                     key={job.id}
-                    className="group relative rounded-3xl p-[1px] bg-gradient-to-b from-slate-200 to-slate-100 hover:from-blue-400 hover:via-indigo-400 hover:to-cyan-400 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:shadow-blue-500/10 flex flex-col justify-between"
+                    className="rounded-2xl p-6 bg-white border border-sky-200/80 shadow-sm hover:shadow-xl hover:border-blue-400 transition-all flex flex-col justify-between"
                   >
-                    <div className="h-full bg-white rounded-[23px] p-6 flex flex-col justify-between">
-                      <div className="space-y-4">
-                        {/* Badges top */}
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] font-extrabold px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60">
-                            {job.department_name || job.department}
-                          </span>
-                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                            Ưu tiên nội bộ
-                          </span>
-                        </div>
+                    <div className="space-y-3">
+                      <h3 className="text-lg font-bold text-slate-900 line-clamp-2">
+                        {job.title}
+                      </h3>
 
-                        {/* Title */}
-                        <h3 className="text-lg font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2">
-                          {job.title}
-                        </h3>
-
-                        {/* Description */}
-                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                          {job.description}
+                      <div className="space-y-1 text-xs text-slate-500">
+                        <p>Phòng: {job.department_name || job.department}</p>
+                        <p className="flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                          {job.location}
                         </p>
-
-                        {/* Meta tags */}
-                        <div className="pt-2 flex flex-wrap gap-2 text-xs text-slate-500">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-100">
-                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                            {job.location}
-                          </span>
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 border border-slate-100">
-                            <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            {job.type}
-                          </span>
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-700 font-semibold">
-                            <DollarSign className="w-3.5 h-3.5" />
-                            {job.salary_range || job.salaryRange || "Thoả thuận"}
-                          </span>
-                        </div>
                       </div>
 
-                      {/* Card Footer CTA */}
-                      <div className="pt-5 mt-5 border-t border-slate-100 flex items-center justify-between">
-                        <span className="text-[11px] text-slate-400 font-medium">
-                          {job.applications_count || 0} hồ sơ đã nộp
+                      {/* Tags */}
+                      <div className="flex flex-wrap gap-2 pt-2 text-xs">
+                        <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-medium">
+                          {job.type}
                         </span>
-                        <Link
-                          href={`/jobs/${job.slug || job.id}`}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 group-hover:text-blue-700 hover:underline cursor-pointer"
-                        >
-                          <span>Ứng tuyển ngay</span>
-                          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                        </Link>
+                        <span className="px-3 py-1 rounded-full bg-sky-50 text-sky-700 font-bold border border-sky-100">
+                          {job.salary_range || job.salaryRange || "Thỏa thuận"}
+                        </span>
                       </div>
                     </div>
+
+                    {/* Luminous Solid Blue Pill Button with Pure White Text */}
+                    <Link
+                      href="/login"
+                      className="btn-pill-apply mt-6 w-full py-3 rounded-full text-white !text-white font-black text-sm text-center shadow-md shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      style={{ color: "#ffffff", backgroundColor: "#2563eb" }}
+                    >
+                      <span className="!text-white text-white font-black" style={{ color: "#ffffff" }}>
+                        Ứng Tuyển Ngay
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-white !text-white" style={{ color: "#ffffff" }} />
+                    </Link>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-16 bg-white rounded-3xl border border-slate-200 text-slate-500">
-                Không tìm thấy vị trí tuyển dụng phù hợp với bộ lọc tìm kiếm của bạn.
+              <div className="text-center py-16 bg-white rounded-3xl border border-dashed border-slate-200">
+                <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-slate-700">Không tìm thấy vị trí phù hợp</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Vui lòng thử tìm kiếm với từ khóa khác hoặc đổi danh mục phòng ban.
+                </p>
               </div>
             )}
           </Container>
         </section>
 
         {/* ========================================================================= */}
-        {/* SECTION 3: LỘ TRÌNH PHÁT TRIỂN - ID: career-path */}
-        {/* ========================================================================= */}
-        <section
-          id="career-path"
-          className="py-20 bg-white relative overflow-hidden scroll-mt-20"
-        >
-          {/* Subtle Grid Accent */}
-          <div className="absolute inset-0 bg-grid-pattern opacity-40 pointer-events-none" />
-
-          <Container className="relative z-10">
-            {/* Section Header */}
-            <div className="text-center max-w-2xl mx-auto space-y-4 mb-16">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold text-blue-600 bg-blue-50 border border-blue-200 uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5" />
-                PHÁT TRIỂN TỪ NỘI LỰC
-              </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-                Nơi tài năng của bạn được tôn vinh và chắp cánh
-              </h2>
-              <p className="text-base text-slate-600">
-                Chúng tôi tin rằng nguồn tài năng xuất sắc nhất luôn bắt đầu từ những đồng đội nhiệt
-                huyết hiện tại.
-              </p>
-            </div>
-
-            {/* 3 Cards Balanced Grid (Uiverse Gradient Border) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {[
-                {
-                  icon: Compass,
-                  title: "Cơ hội nghề nghiệp phong phú",
-                  description:
-                    "Chủ động lựa chọn hướng đi chuyên môn chuyên sâu hoặc quản lý theo nguyện vọng và thế mạnh cá nhân.",
-                  color: "bg-blue-50 text-blue-600 border-blue-200",
-                  tag: "Lộ trình kép",
-                },
-                {
-                  icon: Target,
-                  title: "Quy trình minh bạch & Công bằng",
-                  description:
-                    "Mọi vị trí được công khai nội bộ với tiêu chuẩn đánh giá nhất quán, công bằng cho tất cả ứng viên.",
-                  color: "bg-emerald-50 text-emerald-600 border-emerald-200",
-                  tag: "100% Khách quan",
-                },
-                {
-                  icon: GraduationCap,
-                  title: "Đào tạo & Nâng cao năng lực",
-                  description:
-                    "Hệ thống khóa học, coaching 1:1 và ngân sách đào tạo liên tục đồng hành cùng sự bứt phá của bạn.",
-                  color: "bg-purple-50 text-purple-600 border-purple-200",
-                  tag: "Mentorship 1:1",
-                },
-              ].map((card, idx) => {
-                const IconComponent = card.icon;
-                return (
-                  <div
-                    key={idx}
-                    className="relative group rounded-3xl p-[1.5px] bg-gradient-to-b from-slate-200 via-slate-100 to-slate-200 hover:from-blue-500 hover:via-indigo-500 hover:to-cyan-400 transition-all duration-500 hover:-translate-y-2.5 hover:shadow-[0_20px_45px_-10px_rgba(59,130,246,0.25)] flex flex-col cursor-pointer"
-                  >
-                    <div className="h-full bg-white rounded-[22px] p-8 flex flex-col justify-between backdrop-blur-xl">
-                      <div className="space-y-6">
-                        {/* Header icon + tag */}
-                        <div className="flex items-center justify-between">
-                          <div
-                            className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${card.color} group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-xs`}
-                          >
-                            <IconComponent className="w-7 h-7" />
-                          </div>
-                          <span className="text-[11px] font-extrabold px-3 py-1 rounded-full bg-slate-100 text-slate-600 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                            {card.tag}
-                          </span>
-                        </div>
-
-                        <h3 className="text-xl font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                          {card.title}
-                        </h3>
-
-                        <p className="text-sm text-slate-600 leading-relaxed">
-                          {card.description}
-                        </p>
-                      </div>
-
-                      <div className="pt-6 mt-8 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600">
-                        <span>Khám phá lộ trình</span>
-                        <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all">
-                          <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Sub-grid: 4 Core Advantages (Vì sao nên ứng tuyển nội bộ) */}
-            <div className="mt-20 pt-16 border-t border-slate-100">
-              <div className="text-center max-w-2xl mx-auto space-y-4 mb-14">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold text-indigo-600 bg-indigo-50 border border-indigo-200 uppercase tracking-wider">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  VÌ SAO NÊN ỨNG TUYỂN NỘI BỘ
-                </span>
-                <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                  Không chỉ là vị trí mới. Đó là bước tiến vững chắc.
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                {[
-                  {
-                    icon: Zap,
-                    title: "Phát triển linh hoạt",
-                    desc: "Chuyển đổi vị trí giữa các phòng ban mà không mất đi thâm niên hay chế độ đãi ngộ hiện có.",
-                    color: "bg-amber-50 text-amber-600 border-amber-200",
-                  },
-                  {
-                    icon: ShieldCheck,
-                    title: "Môi trường chuyên nghiệp",
-                    desc: "Làm việc cùng những đồng nghiệp xuất sắc trong môi trường cởi mở và tôn trọng đóng góp.",
-                    color: "bg-blue-50 text-blue-600 border-blue-200",
-                  },
-                  {
-                    icon: Award,
-                    title: "Tiêu chuẩn minh bạch",
-                    desc: "Mọi tiêu chuẩn đánh giá và mô tả công việc được niêm yết công khai trên cổng tuyển dụng.",
-                    color: "bg-indigo-50 text-indigo-600 border-indigo-200",
-                  },
-                  {
-                    icon: HeartHandshake,
-                    title: "Ghi nhận xứng đáng",
-                    desc: "Chính sách đãi ngộ, thưởng nóng và điều chỉnh thu nhập tương xứng với năng lực thực tế.",
-                    color: "bg-rose-50 text-rose-600 border-rose-200",
-                  },
-                ].map((item, idx) => {
-                  const IconComp = item.icon;
-                  return (
-                    <div
-                      key={idx}
-                      className="group relative rounded-3xl p-6 bg-white/90 backdrop-blur-md border border-slate-200/80 hover:border-indigo-400 hover:shadow-[0_15px_35px_rgba(99,102,241,0.18)] hover:-translate-y-2 transition-all duration-300 flex flex-col justify-between"
-                    >
-                      <div>
-                        <div
-                          className={`w-13 h-13 rounded-2xl flex items-center justify-center mb-5 border ${item.color} group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-xs`}
-                        >
-                          <IconComp className="w-6 h-6" />
-                        </div>
-                        <h4 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors mb-2">
-                          {item.title}
-                        </h4>
-                        <p className="text-xs text-slate-600 leading-relaxed">{item.desc}</p>
-                      </div>
-
-                      <div className="pt-4 mt-6 border-t border-slate-100/80 text-[11px] font-bold text-indigo-600 flex items-center gap-1">
-                        <span>Được bảo chứng</span>
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 ml-auto" />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </Container>
-        </section>
-
-        {/* ========================================================================= */}
-        {/* SECTION 4: QUY TRÌNH 5 BƯỚC - ID: process */}
+        {/* SECTION 4: QUY TRÌNH 5 BƯỚC MINH BẠCH - ID: process */}
         {/* ========================================================================= */}
         <section
           id="process"
-          className="py-24 bg-slate-50/80 border-t border-slate-200/60 relative overflow-hidden scroll-mt-20"
+          className="py-24 bg-white relative overflow-hidden scroll-mt-20 border-b border-slate-100"
         >
           <Container>
-            <div className="text-center max-w-2xl mx-auto space-y-4 mb-20">
+            <div className="text-center max-w-2xl mx-auto space-y-3 mb-20">
               <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-extrabold text-blue-600 bg-blue-50 border border-blue-200 uppercase tracking-wider">
                 QUY TRÌNH PHÁT TRIỂN NỘI BỘ
               </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
                 5 bước minh bạch cho hành trình mới
               </h2>
               <p className="text-base text-slate-600">
@@ -770,10 +563,12 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Timeline with Connected Glowing Line */}
+            {/* Timeline with Connected Glowing Laser Trail */}
             <div className="relative">
               {/* Horizontal Connecting Line for Desktop */}
-              <div className="hidden lg:block absolute top-[28px] left-[8%] right-[8%] h-[3px] bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500 rounded-full z-0 opacity-70" />
+              <div className="hidden lg:block absolute top-[28px] left-[8%] right-[8%] h-[3px] bg-slate-200 rounded-full z-0 overflow-hidden">
+                <div className="w-1/3 h-full bg-gradient-to-r from-transparent via-blue-500 to-sky-400 animate-laser-flow" />
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 relative z-10">
                 {[
@@ -817,9 +612,9 @@ export default function LandingPage() {
                     {/* Glowing Ping Node */}
                     <div className="relative mb-6">
                       {hoveredStep === item.step && (
-                        <span className="absolute -inset-2 rounded-2xl bg-blue-500/40 animate-ping pointer-events-none" />
+                        <span className="absolute -inset-2 rounded-2xl bg-blue-500/30 animate-ping pointer-events-none" />
                       )}
-                      <div className="w-14 h-14 rounded-2xl bg-white border-2 border-blue-500 shadow-md shadow-blue-500/20 text-blue-600 font-black text-lg flex items-center justify-center group-hover:bg-gradient-to-tr group-hover:from-blue-600 group-hover:to-indigo-600 group-hover:text-white group-hover:border-transparent transition-all duration-300">
+                      <div className="w-14 h-14 rounded-2xl bg-white border-2 border-blue-500 shadow-md shadow-blue-500/20 text-blue-600 font-black text-lg flex items-center justify-center group-hover:bg-gradient-to-tr group-hover:from-blue-600 group-hover:to-sky-500 group-hover:text-white group-hover:border-transparent transition-all duration-300">
                         {item.num}
                       </div>
                     </div>
@@ -839,120 +634,167 @@ export default function LandingPage() {
         </section>
 
         {/* ========================================================================= */}
-        {/* SECTION 5: TIN TỨC NỘI BỘ & CÂU CHUYỆN - ID: news */}
+        {/* SECTION 5: TIN TỨC NỘI BỘ & CÂU CHUYỆN THÀNH CÔNG - ID: news */}
         {/* ========================================================================= */}
         <section
           id="news"
-          className="py-20 bg-white border-t border-slate-200/60 relative scroll-mt-20"
+          className="py-24 bg-gradient-to-b from-sky-50/70 via-white to-blue-50/40 relative overflow-hidden scroll-mt-20 border-b border-slate-100"
         >
+          {/* Animated floating background blur lights */}
+          <div className="absolute top-1/4 -left-32 w-96 h-96 bg-blue-300/20 rounded-full blur-3xl pointer-events-none animate-pulse-ring" />
+          <div
+            className="absolute bottom-10 -right-32 w-96 h-96 bg-indigo-300/20 rounded-full blur-3xl pointer-events-none animate-pulse-ring"
+            style={{ animationDelay: "3s" }}
+          />
+
           <Container>
             {/* Section Header */}
-            <div className="text-center max-w-2xl mx-auto space-y-4 mb-16">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold text-blue-600 bg-blue-50 border border-blue-200 uppercase tracking-wider">
-                <Newspaper className="w-3.5 h-3.5" />
+            <div className="text-center max-w-2xl mx-auto space-y-3 mb-16 relative z-10">
+              <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-black text-blue-700 bg-blue-100/80 border border-blue-200 uppercase tracking-wider shadow-2xs">
+                <Newspaper className="w-3.5 h-3.5 text-blue-600 animate-spin-slow" />
                 TIN TỨC & HOẠT ĐỘNG NỘI BỘ
               </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 tracking-tight">
                 Cập nhật chuyển động & cơ hội mới
               </h2>
-              <p className="text-base text-slate-600">
+              <p className="text-base sm:text-lg text-slate-600 font-medium">
                 Nắm bắt các chính sách luân chuyển mới nhất, chương trình giới thiệu đồng đội và câu
                 chuyện truyền cảm hứng.
               </p>
             </div>
 
-            {/* Featured Referral Banner */}
-            <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-800 text-white p-8 sm:p-12 shadow-2xl shadow-indigo-900/20 mb-16">
-              <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-white/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute bottom-0 left-10 w-[300px] h-[300px] bg-cyan-400/10 rounded-full blur-2xl pointer-events-none" />
+            {/* Featured Referral Banner with Motion & Dynamic Animations */}
+            <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-600 text-white p-8 sm:p-12 lg:p-14 shadow-2xl shadow-blue-600/25 mb-16 border border-white/20 group">
+              {/* Animated Aurora Background Blobs inside Card */}
+              <div className="absolute -top-20 -right-20 w-80 h-80 bg-sky-300/25 rounded-full blur-3xl pointer-events-none animate-glow-pulse" />
+              <div
+                className="absolute -bottom-20 -left-20 w-80 h-80 bg-indigo-400/30 rounded-full blur-3xl pointer-events-none animate-glow-pulse"
+                style={{ animationDelay: "2s" }}
+              />
 
-              <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-                <div className="lg:col-span-8 space-y-4">
-                  <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold bg-white/20 backdrop-blur-md text-white border border-white/30">
-                    <UserPlus className="w-3.5 h-3.5" />
-                    CHƯƠNG TRÌNH REFERRAL ĐỒNG ĐỘI
+              {/* Shimmer Light Sweep */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full animate-shimmer-sweep pointer-events-none" />
+
+              <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+                <div className="lg:col-span-8 space-y-5">
+                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black bg-white/20 backdrop-blur-md text-sky-100 border border-white/30 shadow-sm">
+                    <UserPlus className="w-4 h-4 text-sky-200" />
+                    <span>CHƯƠNG TRÌNH REFERRAL ĐỒNG ĐỘI</span>
                   </div>
-                  <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight">
+
+                  <h3
+                    className="text-2xl sm:text-3xl lg:text-4xl font-black !text-white text-white tracking-tight leading-tight drop-shadow-md"
+                    style={{ color: "#ffffff" }}
+                  >
                     Giới thiệu đồng nghiệp xuất sắc — Nhận thưởng tới 20.000.000đ
                   </h3>
-                  <p className="text-sm sm:text-base text-blue-100 max-w-xl leading-relaxed">
-                    Đồng đội bạn giới thiệu sẽ giúp tổ chức phát triển mạnh mẽ hơn, đồng thời bạn sẽ
-                    nhận ngay phần thưởng tri ân xứng đáng khi ứng viên onboard thành công.
+
+                  <p
+                    className="text-sm sm:text-base text-sky-100 !text-sky-100 max-w-xl leading-relaxed font-normal drop-shadow-xs"
+                    style={{ color: "#e0f2fe" }}
+                  >
+                    Đồng đội bạn giới thiệu sẽ giúp tổ chức phát triển mạnh mẽ hơn, đồng thời bạn sẽ nhận ngay phần thưởng tri ân xứng đáng vào kỳ lương gần nhất khi ứng viên onboard thành công.
                   </p>
+
+                  {/* Buttons with clear distinct colors and high contrast */}
+                  <div className="flex flex-wrap items-center gap-4 pt-3">
+                    <Link
+                      href="/employee/referrals/new"
+                      className="px-7 py-3.5 rounded-full bg-white hover:bg-sky-50 shadow-xl shadow-blue-950/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      style={{ backgroundColor: "#ffffff" }}
+                    >
+                      <UserPlus className="w-4 h-4 text-blue-700" style={{ color: "#1d4ed8" }} />
+                      <span className="font-black text-sm text-blue-700" style={{ color: "#1d4ed8" }}>
+                        Giới thiệu ứng viên ngay
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-blue-700" style={{ color: "#1d4ed8" }} />
+                    </Link>
+
+                    <a
+                      href="#faq"
+                      className="px-6 py-3.5 rounded-full bg-white/15 hover:bg-white/25 border-2 border-white/40 !text-white text-white font-bold text-sm text-center backdrop-blur-md hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+                      style={{ color: "#ffffff" }}
+                    >
+                      <span style={{ color: "#ffffff" }}>Xem chính sách thưởng</span>
+                    </a>
+                  </div>
                 </div>
 
-                <div className="lg:col-span-4 flex flex-col sm:flex-row lg:flex-col gap-3 justify-end">
-                  <Link
-                    href="/employee/referrals/new"
-                    className="relative group overflow-hidden px-6 py-3.5 rounded-2xl bg-white text-indigo-900 font-extrabold text-sm text-center shadow-xl shadow-slate-950/20 hover:scale-[1.03] active:scale-[0.98] transition-all cursor-pointer"
-                  >
-                    <span>Giới thiệu ứng viên ngay</span>
-                    <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full bg-gradient-to-r from-transparent via-blue-400/20 to-transparent transition-transform duration-700 pointer-events-none" />
-                  </Link>
-                  <a
-                    href="#faq"
-                    className="px-6 py-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/25 text-white font-bold text-sm text-center hover:bg-white/20 transition-all cursor-pointer"
-                  >
-                    Xem chính sách thưởng
-                  </a>
+                {/* Right Interactive Animated Floating Bonus Widget */}
+                <div className="lg:col-span-4 flex justify-center lg:justify-end">
+                  <div className="relative w-full max-w-[280px] rounded-3xl bg-white/15 backdrop-blur-xl border-2 border-white/30 p-6 shadow-2xl text-center animate-float-smooth">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-400 to-yellow-300 text-amber-950 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-amber-400/30">
+                      <Award className="w-8 h-8" />
+                    </div>
+                    <p className="text-xs font-extrabold uppercase tracking-wider text-sky-200">
+                      Thưởng Giới Thiệu
+                    </p>
+                    <div className="text-3xl font-black text-amber-300 drop-shadow-[0_2px_10px_rgba(251,191,36,0.5)] my-1">
+                      20.000.000đ
+                    </div>
+                    <p className="text-[11px] text-sky-100 mb-3">
+                      / mỗi ứng viên tuyển dụng thành công
+                    </p>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[11px] font-bold text-emerald-300">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      <span>Đang diễn ra</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Internal News Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+            {/* 3 News & Internal Activities Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-20">
               {[
                 {
-                  id: "news-1",
-                  title: "Ban hành Quy chế Luân chuyển nội bộ & Khung năng lực mới",
+                  badge: "Chính Sách",
+                  badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
                   date: "15/10/2026",
-                  category: "Chính sách",
-                  summary:
-                    "Toàn bộ quy chuẩn về thâm niên, điều kiện ứng tuyển và cam kết bảo lưu quyền lợi khi chuyển bộ phận đã chính thức được áp dụng.",
+                  title: "Chính sách luân chuyển nội bộ Q4/2026: Rút ngắn thời gian xét duyệt",
+                  desc: "Quy trình chuyển giao vị trí công tác mới được tối ưu hóa, đảm bảo phản hồi kết quả trong vòng tối đa 5 ngày làm việc.",
                 },
                 {
-                  id: "news-2",
-                  title: "Workshop: Chiến lược phát triển bản thân và thăng tiến nghề nghiệp",
-                  date: "22/10/2026",
-                  category: "Đào tạo",
-                  summary:
-                    "Buổi chia sẻ trực tiếp cùng các Trưởng Khối chuyên môn về kỹ năng phỏng vấn, portfolio và lộ trình thăng cấp quản lý.",
+                  badge: "Workshop",
+                  badgeColor: "bg-purple-50 text-purple-700 border-purple-200",
+                  date: "18/10/2026",
+                  title: "Tech Talk hàng tuần: Microservices Architecture & AI Automation",
+                  desc: "Chia sẻ kinh nghiệm thực tế về tối ưu hóa hiệu năng backend và tự động hóa quy trình tuyển dụng cùng đội ngũ Tech Lead.",
                 },
                 {
-                  id: "news-3",
-                  title: "Vinh danh 18 nhân sự chuyển đổi vị trí xuất sắc Quý 3",
-                  date: "28/10/2026",
-                  category: "Vinh danh",
-                  summary:
-                    "Ghi nhận nỗ lực bứt phá và đóng góp vượt trội của những thành viên đã nắm bắt cơ hội mới qua Cổng tuyển dụng nội bộ.",
+                  badge: "Vinh Danh",
+                  badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                  date: "12/10/2026",
+                  title: "Vinh danh 12 nhân sự chuyển đổi vị trí thành công trong tháng 10",
+                  desc: "Chúc mừng các đồng nghiệp đã xuất sắc bứt phá, khẳng định năng lực mới và đồng hành cùng sự phát triển của công ty.",
                 },
-              ].map((article) => (
+              ].map((item, idx) => (
                 <div
-                  key={article.id}
-                  className="group relative rounded-3xl p-6 bg-white border border-slate-200/90 shadow-xs hover:border-blue-400 hover:shadow-xl hover:shadow-blue-500/10 hover:-translate-y-1.5 transition-all duration-300 flex flex-col justify-between"
+                  key={idx}
+                  className="rounded-3xl p-6 bg-white border border-slate-200/90 shadow-sm hover:shadow-xl hover:border-blue-400 hover:-translate-y-2 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
                 >
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span className="font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-600">
-                        {article.category}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className={`px-3 py-1 rounded-full font-bold border ${item.badgeColor}`}>
+                        {item.badge}
                       </span>
-                      <span className="inline-flex items-center gap-1">
+                      <span className="text-slate-400 flex items-center gap-1 font-medium">
                         <Calendar className="w-3.5 h-3.5" />
-                        {article.date}
+                        {item.date}
                       </span>
                     </div>
 
                     <h4 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2">
-                      {article.title}
+                      {item.title}
                     </h4>
 
-                    <p className="text-xs text-slate-500 leading-relaxed line-clamp-3">
-                      {article.summary}
+                    <p className="text-xs text-slate-600 leading-relaxed line-clamp-3">
+                      {item.desc}
                     </p>
                   </div>
 
-                  <div className="pt-4 mt-6 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600">
-                    <span>Đọc chi tiết</span>
+                  <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-600 group-hover:gap-2 transition-all">
+                    <span>Xem chi tiết</span>
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                   </div>
                 </div>
@@ -960,13 +802,13 @@ export default function LandingPage() {
             </div>
 
             {/* Testimonials (Câu chuyện thành công) */}
-            <div className="pt-12 border-t border-slate-100">
-              <div className="text-center max-w-2xl mx-auto space-y-4 mb-14">
+            <div className="pt-6">
+              <div className="text-center max-w-2xl mx-auto space-y-3 mb-12">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold text-blue-600 bg-blue-50 border border-blue-200 uppercase tracking-wider">
                   <Quote className="w-3.5 h-3.5" />
                   CÂU CHUYỆN THÀNH CÔNG
                 </span>
-                <h3 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                   Đồng đội nói gì về lộ trình phát triển nội bộ
                 </h3>
               </div>
@@ -1006,24 +848,22 @@ export default function LandingPage() {
                 ].map((item) => (
                   <div
                     key={item.id}
-                    className="relative group before:absolute before:inset-0 before:-z-10 before:rounded-3xl before:bg-gradient-to-r before:from-blue-400/20 before:via-indigo-400/20 before:to-purple-400/20 before:blur-2xl before:opacity-0 group-hover:before:opacity-100 before:transition-opacity before:duration-500 cursor-pointer"
+                    className="glass-light-card rounded-3xl p-8 flex flex-col justify-between relative overflow-hidden"
                   >
-                    <div className="h-full bg-white rounded-3xl p-8 border border-slate-200/90 shadow-xs group-hover:border-blue-400 group-hover:shadow-xl group-hover:-translate-y-2 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
-                      <Quote className="w-12 h-12 text-blue-100 absolute top-6 right-6 pointer-events-none group-hover:text-blue-200 transition-colors" />
+                    <Quote className="w-12 h-12 text-blue-100 absolute top-6 right-6 pointer-events-none" />
 
-                      <p className="text-sm text-slate-600 leading-relaxed italic mb-8 relative z-10">
-                        &quot;{item.quote}&quot;
-                      </p>
+                    <p className="text-sm text-slate-600 leading-relaxed italic mb-8 relative z-10">
+                      &quot;{item.quote}&quot;
+                    </p>
 
-                      <div className="flex items-center gap-4 pt-4 border-t border-slate-100">
-                        <div className="relative w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 border-blue-200 shadow-xs">
-                          <Image src={item.avatar} alt={item.name} fill className="object-cover" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-900">{item.name}</h4>
-                          <p className="text-xs text-blue-600 font-semibold">{item.role}</p>
-                          <p className="text-[11px] text-slate-400">{item.department}</p>
-                        </div>
+                    <div className="flex items-center gap-4 pt-4 border-t border-slate-100">
+                      <div className="relative w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 border-blue-200 shadow-xs">
+                        <Image src={item.avatar} alt={item.name} fill className="object-cover" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">{item.name}</h4>
+                        <p className="text-xs text-blue-600 font-semibold">{item.role}</p>
+                        <p className="text-[11px] text-slate-400">{item.department}</p>
                       </div>
                     </div>
                   </div>
@@ -1038,15 +878,15 @@ export default function LandingPage() {
         {/* ========================================================================= */}
         <section
           id="faq"
-          className="py-20 bg-slate-50/70 border-t border-slate-200/60 relative scroll-mt-20"
+          className="py-20 bg-white border-t border-slate-200/60 relative scroll-mt-20"
         >
           <Container className="max-w-4xl">
-            <div className="text-center space-y-4 mb-16">
+            <div className="text-center space-y-3 mb-16">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold text-blue-600 bg-blue-50 border border-blue-200 uppercase tracking-wider">
                 <HelpCircle className="w-3.5 h-3.5" />
                 CÂU HỎI THƯỜNG GẶP (FAQ)
               </span>
-              <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+              <h2 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
                 Giải đáp mọi băn khoăn của bạn
               </h2>
               <p className="text-base text-slate-600">
@@ -1062,11 +902,10 @@ export default function LandingPage() {
                 return (
                   <div
                     key={idx}
-                    className={`rounded-2xl border transition-all duration-300 overflow-hidden ${
-                      isOpen
-                        ? "bg-white border-blue-300 shadow-md shadow-blue-500/5 ring-1 ring-blue-500/20"
-                        : "bg-white/80 hover:bg-white border-slate-200 shadow-xs"
-                    }`}
+                    className={`rounded-2xl border transition-all duration-300 overflow-hidden ${isOpen
+                      ? "bg-white border-blue-300 shadow-md shadow-blue-500/5 ring-1 ring-blue-500/20"
+                      : "bg-white/80 hover:bg-white border-slate-200 shadow-xs"
+                      }`}
                   >
                     <button
                       type="button"
@@ -1077,11 +916,10 @@ export default function LandingPage() {
                         {faq.q}
                       </span>
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform duration-300 ${
-                          isOpen
-                            ? "bg-blue-600 text-white rotate-180"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform duration-300 ${isOpen
+                          ? "bg-blue-600 text-white rotate-180"
+                          : "bg-slate-100 text-slate-600"
+                          }`}
                       >
                         <ChevronDown className="w-4 h-4" />
                       </div>
@@ -1118,22 +956,22 @@ export default function LandingPage() {
         </section>
 
         {/* ========================================================================= */}
-        {/* BOTTOM FINAL CTA (Cyberpunk / Liquid Glowing Button) */}
+        {/* BOTTOM FINAL CTA */}
         {/* ========================================================================= */}
-        <section className="py-24 bg-gradient-to-b from-white to-blue-50/50 border-t border-blue-100 relative overflow-hidden">
+        <section className="py-24 bg-gradient-to-b from-white via-sky-50/30 to-blue-50/60 border-t border-blue-100 relative overflow-hidden">
           {/* Radial Ambient Glow */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[350px] bg-gradient-to-tr from-blue-300/30 via-indigo-300/25 to-purple-300/20 blur-3xl rounded-full pointer-events-none" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[350px] bg-gradient-to-tr from-sky-300/25 via-blue-200/20 to-indigo-200/15 blur-3xl rounded-full pointer-events-none" />
 
           <Container className="relative z-10">
             <div className="max-w-4xl mx-auto text-center space-y-7">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold bg-blue-100/80 text-blue-700 border border-blue-200">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">
                 <Sparkles className="w-3.5 h-3.5" />
                 SẴN SÀNG BẮT ĐẦU?
               </div>
 
               <h2 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight leading-tight">
                 Sẵn sàng cho bước tiến tiếp theo{" "}
-                <span className="block mt-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600">
+                <span className="block mt-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-sky-500 to-indigo-600">
                   trong sự nghiệp của bạn?
                 </span>
               </h2>
@@ -1144,10 +982,9 @@ export default function LandingPage() {
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-5 pt-4">
-                {/* Cyberpunk / Liquid Glow Button: "Tạo tài khoản ứng viên" */}
                 <Link
                   href="/register"
-                  className="relative group overflow-hidden px-9 py-4 rounded-full font-bold text-sm sm:text-base text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 shadow-[0_0_25px_rgba(79,70,229,0.4)] hover:shadow-[0_0_40px_rgba(79,70,229,0.7)] hover:scale-105 active:scale-95 transition-all duration-300 before:absolute before:inset-0 before:-translate-x-full hover:before:translate-x-full before:bg-gradient-to-r before:from-transparent before:via-white/35 before:to-transparent before:transition-transform before:duration-700 cursor-pointer"
+                  className="relative group overflow-hidden px-9 py-4 rounded-full font-bold text-sm sm:text-base text-white bg-gradient-to-r from-blue-600 via-sky-600 to-blue-700 shadow-[0_10px_30px_rgba(37,99,235,0.3)] hover:shadow-[0_15px_35px_rgba(37,99,235,0.45)] hover:scale-105 active:scale-95 transition-all duration-300 before:absolute before:inset-0 before:-translate-x-full hover:before:translate-x-full before:bg-gradient-to-r before:from-transparent before:via-white/35 before:to-transparent before:transition-transform before:duration-700 cursor-pointer"
                 >
                   <span className="relative z-10 flex items-center gap-2">
                     <span>Tạo tài khoản ứng viên</span>
@@ -1155,7 +992,6 @@ export default function LandingPage() {
                   </span>
                 </Link>
 
-                {/* Secondary Button: "Xem vị trí đang tuyển" */}
                 <a
                   href="#jobs"
                   className="px-8 py-4 rounded-full font-bold text-sm sm:text-base text-slate-700 bg-white border border-slate-300 hover:border-blue-400 hover:text-blue-600 hover:shadow-md hover:scale-105 active:scale-95 transition-all duration-300 flex items-center gap-2 cursor-pointer"

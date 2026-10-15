@@ -104,3 +104,6 @@ Desktop.ini
 .idea/
 *.sublime-project
 *.sublime-workspace
+Assets/database.sql
+backend/scripts/
+tests/

@@ -151,7 +151,7 @@ def _locked_response(remaining_secs: int) -> JSONResponse:
         content={
             "detail": f"Phiên đăng nhập trên trình duyệt này đang bị tạm khóa {login_guard.LOCK_MINUTES} phút do nhập sai {login_guard.MAX_FAILURES}/{login_guard.MAX_FAILURES} lần liên tiếp. "
                       f"Vui lòng thử lại sau {remaining_mins} phút.",
-            "field_errors": {"password": f"Tạm khóa đăng nhập trên trình duyệt này. Thử lại sau {remaining_mins} phút ({remaining_secs} giây)."},
+            # "field_errors": {"password": f"Tạm khóa đăng nhập trên trình duyệt này. Thử lại sau {remaining_mins} phút ({remaining_secs} giây)."},
         },
     )
 
