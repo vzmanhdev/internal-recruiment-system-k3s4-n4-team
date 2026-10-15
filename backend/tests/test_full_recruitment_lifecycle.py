@@ -1,4 +1,7 @@
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -16,7 +19,8 @@ from app.models.interview import InterviewSchedule, InterviewInterviewer
 from app.models.offer_onboarding import JobOffer, OnboardingChecklist
 from app.models.referral_eval import InternalReferral, CandidateEvaluation
 
-TEST_DB_FILE = "./test_recruitment.db"
+TEST_DB_DIR = TemporaryDirectory(prefix='recruitment-lifecycle-')
+TEST_DB_FILE = (Path(TEST_DB_DIR.name) / 'test_recruitment.db').as_posix()
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -55,6 +59,7 @@ def setup_database():
     app.dependency_overrides.update(previous_overrides)
     Base.metadata.drop_all(bind=engine)
     if os.path.exists(TEST_DB_FILE):
+        engine.dispose()
         try:
             os.remove(TEST_DB_FILE)
         except Exception:
@@ -207,13 +212,18 @@ def test_full_e2e_recruitment_lifecycle():
         "application_id": app_id,
         "job_title": "Kỹ Sư Backend Python Senior",
         "offered_salary": 30000000,
-        "start_date": "2026-11-01"
+        "start_date": (datetime.utcnow() + timedelta(days=14)).isoformat()
     }
     off_resp = client.post("/api/v1/legacy/offers", json=offer_payload, headers=headers)
     assert off_resp.status_code == 201
     off_id = off_resp.json()["id"]
+    assert off_resp.json()['status'] == 'draft'
+    assert client.post(f'/api/v1/offers/{off_id}/submit', headers=headers).status_code == 200
+    for _ in range(2):
+        assert client.post(f'/api/v1/offers/{off_id}/review', headers=headers, json={'status':'approved'}).status_code == 200
+    assert client.put(f'/api/v1/legacy/offers/{off_id}/status', headers=headers, json={'status':'sent'}).status_code == 200
 
-    off_accept = client.put(f"/api/v1/legacy/offers/{off_id}/status", json={"status": "accepted"}, headers=headers)
+    off_accept = client.put(f"/api/v1/legacy/offers/{off_id}/status", json={"status": "accepted"}, headers=cand_headers)
     assert off_accept.status_code == 200
     assert off_accept.json()["status"] == "accepted"
 

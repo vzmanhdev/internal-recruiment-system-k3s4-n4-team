@@ -11,6 +11,8 @@ import { ApiError } from "@/lib/api-client";
 import { AccountStatus, ManagedUser, userService, UsersPage } from "../services/user.service";
 
 const ROLE_OPTIONS = [
+  {value:"interviewer",label:"Người phỏng vấn"},
+  {value:"approver",label:"Ban phê duyệt ngoại lệ"},
   {value:"recruiter",label:"Nhân viên tuyển dụng"},
   {value:"employee",label:"Nhân sự nội bộ"},
   {value:"candidate",label:"Ứng viên"},

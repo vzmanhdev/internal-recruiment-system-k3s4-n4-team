@@ -43,6 +43,9 @@ export interface CreateReferralPayload {
 }
 
 export interface EvaluationItem {
+  interview_id?: number;
+  framework_name?: string;
+  criteria_scores: Array<{id: number; name: string; score: number; weight: number; comment: string}>;
   id: number;
   application_id: number;
   evaluator_id: number;

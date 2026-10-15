@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { fetchMyApplications, ApplicationItem, withdrawApplication } from "@/features/applications/services/application.service";
 import { getSessionRoles, useAuthSession } from "@/features/auth/lib/auth-session";
 import { fetchCandidateInterviews, InterviewItem, respondToInterview } from "@/features/interviews/services/interview.service";
-import { fetchMyOffers, OfferItem, respondToOffer } from "@/features/offers/services/offer.service";
+import { fetchMyOffers, OfferItem } from "@/features/offers/services/offer.service";
 import { ApiError } from "@/lib/api-client";
 
 const appStatus: Record<string, string> = {
@@ -112,7 +112,7 @@ export function CandidateDashboard() {
         <Card>
           <div className="flex items-center gap-2"><Gift className="h-5 w-5 text-emerald-600"/><h2 className="font-bold text-slate-900">Thư mời làm việc</h2></div>
           <div className="mt-4 space-y-4">{offers.length === 0 ? <p className="text-sm text-slate-500">Chưa có thư mời làm việc.</p> : offers.map((item) => (
-            <div key={item.id} className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold text-slate-900">{item.position_title}</h3><p className="mt-1 text-sm text-slate-600">{item.offered_salary.toLocaleString("vi-VN")} VNĐ · {item.work_location}</p><p className="mt-1 text-xs text-slate-500">Bắt đầu: {new Date(item.start_date).toLocaleDateString("vi-VN")}</p><p className="mt-2 text-xs font-semibold text-emerald-700">{responseLabel[item.status] ?? item.status}</p>{item.status === "sent" && <div className="mt-3 flex gap-2"><Button size="sm" isLoading={workingId === `offer-${item.id}`} onClick={() => runAction(`offer-${item.id}`, () => respondToOffer(item.id, "accepted"), "Bạn đã chấp nhận thư mời.")}>Chấp nhận</Button><Button size="sm" variant="outline" onClick={() => runAction(`offer-${item.id}`, () => respondToOffer(item.id, "declined"), "Bạn đã từ chối thư mời.")}>Từ chối</Button></div>}</div>
+            <div key={item.id} className="rounded-2xl border border-slate-200 p-4"><h3 className="font-bold text-slate-900">{item.position_title}</h3><p className="mt-1 text-sm text-slate-600">{item.offered_salary.toLocaleString("vi-VN")} VNĐ · {item.work_location}</p><p className="mt-1 text-xs text-slate-500">Bắt đầu: {new Date(item.start_date).toLocaleDateString("vi-VN")}</p><p className="mt-2 text-xs font-semibold text-emerald-700">{responseLabel[item.status] ?? item.status}</p><Button className="mt-3" size="sm" variant="outline" href={`/offer-response/${item.id}`}>Xem thư mời & phản hồi</Button></div>
           ))}</div>
         </Card>
       </div>

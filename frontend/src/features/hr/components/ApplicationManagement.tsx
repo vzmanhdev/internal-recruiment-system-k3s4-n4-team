@@ -142,7 +142,7 @@ export function ApplicationManagement() {
         expiration_date: new Date(offerForm.expiration_date).toISOString(),
         notes: offerForm.notes,
       });
-      setNotice("Đã phát hành Thư mời Nhận việc (Offer Letter) thành công!");
+      setNotice("Đã lưu bản nháp thư mời. Vào Thư mời & phê duyệt offer để trình duyệt và gửi ứng viên.");
       setShowOfferModal(false);
       loadData();
     } catch (err: unknown) {

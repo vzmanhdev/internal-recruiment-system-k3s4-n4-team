@@ -56,7 +56,7 @@ def test_candidate_application_interview_offer_and_employee_registration():
     assert application.status_code == 201, application.text
     application_id = application.json()["id"]
 
-    interview = client.post("/api/v1/interviews", headers=admin_headers, json={"application_id": application_id, "title": "Phỏng vấn chuyên môn", "interview_type": "online", "location_or_link": "https://meet.example.com/test", "start_time": (datetime.utcnow() + timedelta(days=2)).isoformat(), "end_time": (datetime.utcnow() + timedelta(days=2, hours=1)).isoformat(), "interviewer_ids": []})
+    interview = client.post("/api/v1/interviews", headers=admin_headers, json={"application_id": application_id, "title": "Phỏng vấn chuyên môn", "interview_type": "online", "location_or_link": "https://meet.example.com/test", "start_time": (datetime.utcnow() + timedelta(days=2)).isoformat(), "end_time": (datetime.utcnow() + timedelta(days=2, hours=1)).isoformat(), "interviewer_ids": [client.get("/api/v1/auth/me", headers=admin_headers).json()["id"]]})
     assert interview.status_code == 201, interview.text
     response = client.post(f"/api/v1/interviews/{interview.json()['id']}/respond", headers=candidate_headers, json={"response": "confirmed"})
     assert response.status_code == 200, response.text
@@ -64,6 +64,11 @@ def test_candidate_application_interview_offer_and_employee_registration():
 
     offer = client.post("/api/v1/offers", headers=admin_headers, json={"application_id": application_id, "position_title": "QA Engineer", "offered_salary": 18000000, "start_date": (datetime.utcnow() + timedelta(days=14)).isoformat(), "probation_period_months": 2, "work_location": "Hà Nội", "expiration_date": (datetime.utcnow() + timedelta(days=7)).isoformat()})
     assert offer.status_code == 201, offer.text
+    offer_id = offer.json()['id']
+    assert client.post(f'/api/v1/offers/{offer_id}/submit',headers=admin_headers).status_code==200
+    for _ in range(2):
+        assert client.post(f'/api/v1/offers/{offer_id}/review',headers=admin_headers,json={'status':'approved'}).status_code==200
+    assert client.post(f'/api/v1/offers/{offer_id}/status',headers=admin_headers,json={'status':'sent'}).status_code==200
     my_offers = client.get("/api/v1/offers/my", headers=candidate_headers)
     assert my_offers.status_code == 200, my_offers.text
     assert any(item["id"] == offer.json()["id"] for item in my_offers.json()["items"])

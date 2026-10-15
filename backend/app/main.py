@@ -39,6 +39,13 @@ from app.models.email_automation import EmailTemplate, EmailLog
 Base.metadata.create_all(bind=engine)
 
 with engine.begin() as connection:
+    panel_columns = {column['name'] for column in inspect(engine).get_columns('interview_interviewers')}
+    if 'asked_questions' not in panel_columns:
+        connection.execute(text('ALTER TABLE interview_interviewers ADD COLUMN asked_questions TEXT'))
+    offer_columns = {column['name'] for column in inspect(engine).get_columns('job_offers')}
+    for name in ('salary_exception_reason', 'response_notes', 'approval_history'):
+        if name not in offer_columns:
+            connection.execute(text(f'ALTER TABLE job_offers ADD COLUMN {name} TEXT'))
     requisition_columns = {column["name"] for column in inspect(engine).get_columns("job_requisitions")}
     for name, definition in {
         "recruiter_id": "INTEGER REFERENCES users(id)",

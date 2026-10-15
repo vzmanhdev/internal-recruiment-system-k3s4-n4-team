@@ -119,7 +119,20 @@ export async function sendInterviewInvitation(
 }
 
 export async function fetchMyInterviews(): Promise<PaginatedInterviews> {
-  return apiRequest<PaginatedInterviews>("/interviews/my");
+  const first = await apiRequest<PaginatedInterviews>(
+    "/interviews/my?page_size=100",
+  );
+  const rest = await Promise.all(
+    Array.from({ length: first.pages - 1 }, (_, index) =>
+      apiRequest<PaginatedInterviews>(
+        `/interviews/my?page_size=100&page=${index + 2}`,
+      ),
+    ),
+  );
+  return {
+    ...first,
+    items: [...first.items, ...rest.flatMap((page) => page.items)],
+  };
 }
 
 export async function fetchCandidateInterviews(): Promise<PaginatedInterviews> {

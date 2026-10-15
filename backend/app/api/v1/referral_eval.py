@@ -25,6 +25,11 @@ from app.schemas.referral_eval import (
     ScorecardSubmit,
 )
 from app.services.scorecards import interview_scorecard, calculate_scorecard
+from pydantic import BaseModel
+
+class QuestionMark(BaseModel):
+    question_id: int
+    asked: bool
 
 router = APIRouter()
 
@@ -210,6 +215,35 @@ def authorized_scorecard(db, interview_id, user):
         if not db.query(InterviewInterviewer).filter_by(interview_id=interview_id, interviewer_id=user.id).first():
             raise HTTPException(status_code=403, detail='Bạn chưa được phân công đánh giá lịch này')
     return interview
+
+def question_panel(db, interview, user):
+    name, criteria, _ = interview_scorecard(db, interview, user.id)
+    panel = db.query(InterviewInterviewer).filter_by(interview_id=interview.id, interviewer_id=user.id).first()
+    if not panel:
+        raise HTTPException(403, 'Chỉ người được phân công phỏng vấn mới được đánh dấu câu hỏi')
+    marks = json.loads(panel.asked_questions or '[]')
+    return panel, {'framework_name': name, 'questions': [dict(id=item['id'], competency=item['name'], text=f"Hãy kể một tình huống thực tế thể hiện {item['name'].lower()}. Bạn đã xử lý ra sao và kết quả thế nào?", guidance=item.get('description'), asked=item['id'] in marks) for item in criteria]}
+
+@router.get('/interviews/{interview_id}/questions')
+def get_questions(interview_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_evaluation_user(authorization, db)
+    interview = authorized_scorecard(db, interview_id, user)
+    return question_panel(db, interview, user)[1]
+
+@router.put('/interviews/{interview_id}/questions')
+def mark_question(interview_id: int, payload: QuestionMark, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_evaluation_user(authorization, db)
+    interview = authorized_scorecard(db, interview_id, user)
+    if interview.status == 'cancelled':
+        raise HTTPException(409, 'Buổi phỏng vấn đã hủy')
+    panel, data = question_panel(db, interview, user)
+    if payload.question_id not in {item['id'] for item in data['questions']}:
+        raise HTTPException(422, 'Câu hỏi không thuộc khung năng lực của lịch này')
+    marks = set(json.loads(panel.asked_questions or '[]'))
+    marks.add(payload.question_id) if payload.asked else marks.discard(payload.question_id)
+    panel.asked_questions = json.dumps(sorted(marks))
+    db.commit()
+    return question_panel(db, interview, user)[1]
 
 @router.get('/interviews/{interview_id}/scorecard')
 def get_interview_scorecard(interview_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):

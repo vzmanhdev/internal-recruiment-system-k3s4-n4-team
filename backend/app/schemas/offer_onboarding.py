@@ -5,12 +5,13 @@ from pydantic import BaseModel, Field
 class OfferCreate(BaseModel):
     application_id: int = Field(..., description="ID hồ sơ ứng tuyển")
     position_title: str = Field(..., min_length=2, max_length=255, description="Chức danh công việc đề xuất")
-    offered_salary: float = Field(..., ge=0, description="Mức lương đề xuất (VNĐ)")
+    offered_salary: float = Field(..., ge=0, allow_inf_nan=False, description="Mức lương đề xuất (VNĐ)")
     start_date: datetime = Field(..., description="Ngày bắt đầu làm việc")
     probation_period_months: int = Field(2, ge=0, le=12, description="Thời gian thử việc (Tháng)")
     work_location: str = Field(..., min_length=2, description="Địa điểm làm việc")
     expiration_date: datetime = Field(..., description="Hạn ứng viên phản hồi Offer")
     notes: Optional[str] = Field(None, description="Ghi chú điều khoản phúc lợi thêm")
+    salary_exception_reason: Optional[str] = Field(None, max_length=2000)
 
 class OfferStatusUpdate(BaseModel):
     status: str = Field(..., description="draft, sent, accepted, declined, expired")
@@ -27,9 +28,14 @@ class OfferResponse(BaseModel):
     start_date: str
     probation_period_months: int
     work_location: str
-    expiration_date: str
+    expiration_date: Optional[str] = None
     status: str
     notes: Optional[str] = None
+    salary_exception_reason: Optional[str] = None
+    response_notes: Optional[str] = None
+    min_salary: Optional[float] = None
+    max_salary: Optional[float] = None
+    approvals: list[dict] = Field(default_factory=list)
     created_at: str
     updated_at: str
 

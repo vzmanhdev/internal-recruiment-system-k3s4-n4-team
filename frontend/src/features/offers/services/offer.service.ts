@@ -1,6 +1,19 @@
 import { apiRequest } from "@/lib/api-client";
 
 export interface OfferItem {
+  salary_exception_reason?: string;
+  response_notes?: string;
+  min_salary?: number;
+  max_salary?: number;
+  approvals: Array<{
+    role: string;
+    label: string;
+    status: string;
+    round: number;
+    reviewer?: string;
+    note?: string;
+    reviewed_at?: string;
+  }>;
   id: number;
   code: string;
   application_id: number;
@@ -12,7 +25,16 @@ export interface OfferItem {
   probation_period_months: number;
   work_location: string;
   expiration_date: string;
-  status: "draft" | "sent" | "accepted" | "declined" | "expired";
+  status:
+    | "draft"
+    | "pending_approval"
+    | "approved"
+    | "rejected"
+    | "changes_requested"
+    | "sent"
+    | "accepted"
+    | "declined"
+    | "expired";
   notes?: string;
   created_at: string;
   updated_at: string;
@@ -27,6 +49,7 @@ export interface PaginatedOffers {
 }
 
 export interface CreateOfferPayload {
+  salary_exception_reason?: string;
   application_id: number;
   position_title: string;
   offered_salary: number;
@@ -61,7 +84,9 @@ export interface PaginatedOnboarding {
   pages: number;
 }
 
-export async function createOffer(payload: CreateOfferPayload): Promise<OfferItem> {
+export async function createOffer(
+  payload: CreateOfferPayload,
+): Promise<OfferItem> {
   return apiRequest<OfferItem>("/offers", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -91,7 +116,7 @@ export async function fetchMyOffers(): Promise<PaginatedOffers> {
 export async function respondToOffer(
   id: number,
   status: "accepted" | "declined",
-  notes?: string
+  notes?: string,
 ): Promise<OfferItem> {
   return apiRequest<OfferItem>(`/offers/${id}/respond`, {
     method: "POST",
@@ -102,7 +127,7 @@ export async function respondToOffer(
 export async function updateOfferStatus(
   id: number,
   status: string,
-  notes?: string
+  notes?: string,
 ): Promise<OfferItem> {
   return apiRequest<OfferItem>(`/offers/${id}/status`, {
     method: "POST",
@@ -110,7 +135,9 @@ export async function updateOfferStatus(
   });
 }
 
-export async function fetchApplicationOffer(application_id: number): Promise<OfferItem | null> {
+export async function fetchApplicationOffer(
+  application_id: number,
+): Promise<OfferItem | null> {
   return apiRequest<OfferItem | null>(`/applications/${application_id}/offer`);
 }
 
@@ -125,12 +152,14 @@ export async function fetchManageOnboarding(params?: {
   if (params?.page_size) query.append("page_size", String(params.page_size));
 
   const queryString = query.toString() ? `?${query.toString()}` : "";
-  return apiRequest<PaginatedOnboarding>(`/onboarding/manage/all${queryString}`);
+  return apiRequest<PaginatedOnboarding>(
+    `/onboarding/manage/all${queryString}`,
+  );
 }
 
 export async function updateOnboarding(
   id: number,
-  payload: Partial<OnboardingItem>
+  payload: Partial<OnboardingItem>,
 ): Promise<OnboardingItem> {
   return apiRequest<OnboardingItem>(`/onboarding/${id}`, {
     method: "PUT",

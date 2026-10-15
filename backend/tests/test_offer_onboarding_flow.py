@@ -98,9 +98,19 @@ def test_offer_onboarding_flow():
     create_off = client.post("/api/v1/offers", json=offer_payload, headers=headers_admin)
     assert create_off.status_code == 201
     offer_data = create_off.json()
-    assert offer_data["status"] == "sent"
+    assert offer_data["status"] == "draft"
     assert offer_data["code"].startswith("OFR-")
     offer_id = offer_data["id"]
+    assert client.post(f'/api/v1/offers/{offer_id}/submit', headers=headers_admin).status_code == 200
+    for _ in range(2):
+        assert client.post(f'/api/v1/offers/{offer_id}/review', headers=headers_admin, json={'status':'approved'}).status_code == 200
+    assert client.post(f'/api/v1/offers/{offer_id}/status', headers=headers_admin, json={'status':'sent'}).status_code == 200
+    with next(get_db()) as db:
+        candidate = db.query(User).filter_by(email='minhanh.pham@company.com').first()
+        if not candidate:
+            candidate = User(email='minhanh.pham@company.com', full_name='Phạm Minh Anh', hashed_password=hash_password('Candidate123'), role='candidate', is_active=True)
+            db.add(candidate); db.commit(); db.refresh(candidate)
+        candidate_headers = {'Authorization':f'Bearer {create_access_token(subject=candidate.id)}'}
 
     # Fetch application offer
     get_offer = client.get(f"/api/v1/applications/{app_id}/offer", headers=headers_admin)
@@ -109,9 +119,9 @@ def test_offer_onboarding_flow():
 
     # 3. Candidate Accepts Offer -> Triggers Onboarding Checklist & updates stage to 'hired'
     accept_res = client.post(
-        f"/api/v1/offers/{offer_id}/status",
+        f"/api/v1/offers/{offer_id}/respond",
         json={"status": "accepted", "notes": "Ứng viên xác nhận nhận việc qua email."},
-        headers=headers_admin
+        headers=candidate_headers
     )
     assert accept_res.status_code == 200
     assert accept_res.json()["status"] == "accepted"
@@ -122,7 +132,7 @@ def test_offer_onboarding_flow():
     onboarding_items = onboard_list.json()["items"]
     assert len(onboarding_items) >= 1
     target_ob = next(ob for ob in onboarding_items if ob["application_id"] == app_id)
-    assert target_ob["status"] == "in_progress"
+    assert target_ob["status"] == "pending"
 
     # 4. HR Completes Onboarding Tasks
     ob_id = target_ob["id"]

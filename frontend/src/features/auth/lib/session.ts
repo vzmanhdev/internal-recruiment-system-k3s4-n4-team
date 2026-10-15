@@ -22,6 +22,9 @@ export function getDashboardPath(role: string, roles?: string[]): string {
   if (allRoles.includes("admin")) return "/admin/dashboard";
   if (allRoles.includes("hr_manager")) return "/hr/dashboard";
   if (allRoles.includes("manager")) return "/manager/dashboard";
+  if (allRoles.includes("approver")) return "/hr/offers";
+  if (allRoles.includes("recruiter")) return "/recruiter";
+  if (allRoles.includes("interviewer")) return "/interviewer";
   if (allRoles.includes("candidate")) return "/candidate/dashboard";
   return "/employee/dashboard";
 }

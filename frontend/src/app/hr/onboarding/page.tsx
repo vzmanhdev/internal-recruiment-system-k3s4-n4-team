@@ -1,157 +1,189 @@
-'use client';
-
-import React, { useState } from 'react';
-import { 
-  CheckSquare, CheckCircle2, Circle, UserCheck, Laptop, Key, BookOpen, 
-  Calendar, Building2, ChevronRight
-} from 'lucide-react';
-
-interface OnboardingTask {
-  id: string;
-  candidate_name: string;
-  position: string;
-  department: string;
-  start_date: string;
-  mentor_name: string;
-  checklist: {
-    it_account: boolean;
-    laptop_assigned: boolean;
-    contract_signed: boolean;
-    orientation_done: boolean;
-  };
-}
-
-export default function HROnboardingPage() {
-  const [onboardings, setOnboardings] = useState<OnboardingTask[]>([
-    {
-      id: "ONB-001",
-      candidate_name: "Phạm Văn Minh",
-      position: "Senior DevOps Engineer",
-      department: "Công Nghệ Thông Tin",
-      start_date: "20/10/2026",
-      mentor_name: "Nguyễn Văn Hùng",
-      checklist: {
-        it_account: true,
-        laptop_assigned: true,
-        contract_signed: true,
-        orientation_done: false
-      }
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { HrShell } from "@/features/hr/components/HrShell";
+import {
+  fetchManageOnboarding,
+  updateOnboarding,
+  OnboardingItem,
+} from "@/features/offers/services/offer.service";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Alert } from "@/components/ui/Alert";
+const tasks = [
+  ["welcome_email_sent", "Gửi email chào mừng"],
+  ["equipment_prepared", "Chuẩn bị thiết bị"],
+  ["account_created", "Tạo tài khoản làm việc"],
+  ["documents_submitted", "Hoàn tất hồ sơ nhận việc"],
+  ["orientation_scheduled", "Sắp lịch hội nhập"],
+] as const;
+export default function OnboardingPage() {
+  const [items, setItems] = useState<OnboardingItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [status, setStatus] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<number | null>(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await fetchManageOnboarding({ page, status });
+      setItems(result.items);
+      setPages(result.pages);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Không thể tải checklist",
+      );
+    } finally {
+      setLoading(false);
     }
-  ]);
-
-  const toggleCheck = (id: string, key: keyof OnboardingTask['checklist']) => {
-    setOnboardings(prev => prev.map(item => {
-      if (item.id === id) {
-        return {
-          ...item,
-          checklist: {
-            ...item.checklist,
-            [key]: !item.checklist[key]
-          }
-        };
-      }
-      return item;
-    }));
-  };
-
+  }, [page, status]);
+  useEffect(() => {
+    queueMicrotask(() => void load());
+  }, [load]);
+  async function toggle(item: OnboardingItem, key: (typeof tasks)[number][0]) {
+    if (busy !== null) return;
+    setBusy(item.id);
+    setError("");
+    setItems((current) =>
+      current.map((row) =>
+        row.id === item.id ? { ...row, [key]: !item[key] } : row,
+      ),
+    );
+    try {
+      const updated = await updateOnboarding(item.id, { [key]: !item[key] });
+      setItems((current) =>
+        current.map((row) => (row.id === item.id ? updated : row)),
+      );
+      if (status !== "all" && updated.status !== status) await load();
+    } catch (caught) {
+      setItems((current) =>
+        current.map((row) => (row.id === item.id ? item : row)),
+      );
+      setError(
+        caught instanceof Error ? caught.message : "Không thể lưu tiến độ",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="border-b border-slate-200/80 pb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Checklist Pre-Onboarding & Thử Việc</h1>
-            <span className="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-emerald-200">
-              [S8-01] New Hire Readiness
-            </span>
+    <HrShell>
+      <div className="space-y-6">
+        <section className="workspace-hero">
+          <p className="text-sm font-bold text-blue-600">
+            Onboarding · Chuẩn bị nhận việc
+          </p>
+          <h1 className="mt-2 text-3xl font-black text-slate-950">
+            Checklist hội nhập
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Checklist được tạo khi ứng viên chấp nhận thư mời. Các thay đổi được
+            lưu ngay.
+          </p>
+        </section>
+        {error && <Alert variant="error">{error}</Alert>}
+        <Card>
+          <label className="text-sm font-semibold">
+            Lọc tiến độ
+            <select
+              className="ml-3 rounded-xl border border-slate-200 p-3"
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="all">Tất cả</option>
+              <option value="pending">Chưa bắt đầu</option>
+              <option value="in_progress">Đang thực hiện</option>
+              <option value="completed">Hoàn thành</option>
+            </select>
+          </label>
+        </Card>
+        {loading ? (
+          <Card>Đang tải checklist...</Card>
+        ) : items.length === 0 ? (
+          <Card>Chưa có checklist nhận việc phù hợp.</Card>
+        ) : (
+          <div className="grid gap-5 xl:grid-cols-2">
+            {items.map((item) => {
+              const done = tasks.filter(([key]) => item[key]).length;
+              const progress = (done / tasks.length) * 100;
+              return (
+                <Card key={item.id}>
+                  <h2 className="text-lg font-black text-slate-950">
+                    {item.candidate_name}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {item.job_title} · {item.department_name}
+                  </p>
+                  <p className="mt-4 text-sm font-bold text-blue-700">
+                    {progress}% hoàn thành · {done}/{tasks.length} công việc
+                  </p>
+                  <div
+                    role="progressbar"
+                    aria-label={`Tiến độ ${item.candidate_name}`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progress}
+                    className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"
+                  >
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <div className="mt-5 space-y-3">
+                    {tasks.map(([key, label]) => (
+                      <label
+                        key={key}
+                        className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-100 p-3 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 accent-blue-600"
+                          checked={item[key]}
+                          disabled={busy !== null}
+                          onChange={() => void toggle(item, key)}
+                        />
+                        <span
+                          className={
+                            item[key]
+                              ? "text-slate-400 line-through"
+                              : "text-slate-700"
+                          }
+                        >
+                          {label}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
-          <p className="text-xs text-slate-500 mt-1">Theo dõi chuẩn bị thiết bị IT, tài khoản truy cập, gán Mentor & đào tạo định hướng cho nhân sự mới</p>
+        )}
+        <div className="flex items-center justify-center gap-3">
+          <Button
+            variant="outline"
+            disabled={page <= 1 || loading}
+            onClick={() => setPage(page - 1)}
+          >
+            Trước
+          </Button>
+          <span className="text-sm">
+            {page}/{pages}
+          </span>
+          <Button
+            variant="outline"
+            disabled={page >= pages || loading}
+            onClick={() => setPage(page + 1)}
+          >
+            Sau
+          </Button>
         </div>
       </div>
-
-      {/* Checklist List */}
-      <div className="space-y-4">
-        {onboardings.map((item) => {
-          const completedCount = Object.values(item.checklist).filter(Boolean).length;
-          const progressPercent = Math.round((completedCount / 4) * 100);
-
-          return (
-            <div key={item.id} className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm space-y-4 hover:shadow-md transition-all">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-slate-900">{item.candidate_name}</h2>
-                    <span className="text-xs text-slate-500">• Ngày bắt đầu làm: <strong className="text-slate-900">{item.start_date}</strong></span>
-                  </div>
-                  <div className="text-xs text-slate-500 mt-0.5">Vị trí: <strong>{item.position}</strong> ({item.department}) | Mentor: <strong>{item.mentor_name}</strong></div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <div className="text-xs font-bold text-slate-900">Tiến độ chuẩn bị: {progressPercent}%</div>
-                    <div className="w-32 bg-slate-100 h-2 rounded-full mt-1 overflow-hidden">
-                      <div className="bg-emerald-500 h-full transition-all" style={{ width: `${progressPercent}%` }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Checklist Items */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                
-                <div 
-                  onClick={() => toggleCheck(item.id, 'contract_signed')}
-                  className={`p-3.5 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-all ${
-                    item.checklist.contract_signed ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900 font-bold' : 'bg-slate-50 border-slate-200 text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {item.checklist.contract_signed ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-slate-400" />}
-                    <span>1. Ký hợp đồng thử việc</span>
-                  </div>
-                </div>
-
-                <div 
-                  onClick={() => toggleCheck(item.id, 'it_account')}
-                  className={`p-3.5 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-all ${
-                    item.checklist.it_account ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900 font-bold' : 'bg-slate-50 border-slate-200 text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {item.checklist.it_account ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-slate-400" />}
-                    <span>2. Cấp tài khoản Email / IT</span>
-                  </div>
-                </div>
-
-                <div 
-                  onClick={() => toggleCheck(item.id, 'laptop_assigned')}
-                  className={`p-3.5 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-all ${
-                    item.checklist.laptop_assigned ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900 font-bold' : 'bg-slate-50 border-slate-200 text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {item.checklist.laptop_assigned ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-slate-400" />}
-                    <span>3. Cấp Laptop / Thiết bị</span>
-                  </div>
-                </div>
-
-                <div 
-                  onClick={() => toggleCheck(item.id, 'orientation_done')}
-                  className={`p-3.5 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition-all ${
-                    item.checklist.orientation_done ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900 font-bold' : 'bg-slate-50 border-slate-200 text-slate-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    {item.checklist.orientation_done ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <Circle className="w-4 h-4 text-slate-400" />}
-                    <span>4. Đào tạo hội nhập HR</span>
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    </HrShell>
   );
 }

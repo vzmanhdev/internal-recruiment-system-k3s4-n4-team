@@ -75,6 +75,7 @@ def _decode_response_token(token: str) -> dict:
 
 def _serialize_schedule(schedule: InterviewSchedule, include_token: bool = False) -> dict:
     result = schedule.to_dict()
+    result['title'] = schedule.title or 'Lịch phỏng vấn'
     result['competency_category'] = schedule.competency_category
     result['is_final_round'] = bool(schedule.is_final_round)
     result['accepts_response'] = schedule.status in {'scheduled', 'rescheduled'} and schedule.start_time > datetime.utcnow()

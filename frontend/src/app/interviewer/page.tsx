@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   RefreshCw,
+  Gift,
 } from "lucide-react";
 import { WorkspaceShell } from "@/components/layout/WorkspaceShell";
 import { Alert } from "@/components/ui/Alert";
@@ -21,6 +22,11 @@ import {
   fetchEvaluationComparison,
 } from "@/features/referrals/services/referral.service";
 import { ScorecardModal } from "@/features/interviews/components/ScorecardModal";
+import { InterviewCalendar } from "@/features/interviews/components/InterviewCalendar";
+import {
+  getSessionRoles,
+  useAuthSession,
+} from "@/features/auth/lib/auth-session";
 
 const recommendationLabels: Record<string, string> = {
   strong_hire: "Rất nên tuyển",
@@ -30,9 +36,11 @@ const recommendationLabels: Record<string, string> = {
 };
 const navItems = [
   { href: "/interviewer", label: "Lịch & đánh giá", icon: ClipboardCheck },
+  { href: "/hr/offers", label: "Quyết định & offer", icon: Gift },
 ];
 
 export default function InterviewerWorkspacePage() {
+  const roles = getSessionRoles(useAuthSession());
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
   const [comparison, setComparison] = useState<CandidateScoreComparison[]>([]);
   const [finalOnly, setFinalOnly] = useState(true);
@@ -81,7 +89,19 @@ export default function InterviewerWorkspacePage() {
       title="Hội đồng phỏng vấn"
       description="Phiếu theo khung năng lực và so sánh vòng cuối"
       icon={ClipboardCheck}
-      items={navItems}
+      items={navItems.filter(
+        (item) =>
+          item.href !== "/hr/offers" ||
+          roles.some((role) =>
+            [
+              "admin",
+              "hr_manager",
+              "recruiter",
+              "manager",
+              "hiring_manager",
+            ].includes(role),
+          ),
+      )}
       allowedRoles={[
         "admin",
         "hr_manager",
@@ -121,6 +141,7 @@ export default function InterviewerWorkspacePage() {
           </Card>
         ) : (
           <>
+            <InterviewCalendar interviews={interviews} onScore={setSelected} />
             <section>
               <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-slate-950">
                 <CalendarDays className="h-5 w-5 text-blue-600" />
