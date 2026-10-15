@@ -1,9 +1,37 @@
-import Image from "next/image";
+import React from "react";
 import { Header } from "@/components/layout/Header";
-import { Button } from "@/components/ui/Button";
-import { Icon } from "@/components/ui/Icons";
-import { JobCard } from "@/features/jobs/components/JobCard";
-import { jobs } from "@/features/jobs/data/jobs";
+import { Footer } from "@/components/layout/Footer";
+import { Container } from "@/components/layout/Container";
+import { HeroSection } from "@/features/landing/components/HeroSection";
+import { SearchFilterBar } from "@/features/landing/components/SearchFilterBar";
+import { BusinessMetricsSection } from "@/features/landing/components/BusinessMetricsSection";
+import { JobOpportunitiesSection } from "@/features/landing/components/JobOpportunitiesSection";
+import { CareerDevelopmentSection } from "@/features/landing/components/CareerDevelopmentSection";
+import { ReferralBanner } from "@/features/landing/components/ReferralBanner";
+import { DevelopmentProcessSection } from "@/features/landing/components/DevelopmentProcessSection";
+import { WhyJoinSection } from "@/features/landing/components/WhyJoinSection";
+import { TestimonialsSection } from "@/features/landing/components/TestimonialsSection";
+import { FinalCTASection } from "@/features/landing/components/FinalCTASection";
 
-const values=[{icon:"people" as const,title:"Cơ hội nội bộ",text:"Khám phá những vị trí mới, thử thách mới ngay trong chính doanh nghiệp của bạn."},{icon:"document" as const,title:"Quy trình minh bạch",text:"Thông tin rõ ràng, quy trình công bằng, đánh giá dựa trên năng lực."},{icon:"chart" as const,title:"Phát triển sự nghiệp",text:"Không ngừng học hỏi, mở rộng cơ hội và vươn xa hơn cùng tổ chức."}];
-export default function Home(){return <><Header/><main className="landing-page"><section className="hero grid grid-cols-1 overflow-hidden md:grid-cols-2"><div className="hero__content"><span className="eyebrow">Cùng nhau phát triển mạnh mẽ hơn</span><h1>Cơ hội phát triển<br/><span>bắt đầu từ bên trong</span></h1><p>Khám phá vị trí mới và phát triển sự nghiệp ngay trong doanh nghiệp.</p><div className="actions flex flex-col gap-3 sm:flex-row"><Button href="/jobs"><Icon name="search"/>Khám phá vị trí <Icon name="arrow"/></Button><Button href="/process" variant="secondary"><Icon name="document"/>Tìm hiểu quy trình</Button></div><p className="handwriting">Nhân tài luôn có cơ hội tỏa sáng<br/>ngay trong chính ngôi nhà của mình!</p></div><div className="office-scene relative overflow-hidden"><Image className="object-cover" src="/images/home-team.png" alt="Nhóm nhân viên cùng làm việc quanh máy tính" fill priority sizes="(max-width: 767px) 100vw, 55vw"/><p>“Cùng nhau<br/>tạo nên<br/>những giá trị<br/>lớn hơn”</p></div></section><section className="value-grid container grid grid-cols-1 gap-5 lg:grid-cols-3">{values.map(value=><article className="value-card" key={value.title}><span className="feature-icon"><Icon name={value.icon}/></span><div><h2>{value.title}</h2><p>{value.text}</p></div><Icon name="arrow"/></article>)}</section><section className="jobs-section container"><div className="section-heading"><div><h2>Vị trí đang tuyển dụng</h2><p>Những cơ hội mới đang chờ bạn khám phá</p></div><Button href="/jobs" variant="secondary">Xem tất cả vị trí <Icon name="arrow"/></Button></div><div className="job-grid grid grid-cols-1 gap-5 lg:grid-cols-3">{jobs.map(job=><JobCard key={job.id} job={job}/>)}</div><div className="career-note"><span>♧</span><p>Phát triển sự nghiệp không chỉ ở bên ngoài, mà còn ở ngay bên trong chính tổ chức của chúng ta.</p><i/><em>Cùng nhau, chúng ta đi xa hơn</em></div></section></main></>}
+export default function LandingPage() {
+  return (
+    <div className="public-site min-h-screen flex flex-col">
+      <Header />
+      <main className="flex-1">
+        <HeroSection />
+        <Container className="relative -mt-10 lg:-mt-14 z-20 mb-12">
+          <SearchFilterBar />
+        </Container>
+        <BusinessMetricsSection />
+        <JobOpportunitiesSection />
+        <CareerDevelopmentSection />
+        <ReferralBanner />
+        <DevelopmentProcessSection />
+        <WhyJoinSection />
+        <TestimonialsSection />
+        <FinalCTASection />
+      </main>
+      <Footer />
+    </div>
+  );
+}

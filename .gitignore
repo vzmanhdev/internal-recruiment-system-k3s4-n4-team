@@ -28,6 +28,24 @@ ENV/
 *.sqlite
 *.sqlite3
 
+# Temporary & Scratch scripts in root
+analyze_excel_and_code.py
+check_headers.py
+code_files_list.txt
+codebase_files.txt
+cross_analysis_result.txt
+cross_reference.py
+deep_check_completion.py
+detailed_excel_analysis.py
+doc_extracted.txt
+excel_dump.json
+excel_items_dump.txt
+full_excel_breakdown.txt
+generate_full_report.py
+match_code_and_tasks.py
+tmp_output.txt
+tmp_parse_xlsx.py
+
 # IDE / OS
 .DS_Store
 Thumbs.db

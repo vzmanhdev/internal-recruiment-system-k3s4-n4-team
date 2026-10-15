@@ -1,8 +1,102 @@
-import type { LoginRequest, RegisterRequest } from "../types/auth.types";
+import { apiRequest } from "@/lib/api-client";
+import { clearStoredSession, saveSessionExpiration } from "../lib/session";
+import { saveAuthSession } from "../lib/auth-session";
 
-// TODO: Thay mô phỏng bằng apiRequest khi Backend công bố auth routes và contract chính thức.
-async function simulateSubmit(): Promise<void> { await new Promise(resolve=>setTimeout(resolve,700)); }
-export const authService: {
-  login(payload: LoginRequest): Promise<void>;
-  register(payload: RegisterRequest): Promise<void>;
-} = { login:()=>simulateSubmit(), register:()=>simulateSubmit() };
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: {
+    id: number;
+    email: string;
+    full_name: string;
+    phone?: string;
+    role: string;
+    is_active: boolean;
+    avatar_url?: string;
+    created_at?: string;
+  };
+}
+
+export interface RegistrationResponse {
+  message: string;
+  user: AuthResponse["user"];
+}
+
+export const authService = {
+  async register(payload: {
+    full_name: string;
+    email: string;
+    password: string;
+    phone?: string;
+    role?: string;
+  }): Promise<RegistrationResponse> {
+    return await apiRequest<RegistrationResponse>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async login(payload: {
+    email: string;
+    password: string;
+  }, rememberMe = false): Promise<AuthResponse> {
+    const res = await apiRequest<AuthResponse>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    if (res.access_token) {
+      localStorage.setItem("access_token", res.access_token);
+      localStorage.setItem("auth_remember_me", String(rememberMe));
+      if (rememberMe) localStorage.setItem("remembered_login_email", payload.email);
+      else localStorage.removeItem("remembered_login_email");
+      saveAuthSession(res.user);
+      saveSessionExpiration(res.access_token);
+    }
+    return res;
+  },
+
+  async forgotPassword(email: string): Promise<{ message: string; reset_url?: string }> {
+    return await apiRequest<{ message: string; reset_url?: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async getCurrentUser() {
+    return await apiRequest("/auth/me", {
+      method: "GET",
+    });
+  },
+
+  async updateProfile(payload: {full_name:string; phone?:string; avatar_url?:string}) {
+    const user = await apiRequest<AuthResponse["user"]>("/auth/me", {method:"PUT", body:JSON.stringify(payload)});
+    saveAuthSession(user);
+    localStorage.setItem("user_info", JSON.stringify(user));
+    return user;
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    return await apiRequest<{ message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+  },
+
+  async changePassword(payload: {
+    current_password: string;
+    new_password: string;
+  }): Promise<{ message: string }> {
+    return await apiRequest<{ message: string }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  logout() {
+    if (typeof window !== "undefined") {
+      clearStoredSession();
+      localStorage.removeItem("auth_remember_me");
+    }
+  }
+};
