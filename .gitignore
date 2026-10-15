@@ -14,13 +14,13 @@ tmp_test/
 # ------------------------------------------------------------------------------
 # 2. Environment Variables & Credentials (Biến môi trường & Bí mật)
 # ------------------------------------------------------------------------------
-.env
+
 .env.local
 .env.*.local
 .env.development
 .env.test
 .env.production
-*.env
+
 
 # Cho phép commit file mẫu .env.example
 !.env.example
