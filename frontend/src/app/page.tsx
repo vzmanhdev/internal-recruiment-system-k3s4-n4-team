@@ -38,6 +38,7 @@ import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Container } from "@/components/layout/Container";
 import { jobService, JobPostingItem } from "@/services/job.service";
+import { API_BASE_URL } from "@/lib/api-client";
 
 interface CareerBenefit {
   title: string;
@@ -152,7 +153,7 @@ export default function LandingPage() {
     } catch { }
 
     // Load CMS Career Page Settings
-    fetch("/api/v1/public/career-page")
+    fetch(`${API_BASE_URL}/public/career-page`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (isMounted && data && data.configured !== false && data.company_name) {
@@ -287,6 +288,7 @@ export default function LandingPage() {
               alt="Môi trường làm việc"
               fill
               priority
+              sizes="100vw"
               className="object-cover object-center filter blur-[10px] scale-105 opacity-[0.25]"
             />
           </div>
@@ -387,6 +389,7 @@ export default function LandingPage() {
                     src={careerSettings.banner_url || DEFAULT_CAREER_SETTINGS.banner_url!}
                     alt="Môi trường làm việc"
                     fill
+                    sizes="(max-width: 1024px) 100vw, 40vw"
                     className="object-cover transition-transform duration-700 group-hover:scale-105"
                   />
                 </div>
@@ -858,7 +861,7 @@ export default function LandingPage() {
 
                     <div className="flex items-center gap-4 pt-4 border-t border-slate-100">
                       <div className="relative w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 border-blue-200 shadow-xs">
-                        <Image src={item.avatar} alt={item.name} fill className="object-cover" />
+                        <Image src={item.avatar} alt={item.name} fill sizes="48px" className="object-cover" />
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-slate-900">{item.name}</h4>
