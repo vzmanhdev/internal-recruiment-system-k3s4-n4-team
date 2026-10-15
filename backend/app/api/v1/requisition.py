@@ -26,7 +26,7 @@ from app.schemas.requisition import (
 
 router = APIRouter()
 
-ALLOWED_ROLES = {"admin", "hr_manager", "manager", "employee"}
+ALLOWED_ROLES = {"admin", "hr_manager", "manager", "employee", "recruiter"}
 HR_ADMIN_ROLES = {"admin", "hr_manager"}
 DEPARTMENT_APPROVER_ROLES = {"admin", "manager"}
 
@@ -69,9 +69,16 @@ def list_requisitions(
         today = datetime.now(timezone(timedelta(hours=7))).date()
         query = query.filter(JobRequisition.deadline < datetime.combine(today, time.min), JobRequisition.status.notin_(["closed", "rejected"]))
 
-    # Trưởng bộ phận xem các tờ trình đang chờ duyệt vòng phòng ban và các
-    # tờ trình do chính họ tạo. Nhân viên chỉ xem tờ trình của mình.
-    if "manager" in user_roles and not user_roles.intersection(HR_ADMIN_ROLES):
+    # Story S3-06: Recruiter chỉ nhìn thấy các yêu cầu tuyển dụng được phân công phụ trách chính hoặc hỗ trợ
+    if "recruiter" in user_roles and not user_roles.intersection(HR_ADMIN_ROLES):
+        query = query.filter(
+            or_(
+                JobRequisition.recruiter_id == current_user.id,
+                JobRequisition.support_recruiter_id == current_user.id,
+                JobRequisition.created_by_id == current_user.id,
+            )
+        )
+    elif "manager" in user_roles and not user_roles.intersection(HR_ADMIN_ROLES):
         query = query.filter(
             or_(
                 JobRequisition.created_by_id == current_user.id,

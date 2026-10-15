@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   ShieldCheck,
+  Sparkles,
   UserCheck,
   UserPlus,
   Users,
@@ -29,6 +30,7 @@ import {
 
 const recruiterNavItems = [
   { label: "Tổng quan tuyển dụng", href: "/recruiter/dashboard", icon: LayoutDashboard },
+  { label: "Yêu cầu & Soạn tin (S3-09)", href: "/recruiter", icon: Sparkles },
   { label: "Vị trí tuyển dụng", href: "/recruiter/jobs", icon: BriefcaseBusiness },
   { label: "Hồ sơ ứng viên (ATS)", href: "/recruiter/candidates", icon: UserCheck },
   { label: "Lịch phỏng vấn", href: "/recruiter/interviews", icon: CalendarCheck },
@@ -81,7 +83,10 @@ export function RecruiterShell({ children }: { children: React.ReactNode }) {
           Nghiệp vụ tuyển dụng
         </p>
         {recruiterNavItems.map((item) => {
-          const active = pathname === item.href || (item.href !== "/recruiter/dashboard" && pathname.startsWith(item.href));
+          const active =
+            item.href === "/recruiter" || item.href === "/recruiter/dashboard"
+              ? pathname === item.href
+              : pathname.startsWith(item.href);
           const Icon = item.icon;
           return (
             <Link

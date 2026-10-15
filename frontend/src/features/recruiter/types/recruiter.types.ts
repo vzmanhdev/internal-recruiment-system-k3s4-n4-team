@@ -105,20 +105,40 @@ export interface ApprovalStep {
 
 export interface JobRequisition {
   id: number;
+  code?: string;
   title: string;
   department: string;
+  department_id?: number;
+  department_name?: string;
   salary_range: string;
+  min_salary?: number;
+  max_salary?: number;
   openings: number;
+  quantity?: number;
   experience_level: string;
+  experience_years?: string;
+  work_location?: string;
+  employment_type?: string;
+  deadline?: string;
   reason: string;
-  status: "approved" | "pending_approval" | "draft" | "rejected";
+  status: "approved" | "pending_approval" | "draft" | "rejected" | "closed" | string;
   approval_chain: ApprovalStep[];
   description: string;
+  job_description?: string;
   requirements: string[];
   benefits: string[];
   created_by?: string;
+  creator_name?: string;
+  recruiter_id?: number;
+  recruiter_name?: string;
+  support_recruiter_id?: number;
+  support_recruiter_name?: string;
   is_converted: boolean;
   created_at?: string;
+  updated_at?: string;
+  days_open?: number;
+  days_remaining?: number | null;
+  is_overdue?: boolean;
 }
 
 export interface JobDraftFromRequisitionPayload {

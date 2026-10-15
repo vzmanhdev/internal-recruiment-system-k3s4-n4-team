@@ -29,6 +29,7 @@ import { recruiterService } from "../services/recruiter.service";
 import type { JobApprovalStatus, JobStatus, RecruiterJob, JobRequisition } from "../types/recruiter.types";
 import { Spinner } from "@/components/ui/Spinner";
 import { getSessionRoles, useAuthSession } from "@/features/auth/lib/auth-session";
+import { JobDraftFromRequisitionModal } from "./JobDraftFromRequisitionModal";
 
 export function JobManagement() {
   const searchParams = useSearchParams();
@@ -54,6 +55,7 @@ export function JobManagement() {
   const [scopeWarning, setScopeWarning] = useState<string | null>(null);
   const [reqStatusFilter, setReqStatusFilter] = useState<string>("all");
   const [draftSourceReq, setDraftSourceReq] = useState<JobRequisition | null>(null);
+  const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -161,30 +163,17 @@ export function JobManagement() {
   const handleConfirmDraftFromReq = () => {
     if (!selectedReq) return;
     if (selectedReq.status !== "approved") {
-      alert("Thao tác ngoài phạm vi cho phép: Chỉ yêu cầu ở trạng thái 'Đã duyệt' mới được phép soạn tin tuyển dụng.");
+      alert("Thao tác ngoài phạm vi cho phép (Story S3-09 AC3): Chỉ yêu cầu ở trạng thái 'Đã duyệt' mới được phép soạn tin tuyển dụng.");
       return;
     }
 
-    setEditingJob(null);
-    setDraftSourceReq(selectedReq);
-    setFormData({
-      title: selectedReq.title,
-      department: selectedReq.department,
-      location: "Hà Nội",
-      employment_type: "Toàn thời gian",
-      openings: selectedReq.openings,
-      salary_range: selectedReq.salary_range,
-      experience_level: selectedReq.experience_level,
-      deadline: "31/12/2026",
-      status: isAdmin ? "open" : "closed",
-      approval_status: isAdmin ? "approved" : "pending",
-      description: selectedReq.description,
-      requirements: selectedReq.requirements.join("\n"),
-      benefits: selectedReq.benefits.join("\n"),
-    });
     setReqModalOpen(false);
-    setModalOpen(true);
-    setNotification(`Đã kế thừa toàn bộ nội dung từ Yêu cầu #${selectedReq.id}. Bạn có thể tinh chỉnh văn phong cho phù hợp.`);
+    setIsDraftModalOpen(true);
+  };
+
+  const handleDraftSuccess = (createdJob: RecruiterJob) => {
+    setNotification(`Đã soạn tin tuyển dụng thành công: "${createdJob.title}". Bài đăng đã được liên kết với tờ trình gốc.`);
+    loadJobs();
     setTimeout(() => setNotification(null), 4000);
   };
 
@@ -1146,6 +1135,14 @@ export function JobManagement() {
           </div>
         </div>
       )}
+
+      {/* S3-09 Dedicated Drafting Modal with AC1, AC2, AC3 and Live Preview */}
+      <JobDraftFromRequisitionModal
+        isOpen={isDraftModalOpen}
+        onClose={() => setIsDraftModalOpen(false)}
+        requisition={selectedReq}
+        onSuccess={handleDraftSuccess}
+      />
     </div>
   );
 }

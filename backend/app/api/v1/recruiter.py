@@ -81,14 +81,36 @@ def list_requisitions(
     current_user: User = Depends(require_recruiter_or_admin),
     db: Session = Depends(get_db)
 ):
+    from app.models.hr import Department
+
     query = db.query(JobRequisition)
+
+    user_roles = [r.strip() for r in current_user.role.split(",") if r.strip()]
+    # Story S3-06: Recruiter chỉ nhìn thấy các yêu cầu tuyển dụng được phân công
+    if "recruiter" in user_roles and not any(r in {"admin", "hr_manager"} for r in user_roles):
+        query = query.filter(
+            or_(
+                JobRequisition.recruiter_id == current_user.id,
+                JobRequisition.support_recruiter_id == current_user.id,
+                JobRequisition.created_by_id == current_user.id,
+            )
+        )
+
     if status_filter != "all":
         query = query.filter(JobRequisition.status == status_filter)
     if department != "all":
-        query = query.filter(JobRequisition.department == department)
+        query = query.join(Department, JobRequisition.department_id == Department.id, isouter=True)
+        query = query.filter(Department.name == department)
     if search.strip():
         term = f"%{search.strip()}%"
-        query = query.filter(or_(JobRequisition.title.ilike(term), JobRequisition.department.ilike(term)))
+        query = query.join(Department, JobRequisition.department_id == Department.id, isouter=True)
+        query = query.filter(
+            or_(
+                JobRequisition.title.ilike(term),
+                JobRequisition.code.ilike(term),
+                Department.name.ilike(term),
+            )
+        )
     
     requisitions = query.order_by(desc(JobRequisition.created_at)).all()
     return {"items": [r.to_dict() for r in requisitions], "total": len(requisitions)}
@@ -117,6 +139,9 @@ def draft_job_from_requisition(
     AC2: Khai báo địa điểm, hình thức làm việc, hạn nhận hồ sơ, có hiển thị mức lương hay không.
     AC3: Chỉ yêu cầu ở trạng thái Đã duyệt mới tạo được tin.
     """
+    from datetime import datetime, timedelta
+    from uuid import uuid4
+
     req = db.query(JobRequisition).filter(JobRequisition.id == requisition_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Không tìm thấy yêu cầu tuyển dụng")
@@ -130,29 +155,68 @@ def draft_job_from_requisition(
 
     # Kế thừa dữ liệu và cho phép tinh chỉnh (AC1, AC2)
     final_title = payload.title.strip() if payload.title and payload.title.strip() else req.title
-    final_salary = req.salary_range if payload.show_salary else "Thỏa thuận"
-    final_desc = payload.description.strip() if payload.description and payload.description.strip() else req.description
-    final_reqs = payload.requirements.strip() if payload.requirements and payload.requirements.strip() else req.requirements
-    final_benefits = payload.benefits.strip() if payload.benefits and payload.benefits.strip() else (req.benefits or "")
+    
+    if payload.show_salary:
+        if req.min_salary and req.max_salary:
+            final_salary = f"{int(req.min_salary):,} - {int(req.max_salary):,} VNĐ"
+        elif req.min_salary:
+            final_salary = f"Từ {int(req.min_salary):,} VNĐ"
+        else:
+            final_salary = "Thỏa thuận"
+    else:
+        final_salary = "Thỏa thuận"
+
+    final_desc = payload.description.strip() if payload.description and payload.description.strip() else (req.job_description or "")
+    
+    if isinstance(payload.requirements, list):
+        final_reqs = "\n".join(payload.requirements)
+    else:
+        final_reqs = payload.requirements.strip() if payload.requirements and payload.requirements.strip() else (req.requirements or "")
+
+    if isinstance(payload.benefits, list):
+        final_benefits = "\n".join(payload.benefits)
+    else:
+        final_benefits = payload.benefits.strip() if payload.benefits and payload.benefits.strip() else (req.benefits or "")
+
+    dep_id = req.department_id if req.department_id else 1
+    dep_name = req.department.name if req.department else "Phòng ban"
+
+    deadline_dt = None
+    if payload.deadline:
+        try:
+            deadline_dt = datetime.fromisoformat(payload.deadline)
+        except Exception:
+            try:
+                deadline_dt = datetime.strptime(payload.deadline, "%d/%m/%Y")
+            except Exception:
+                deadline_dt = datetime.utcnow() + timedelta(days=30)
 
     new_job = JobPosting(
+        code=f"JOB-{datetime.utcnow().year}-{uuid4().hex[:6].upper()}",
         title=final_title,
-        department=req.department,
+        department_id=dep_id,
+        department_name=dep_name,
+        quantity=req.quantity,
+        min_salary=req.min_salary,
+        max_salary=req.max_salary,
+        is_salary_negotiable=not payload.show_salary,
+        salary_range=final_salary,
+        work_location=payload.location,
         location=payload.location,
         employment_type=payload.employment_type,
-        openings=req.openings,
-        salary_range=final_salary,
-        experience_level=req.experience_level,
-        deadline=payload.deadline,
+        type=payload.employment_type,
+        experience_years=req.experience_years,
+        experience_level=req.experience_years,
+        deadline=deadline_dt,
         status=payload.status,
-        approval_status="approved", # Kế thừa từ yêu cầu đã duyệt
+        job_description=final_desc,
         description=final_desc,
         requirements=final_reqs,
         benefits=final_benefits,
-        created_by=current_user.full_name,
+        created_by_id=current_user.id,
+        requisition_id=req.id,
     )
     db.add(new_job)
-    req.is_converted = True
     db.commit()
     db.refresh(new_job)
 
