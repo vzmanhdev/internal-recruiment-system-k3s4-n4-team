@@ -126,6 +126,13 @@ export async function fetchEvaluations(
 }
 
 export interface CandidateScoreComparison {
+  criteria_scores: Array<{
+    id: number;
+    name: string;
+    weight: number;
+    score: number;
+  }>;
+  total_points: number;
   application_id: number;
   candidate_name: string;
   job_title?: string;
@@ -140,10 +147,12 @@ export interface CandidateScoreComparison {
 
 export async function fetchEvaluationComparison(
   applicationIds: number[] = [],
+  finalOnly = false,
 ): Promise<CandidateScoreComparison[]> {
-  const query = applicationIds.length
-    ? `?application_ids=${applicationIds.join(",")}`
-    : "";
+  const params = new URLSearchParams({ final_only: String(finalOnly) });
+  if (applicationIds.length)
+    params.set("application_ids", applicationIds.join(","));
+  const query = `?${params.toString()}`;
   return apiRequest<CandidateScoreComparison[]>(
     `/evaluations/comparison${query}`,
   );

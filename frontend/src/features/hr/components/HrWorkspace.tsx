@@ -16,8 +16,8 @@ import { CompetencyFrameworkForm } from "./CompetencyFrameworkForm";
 type Tab = "profile" | "organization" | "titles" | "competencies" | "categories";
 const tabs:[Tab,string][]=[["profile","Hồ sơ & Import"],["organization","Sơ đồ phòng ban"],["titles","Chức danh & dải lương"],["competencies","Khung năng lực"],["categories","Danh mục dùng chung"]];
 
-export function HrWorkspace(){
-  const [tab,setTab]=useState<Tab>("organization"); const [departments,setDepartments]=useState<Department[]>([]); const [titles,setTitles]=useState<JobTitle[]>([]); const [competencies,setCompetencies]=useState<Competency[]>([]); const [categories,setCategories]=useState<SharedCategory[]>([]); const [error,setError]=useState(""); const [notice,setNotice]=useState("");
+export function HrWorkspace({initialTab = "organization"}: {initialTab?: Tab} = {}){
+  const [tab,setTab]=useState<Tab>(initialTab); const [departments,setDepartments]=useState<Department[]>([]); const [titles,setTitles]=useState<JobTitle[]>([]); const [competencies,setCompetencies]=useState<Competency[]>([]); const [categories,setCategories]=useState<SharedCategory[]>([]); const [error,setError]=useState(""); const [notice,setNotice]=useState("");
   const load=()=>Promise.all([hrService.departments(),hrService.jobTitles(),hrService.competencies(),hrService.categories()]).then(([d,t,c,sc])=>{setDepartments(d);setTitles(t);setCompetencies(c);setCategories(sc)}).catch((err:unknown)=>setError(err instanceof ApiError?err.message:"Không thể tải dữ liệu nhân sự."));
   useEffect(()=>{void load()},[]);
   const done=(message:string)=>{setNotice(message);setError("");void load()};

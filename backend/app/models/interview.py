@@ -30,6 +30,8 @@ class InterviewSchedule(Base):
     candidate_response = Column(String(30), default='pending', nullable=False)
     candidate_response_at = Column(DateTime, nullable=True)
     candidate_response_note = Column(Text, nullable=True)
+    competency_category = Column(String(80), nullable=True)
+    is_final_round = Column(Boolean, default=False, nullable=False)
     candidate_proposed_start_time = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

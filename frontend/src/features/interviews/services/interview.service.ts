@@ -11,6 +11,8 @@ export interface AvailableInterviewer extends InterviewerInfo {
 }
 
 export interface InterviewItem {
+  competency_category?: string;
+  is_final_round: boolean;
   id: number;
   code: string;
   application_id: number;
@@ -45,6 +47,8 @@ export interface PaginatedInterviews {
 }
 
 export interface CreateInterviewPayload {
+  competency_category?: string;
+  is_final_round?: boolean;
   application_id: number;
   title: string;
   interview_type: string;
@@ -56,6 +60,8 @@ export interface CreateInterviewPayload {
 }
 
 export interface UpdateInterviewPayload {
+  competency_category?: string;
+  is_final_round?: boolean;
   title?: string;
   interview_type?: string;
   location_or_link?: string;
@@ -150,6 +156,10 @@ export async function fetchAvailableInterviewers(): Promise<
   AvailableInterviewer[]
 > {
   return apiRequest<AvailableInterviewer[]>("/interviews/interviewers");
+}
+
+export function fetchInterviewFrameworks(): Promise<string[]> {
+  return apiRequest("/interviews/competency-frameworks");
 }
 
 export async function fetchPublicInterview(

@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from math import ceil
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -21,7 +22,9 @@ from app.schemas.referral_eval import (
     ReferralCreate,
     ReferralResponse,
     ReferralStatusUpdate,
+    ScorecardSubmit,
 )
+from app.services.scorecards import interview_scorecard, calculate_scorecard
 
 router = APIRouter()
 
@@ -199,6 +202,47 @@ def update_referral_status(
 
 # ==================== CANDIDATE EVALUATION ENDPOINTS ====================
 
+def authorized_scorecard(db, interview_id, user):
+    interview = db.query(InterviewSchedule).filter_by(id=interview_id).first()
+    if not interview or not accessible_evaluation_applications(db, user).filter(JobApplication.id == interview.application_id).first():
+        raise HTTPException(status_code=404, detail='Không tìm thấy lịch hoặc bạn chưa được phân công')
+    if not set(user.role.split(',')).intersection({'admin', 'hr_manager', 'recruiter'}):
+        if not db.query(InterviewInterviewer).filter_by(interview_id=interview_id, interviewer_id=user.id).first():
+            raise HTTPException(status_code=403, detail='Bạn chưa được phân công đánh giá lịch này')
+    return interview
+
+@router.get('/interviews/{interview_id}/scorecard')
+def get_interview_scorecard(interview_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_evaluation_user(authorization, db)
+    interview = authorized_scorecard(db, interview_id, user)
+    name, criteria, saved = interview_scorecard(db, interview, user.id)
+    return {'framework_name': name, 'criteria': criteria, 'evaluation': saved.to_dict() if saved else None}
+
+@router.post('/interviews/{interview_id}/scorecard', response_model=EvaluationResponse)
+def submit_interview_scorecard(interview_id: int, payload: ScorecardSubmit, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    user = get_evaluation_user(authorization, db)
+    interview = authorized_scorecard(db, interview_id, user)
+    if interview.status == 'cancelled':
+        raise HTTPException(status_code=400, detail='Không thể chấm điểm lịch đã hủy')
+    name, criteria, evaluation = interview_scorecard(db, interview, user.id)
+    snapshots, total = calculate_scorecard(criteria, payload.criteria)
+    if len(payload.feedback.strip()) < 5:
+        raise HTTPException(status_code=400, detail='Nhận xét chung cần ít nhất 5 ký tự')
+    if not evaluation:
+        evaluation = CandidateEvaluation(application_id=interview.application_id, interview_id=interview.id, evaluator_id=user.id)
+        db.add(evaluation)
+    evaluation.framework_name = name
+    evaluation.criteria_scores = json.dumps(snapshots, ensure_ascii=False)
+    evaluation.overall_score = total
+    evaluation.competency_score = total
+    evaluation.culture_fit_score = total
+    evaluation.recommendation = payload.recommendation
+    evaluation.feedback = payload.feedback.strip()
+    evaluation.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(evaluation)
+    return evaluation.to_dict()
+
 @router.post("/applications/{application_id}/evaluations", response_model=EvaluationResponse, status_code=status.HTTP_201_CREATED)
 def create_application_evaluation(
     application_id: int,
@@ -212,7 +256,7 @@ def create_application_evaluation(
     if not app_record:
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ ứng tuyển")
 
-    evaluation = db.query(CandidateEvaluation).filter_by(application_id=application_id, evaluator_id=hr_user.id).first()
+    evaluation = db.query(CandidateEvaluation).filter_by(application_id=application_id, evaluator_id=hr_user.id, interview_id=None).first()
     if evaluation:
         for field, value in payload.model_dump().items():
             setattr(evaluation, field, value.strip() if isinstance(value, str) else value)
@@ -260,12 +304,17 @@ def get_application_evaluations(
 @router.get("/evaluations/comparison")
 def compare_candidate_evaluations(
     application_ids: str = Query(""),
+    final_only: bool = Query(False),
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db),
 ):
     user = get_evaluation_user(authorization, db)
     requested_ids = [int(value) for value in application_ids.split(",") if value.strip().isdigit()]
     applications_query = accessible_evaluation_applications(db, user)
+    final_interview_ids = db.query(InterviewSchedule.id).filter(InterviewSchedule.is_final_round.is_(True), InterviewSchedule.status != 'cancelled')
+    if final_only:
+        finalist_ids = db.query(InterviewSchedule.application_id).filter(InterviewSchedule.id.in_(final_interview_ids))
+        applications_query = applications_query.filter(JobApplication.id.in_(finalist_ids))
     if requested_ids:
         applications_query = applications_query.filter(JobApplication.id.in_(requested_ids))
     else:
@@ -275,12 +324,19 @@ def compare_candidate_evaluations(
 
     result = []
     for application in applications:
-        evaluations = (
-            db.query(CandidateEvaluation)
-            .filter(CandidateEvaluation.application_id == application.id)
-            .order_by(CandidateEvaluation.created_at.asc())
-            .all()
-        )
+        evaluations_query = db.query(CandidateEvaluation).filter(CandidateEvaluation.application_id == application.id)
+        if final_only:
+            evaluations_query = evaluations_query.filter(CandidateEvaluation.interview_id.in_(final_interview_ids))
+        evaluations = evaluations_query.order_by(CandidateEvaluation.created_at.asc()).all()
+        if final_only and not evaluations:
+            continue
+        criterion_totals = {}
+        for evaluation in evaluations:
+            for criterion in json.loads(evaluation.criteria_scores or '[]'):
+                key = str(criterion['id'])
+                item = criterion_totals.setdefault(key, {'id':criterion['id'], 'name':criterion['name'], 'weight':criterion['weight'], 'sum':0, 'count':0})
+                item['sum'] += criterion['score']
+                item['count'] += 1
         count = len(evaluations)
         average = lambda field: round(sum(float(getattr(item, field) or 0) for item in evaluations) / count, 2) if count else 0
         result.append({
@@ -292,6 +348,8 @@ def compare_candidate_evaluations(
             "competency_score": average("competency_score"),
             "culture_fit_score": average("culture_fit_score"),
             "evaluation_count": count,
+            'criteria_scores': [{'id':item['id'], 'name':item['name'], 'weight':item['weight'], 'score':round(item['sum'] / item['count'], 2)} for item in criterion_totals.values()],
+            'total_points': round(average('overall_score') * 20, 2),
             "recommendations": [item.recommendation for item in evaluations],
             "evaluators": [item.to_dict() for item in evaluations],
         })

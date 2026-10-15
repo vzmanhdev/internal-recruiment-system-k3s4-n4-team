@@ -72,6 +72,14 @@ with engine.begin() as connection:
     if "weight" not in competency_columns:
         connection.execute(text("ALTER TABLE competencies ADD COLUMN weight FLOAT NOT NULL DEFAULT 0"))
     interview_columns = {column["name"] for column in inspect(engine).get_columns("interview_schedules")}
+    if 'competency_category' not in interview_columns:
+        connection.execute(text('ALTER TABLE interview_schedules ADD COLUMN competency_category VARCHAR(80)'))
+    if 'is_final_round' not in interview_columns:
+        connection.execute(text('ALTER TABLE interview_schedules ADD COLUMN is_final_round BOOLEAN NOT NULL DEFAULT false'))
+    evaluation_columns = {column['name'] for column in inspect(engine).get_columns('candidate_evaluations')}
+    for name, definition in {'interview_id':'INTEGER REFERENCES interview_schedules(id)', 'framework_name':'VARCHAR(80)', 'criteria_scores':'TEXT'}.items():
+        if name not in evaluation_columns:
+            connection.execute(text(f'ALTER TABLE candidate_evaluations ADD COLUMN {name} {definition}'))
     if "candidate_response" not in interview_columns:
         connection.execute(text("ALTER TABLE interview_schedules ADD COLUMN candidate_response VARCHAR(30) NOT NULL DEFAULT 'pending'"))
     if "candidate_response_at" not in interview_columns:

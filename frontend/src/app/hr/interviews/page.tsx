@@ -38,6 +38,7 @@ import {
   updateInterview,
   fetchAvailableInterviewers,
   fetchManageInterviews,
+  fetchInterviewFrameworks,
   InterviewConflict,
   InterviewItem,
 } from "@/features/interviews/services/interview.service";
@@ -55,6 +56,7 @@ function toLocalInput(date = new Date()) {
 
 export default function HRInterviewsPage() {
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
+  const [frameworks, setFrameworks] = useState<string[]>([]);
   const [applications, setApplications] = useState<ApplicationItem[]>([]);
   const [interviewers, setInterviewers] = useState<AvailableInterviewer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,17 +82,20 @@ export default function HRInterviewsPage() {
     duration: 60,
     break_minutes: 15,
     notes: "",
+    competency_category: "",
+    is_final_round: false,
   });
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [scheduleData, applicationData, interviewerData] =
+      const [scheduleData, applicationData, interviewerData, frameworkData] =
         await Promise.all([
           fetchManageInterviews({ search, status, page_size: 100 }),
           fetchManageApplications({ page_size: 100 }),
           fetchAvailableInterviewers(),
+          fetchInterviewFrameworks(),
         ]);
       setInterviews(scheduleData.items);
       setApplications(
@@ -99,6 +104,7 @@ export default function HRInterviewsPage() {
         ),
       );
       setInterviewers(interviewerData);
+      setFrameworks(frameworkData);
     } catch (caught: unknown) {
       setError(
         caught instanceof ApiError
@@ -202,6 +208,8 @@ export default function HRInterviewsPage() {
           start_time: slot.start.toISOString(),
           end_time: slot.end.toISOString(),
           notes: form.notes.trim() || undefined,
+          competency_category: form.competency_category || frameworks[0],
+          is_final_round: form.is_final_round,
           interviewer_ids: selectedInterviewers,
         })),
       );
@@ -380,6 +388,32 @@ export default function HRInterviewsPage() {
                   </span>
                 </div>
                 <div className="space-y-3 p-5 text-sm text-slate-600">
+                  <p className="text-xs font-semibold text-violet-700">
+                    {item.is_final_round ? "Vòng cuối" : "Vòng phỏng vấn"} ·{" "}
+                    {item.competency_category ?? "Khung mặc định"}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await updateInterview(item.id, {
+                          is_final_round: !item.is_final_round,
+                        });
+                        await load();
+                      } catch (caught: unknown) {
+                        setError(
+                          caught instanceof ApiError
+                            ? caught.message
+                            : "Không thể cập nhật vòng phỏng vấn",
+                        );
+                      }
+                    }}
+                  >
+                    {item.is_final_round
+                      ? "Bỏ đánh dấu vòng cuối"
+                      : "Đánh dấu vòng cuối"}
+                  </Button>
                   <p className="flex gap-2">
                     <Clock3 className="h-4 w-4 text-blue-600" />
                     {new Date(item.start_time).toLocaleString("vi-VN")} –{" "}
@@ -484,6 +518,39 @@ export default function HRInterviewsPage() {
                       }
                       className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-3 font-normal"
                     />
+                  </label>
+                  <label className="block text-sm font-bold text-slate-700">
+                    Khung năng lực
+                    <select
+                      value={form.competency_category}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          competency_category: event.target.value,
+                        })
+                      }
+                      className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-3 font-normal"
+                    >
+                      <option value="">Khung mặc định đang hoạt động</option>
+                      {frameworks.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-3 rounded-xl bg-violet-50 p-3 text-sm font-semibold text-violet-700">
+                    <input
+                      type="checkbox"
+                      checked={form.is_final_round}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          is_final_round: event.target.checked,
+                        })
+                      }
+                    />
+                    Đây là vòng phỏng vấn cuối
                   </label>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="text-sm font-bold text-slate-700">
@@ -645,38 +712,64 @@ export default function HRInterviewsPage() {
                     <p className="text-sm font-bold text-slate-800">
                       3. Khe thời gian xem trước
                     </p>
-                    <div className="mt-2 space-y-2">
-                      {slots.map((slot, index) => (
-                        <div
-                          key={slot.applicationId}
-                          className="flex items-center gap-3 rounded-xl bg-slate-50 p-3 text-xs"
-                        >
-                          <span className="grid h-7 w-7 place-items-center rounded-lg bg-blue-600 font-bold text-white">
-                            {index + 1}
-                          </span>
-                          <span>
-                            <strong className="block text-slate-900">
-                              {slot.application?.full_name}
-                            </strong>
-                            {slot.start.toLocaleTimeString("vi-VN", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}{" "}
-                            –{" "}
-                            {slot.end.toLocaleTimeString("vi-VN", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                      ))}
+                    <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
+                      <table
+                        aria-label="Xem trước các khe giờ"
+                        className="w-full text-left text-xs"
+                      >
+                        <thead className="bg-blue-50 text-blue-800">
+                          <tr>
+                            <th className="p-2">Khe</th>
+                            <th className="p-2">Ứng viên</th>
+                            <th className="p-2">Bắt đầu</th>
+                            <th className="p-2">Kết thúc</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {slots.map((slot, index) => (
+                            <tr
+                              key={slot.applicationId}
+                              className="border-t border-slate-100"
+                            >
+                              <td className="p-2">{index + 1}</td>
+                              <td className="p-2 font-semibold text-slate-900">
+                                {slot.application?.full_name}
+                              </td>
+                              <td className="p-2">
+                                {slot.start.toLocaleString("vi-VN", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </td>
+                              <td className="p-2">
+                                {slot.end.toLocaleString("vi-VN", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {slots.length === 0 && (
+                        <p className="p-3 text-slate-500">
+                          Chọn ứng viên và giờ bắt đầu để xem các khe.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
               </div>
               {conflicts.length > 0 && (
                 <div className="mx-6 mb-4">
-                  <Alert variant="warning" title="Phát hiện trùng lịch">
+                  <Alert
+                    variant="error"
+                    title="Không thể tạo lịch: phát hiện trùng"
+                  >
                     {conflicts.map((item) => (
                       <p key={`${item.interview_id}-${item.reason}`}>
                         {item.code}: {item.reason}

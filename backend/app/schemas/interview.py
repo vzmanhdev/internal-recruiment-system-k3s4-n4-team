@@ -14,6 +14,8 @@ class InterviewerInfo(BaseModel):
     email: str
 
 class InterviewCreate(InterviewTimes):
+    competency_category: Optional[str] = Field(None, max_length=80)
+    is_final_round: bool = False
     application_id: int = Field(..., description="ID hồ sơ ứng tuyển")
     title: str = Field(..., min_length=2, max_length=255, description="Tiêu đề (VD: Phỏng vấn Chuyên môn Vòng 1)")
     interview_type: str = Field("online", description="Hình thức: online hoặc offline")
@@ -24,6 +26,8 @@ class InterviewCreate(InterviewTimes):
     interviewer_ids: List[int] = Field(default=[], description="Danh sách ID người phỏng vấn được phân công")
 
 class InterviewUpdate(InterviewTimes):
+    competency_category: Optional[str] = Field(None, max_length=80)
+    is_final_round: Optional[bool] = None
     title: Optional[str] = Field(None, min_length=2, max_length=255)
     interview_type: Optional[str] = Field(None)
     location_or_link: Optional[str] = Field(None)
@@ -62,6 +66,8 @@ class InterviewBatchCreate(BaseModel):
     interviews: List[InterviewCreate] = Field(..., min_length=1, max_length=30)
 
 class InterviewResponse(BaseModel):
+    competency_category: Optional[str] = None
+    is_final_round: bool = False
     id: int
     code: str
     application_id: int

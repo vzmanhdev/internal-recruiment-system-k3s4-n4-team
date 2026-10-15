@@ -47,6 +47,9 @@ class EvaluationCreate(BaseModel):
     feedback: str = Field(..., min_length=5, max_length=2000, description="Nhận xét chi tiết")
 
 class EvaluationResponse(BaseModel):
+    interview_id: Optional[int] = None
+    framework_name: Optional[str] = None
+    criteria_scores: List[dict] = Field(default_factory=list)
     id: int
     application_id: int
     evaluator_id: int
@@ -58,3 +61,13 @@ class EvaluationResponse(BaseModel):
     feedback: str
     created_at: str
     updated_at: str
+
+class CriterionScoreInput(BaseModel):
+    criterion_id: int
+    score: int = Field(..., ge=1, le=5)
+    comment: str = Field(..., min_length=5, max_length=1000)
+
+class ScorecardSubmit(BaseModel):
+    criteria: List[CriterionScoreInput] = Field(..., min_length=1, max_length=100)
+    recommendation: str = Field(..., pattern='^(strong_hire|hire|hold|reject)$')
+    feedback: str = Field(..., min_length=5, max_length=2000)

@@ -17,6 +17,7 @@ from app.db.session import get_db
 from app.models.application import JobApplication
 from app.models.interview import InterviewSchedule, InterviewInterviewer
 from app.models.user import User
+from app.models.hr import Competency
 from app.schemas.interview import (
     InterviewCreate,
     InterviewResponse,
@@ -74,6 +75,8 @@ def _decode_response_token(token: str) -> dict:
 
 def _serialize_schedule(schedule: InterviewSchedule, include_token: bool = False) -> dict:
     result = schedule.to_dict()
+    result['competency_category'] = schedule.competency_category
+    result['is_final_round'] = bool(schedule.is_final_round)
     result['accepts_response'] = schedule.status in {'scheduled', 'rescheduled'} and schedule.start_time > datetime.utcnow()
     for key in ('start_time', 'end_time', 'candidate_proposed_start_time', 'candidate_response_at', 'created_at', 'updated_at'):
         value = result.get(key)
@@ -124,6 +127,8 @@ def _find_conflicts(db: Session, payload: InterviewConflictCheck) -> list[dict]:
     return conflicts
 
 def _validate_schedule(db: Session, payload: InterviewCreate):
+    if payload.competency_category and not db.query(Competency).filter_by(category=payload.competency_category, is_active=True).first():
+        raise HTTPException(status_code=400, detail='Không tìm thấy khung năng lực đang hoạt động')
     if payload.end_time <= payload.start_time or payload.start_time <= datetime.utcnow():
         raise HTTPException(status_code=400, detail="Chọn thời gian tương lai; kết thúc phải sau bắt đầu")
     if payload.interview_type not in {'online', 'offline'}:
@@ -211,6 +216,11 @@ def list_available_interviewers(
         for user in users
         if allowed_roles.intersection({role.strip().lower() for role in user.role.split(",") if role.strip()})
     ]
+
+@router.get('/interviews/competency-frameworks')
+def get_interview_frameworks(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    get_hr_user(authorization, db)
+    return [row[0] for row in db.query(Competency.category).filter(Competency.is_active.is_(True)).distinct().order_by(Competency.category).all()]
 
 @router.post("/interviews", response_model=InterviewResponse, status_code=status.HTTP_201_CREATED)
 def create_interview(
@@ -442,6 +452,12 @@ def update_interview(
     if payload.status is not None:
         schedule.status = payload.status
     schedule.updated_at = datetime.utcnow()
+    if payload.is_final_round is not None:
+        schedule.is_final_round = payload.is_final_round
+    if payload.competency_category is not None:
+        if not db.query(Competency).filter_by(category=payload.competency_category, is_active=True).first():
+            raise HTTPException(status_code=400, detail='Khung năng lực không hợp lệ')
+        schedule.competency_category = payload.competency_category
 
     if payload.interviewer_ids is not None:
         # Clear existing interviewers

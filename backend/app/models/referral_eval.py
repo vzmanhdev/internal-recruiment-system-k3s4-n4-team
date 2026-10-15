@@ -34,6 +34,9 @@ class InternalReferral(Base):
         return {'id': self.id, 'code': self.code, 'referrer_id': self.referrer_id, 'referrer_name': self.referrer.full_name if self.referrer else None, 'job_id': self.job_id, 'job_title': self.job.title if self.job else None, 'department_name': self.job.department.name if self.job and self.job.department else None, 'candidate_name': self.candidate_name, 'candidate_email': self.candidate_email, 'candidate_phone': self.candidate_phone, 'cv_url': self.cv_url, 'relationship_note': self.relationship_note, 'status': self.status, 'bonus_amount': self.bonus_amount, 'created_at': self.created_at.isoformat() if self.created_at else None, 'updated_at': self.updated_at.isoformat() if self.updated_at else None, 'job_posting_id': self.job_posting_id, 'payout_status': self.payout_status}
 
 class CandidateEvaluation(Base):
+    interview_id = Column(Integer, ForeignKey('interview_schedules.id'), nullable=True, index=True)
+    framework_name = Column(String(80), nullable=True)
+    criteria_scores = Column(Text, nullable=True)
     weaknesses = Column(Text, nullable=True)
     strengths = Column(Text, nullable=True)
     communication_score = Column(Integer, default=0, nullable=True)
@@ -54,4 +57,5 @@ class CandidateEvaluation(Base):
     evaluator = relationship('User', foreign_keys=[evaluator_id])
 
     def to_dict(self):
-        return {'id': self.id, 'application_id': self.application_id, 'evaluator_id': self.evaluator_id, 'evaluator_name': self.evaluator.full_name if self.evaluator else None, 'overall_score': self.overall_score, 'competency_score': self.competency_score, 'culture_fit_score': self.culture_fit_score, 'recommendation': self.recommendation, 'feedback': self.feedback, 'created_at': self.created_at.isoformat() if self.created_at else None, 'updated_at': self.updated_at.isoformat() if self.updated_at else None, 'technical_score': self.technical_score, 'communication_score': self.communication_score, 'strengths': self.strengths, 'weaknesses': self.weaknesses, 'comments': self.comments}
+        import json
+        return {'interview_id': self.interview_id, 'framework_name': self.framework_name, 'criteria_scores': json.loads(self.criteria_scores or '[]'), 'id': self.id, 'application_id': self.application_id, 'evaluator_id': self.evaluator_id, 'evaluator_name': self.evaluator.full_name if self.evaluator else None, 'overall_score': self.overall_score, 'competency_score': self.competency_score, 'culture_fit_score': self.culture_fit_score, 'recommendation': self.recommendation, 'feedback': self.feedback, 'created_at': self.created_at.isoformat() if self.created_at else None, 'updated_at': self.updated_at.isoformat() if self.updated_at else None, 'technical_score': self.technical_score, 'communication_score': self.communication_score, 'strengths': self.strengths, 'weaknesses': self.weaknesses, 'comments': self.comments}

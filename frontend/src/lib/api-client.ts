@@ -50,7 +50,7 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
       try {
         const errorData = await response.json();
         if (errorData.detail) {
-          errorDetail = typeof errorData.detail === "string" ? errorData.detail : JSON.stringify(errorData.detail);
+          errorDetail = typeof errorData.detail === "string" ? errorData.detail : typeof errorData.detail.message === 'string' ? errorData.detail.message : JSON.stringify(errorData.detail);
         }
         if (errorData.field_errors) {
           fieldErrors = errorData.field_errors;
