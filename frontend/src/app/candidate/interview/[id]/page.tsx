@@ -135,7 +135,7 @@ function CandidateInterviewAction() {
       {/* Breadcrumb quay về trang chủ ứng viên */}
       <nav className="flex items-center justify-between text-xs text-slate-500 font-medium">
         <Link
-          href="/candidate/tracking"
+          href="/candidate/track"
           className="hover:text-blue-600 transition-colors flex items-center gap-1.5 py-1"
         >
           <ChevronLeft className="w-4 h-4" />

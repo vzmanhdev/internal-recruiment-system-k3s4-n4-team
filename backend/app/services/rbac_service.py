@@ -16,15 +16,16 @@ DEFAULT_ROLES_MAP = {
     "hiring_manager": "Trưởng bộ phận",
     "interviewer": "Người phỏng vấn",
     "approver": "Người duyệt",
-    "employee": "Nhân sự nội bộ",
+    "candidate": "Ứng viên",
 }
 
 
 def sync_user_roles_from_legacy_string(db: Session, user: User) -> List[Role]:
     """Fallback migration helper to ensure legacy comma-separated user.role strings map to user_roles table."""
-    role_codes = [r.strip() for r in (user.role or "").split(",") if r.strip()]
+    from app.db.rbac_catalog import PUBLIC_REGISTRATION_ROLE, canonical_role
+    role_codes = list(dict.fromkeys(canonical_role(r) for r in (user.role or "").split(",") if r.strip()))
     if not role_codes:
-        role_codes = ["employee"]
+        role_codes = [PUBLIC_REGISTRATION_ROLE]
 
     existing_roles = db.query(Role).filter(Role.code.in_(role_codes)).all()
     existing_role_codes = {r.code for r in existing_roles}

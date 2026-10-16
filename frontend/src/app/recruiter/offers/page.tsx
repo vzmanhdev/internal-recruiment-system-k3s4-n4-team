@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Mail,
   Plus,
@@ -470,13 +472,33 @@ export default function RecruiterOffersPage() {
   }, [offers]);
 
   const filteredOffers = useMemo(() => {
+    const q = offerSearch.trim();
     return offers.filter((o) => {
-      const matchSearch =
-        o.candidateName.toLowerCase().includes(offerSearch.toLowerCase()) ||
-        o.position.toLowerCase().includes(offerSearch.toLowerCase()) ||
-        o.id.toLowerCase().includes(offerSearch.toLowerCase());
+      if (q) {
+        const score = Math.max(
+          getSearchScore(o.candidateName, q),
+          getSearchScore(o.position, q),
+          getSearchScore(o.id, q)
+        );
+        if (score === 0) return false;
+      }
       const matchStatus = offerStatusFilter === 'all' || o.status === offerStatusFilter;
-      return matchSearch && matchStatus;
+      return matchStatus;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.candidateName, q),
+          getSearchScore(a.position, q),
+          getSearchScore(a.id, q)
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.candidateName, q),
+          getSearchScore(b.position, q),
+          getSearchScore(b.id, q)
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [offers, offerSearch, offerStatusFilter]);
 
@@ -696,13 +718,19 @@ export default function RecruiterOffersPage() {
           {/* TOOLBAR: SEARCH & STATUS FILTER */}
           <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-100 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             <div className="relative flex-1 max-w-sm">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
+              <SearchAutocompleteInput
                 value={offerSearch}
-                onChange={(e) => setOfferSearch(e.target.value)}
+                onChange={(val) => setOfferSearch(val)}
+                onSelectSuggestion={(item) => setOfferSearch(item.title)}
                 placeholder="Tìm theo ứng viên, vị trí, mã offer..."
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                size="sm"
+                localSuggestions={offers.map((o) => ({
+                  id: o.id,
+                  title: o.candidateName,
+                  subtitle: `${o.position} • Lương: ${o.baseSalary ? o.baseSalary.toLocaleString('vi-VN') + ' đ' : 'Thoả thuận'} • ${o.status}`,
+                  category: "candidate",
+                  category_label: "Offer",
+                }))}
               />
             </div>
 

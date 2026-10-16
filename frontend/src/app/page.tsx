@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { getSearchScore } from "@/utils/vietnameseSearch";
+import { SearchAutocompleteInput } from "@/components/ui/SearchAutocompleteInput";
 import {
   Sparkles,
   ShieldCheck,
@@ -232,9 +234,9 @@ export default function LandingPage() {
 
     const matchesKeyword =
       !searchKeyword ||
-      titleStr.includes(searchKeyword.toLowerCase()) ||
-      deptStr.includes(searchKeyword.toLowerCase()) ||
-      locStr.includes(searchKeyword.toLowerCase());
+      getSearchScore(titleStr, searchKeyword) > 0 ||
+      getSearchScore(deptStr, searchKeyword) > 0 ||
+      getSearchScore(locStr, searchKeyword) > 0;
 
     const matchesDept =
       selectedDept === "all" || deptStr.includes(selectedDept.toLowerCase());
@@ -243,6 +245,21 @@ export default function LandingPage() {
       selectedLocation === "all" || locStr.includes(selectedLocation.toLowerCase());
 
     return matchesCategory && matchesKeyword && matchesDept && matchesLoc;
+  }).sort((a, b) => {
+    if (searchKeyword.trim()) {
+      const scoreA = Math.max(
+        getSearchScore(a.title, searchKeyword),
+        getSearchScore(a.department_name, searchKeyword),
+        getSearchScore(a.location, searchKeyword)
+      );
+      const scoreB = Math.max(
+        getSearchScore(b.title, searchKeyword),
+        getSearchScore(b.department_name, searchKeyword),
+        getSearchScore(b.location, searchKeyword)
+      );
+      if (scoreA !== scoreB) return scoreB - scoreA;
+    }
+    return 0;
   });
 
   const faqs = [
@@ -319,31 +336,29 @@ export default function LandingPage() {
                 Khám Phá Cơ Hội & Tự Hào<br />Đồng Hành Cùng Doanh Nghiệp
               </h1>
 
-              {/* Centered Expansive Pill Search Bar */}
-              <div className="relative flex items-center max-w-3xl lg:max-w-4xl mx-auto mt-6 w-full hero-search-bar rounded-full">
-                <input
-                  type="text"
-                  placeholder="Tìm kiếm cơ hội việc làm nội bộ, chức danh, phòng ban..."
+              {/* Centered Expansive Pill Search Bar với Autocomplete Suggestions */}
+              <div className="relative max-w-3xl lg:max-w-4xl mx-auto mt-6 w-full">
+                <SearchAutocompleteInput
                   value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      document.getElementById("jobs")?.scrollIntoView({ behavior: "smooth" });
-                    }
-                  }}
-                  className="w-full h-15 sm:h-16 pl-7 pr-18 bg-transparent rounded-full focus:outline-none text-sm sm:text-base font-medium text-slate-800 placeholder:text-slate-400"
-                />
-                <button
-                  type="button"
-                  aria-label="Tìm kiếm vị trí"
-                  onClick={() => {
+                  onChange={(val) => setSearchKeyword(val)}
+                  onSelectSuggestion={(item) => {
+                    setSearchKeyword(item.title);
                     document.getElementById("jobs")?.scrollIntoView({ behavior: "smooth" });
                   }}
-                  className="absolute right-2.5 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-r from-sky-400 via-cyan-400 to-blue-500 hover:from-sky-500 hover:to-blue-600 text-white flex items-center justify-center hover:scale-105 active:scale-95 shadow-md shadow-cyan-400/35 transition-all cursor-pointer"
-                  style={{ color: "#ffffff" }}
-                >
-                  <Search className="w-5 h-5 text-white" />
-                </button>
+                  onSubmit={() => {
+                    document.getElementById("jobs")?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  placeholder="Tìm kiếm cơ hội việc làm nội bộ, chức danh, phòng ban (có dấu hoặc không dấu)..."
+                  size="lg"
+                  scope="jobs"
+                  localSuggestions={jobs.map((j) => ({
+                    id: String(j.id),
+                    title: j.title,
+                    subtitle: `${j.department_name || 'Toàn doanh nghiệp'} • ${j.location || 'Hà Nội'}`,
+                    category: "job",
+                    category_label: "Việc làm",
+                  }))}
+                />
               </div>
 
               {/* Trust & Key Advantage Badges Row to Expand Width Harmoniously */}

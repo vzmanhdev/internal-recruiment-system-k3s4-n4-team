@@ -6,6 +6,8 @@ import { masterDataService } from "@/services/master-data.service";
 import { useApiData } from "@/hooks/useApiData";
 import { ErrorState, LoadingState } from "@/components/ui/DataStates";
 import { ApiError } from "@/lib/api-client";
+import { getSearchScore } from "@/utils/vietnameseSearch";
+import { SearchAutocompleteInput } from "@/components/ui/SearchAutocompleteInput";
 import Link from "next/link";
 import {
   FileCheck,
@@ -283,13 +285,13 @@ export default function HRRequisitionsPage() {
 
   // Filtered requisitions list
   const filteredRequisitions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = searchQuery.trim();
     return requisitions.filter((r) => {
       const matchSearch =
         !q ||
-        r.title.toLowerCase().includes(q) ||
-        r.code.toLowerCase().includes(q) ||
-        r.department.toLowerCase().includes(q);
+        getSearchScore(r.title, q) > 0 ||
+        getSearchScore(r.code, q) > 0 ||
+        getSearchScore(r.department, q) > 0;
 
       const matchStatus =
         selectedStatus === "all" ||
@@ -299,6 +301,13 @@ export default function HRRequisitionsPage() {
       const matchRecruiter = selectedRecruiter === "all" || r.primaryRecruiter === selectedRecruiter;
 
       return matchSearch && matchStatus && matchDept && matchRecruiter;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(getSearchScore(a.title, q), getSearchScore(a.code, q), getSearchScore(a.department, q));
+        const scoreB = Math.max(getSearchScore(b.title, q), getSearchScore(b.code, q), getSearchScore(b.department, q));
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [requisitions, searchQuery, selectedStatus, selectedDept, selectedRecruiter]);
 
@@ -418,15 +427,21 @@ export default function HRRequisitionsPage() {
             {/* Filter Bar */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
               <div className="flex flex-wrap items-center gap-2.5 flex-1">
-                {/* Search */}
-                <div className="relative flex-1 min-w-[220px] max-w-sm">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Tìm theo mã REQ, tên chức danh tuyển..."
+                {/* Search với Autocomplete Suggestions */}
+                <div className="relative flex-1 min-w-[260px] max-w-md">
+                  <SearchAutocompleteInput
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-blue-500 focus:outline-hidden font-medium"
+                    onChange={(val) => setSearchQuery(val)}
+                    onSelectSuggestion={(item) => setSearchQuery(item.title)}
+                    placeholder="Tìm theo mã REQ, tên chức danh (có dấu hoặc không dấu)..."
+                    size="sm"
+                    localSuggestions={requisitions.map((r) => ({
+                      id: r.id,
+                      title: r.title,
+                      subtitle: `Mã: ${r.code} • Phòng ban: ${r.department}`,
+                      category: "requisition",
+                      category_label: "Tờ trình",
+                    }))}
                   />
                 </div>
 

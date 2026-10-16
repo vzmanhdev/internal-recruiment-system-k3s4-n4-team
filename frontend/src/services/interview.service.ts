@@ -6,6 +6,7 @@ export interface InterviewItem {
   candidate_name?: string;
   candidate_email?: string;
   job_title?: string;
+  department?: string;
   round_number: number;
   round_name: string;
   scheduled_time: string;

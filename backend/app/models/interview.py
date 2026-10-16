@@ -43,6 +43,7 @@ class InterviewSchedule(Base):
             "candidate_name": self.application.full_name if self.application else None,
             "candidate_email": self.application.email if self.application else None,
             "job_title": self.application.job_posting.title if self.application and self.application.job_posting else None,
+            "department": self.application.job_posting.department_name if self.application and self.application.job_posting else None,
             "round_number": self.round_number,
             "round_name": self.round_name,
             "scheduled_time": self.scheduled_time.isoformat() if self.scheduled_time else None,

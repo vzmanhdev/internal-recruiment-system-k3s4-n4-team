@@ -15,6 +15,8 @@ from app.models.requisition import JobRequisition
 from app.models.user import User
 from app.services.access_scope import ensure_can_manage_application, require_any_permission
 
+from app.core.search import build_search_filter, build_search_score
+
 router = APIRouter()
 
 
@@ -32,10 +34,13 @@ def search_pool(q: Optional[str] = None, title: Optional[str] = None, current_us
     query = db.query(TalentPoolEntry).filter(TalentPoolEntry.is_active == True)  # noqa: E712
     if title:
         query = query.filter(TalentPoolEntry.interested_title.ilike(f"%{title}%"))
-    if q:
-        like = f"%{q}%"
-        query = query.filter(or_(TalentPoolEntry.skills.ilike(like), TalentPoolEntry.full_name.ilike(like),
-                                 TalentPoolEntry.interested_title.ilike(like)))
+    search_score = None
+    if q and q.strip():
+        search_cols = [TalentPoolEntry.skills, TalentPoolEntry.full_name, TalentPoolEntry.interested_title]
+        query = query.filter(build_search_filter(search_cols, q.strip()))
+        search_score = build_search_score(search_cols, q.strip())
+    if search_score is not None:
+        return [e.to_dict() for e in query.order_by(search_score.desc(), TalentPoolEntry.created_at.desc()).all()]
     return [e.to_dict() for e in query.order_by(TalentPoolEntry.created_at.desc()).all()]
 
 

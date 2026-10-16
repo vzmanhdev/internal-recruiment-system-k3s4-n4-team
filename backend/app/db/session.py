@@ -7,20 +7,26 @@ logger = logging.getLogger("uvicorn")
 
 Base = declarative_base()
 
+from app.core.search import unaccent_vn
+
 SQLITE_FALLBACK_URL = "sqlite:///./recruitment_fallback.db"
 
 
-def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+def _configure_sqlite_connection(dbapi_connection, connection_record):
     # SQLite ignores FOREIGN KEY constraints unless enabled per connection; PostgreSQL always enforces them.
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
+    # Register custom unaccent function for accent/case-insensitive search in SQLite
+    if hasattr(dbapi_connection, "create_function"):
+        dbapi_connection.create_function("unaccent_vn", 1, unaccent_vn)
+        dbapi_connection.create_function("unaccent", 1, unaccent_vn)
 
 
 def _make_engine(url: str):
     if url.startswith("sqlite"):
         eng = create_engine(url, connect_args={"check_same_thread": False}, echo=False)
-        event.listen(eng, "connect", _enable_sqlite_foreign_keys)
+        event.listen(eng, "connect", _configure_sqlite_connection)
         return eng
     return create_engine(url, pool_pre_ping=True, echo=False)
 

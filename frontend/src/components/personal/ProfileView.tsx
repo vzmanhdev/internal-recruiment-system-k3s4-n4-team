@@ -395,7 +395,7 @@ export function ProfileView() {
                 <div>
                   <h3 className="text-base font-extrabold text-slate-900">Chi Tiết Hồ Sơ Cá Nhân</h3>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Cập nhật họ tên, số điện thoại và thông tin cá nhân. Email và phòng ban do Quản trị viên cấp.
+                    Cập nhật họ tên, số điện thoại và thông tin cá nhân. Email, phòng ban và chức danh do Quản trị viên cấp.
                   </p>
                 </div>
               </div>
@@ -456,19 +456,20 @@ export function ProfileView() {
                     <span className="text-[10px] text-slate-400">Email công ty do IT/Admin quản lý</span>
                   </div>
 
-                  {/* Chức danh hiển thị */}
+                  {/* Chức danh hiển thị (Readonly) */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                      <Briefcase className="w-3.5 h-3.5 text-blue-600" />
+                      <Briefcase className="w-3.5 h-3.5 text-slate-400" />
                       <span>Chức danh hiển thị</span>
+                      <Lock className="w-3 h-3 text-slate-400 ml-auto" />
                     </label>
                     <input
                       type="text"
-                      value={form.job_title}
-                      onChange={(e) => setForm({ ...form, job_title: e.target.value })}
-                      placeholder="Ví dụ: Senior Software Engineer"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                      value={me.job_title || "Quản trị hệ thống"}
+                      disabled
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-500 cursor-not-allowed"
                     />
+                    <span className="text-[10px] text-slate-400">Chức danh công tác do HR/Admin quản lý</span>
                   </div>
 
                   {/* Ngày sinh */}

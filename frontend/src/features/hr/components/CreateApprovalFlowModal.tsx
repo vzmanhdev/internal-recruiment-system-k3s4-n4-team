@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Department, ApprovalTypeOption, ApprovalRoleOption, ApprovalFlow, ApprovalFlowStep } from "@/services/master-data.service";
 import { formatVND, numberToWordsVietnamese } from "@/lib/currency";
+import { matchesVietnamese } from "@/utils/vietnameseSearch";
 
 export interface ApprovalFlowFormData {
   name: string;
@@ -159,8 +160,7 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
   const filteredDepartments = useMemo(() => {
     const list = departments.filter((d) => d.is_active);
     if (!deptSearchTerm.trim()) return list;
-    const term = deptSearchTerm.toLowerCase();
-    return list.filter((d) => d.name.toLowerCase().includes(term) || d.code.toLowerCase().includes(term));
+    return list.filter((d) => matchesVietnamese(d.name, deptSearchTerm) || matchesVietnamese(d.code, deptSearchTerm));
   }, [departments, deptSearchTerm]);
 
   const selectedDepartmentName = useMemo(() => {

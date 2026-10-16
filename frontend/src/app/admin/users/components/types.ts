@@ -66,10 +66,10 @@ export const ROLE_DEFINITIONS: RoleDefinition[] = [
     badgeClass: "bg-cyan-50 text-cyan-700 border-cyan-200",
   },
   {
-    code: "employee",
-    name: "Nhân viên nội bộ",
-    shortName: "Employee",
-    description: "Xem tin nội bộ, giới thiệu ứng viên (Referral) và nộp đơn ứng tuyển nội bộ.",
+    code: "candidate",
+    name: "Ứng viên",
+    shortName: "Candidate",
+    description: "Người nộp hồ sơ từ bên ngoài doanh nghiệp, sử dụng cổng tuyển dụng để nộp CV, theo dõi trạng thái hồ sơ, xác nhận phỏng vấn và phản hồi Offer.",
     badgeClass: "bg-slate-50 text-slate-700 border-slate-200",
   },
 ];
@@ -78,6 +78,10 @@ export const getRoleMeta = (roleCode: string): RoleDefinition => {
   const code = (roleCode || "").toLowerCase().trim();
   if (code === "hr") {
     return ROLE_DEFINITIONS.find((r) => r.code === "hr_manager")!;
+  }
+  // "employee" was retired on 2026-10-16 and replaced by "candidate"
+  if (code === "employee") {
+    return ROLE_DEFINITIONS.find((r) => r.code === "candidate")!;
   }
   const found = ROLE_DEFINITIONS.find(
     (r) => r.code === roleCode || r.code === code

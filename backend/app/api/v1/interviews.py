@@ -186,7 +186,7 @@ def list_interviews(
         data = i.to_dict()
         if i.application and i.application.candidate_id == current_user.id:
             # The candidate's own schedule: never expose panel feedback, scores or interviewer contacts.
-            out.append({k: data[k] for k in ("id", "application_id", "job_title", "round_number", "round_name",
+            out.append({k: data[k] for k in ("id", "application_id", "job_title", "department", "round_number", "round_name",
                                              "scheduled_time", "duration_minutes", "location", "meeting_link", "status")}
                        | {"candidate_response": i.candidate_response, "is_own_application": True})
             continue

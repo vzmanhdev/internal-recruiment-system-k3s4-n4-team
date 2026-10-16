@@ -109,7 +109,7 @@ export function Header() {
     if (roles.includes("hiring_manager") || roles.includes("manager")) return "/manager";
     if (roles.includes("interviewer")) return "/interviewer";
     if (roles.includes("approver")) return "/approver";
-    if (roles.includes("employee")) return "/employee";
+    if (roles.includes("candidate")) return "/candidate";
     return "/jobs";
   };
 

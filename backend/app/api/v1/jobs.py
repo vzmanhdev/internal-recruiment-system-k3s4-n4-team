@@ -14,6 +14,7 @@ from app.models.requisition import JobRequisition
 from app.models.hr import Department
 from app.api.deps import get_current_user_obj, authenticate_bearer
 from app.services.access_scope import has_permission
+from app.core.search import build_search_filter, build_search_score
 
 router = APIRouter()
 
@@ -115,17 +116,23 @@ def list_jobs(
         query = query.filter(JobPosting.location == location)
     if type and type != "Tất cả":
         query = query.filter(JobPosting.type == type)
-    if search:
-        like = f"%{search}%"
-        query = query.filter(JobPosting.title.ilike(like) | JobPosting.description.ilike(like))  # S4-01 AC3
+    search_score = None
+    if search and search.strip():
+        search_cols = [JobPosting.title, JobPosting.description]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
 
-    jobs = query.order_by(JobPosting.created_at.desc()).all()
+    if search_score is not None:
+        jobs = query.order_by(search_score.desc(), JobPosting.created_at.desc()).all()
+    else:
+        jobs = query.order_by(JobPosting.created_at.desc()).all()
     return [_out(j) for j in jobs if not _is_expired(j)]  # S4-01 AC4: published AND not expired
 
 
 @router.get("/admin-list")
 def list_all_jobs_for_admin(
     status_filter: Optional[str] = None,
+    search: Optional[str] = None,
     current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
@@ -133,7 +140,15 @@ def list_all_jobs_for_admin(
     query = db.query(JobPosting)
     if status_filter:
         query = query.filter(JobPosting.status == status_filter)
-    jobs = query.order_by(JobPosting.created_at.desc()).all()
+    search_score = None
+    if search and search.strip():
+        search_cols = [JobPosting.title, JobPosting.description]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
+    if search_score is not None:
+        jobs = query.order_by(search_score.desc(), JobPosting.created_at.desc()).all()
+    else:
+        jobs = query.order_by(JobPosting.created_at.desc()).all()
     return [_out(j) for j in jobs]
 
 

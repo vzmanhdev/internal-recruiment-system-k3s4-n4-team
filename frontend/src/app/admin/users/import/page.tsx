@@ -282,7 +282,7 @@ export default function ImportUsersPage() {
                       <td className="p-2.5">Ban Công Nghệ</td>
                       <td className="p-2.5">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                          employee
+                          candidate
                         </span>
                       </td>
                     </tr>
@@ -301,7 +301,7 @@ export default function ImportUsersPage() {
                       { code: "hiring_manager", label: "Quản lý tuyển dụng", color: "bg-amber-50 text-amber-700 border-amber-200" },
                       { code: "interviewer", label: "Phỏng vấn viên", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
                       { code: "approver", label: "Người phê duyệt", color: "bg-violet-50 text-violet-700 border-violet-200" },
-                      { code: "employee", label: "Nhân viên nội bộ", color: "bg-slate-100 text-slate-700 border-slate-200" },
+                      { code: "candidate", label: "Ứng viên", color: "bg-slate-100 text-slate-700 border-slate-200" },
                     ].map((r) => (
                       <span key={r.code} className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border ${r.color}`}>
                         {r.code} ({r.label})
@@ -404,7 +404,7 @@ export default function ImportUsersPage() {
                     const rolesDisplay =
                       Array.isArray(row.roles) && row.roles.length > 0
                         ? row.roles.join(", ")
-                        : row.role || "employee";
+                        : row.role || "candidate";
 
                     return (
                       <tr

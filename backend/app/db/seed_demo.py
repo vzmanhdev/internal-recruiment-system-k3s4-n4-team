@@ -46,13 +46,13 @@ REQUIRED_TABLES = {"users", "roles", "user_roles", "departments", "job_titles", 
 
 # e-mail local part -> (full name, job title, department, roles). Several accounts hold more than one role.
 DEMO_USERS = {
-    "hr.manager": ("Demo HR Manager", "Trưởng phòng Nhân sự", "Nhân sự", ["hr_manager", "approver", "employee"]),
-    "recruiter": ("Demo Recruiter", "Chuyên viên tuyển dụng", "Nhân sự", ["recruiter", "employee"]),
-    "recruiter2": ("Demo Recruiter 2", "Chuyên viên tuyển dụng", "Nhân sự", ["recruiter", "interviewer", "employee"]),
-    "hiring.manager": ("Demo Hiring Manager", "Trưởng nhóm Backend", "Khối Công Nghệ (Demo)", ["hiring_manager", "interviewer", "employee"]),
-    "interviewer": ("Demo Interviewer", "Kỹ sư Backend cấp cao", "Khối Công Nghệ (Demo)", ["interviewer", "employee"]),
-    "approver": ("Demo Approver", "Giám đốc Khối", "Ban Giám Đốc", ["approver", "employee"]),
-    "employee": ("Demo Employee", "Kỹ sư Backend", "Khối Công Nghệ (Demo)", ["employee"]),
+    "hr.manager": ("Demo HR Manager", "Trưởng phòng Nhân sự", "Nhân sự", ["hr_manager", "approver"]),
+    "recruiter": ("Demo Recruiter", "Chuyên viên tuyển dụng", "Nhân sự", ["recruiter"]),
+    "recruiter2": ("Demo Recruiter 2", "Chuyên viên tuyển dụng", "Nhân sự", ["recruiter", "interviewer"]),
+    "hiring.manager": ("Demo Hiring Manager", "Trưởng nhóm Backend", "Khối Công Nghệ (Demo)", ["hiring_manager", "interviewer"]),
+    "interviewer": ("Demo Interviewer", "Kỹ sư Backend cấp cao", "Khối Công Nghệ (Demo)", ["interviewer"]),
+    "approver": ("Demo Approver", "Giám đốc Khối", "Ban Giám Đốc", ["approver"]),
+    "employee": ("Demo Employee", "Kỹ sư Backend", "Khối Công Nghệ (Demo)", ["candidate"]),  # employee role retired 2026-10-16
     "candidate": ("Demo Candidate", "", "", ["candidate"]),
 }
 

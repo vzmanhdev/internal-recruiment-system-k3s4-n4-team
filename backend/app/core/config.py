@@ -67,6 +67,20 @@ class Settings(BaseSettings):
     PASSWORD_RESET_IP_WINDOW_SECONDS: int = 900
     PASSWORD_RESET_PASSWORD_LENGTH: int = 16
 
+    # Public candidate self-registration (e-mail OTP, purpose "candidate_registration")
+    REGISTRATION_OTP_TTL_SECONDS: int = 600  # 10 minutes
+    REGISTRATION_OTP_MAX_ATTEMPTS: int = 5  # wrong codes per challenge, then the challenge is blocked
+    REGISTRATION_RESEND_COOLDOWN_SECONDS: int = 60  # minimum gap between two codes for the same e-mail
+    REGISTRATION_EMAIL_WINDOW_SECONDS: int = 3600
+    REGISTRATION_EMAIL_WINDOW_LIMIT: int = 5  # codes per e-mail per window (start + resends)
+    REGISTRATION_EMAIL_DAILY_LIMIT: int = 10  # codes per e-mail per 24 h
+    REGISTRATION_EMAIL_DAILY_FAILED_LIMIT: int = 15  # wrong codes per e-mail per 24 h across all challenges
+    REGISTRATION_IP_WINDOW_SECONDS: int = 3600
+    REGISTRATION_IP_WINDOW_LIMIT: int = 20  # codes per client IP per window
+    REGISTRATION_PASSWORD_MIN_LENGTH: int = 8
+    # Comma separated list such as "gmail.com"; empty = any syntactically valid e-mail domain.
+    REGISTRATION_ALLOWED_EMAIL_DOMAINS: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

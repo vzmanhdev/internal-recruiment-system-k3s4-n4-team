@@ -26,15 +26,20 @@ import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { useAuth } from '@/providers/auth-provider';
 
 interface MyApplication {
-  id: number; tracking_code: string; job_title: string | null; department: string | null; status: string;
-  public_status: string; applied_date: string | null;
+  id: number;
+  tracking_code?: string | null;
+  job_title?: string | null;
+  department?: string | null;
+  status: string;
+  public_status?: string | null;
+  applied_date?: string | null;
 }
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** The signed-in applicant's own applications, interviews and offers (candidate views only) + open jobs. */
 async function loadCandidateHome() {
   const [apps, interviews, offers, jobs] = await Promise.all([
-    apiRequest<MyApplication[]>('/applications'),
+    apiRequest<MyApplication[]>('/applications?mine=true'),
     interviewService.getInterviews().catch(() => []),
     offerService.getOffers().catch(() => []),
     careerApi.list().catch(() => []),
@@ -95,17 +100,20 @@ export default function CandidateDashboardPage() {
     },
   ];
 
-  const ongoingApplications = open.map((a) => {
+  const ongoingApplications = open.map((a, idx) => {
     const iv = home.mine.find((i) => i.application_id === a.id);
     const offer = home.offers.find((o) => o.application_id === a.id && o.status === 'sent');
     const at = iv ? new Date(iv.scheduled_time) : null;
+    const trackingCode = a.tracking_code || `APP-${String(a.id || idx + 1).padStart(6, '0')}`;
     return {
-      id: a.tracking_code,
-      jobTitle: a.job_title || '',
+      key: `app-${a.id ?? idx}`,
+      id: a.id,
+      trackingCode,
+      jobTitle: a.job_title || 'Vị trí ứng tuyển',
       department: a.department || '',
       location: '',
       appliedDate: a.applied_date ? new Date(`${a.applied_date}T00:00:00`).toLocaleDateString('vi-VN') : '',
-      stage: a.public_status,
+      stage: a.public_status || a.status || 'Đang xem xét',
       status: offer ? 'Đã nhận Offer' : 'Đang xử lý',
       statusColor: offer ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200',
       nextAction: offer
@@ -114,7 +122,8 @@ export default function CandidateDashboardPage() {
     };
   });
 
-  const featuredJobs = home.jobs.map((j) => ({
+  const featuredJobs = home.jobs.map((j, idx) => ({
+    key: `job-${j.slug || j.id || idx}`,
     id: j.slug || j.id,
     title: j.title,
     department: j.department,
@@ -148,7 +157,7 @@ export default function CandidateDashboardPage() {
               <span>Xem vị trí đang tuyển</span>
             </Link>
             <Link
-              href="/candidate/tracking"
+              href="/candidate/track"
               className="px-4 py-2.5 rounded-xl bg-blue-500/30 hover:bg-blue-500/40 text-white font-extrabold text-xs flex items-center gap-2 transition-all border border-white/20 active:scale-95"
             >
               <Clock className="w-4 h-4" />
@@ -208,33 +217,54 @@ export default function CandidateDashboardPage() {
           </div>
 
           <div className="space-y-3">
-            {ongoingApplications.map((app) => (
-              <div
-                key={app.id}
-                className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs hover:border-blue-200 transition-all space-y-3"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                  <div>
-                    <span className="font-mono text-[10px] font-bold text-slate-400 block">{app.id}</span>
-                    <h3 className="font-extrabold text-sm text-slate-900">{app.jobTitle}</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">{[app.department, app.location].filter(Boolean).join(' • ')}</p>
-                  </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border self-start sm:self-auto ${app.statusColor}`}>
-                    {app.status}
-                  </span>
+            {ongoingApplications.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/80 shadow-2xs space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                  <FileText className="w-6 h-6" />
                 </div>
-
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs pt-1">
-                  <div className="flex items-center gap-2 text-slate-600 font-medium">
-                    <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                    <span>Giai đoạn: <strong className="text-slate-800">{app.stage}</strong></span>
-                  </div>
-                  <div className="text-xs font-bold text-blue-600 bg-blue-50/80 px-3 py-1 rounded-lg">
-                    {app.nextAction}
-                  </div>
+                <div className="space-y-1">
+                  <h3 className="font-extrabold text-sm text-slate-800">Bạn chưa nộp hồ sơ ứng tuyển nào</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Khám phá hàng chục vị trí hấp dẫn với mức đãi ngộ và lộ trình phát triển rõ ràng ngay hôm nay.
+                  </p>
                 </div>
+                <Link
+                  href="/candidate/jobs"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs transition-colors shadow-sm cursor-pointer"
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>Khám phá vị trí đang tuyển</span>
+                </Link>
               </div>
-            ))}
+            ) : (
+              ongoingApplications.map((app) => (
+                <div
+                  key={app.key}
+                  className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs hover:border-blue-200 transition-all space-y-3"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <span className="font-mono text-[10px] font-bold text-slate-400 block">{app.trackingCode}</span>
+                      <h3 className="font-extrabold text-sm text-slate-900">{app.jobTitle}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">{[app.department, app.location].filter(Boolean).join(' • ')}</p>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border self-start sm:self-auto ${app.statusColor}`}>
+                      {app.status}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs pt-1">
+                    <div className="flex items-center gap-2 text-slate-600 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                      <span>Giai đoạn: <strong className="text-slate-800">{app.stage}</strong></span>
+                    </div>
+                    <div className="text-xs font-bold text-blue-600 bg-blue-50/80 px-3 py-1 rounded-lg">
+                      {app.nextAction}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -257,7 +287,7 @@ export default function CandidateDashboardPage() {
           <div className="space-y-3">
             {featuredJobs.map((job) => (
               <div
-                key={job.id}
+                key={job.key}
                 className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow space-y-2.5"
               >
                 <div>

@@ -13,6 +13,8 @@ import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { ApiError } from '@/lib/api-client';
 import { formatVND } from '@/lib/currency';
+import { getSearchScore, matchesVietnamese } from '@/utils/vietnameseSearch';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 
 export default function HRApprovalFlowsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -83,12 +85,11 @@ export default function HRApprovalFlowsPage() {
   // Filtered & Sorted list
   const filteredFlows = useMemo(() => {
     return rawFlows.filter((flow) => {
-      // 1. Search term
+      // 1. Search term (case-insensitive & accent-insensitive)
       if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase();
-        const matchesName = flow.name.toLowerCase().includes(term);
-        const matchesDept = (flow.department_name || '').toLowerCase().includes(term);
-        if (!matchesName && !matchesDept) return false;
+        const s1 = getSearchScore(flow.name, searchTerm);
+        const s2 = getSearchScore(flow.department_name || '', searchTerm);
+        if (s1 === 0 && s2 === 0) return false;
       }
 
       // 2. Department filter
@@ -112,6 +113,12 @@ export default function HRApprovalFlowsPage() {
 
       return true;
     }).sort((a, b) => {
+      // Priority 1: Ranked search score when searching
+      if (searchTerm.trim()) {
+        const scoreA = Math.max(getSearchScore(a.name, searchTerm), getSearchScore(a.department_name || '', searchTerm));
+        const scoreB = Math.max(getSearchScore(b.name, searchTerm), getSearchScore(b.department_name || '', searchTerm));
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
       if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
       if (sortBy === 'name_desc') return b.name.localeCompare(a.name);
       if (sortBy === 'updated_asc') {
@@ -400,22 +407,29 @@ export default function HRApprovalFlowsPage() {
       {/* Filter and Action Bar */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-sm">
         <div className="flex flex-wrap lg:flex-nowrap items-end gap-3">
-          {/* Search by Name / Department */}
-          <div className="flex-1 min-w-[220px]">
+          {/* Search by Name / Department với Autocomplete Suggestions */}
+          <div className="flex-1 min-w-[240px]">
             <label className="block text-[11px] font-bold text-slate-600 mb-1">Tìm kiếm</label>
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Tìm theo tên luồng duyệt..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
-              />
-            </div>
+            <SearchAutocompleteInput
+              value={searchTerm}
+              onChange={(val) => {
+                setSearchTerm(val);
+                setCurrentPage(1);
+              }}
+              onSelectSuggestion={(item) => {
+                setSearchTerm(item.title);
+                setCurrentPage(1);
+              }}
+              placeholder="Tìm theo tên luồng duyệt (có dấu hoặc không dấu)..."
+              size="sm"
+              localSuggestions={rawFlows.map((f) => ({
+                id: String(f.id),
+                title: f.name,
+                subtitle: `${f.department_name || 'Toàn doanh nghiệp'} • ${f.steps.length} cấp duyệt`,
+                category: 'approval_flow',
+                category_label: 'Luồng duyệt',
+              }))}
+            />
           </div>
 
           {/* Phòng ban Combobox (Searchable) */}
@@ -476,7 +490,7 @@ export default function HRApprovalFlowsPage() {
                   </button>
 
                   {departments
-                    .filter((d) => d.name.toLowerCase().includes(deptFilterSearch.toLowerCase()))
+                    .filter((d) => matchesVietnamese(d.name, deptFilterSearch))
                     .map((d) => (
                       <button
                         key={d.id}

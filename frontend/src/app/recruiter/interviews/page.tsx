@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -407,14 +409,34 @@ export default function RecruiterInterviewsPage() {
   // FILTERING LOGIC
   // ==========================================
   const filteredInterviews = useMemo(() => {
+    const q = searchTerm.trim();
     return interviews.filter((s) => {
-      const matchSearch =
-        s.candidateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.interviewers.some((i) => i.toLowerCase().includes(searchTerm.toLowerCase()));
+      if (q) {
+        const score = Math.max(
+          getSearchScore(s.candidateName, q),
+          getSearchScore(s.position, q),
+          ...s.interviewers.map((i) => getSearchScore(i, q))
+        );
+        if (score === 0) return false;
+      }
 
       const matchType = typeFilter === 'all' || s.type === typeFilter;
-      return matchSearch && matchType;
+      return matchType;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.candidateName, q),
+          getSearchScore(a.position, q),
+          ...a.interviewers.map((i) => getSearchScore(i, q))
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.candidateName, q),
+          getSearchScore(b.position, q),
+          ...b.interviewers.map((i) => getSearchScore(i, q))
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [interviews, searchTerm, typeFilter]);
 
@@ -518,13 +540,19 @@ export default function RecruiterInterviewsPage() {
         {/* Search & Type filter */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
           <div className="relative flex-1 max-w-xs">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
+            <SearchAutocompleteInput
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(val) => setSearchTerm(val)}
+              onSelectSuggestion={(item) => setSearchTerm(item.title)}
               placeholder="Tìm theo ứng viên, vị trí, interviewer..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              size="sm"
+              localSuggestions={interviews.map((s) => ({
+                id: String(s.interviewId),
+                title: s.candidateName,
+                subtitle: `${s.position} • Interviewer: ${s.interviewers.join(', ')}`,
+                category: "candidate",
+                category_label: "Phỏng vấn",
+              }))}
             />
           </div>
 

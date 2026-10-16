@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/Icons";
 import { JobCard } from "./JobCard";
 import { jobService, JobPostingItem } from "@/services/job.service";
 import type { Job } from "@/types/job";
+import { getSearchScore } from "@/utils/vietnameseSearch";
 
 export function JobExplorer() {
   const [dbJobs, setDbJobs] = useState<JobPostingItem[]>([]);
@@ -50,14 +51,33 @@ export function JobExplorer() {
   }, [dbJobs]);
 
   const filtered = useMemo(() => {
+    const q = search.trim();
     return formattedJobs.filter(
-      (job) =>
-        `${job.title} ${job.description} ${job.skills.join(" ")}`
-          .toLowerCase()
-          .includes(search.toLowerCase()) &&
-        (!department || job.department === department) &&
-        (!location || job.location === location)
-    );
+      (job) => {
+        const matchSearch = !q ||
+          getSearchScore(job.title, q) > 0 ||
+          getSearchScore(job.description, q) > 0 ||
+          job.skills.some((s) => getSearchScore(s, q) > 0);
+        return matchSearch &&
+          (!department || job.department === department) &&
+          (!location || job.location === location);
+      }
+    ).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.title, q),
+          getSearchScore(a.description, q),
+          ...a.skills.map((s) => getSearchScore(s, q))
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.title, q),
+          getSearchScore(b.description, q),
+          ...b.skills.map((s) => getSearchScore(s, q))
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
+    });
   }, [formattedJobs, search, department, location]);
 
   const departments = useMemo(() => {

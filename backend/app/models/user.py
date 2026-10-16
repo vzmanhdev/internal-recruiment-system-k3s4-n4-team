@@ -12,7 +12,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=False)
     phone = Column(String(50), nullable=True)
-    role = Column(String(50), default="employee", nullable=False)
+    role = Column(String(50), default="candidate", nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     account_status = Column(String(20), default="active", nullable=False)
     lock_reason = Column(String(500), nullable=True)
@@ -31,6 +31,8 @@ class User(Base):
     locked_until = Column(DateTime, nullable=True)
     security_version = Column(Integer, default=1, nullable=False)
     last_login_at = Column(DateTime, nullable=True)
+    # Set when the user proved ownership of the e-mail address (candidate self-registration OTP).
+    email_verified_at = Column(DateTime, nullable=True)
     version = Column(Integer, default=1, nullable=False) # Optimistic Locking
 
     auth_sessions = relationship("AuthSession", back_populates="user", cascade="all, delete-orphan")
@@ -73,6 +75,8 @@ class User(Base):
             "lock_reason": self.lock_reason,
             "avatar_url": self.avatar_url,
             "security_version": self.security_version,
+            "email_verified": self.email_verified_at is not None,
+            "email_verified_at": self.email_verified_at.isoformat() if self.email_verified_at else None,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None
         }

@@ -2,6 +2,8 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Kanban,
   Search,
@@ -456,17 +458,40 @@ export default function RecruiterPipelinePage() {
   // ==========================================
 
   const filteredCandidates = useMemo(() => {
+    const q = searchQuery.trim();
     return candidates.filter((c) => {
-      const matchSearch =
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.position.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+      let matchSearch = true;
+      if (q) {
+        const scores = [
+          getSearchScore(c.name, q),
+          getSearchScore(c.id, q),
+          getSearchScore(c.position, q),
+          ...c.tags.map((t) => getSearchScore(t, q)),
+        ];
+        matchSearch = Math.max(...scores) > 0;
+      }
 
       const matchPos = selectedPosition === 'all' || c.position === selectedPosition;
       const matchSla = slaFilterOnly ? c.daysInStage > 3 : true;
 
       return matchSearch && matchPos && matchSla;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.name, q),
+          getSearchScore(a.id, q),
+          getSearchScore(a.position, q),
+          ...a.tags.map((t) => getSearchScore(t, q))
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.name, q),
+          getSearchScore(b.id, q),
+          getSearchScore(b.position, q),
+          ...b.tags.map((t) => getSearchScore(t, q))
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [candidates, searchQuery, selectedPosition, slaFilterOnly]);
 
@@ -523,13 +548,19 @@ export default function RecruiterPipelinePage() {
         {/* Search & Position Filter */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
           <div className="relative flex-1 sm:max-w-xs">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
+            <SearchAutocompleteInput
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(val) => setSearchQuery(val)}
+              onSelectSuggestion={(item) => setSearchQuery(item.title)}
               placeholder="Tìm theo tên, mã hồ sơ, kỹ năng..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              size="sm"
+              localSuggestions={candidates.map((c) => ({
+                id: c.id,
+                title: c.name,
+                subtitle: `${c.position} • Giai đoạn: ${c.columnId}`,
+                category: "candidate",
+                category_label: "Ứng viên",
+              }))}
             />
           </div>
 

@@ -27,6 +27,7 @@ from app.models.application import JobApplication
 from app.schemas.hr import CategoryCreate, CompetencyCreate, DepartmentCreate, JobTitleCreate, ReorderCategories
 from app.services.access_scope import has_permission, require_any_permission
 from app.services.headcount_service import headcount_status
+from app.core.search import build_search_filter, build_search_score
 
 router = APIRouter()
 APPROVAL_STEPS = {"manager", "hr", "executive"}
@@ -367,8 +368,9 @@ def list_questions(job_title: Optional[str] = None, criteria_id: Optional[str] =
         q = q.filter(InterviewQuestion.criteria_id == criteria_id)
     if difficulty:
         q = q.filter(InterviewQuestion.difficulty == difficulty)
-    if search:
-        q = q.filter(or_(InterviewQuestion.content.ilike(f"%{search}%"), InterviewQuestion.code.ilike(f"%{search}%")))
+    if search and search.strip():
+        search_cols = [InterviewQuestion.content, InterviewQuestion.code, InterviewQuestion.job_title]
+        q = q.filter(build_search_filter(search_cols, search.strip()))
     return [x.to_dict() for x in q.order_by(InterviewQuestion.code).all()]
 
 
@@ -770,9 +772,11 @@ def list_approval_flows(
     authorize(authorization, db)
     query = db.query(ApprovalFlow).filter(ApprovalFlow.is_deleted == False)
 
+    search_score = None
     if search and search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(ApprovalFlow.name.ilike(term))
+        search_cols = [ApprovalFlow.name]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
 
     if department_id is not None:
         query = query.filter(ApprovalFlow.department_id == department_id)
@@ -788,7 +792,9 @@ def list_approval_flows(
         response.headers["X-Total-Count"] = str(total_count)
 
     # Sorting
-    if sort_by == "name_asc":
+    if search_score is not None and not sort_by:
+        query = query.order_by(search_score.desc(), ApprovalFlow.updated_at.desc(), ApprovalFlow.id.desc())
+    elif sort_by == "name_asc":
         query = query.order_by(ApprovalFlow.name.asc())
     elif sort_by == "name_desc":
         query = query.order_by(ApprovalFlow.name.desc())

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.auth import require_admin
 from app.core.security import generate_secure_random_password, hash_password
+from app.core.search import build_search_filter, build_search_score
 from app.db.session import get_db
 from app.models.user import User
 from app.models.import_job import ImportJob
@@ -138,10 +139,10 @@ def list_system_roles(
             "description": "Xem và phê duyệt các Yêu cầu tuyển dụng (Requisition) và Đề xuất tuyển dụng (Offer).",
         },
         {
-            "code": "employee",
-            "name": "Nhân viên nội bộ / Ứng viên (Employee)",
+            "code": "candidate",
+            "name": "Ứng viên (Candidate)",
             "authority_type": "BUSINESS",
-            "description": "Xem cổng việc làm nội bộ, nộp ứng tuyển, giới thiệu nhân sự (Referral), cập nhật profile.",
+            "description": "Người nộp hồ sơ từ bên ngoài doanh nghiệp, sử dụng cổng tuyển dụng để nộp CV, theo dõi trạng thái hồ sơ, xác nhận phỏng vấn và phản hồi Offer.",
         },
     ]
     return roles_list
@@ -162,16 +163,11 @@ def list_users(
 ):
     require_admin(authorization, db)
     query = db.query(User)
+    search_score = None
     if search.strip():
-        term = f"%{search.strip()}%"
-        query = query.filter(
-            or_(
-                User.full_name.ilike(term),
-                User.email.ilike(term),
-                User.department.ilike(term),
-                User.employee_code.ilike(term),
-            )
-        )  # S1-08 AC3
+        search_cols = [User.full_name, User.email, User.department, User.employee_code]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
     if account_status != "all":
         query = query.filter(User.account_status == account_status)
     if department != "all":
@@ -196,7 +192,10 @@ def list_users(
     }
     col = sort_columns.get(sort_by, User.created_at)
     order_func = asc if (sort_order or "").lower() == "asc" else desc
-    query = query.order_by(order_func(col), User.id.desc())
+    if search_score is not None and not sort_by:
+        query = query.order_by(search_score.desc(), order_func(col), User.id.desc())
+    else:
+        query = query.order_by(order_func(col), User.id.desc())
 
     total = query.count()
     pages = max(1, ceil(total / page_size))
@@ -489,7 +488,7 @@ def validate_import_data(
         full_name = str(row[name_idx]).strip() if name_idx < len(row) and row[name_idx] is not None else ""
         raw_email = str(row[email_idx]).strip() if email_idx < len(row) and row[email_idx] is not None else ""
         email = raw_email.lower()
-        roles_raw = str(row[roles_idx]).strip() if roles_idx < len(row) and row[roles_idx] is not None else "employee"
+        roles_raw = str(row[roles_idx]).strip() if roles_idx < len(row) and row[roles_idx] is not None else "candidate"
         phone = str(row[phone_idx]).strip() if phone_idx >= 0 and phone_idx < len(row) and row[phone_idx] is not None else ""
         dept = str(row[dept_idx]).strip() if dept_idx >= 0 and dept_idx < len(row) and row[dept_idx] is not None else "Nhân sự"
         emp_code = str(row[code_idx]).strip() if code_idx >= 0 and code_idx < len(row) and row[code_idx] is not None else ""
@@ -518,10 +517,11 @@ def validate_import_data(
         seen_in_file.add(email)
 
         # Parse & validate roles
-        parsed_roles = [r.strip().lower() for r in roles_raw.replace(";", ",").split(",") if r.strip()]
+        from app.db.rbac_catalog import canonical_role
+        parsed_roles = list(dict.fromkeys(canonical_role(r) for r in roles_raw.replace(";", ",").split(",") if r.strip()))
         valid_user_roles = [r for r in parsed_roles if r in VALID_ROLES]
         if not valid_user_roles:
-            valid_user_roles = ["employee"]
+            valid_user_roles = ["candidate"]
 
         if status_val == "VALID":
             valid_count += 1
@@ -713,7 +713,7 @@ def commit_users_import(
             pwd_to_set = raw_pwd if (raw_pwd and len(raw_pwd) >= 6) else generate_secure_random_password(14)
             hashed_pwd = hash_password(pwd_to_set)
 
-            roles_to_assign = row.get("roles") or ["employee"]
+            roles_to_assign = row.get("roles") or ["candidate"]
             role_str = ",".join(dict.fromkeys(roles_to_assign))
 
             new_user = User(
@@ -826,7 +826,7 @@ async def import_users_from_excel(
         pwd_to_set = raw_pwd if (raw_pwd and len(raw_pwd) >= 6) else generate_secure_random_password(14)
         hashed_pwd = hash_password(pwd_to_set)
 
-        roles_to_assign = row.get("roles") or ["employee"]
+        roles_to_assign = row.get("roles") or ["candidate"]
         role_str = ",".join(dict.fromkeys(roles_to_assign))
 
         try:
@@ -895,7 +895,7 @@ def download_import_template(
         ["Trần Thị Hiring Manager", "manager_demo@company.com", "hiring_manager,interviewer", "0923456789", "Khối Công Nghệ & Kỹ Thuật", "NV-HM-002", "Password123!"],
         ["Lê Văn Recruiter", "recruiter_demo@company.com", "recruiter", "0934567890", "Phòng Tuyển Dụng & Đào Tạo", "NV-REC-003", ""],
         ["Hoàng Minh Interviewer", "interviewer_demo@company.com", "interviewer", "0945678901", "Khối Công Nghệ & Kỹ Thuật", "NV-INT-004", ""],
-        ["Phạm Thu Nhân Viên", "employee_demo@company.com", "employee", "0956789012", "Ban Giám Đốc", "NV-EMP-005", ""],
+        ["Phạm Thu Nhân Viên", "employee_demo@company.com", "candidate", "0956789012", "Ban Giám Đốc", "NV-EMP-005", ""],
     ]
     for r in sample_rows:
         ws.append(r)
@@ -938,7 +938,6 @@ def get_admin_dashboard_stats(
         "interviewer": 0,
         "approver": 0,
         "candidate": 0,
-        "employee": 0,
     }
     from app.services.rbac_service import get_user_roles
     for user in all_users:
@@ -970,11 +969,11 @@ def list_audit_logs(
     require_admin(authorization, db)
     query = db.query(AuditLog).order_by(AuditLog.created_at.desc())
     if actor.strip():
-        query = query.filter(AuditLog.actor_email.ilike(f"%{actor.strip()}%"))
+        query = query.filter(build_search_filter([AuditLog.actor_email], actor.strip()))
     if action.strip():
-        query = query.filter(AuditLog.action.ilike(f"%{action.strip()}%"))
+        query = query.filter(build_search_filter([AuditLog.action], action.strip()))
     if module.strip():
-        query = query.filter(AuditLog.target_entity.ilike(f"%{module.strip()}%"))
+        query = query.filter(build_search_filter([AuditLog.target_entity], module.strip()))
 
     logs = query.limit(100).all()
     result = []
@@ -1039,7 +1038,7 @@ MODULE_TITLE_MAP = {
     "audit": "Nhật Ký Hệ Thống & Audit Logs",
 }
 
-ALL_ROLES = ["admin", "hr_manager", "recruiter", "hiring_manager", "interviewer", "approver", "employee"]
+ALL_ROLES = ["admin", "hr_manager", "recruiter", "hiring_manager", "interviewer", "approver", "candidate"]
 
 
 @router.get("/permissions/matrix")

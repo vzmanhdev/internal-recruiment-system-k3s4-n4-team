@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
   Upload,
   CheckCircle2,
@@ -25,16 +25,20 @@ import {
   AlertCircle,
   FileCheck,
   X,
+  Share2,
 } from 'lucide-react';
 import { careerApi, type CandidateJob } from '@/features/candidate/api';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { ApiError } from '@/lib/api-client';
+import { useAuth } from '@/providers/auth-provider';
 
-export default function CandidateApplyPage() {
+function CandidateApplyContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const jobId = (params?.id as string) || '';
+  const { user } = useAuth();
 
   const { data: job, loading: jobLoading } = useApiData(() => careerApi.get(jobId), [jobId]);
 
@@ -44,7 +48,17 @@ export default function CandidateApplyPage() {
   const [phone, setPhone] = useState('');
   const [cvLink, setCvLink] = useState('');
   const [coverNote, setCoverNote] = useState('');
+  const [referralCode, setReferralCode] = useState(searchParams?.get('ref') || '');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Auto prefill authenticated user information
+  useEffect(() => {
+    if (user) {
+      if (!fullName && user.full_name) setFullName(user.full_name);
+      if (!email && user.email) setEmail(user.email);
+      if (!phone && user.phone) setPhone(user.phone);
+    }
+  }, [user]);
 
   // Validation & Submit states
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -112,8 +126,12 @@ export default function CandidateApplyPage() {
     setIsSubmitting(true);
     try {
       const created = await careerApi.apply(job, {
-        full_name: fullName.trim(), email: email.trim(), phone: phone.trim(), file: selectedFile,
+        full_name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        file: selectedFile,
         cover_letter: [coverNote.trim(), cvLink.trim() && `Liên kết hồ sơ bổ sung: ${cvLink.trim()}`].filter(Boolean).join('\n'),
+        referral_code: referralCode.trim() || undefined,
       });
       setTrackingCode(created.tracking_code);
       setIsSuccess(true);
@@ -271,7 +289,7 @@ export default function CandidateApplyPage() {
           {/* Nút hành động */}
           <div className="pt-2 space-y-3">
             <Link
-              href={`/candidate/track?code=${trackingCode}`}
+              href={`/candidate/track?code=${encodeURIComponent(trackingCode)}&email=${encodeURIComponent(email)}`}
               className="w-full py-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-base flex items-center justify-center gap-2 transition-all shadow-md shadow-blue-500/25 active:scale-98"
             >
               <span>Tra cứu ngay</span>
@@ -485,6 +503,20 @@ export default function CandidateApplyPage() {
               />
             </div>
 
+            {/* Mã giới thiệu nội bộ (S4-07 Referral Code) */}
+            <div className="space-y-1.5 pt-1">
+              <label className="block text-xs font-bold text-slate-800">
+                Mã giới thiệu nội bộ (Nếu có người giới thiệu)
+              </label>
+              <input
+                type="text"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value)}
+                placeholder="Ví dụ: REF-102 hoặc mã nhân viên..."
+                className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-2xl text-sm font-semibold uppercase tracking-wider text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all placeholder:normal-case placeholder:tracking-normal placeholder:font-normal placeholder:text-slate-400"
+              />
+            </div>
+
             {/* Cam kết bảo mật */}
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-start gap-3 text-xs text-slate-500">
               <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
@@ -514,5 +546,13 @@ export default function CandidateApplyPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CandidateApplyPage() {
+  return (
+    <Suspense fallback={<LoadingState />}>
+      <CandidateApplyContent />
+    </Suspense>
   );
 }

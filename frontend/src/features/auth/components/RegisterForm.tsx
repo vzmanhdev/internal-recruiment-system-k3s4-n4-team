@@ -92,8 +92,8 @@ export function RegisterForm() {
         full_name: formData.fullName,
         email: formData.companyEmail,
         password: formData.password,
+        confirm_password: formData.confirmPassword,
         phone: formData.phone || undefined,
-        role: "employee",
       });
 
       setSuccessMsg("Tạo tài khoản thành công! Đang chuyển hướng đến trang Đăng nhập...");

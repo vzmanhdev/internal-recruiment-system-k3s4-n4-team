@@ -42,12 +42,36 @@ class OfferReply(BaseModel):
     comment: Optional[str] = None
 
 
+DEFAULT_CAREER_DATA = {
+    "configured": True,
+    "company_name": "Tập Đoàn Doanh Nghiệp Enterprise",
+    "slogan": "Cùng nhau tạo nên những điều lớn lao và bứt phá nấc thang sự nghiệp",
+    "contact_email": "tuyendung@enterprise.com",
+    "contact_phone": "1900 6868",
+    "banner_url": "https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop",
+    "about_us": "Về danh tiếng và thị trường, công ty là điểm tựa vững chắc cho sự nghiệp của bạn. Chúng tôi tin rằng tài sản quý giá nhất chính là đội ngũ nhân sự.",
+    "benefits": [
+        {"title": "Bảo hiểm toàn diện", "description": "Bảo hiểm toàn diện nhân lương, bảo hiểm y tế mở rộng cho cả gia đình.", "icon": "ShieldCheck"},
+        {"title": "Đào tạo chuyên sâu", "description": "Đào tạo chuyên sâu các kỹ năng mới, hỗ trợ 100% học bổng chứng chỉ quốc tế.", "icon": "GraduationCap"},
+        {"title": "Thưởng thâm niên", "description": "Thưởng thâm niên và các chế độ đãi ngộ vượt bậc khi cống hiến lâu dài.", "icon": "Award"}
+    ],
+}
+
+
 @router.get("/career-page")
 def career_page(db: Session = Depends(get_db)):
-    """Public career page content (company, about, benefits) as configured by HR; empty until configured."""
+    """Public career page content (company, about, benefits) as configured by HR; defaults provided if not configured."""
     from app.models.master_data import CareerPageSettings
     row = db.query(CareerPageSettings).filter(CareerPageSettings.id == 1).first()
-    return (row.data() | {"updated_at": row.updated_at.isoformat() if row.updated_at else None}) if row else {"configured": False}
+    if row and row.data():
+        d = row.data()
+        return d | {
+            "configured": True,
+            "contact_email": d.get("contact_email") or DEFAULT_CAREER_DATA["contact_email"],
+            "contact_phone": d.get("contact_phone") or DEFAULT_CAREER_DATA["contact_phone"],
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+    return DEFAULT_CAREER_DATA
 
 
 @router.post("/applications/status")
@@ -57,8 +81,15 @@ def lookup_status(payload: StatusLookup, db: Session = Depends(get_db)):
     if not app or app.email.lower() != payload.email.strip().lower():
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ khớp với mã tra cứu và email.")
     view = app.candidate_view()
-    return {"tracking_code": app.tracking_code, "job_title": view["job_title"], "status": view["public_status"],
-            "applied_date": view["applied_date"]}
+    return {
+        "tracking_code": app.tracking_code,
+        "job_title": view["job_title"],
+        "department": view["department"],
+        "candidate_name": app.full_name,
+        "status": view["public_status"],
+        "internal_status": app.status,
+        "applied_date": view["applied_date"],
+    }
 
 
 def _by_token(db: Session, model, column, token: str):
@@ -86,9 +117,17 @@ def interview_by_link(token: str, db: Session = Depends(get_db)):
     i = _by_token(db, InterviewSchedule, InterviewSchedule.confirmation_token_hash, token)
     if i.status != "scheduled":
         raise HTTPException(status_code=410, detail=INVALID_LINK)
-    return {"job_title": i.application.job_posting.title if i.application and i.application.job_posting else None,
-            "round_name": i.round_name, "scheduled_time": i.scheduled_time.isoformat(), "duration_minutes": i.duration_minutes,
-            "location": i.location, "meeting_link": i.meeting_link, "candidate_response": i.candidate_response}
+    posting = i.application.job_posting if i.application else None
+    return {
+        "job_title": posting.title if posting else None,
+        "department": posting.department_name if posting else None,
+        "round_name": i.round_name,
+        "scheduled_time": i.scheduled_time.isoformat(),
+        "duration_minutes": i.duration_minutes,
+        "location": i.location,
+        "meeting_link": i.meeting_link,
+        "candidate_response": i.candidate_response,
+    }
 
 
 @router.post("/interviews/respond")
@@ -113,11 +152,20 @@ def offer_by_link(token: str, db: Session = Depends(get_db)):
     if offer.status != "sent" or (offer.response_deadline and date.fromisoformat(offer.response_deadline[:10]) < date.today()):
         raise HTTPException(status_code=410, detail=INVALID_LINK)
     app = offer.application
-    return {"candidate_name": app.full_name, "job_title": app.job_posting.title if app.job_posting else None,
-            "offered_salary": offer.offered_salary, "allowance": offer.allowance, "currency": offer.currency,
-            "start_date": offer.start_date, "work_location": offer.work_location,
-            "probation_duration_months": offer.probation_duration_months,
-            "probation_salary_percentage": offer.probation_salary_percentage, "response_deadline": offer.response_deadline}
+    posting = app.job_posting if app else None
+    return {
+        "candidate_name": app.full_name,
+        "job_title": posting.title if posting else None,
+        "department": posting.department_name if posting else None,
+        "offered_salary": offer.offered_salary,
+        "allowance": offer.allowance,
+        "currency": offer.currency,
+        "start_date": offer.start_date,
+        "work_location": offer.work_location,
+        "probation_duration_months": offer.probation_duration_months,
+        "probation_salary_percentage": offer.probation_salary_percentage,
+        "response_deadline": offer.response_deadline,
+    }
 
 
 @router.post("/offers/respond")

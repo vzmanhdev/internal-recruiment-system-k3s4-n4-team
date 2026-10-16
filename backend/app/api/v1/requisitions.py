@@ -18,6 +18,7 @@ from app.api.deps import get_current_user_obj, require_permission
 from app.services.rbac_service import get_user_roles, get_effective_permissions
 from app.models.audit import AuditLog
 from app.services.notification_service import notify, users_with_roles
+from app.core.search import build_search_filter, build_search_score
 
 router = APIRouter()
 
@@ -220,6 +221,7 @@ def _next_code(db: Session) -> str:
 
 @router.get("")
 def list_requisitions(
+    search: Optional[str] = None,
     status_filter: Optional[str] = None,
     department_id: Optional[int] = None,
     recruiter_id: Optional[int] = None,
@@ -235,6 +237,11 @@ def list_requisitions(
         query = query.filter(
             (JobRequisition.created_by_id == current_user.id) | (JobRequisition.id.in_(assigned or {-1}))
         )
+    search_score = None
+    if search and search.strip():
+        search_cols = [JobRequisition.title, JobRequisition.code]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
     if status_filter:
         query = query.filter(JobRequisition.status == status_filter)
     if department_id:
@@ -246,7 +253,10 @@ def list_requisitions(
         query = query.filter(JobRequisition.created_at >= datetime.combine(date_from, datetime.min.time()))
     if date_to:
         query = query.filter(JobRequisition.created_at <= datetime.combine(date_to, datetime.max.time()))
-    rows = query.order_by(JobRequisition.created_at.desc()).all()
+    if search_score is not None:
+        rows = query.order_by(search_score.desc(), JobRequisition.created_at.desc()).all()
+    else:
+        rows = query.order_by(JobRequisition.created_at.desc()).all()
     # S3-06: show who is in charge; one query for all assignments on the page.
     assigned = {}
     if rows:

@@ -18,6 +18,7 @@ from app.schemas.email_automation import (
     EmailTemplateResponse,
     EmailLogResponse
 )
+from app.core.search import build_search_filter, build_search_score
 
 router = APIRouter(prefix="/email-automation", tags=["email-automation"])
 
@@ -157,14 +158,16 @@ def get_email_logs(
     query = db.query(EmailLog)
     if status_filter and status_filter.lower() != "all":
         query = query.filter(EmailLog.status == status_filter.lower())
-    if search:
-        pattern = f"%{search}%"
-        query = query.filter(
-            (EmailLog.recipient_name.ilike(pattern)) |
-            (EmailLog.recipient_email.ilike(pattern)) |
-            (EmailLog.subject.ilike(pattern))
-        )
-    logs = query.order_by(EmailLog.sent_at.desc()).limit(500).all()
+    search_score = None
+    if search and search.strip():
+        search_cols = [EmailLog.recipient_name, EmailLog.recipient_email, EmailLog.subject]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
+
+    if search_score is not None:
+        logs = query.order_by(search_score.desc(), EmailLog.sent_at.desc()).limit(500).all()
+    else:
+        logs = query.order_by(EmailLog.sent_at.desc()).limit(500).all()
     return [log.to_dict() for log in logs]
 
 

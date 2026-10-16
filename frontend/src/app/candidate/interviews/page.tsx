@@ -46,7 +46,7 @@ function toItem(i: ApiInterview, now: number): InterviewItem {
     id: `IV-${i.id}`,
     interviewId: i.id,
     position: i.job_title || '',
-    department: '',
+    department: i.department || '',
     round: i.round_name,
     dateDisplay: start.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }),
     timeDisplay: `${pad(start.getHours())}:${pad(start.getMinutes())} - ${pad(end.getHours())}:${pad(end.getMinutes())} (GMT+7)`,

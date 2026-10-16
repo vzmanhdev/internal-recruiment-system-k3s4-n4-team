@@ -33,6 +33,7 @@ COMPAT_COLUMNS: List[Tuple[str, str, str, str]] = [
     ("users", "locked_until", "DATETIME", ""),
     ("users", "security_version", "INTEGER", "NOT NULL DEFAULT 1"),
     ("users", "last_login_at", "DATETIME", ""),
+    ("users", "email_verified_at", "DATETIME", ""),
     ("users", "version", "INTEGER", "NOT NULL DEFAULT 1"),
     ("competencies", "weight", "FLOAT", "NOT NULL DEFAULT 0"),
     ("job_postings", "slug", "VARCHAR(255)", "DEFAULT ''"),
@@ -156,7 +157,8 @@ def sync_legacy_user_roles(connection: Connection) -> int:
     for uid, legacy in connection.execute(text("SELECT id, role FROM users")).all():
         if uid in linked or not legacy:
             continue
-        for code in dict.fromkeys(c.strip().lower() for c in legacy.split(",") if c.strip()):
+        from app.db.rbac_catalog import canonical_role
+        for code in dict.fromkeys(canonical_role(c) for c in legacy.split(",") if c.strip()):
             if code in roles:
                 connection.execute(
                     text("INSERT INTO user_roles (user_id, role_id, assigned_at) VALUES (:u, :r, :t)"),
