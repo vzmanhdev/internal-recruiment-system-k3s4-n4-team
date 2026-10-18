@@ -79,6 +79,8 @@ export const masterDataService = {
     apiRequest<Department>(id ? `/hr/departments/${id}` : "/hr/departments", json(id ? "PUT" : "POST", d)),
   setDepartmentActive: (id: number, active: boolean) =>
     apiRequest<Department>(`/hr/departments/${id}/${active ? "activate" : "deactivate"}`, { method: "POST" }),
+  deactivateDepartment: (id: number) =>
+    apiRequest<Department>(`/hr/departments/${id}/deactivate`, { method: "POST" }),
   deleteDepartment: (id: number) => apiRequest(`/hr/departments/${id}`, { method: "DELETE" }),
 
   jobTitles: () => apiRequest<JobTitle[]>("/hr/job-titles"),
