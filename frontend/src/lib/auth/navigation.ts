@@ -90,13 +90,13 @@ export const NAVIGATION: NavGroup[] = [
     ],
   },
   {
-    id: "interviews", label: "Phỏng vấn & đánh giá", icon: "calendar", items: [
+    id: "interviews", label: "Phòng vấn & đánh giá", icon: "calendar", items: [
       leaf("int.schedule", "Lịch phỏng vấn", "calendar", "/hr/interviews", "/recruiter/interviews", "/manager/interviews"),
+      leaf("int.evaluations", "Phiếu & Kết quả đánh giá", "clipboard", "/hr/evaluations", "/manager/evaluations"),
+      leaf("int.questions", "Ngân hàng câu hỏi", "book", "/hr/interview-questions", "/interviewer/questions"),
       leaf("int.mine", "Lịch phỏng vấn của tôi", "clock", "/interviewer/schedule"),
       leaf("int.pending", "Phiếu đánh giá chờ nộp", "clipboard", "/interviewer/evaluations/pending"),
       leaf("int.history", "Lịch sử đánh giá", "history", "/interviewer/evaluations/history"),
-      leaf("int.dept-evals", "Kết quả đánh giá bộ phận", "clipboard", "/manager/evaluations"),
-      leaf("int.questions", "Ngân hàng câu hỏi", "book", "/interviewer/questions"),
     ],
   },
   {

@@ -356,6 +356,19 @@ def cancel_interview(interview_id: int, payload: InterviewCancel, current_user: 
     return interview.to_dict()
 
 
+@router.delete("/{interview_id}", status_code=204)
+def delete_interview(interview_id: int, current_user: User = Depends(get_current_user_obj), db: Session = Depends(get_db)):
+    require_any_permission(db, current_user, "interview:schedule")
+    interview = _get_interview(db, interview_id)
+    ensure_can_manage_application(db, current_user, interview.application)
+    if _has_evaluation(db, interview):
+        raise HTTPException(status_code=409, detail="Buổi phỏng vấn đã có phiếu đánh giá được nộp, không thể xóa.")
+    db.query(InterviewInterviewer).filter(InterviewInterviewer.interview_id == interview.id).delete(synchronize_session=False)
+    db.delete(interview)
+    db.commit()
+    return None
+
+
 @router.post("/{interview_id}/candidate-response")
 def candidate_response(interview_id: int, payload: CandidateReply, current_user: User = Depends(get_current_user_obj),
                        db: Session = Depends(get_db)):

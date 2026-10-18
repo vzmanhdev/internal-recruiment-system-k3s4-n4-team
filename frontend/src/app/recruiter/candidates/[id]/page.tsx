@@ -48,7 +48,15 @@ import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { ApiError } from '@/lib/api-client';
 
-export default function UnifiedCandidateDetailPage() {
+export interface UnifiedCandidateDetailViewProps {
+  backHref?: string;
+  backLabel?: string;
+}
+
+export function UnifiedCandidateDetailView({
+  backHref = '/recruiter/candidates',
+  backLabel = 'Hồ sơ hợp nhất',
+}: UnifiedCandidateDetailViewProps) {
   const params = useParams();
   const router = useRouter();
   const appId = Number(params?.id);
@@ -202,7 +210,7 @@ export default function UnifiedCandidateDetailPage() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => router.push('/recruiter/candidates')}
+            onClick={() => router.push(backHref)}
             className="p-2.5 rounded-2xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors shadow-xs cursor-pointer"
             title="Quay lại danh sách hồ sơ"
           >
@@ -210,8 +218,8 @@ export default function UnifiedCandidateDetailPage() {
           </button>
           <div>
             <div className="flex items-center gap-2 text-xs text-slate-400 font-medium mb-0.5">
-              <Link href="/recruiter/candidates" className="hover:text-blue-600 transition-colors">
-                Hồ sơ hợp nhất
+              <Link href={backHref} className="hover:text-blue-600 transition-colors">
+                {backLabel}
               </Link>
               <span>&rsaquo;</span>
               <span className="font-mono text-slate-700 font-bold">{candidate.id}</span>
@@ -1082,4 +1090,8 @@ export default function UnifiedCandidateDetailPage() {
       )}
     </div>
   );
+}
+
+export default function UnifiedCandidateDetailPage() {
+  return <UnifiedCandidateDetailView />;
 }

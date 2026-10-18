@@ -42,6 +42,7 @@ import {
   Briefcase,
   HelpCircle,
   ArrowUpRight,
+  ArrowRightLeft,
 } from "lucide-react";
 
 // =============================================================================
@@ -59,12 +60,18 @@ export interface Requisition {
   salaryRangeDisplay: string;
   targetDate: string;
   status: "pending_approval" | "in_progress" | "paused" | "cancelled" | "completed";
+  rawStatus: string;
   slaStatus: "normal" | "warning" | "overdue";
   delayDays: number;
   pendingSinceDays: number; // Số ngày bị kẹt chờ duyệt
   primaryRecruiter: string;
+  primaryRecruiterId?: number;
+  primaryRecruiterAccountStatus?: string;
   createdAt: string;
   urgency: "Bình thường" | "Khẩn cấp" | "Chiến lược";
+  needsHandover?: boolean;
+  handoverReasonFlag?: string | null;
+  recruiters?: Array<{ recruiter_id: number; full_name: string; assignment_type: string; account_status?: string; is_active?: boolean }>;
 }
 
 export interface DepartmentBudget {
@@ -135,23 +142,30 @@ function toRequisition(r: RequisitionItem & { updated_at?: string | null; days_r
     salaryRangeDisplay: r.is_salary_negotiable ? "Thỏa thuận" : `${fmt(r.min_salary)} - ${fmt(r.max_salary)} Triệu`,
     targetDate: r.target_onboard_date || "",
     status,
+    rawStatus: r.status,
     slaStatus: r.is_overdue ? "overdue" : remaining !== null && remaining <= 7 ? "warning" : "normal",
     delayDays: remaining !== null && remaining < 0 ? -remaining : 0,
     pendingSinceDays,
     primaryRecruiter: primary?.full_name || UNASSIGNED,
+    primaryRecruiterId: primary?.recruiter_id,
+    primaryRecruiterAccountStatus: primary?.account_status,
     createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : "",
     urgency: r.priority === "urgent" || r.priority === "high" ? "Khẩn cấp" : r.priority === "strategic" ? "Chiến lược" : "Bình thường",
+    needsHandover: r.needs_handover,
+    handoverReasonFlag: r.handover_reason_flag,
+    recruiters: r.recruiters,
   };
 }
 
 async function loadBoard() {
   const year = new Date().getFullYear();
-  const [reqs, depts, budgets, flows, recruiters] = await Promise.all([
+  const [reqs, depts, budgets, flows, recruiters, handoverHistory] = await Promise.all([
     requisitionService.getRequisitions(),
     masterDataService.departments(false) as Promise<Array<{ id: number; name: string; code: string; head_name?: string | null; member_count?: number }>>,
     masterDataService.headcounts().catch(() => []),
     masterDataService.approvalFlows().catch(() => []),
     masterDataService.people("recruiter").catch(() => []),
+    requisitionService.getHandoverHistory().catch(() => []),
   ]);
   const open = new Set(["pending_manager", "pending_hr", "pending_executive", "approved"]);
   const departmentBudgets: DepartmentBudget[] = budgets.filter((b) => b.year === year && b.budget_quantity > 0).map((b) => {
@@ -181,7 +195,7 @@ async function loadBoard() {
       steps: f.steps.map((code, i) => ({ stepNumber: i + 1, approverRole: STEP_ROLE[code] || code, approverName: "Theo phân quyền", slaHours: APPROVAL_REMINDER_DAYS * 24 })),
     };
   });
-  return { reqs, departmentBudgets, workflowRules, recruiters, now: Date.now() };
+  return { reqs, depts, departmentBudgets, workflowRules, recruiters, handoverHistory, now: Date.now() };
 }
 
 // =============================================================================
@@ -189,7 +203,7 @@ async function loadBoard() {
 // =============================================================================
 
 export default function HRRequisitionsPage() {
-  const [activeTab, setActiveTab] = useState<"requisitions" | "headcount">("requisitions");
+  const [activeTab, setActiveTab] = useState<"requisitions" | "headcount" | "handover">("requisitions");
 
   // Requisitions data
   const { data: board, error, loading, reload } = useApiData(loadBoard, []);
@@ -218,6 +232,51 @@ export default function HRRequisitionsPage() {
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
+  };
+
+  // Requisition Handover Modal (S1-10 & S3-06)
+  const [isHandoverModalOpen, setIsHandoverModalOpen] = useState(false);
+  const [handoverReq, setHandoverReq] = useState<Requisition | null>(null);
+  const [handoverRecruiterId, setHandoverRecruiterId] = useState<number | null>(null);
+  const [handoverReason, setHandoverReason] = useState("");
+  const [isSubmittingHandover, setIsSubmittingHandover] = useState(false);
+
+  const openHandoverModal = (req: Requisition) => {
+    setHandoverReq(req);
+    setHandoverReason(req.handoverReasonFlag || "");
+    const firstActiveRecruiter = board?.recruiters.find((u) => u.id !== req.primaryRecruiterId);
+    setHandoverRecruiterId(firstActiveRecruiter ? firstActiveRecruiter.id : board?.recruiters[0]?.id || null);
+    setIsHandoverModalOpen(true);
+  };
+
+  const handleConfirmHandover = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!handoverReq || !handoverRecruiterId) {
+      showToast("Vui lòng chọn Recruiter tiếp nhận bàn giao!", "error");
+      return;
+    }
+    if (!handoverReason.trim()) {
+      showToast("Bắt buộc nhập lý do bàn giao (S1-10 & S3-06)!", "error");
+      return;
+    }
+    setIsSubmittingHandover(true);
+    try {
+      await requisitionService.assignRecruiter(
+        Number(handoverReq.id),
+        handoverRecruiterId,
+        "primary",
+        handoverReason.trim()
+      );
+      showToast(`Đã bàn giao vị trí "${handoverReq.code}" thành công!`, "success");
+      setIsHandoverModalOpen(false);
+      setHandoverReq(null);
+      setHandoverReason("");
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không thể bàn giao vị trí tuyển dụng.", "error");
+    } finally {
+      setIsSubmittingHandover(false);
+    }
   };
 
   // Handle assign recruiter dropdown change (primary recruiter, S3-06)
@@ -295,7 +354,11 @@ export default function HRRequisitionsPage() {
 
       const matchStatus =
         selectedStatus === "all" ||
-        (selectedStatus === "overdue" ? r.pendingSinceDays >= 3 || r.slaStatus === "overdue" : r.status === selectedStatus);
+        (selectedStatus === "needs_handover"
+          ? Boolean(r.needsHandover)
+          : selectedStatus === "overdue"
+          ? r.pendingSinceDays >= 3 || r.slaStatus === "overdue"
+          : r.status === selectedStatus);
 
       const matchDept = selectedDept === "all" || r.department === selectedDept;
       const matchRecruiter = selectedRecruiter === "all" || r.primaryRecruiter === selectedRecruiter;
@@ -322,6 +385,10 @@ export default function HRRequisitionsPage() {
     return requisitions.filter(
       (r) => (r.status === "pending_approval" && r.pendingSinceDays >= 3) || r.slaStatus === "overdue"
     ).length;
+  }, [requisitions]);
+
+  const handoverCount = useMemo(() => {
+    return requisitions.filter((r) => r.needsHandover).length;
   }, [requisitions]);
 
   if (loading) return <LoadingState />;
@@ -382,7 +449,7 @@ export default function HRRequisitionsPage() {
           </div>
         </div>
 
-        {/* 2 TABS SWITCHER: DANH SÁCH YC vs NGÂN SÁCH HEADCOUNT */}
+        {/* 3 TABS SWITCHER: DANH SÁCH YC vs NGÂN SÁCH HEADCOUNT vs LỊCH SỬ BÀN GIAO */}
         <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200/60 max-w-fit">
           <button
             type="button"
@@ -395,6 +462,11 @@ export default function HRRequisitionsPage() {
           >
             <FileCheck className="w-4 h-4" />
             <span>Danh sách Yêu cầu ({requisitions.length})</span>
+            {handoverCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-700 font-extrabold border border-amber-200 animate-pulse">
+                {handoverCount} cần bàn giao
+              </span>
+            )}
             {overdueCount > 0 && (
               <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-50 text-rose-700 font-extrabold border border-rose-200 animate-pulse">
                 {overdueCount} trễ SLA
@@ -417,6 +489,19 @@ export default function HRRequisitionsPage() {
               Quỹ nhân sự
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("handover")}
+            className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === "handover"
+                ? "bg-white text-blue-600 shadow-sm shadow-slate-200"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+            }`}
+          >
+            <ArrowRightLeft className="w-4 h-4" />
+            <span>Lịch sử Bàn giao Phụ trách ({board?.handoverHistory?.length || 0})</span>
+          </button>
         </div>
 
         {/* =================================================================== */}
@@ -424,6 +509,34 @@ export default function HRRequisitionsPage() {
         {/* =================================================================== */}
         {activeTab === "requisitions" && (
           <div className="space-y-4">
+            {/* Banner Cảnh báo Bàn giao nếu có vị trí bị khoá recruiter hoặc chưa gán */}
+            {handoverCount > 0 && (
+              <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-amber-900 uppercase tracking-wide">
+                      Cảnh báo bàn giao tuyển dụng (S1-10 & S3-06)
+                    </h4>
+                    <p className="text-xs text-amber-800 font-medium mt-0.5">
+                      Có <strong>{handoverCount}</strong> vị trí đang mở tuyển cần bàn giao do Recruiter bị khoá tài khoản/nghỉ việc hoặc chưa có người phụ trách chính.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStatus(selectedStatus === "needs_handover" ? "all" : "needs_handover")}
+                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  >
+                    {selectedStatus === "needs_handover" ? "Hiển thị tất cả YC" : "Lọc vị trí cần bàn giao"}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Filter Bar */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
               <div className="flex flex-wrap items-center gap-2.5 flex-1">
@@ -453,6 +566,7 @@ export default function HRRequisitionsPage() {
                     className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-700 focus:outline-hidden"
                   >
                     <option value="all">Tất cả trạng thái</option>
+                    <option value="needs_handover">⚠️ Cần bàn giao / Chưa phụ trách</option>
                     <option value="overdue">🔴 Quá hạn SLA (&gt;3 ngày)</option>
                     <option value="in_progress">🟢 Đang tuyển dụng</option>
                     <option value="pending_approval">🟡 Chờ phê duyệt</option>
@@ -469,10 +583,11 @@ export default function HRRequisitionsPage() {
                     className="text-xs bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-slate-700 focus:outline-hidden"
                   >
                     <option value="all">Tất cả phòng ban</option>
-                    <option value="Khối Công Nghệ (Tech Hub)">Khối Công Nghệ (Tech Hub)</option>
-                    <option value="Khối Dữ Liệu & Phân Tích">Khối Dữ Liệu & Phân Tích</option>
-                    <option value="Khối Kinh Doanh & Tăng Trưởng">Khối Kinh Doanh & Tăng Trưởng</option>
-                    <option value="Khối Quản Trị Nhân Sự (HR Hub)">Khối Quản Trị Nhân Sự (HR Hub)</option>
+                    {(board?.depts || []).map((d) => (
+                      <option key={d.id} value={d.name}>
+                        {d.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -572,16 +687,18 @@ export default function HRRequisitionsPage() {
                             )}
                           </td>
 
-                          {/* Cột Phân công (Assign) Dropdown */}
+                          {/* Cột Phân công (Assign) Dropdown & Nút Bàn giao */}
                           <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
                               <select
                                 value={req.primaryRecruiter}
                                 onChange={(e) =>
                                   handleAssignRecruiter(req.id, e.target.value)
                                 }
                                 className={`text-xs px-2.5 py-1.5 rounded-xl border font-bold transition-all focus:outline-hidden ${
-                                  req.primaryRecruiter === "Chưa phân công"
+                                  req.needsHandover
+                                    ? "bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-400/30"
+                                    : req.primaryRecruiter === "Chưa phân công"
                                     ? "bg-amber-50 text-amber-800 border-amber-200"
                                     : "bg-white text-slate-800 border-slate-200 hover:border-blue-300"
                                 }`}
@@ -594,7 +711,26 @@ export default function HRRequisitionsPage() {
                                   </option>
                                 ))}
                               </select>
+
+                              {/* Nút mở Modal bàn giao kèm lý do (S3-06 & S1-10) */}
+                              <button
+                                type="button"
+                                title="Bàn giao phụ trách (kèm lý do và lưu audit trail)"
+                                onClick={() => openHandoverModal(req)}
+                                className={`p-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shrink-0 ${
+                                  req.needsHandover
+                                    ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                                    : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 hover:text-slate-900"
+                                }`}
+                              >
+                                <ArrowRightLeft className="w-3.5 h-3.5" />
+                              </button>
                             </div>
+                            {req.needsHandover && req.handoverReasonFlag && (
+                              <span className="text-[10px] text-amber-700 font-bold block mt-1">
+                                ⚠️ {req.handoverReasonFlag}
+                              </span>
+                            )}
                           </td>
 
                           {/* Trạng thái REQ */}
@@ -624,6 +760,15 @@ export default function HRRequisitionsPage() {
                           {/* Actions: Nút đổi trạng thái để dừng đăng tin lập tức */}
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              <Link
+                                href={`/hr/requisitions/${req.id}`}
+                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                                title="Xem chi tiết và luồng phê duyệt"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Chi tiết</span>
+                              </Link>
+
                               {req.status === "in_progress" ? (
                                 <button
                                   type="button"
@@ -685,7 +830,7 @@ export default function HRRequisitionsPage() {
 
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-blue-200 shadow-2xs">
-                  Tổng định biên toàn công ty: <strong>41 nhân sự</strong>
+                  Tổng định biên toàn công ty: <strong>{budgets.reduce((sum, b) => sum + (b.allocatedHeadcount || 0), 0)} nhân sự</strong>
                 </span>
               </div>
             </div>
@@ -808,6 +953,88 @@ export default function HRRequisitionsPage() {
             </div>
           </div>
         )}
+
+        {/* =================================================================== */}
+        {/* TAB 3: LỊCH SỬ CHUYỂN GIAO PHỤ TRÁCH (S3-06 & S1-10) */}
+        {/* =================================================================== */}
+        {activeTab === "handover" && (
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-blue-900">
+                  Nhật Ký Chuyển Giao Phụ Trách & Bàn Giao Vị Trí Tuyển Dụng
+                </h3>
+                <p className="text-xs text-blue-700 mt-0.5">
+                  Lưu vết kiểm toán toàn bộ thao tác phân công, thay đổi người phụ trách và bàn giao khi Recruiter nghỉ việc / khoá tài khoản (S1-10 & S3-06).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => reload()}
+                className="px-3.5 py-1.5 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer self-start sm:self-auto"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Làm mới nhật ký</span>
+              </button>
+            </div>
+
+            <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+                      <th className="py-3.5 px-4 w-40">Thời gian</th>
+                      <th className="py-3.5 px-4 w-44">Tờ trình / Vị trí</th>
+                      <th className="py-3.5 px-3 w-40">Người thực hiện</th>
+                      <th className="py-3.5 px-3 w-36">Thao tác</th>
+                      <th className="py-3.5 px-4">Chi tiết & Lý do chuyển giao</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white font-medium">
+                    {(!board?.handoverHistory || board.handoverHistory.length === 0) ? (
+                      <tr>
+                        <td colSpan={5} className="py-12 text-center text-slate-400 text-xs">
+                          Chưa có lịch sử chuyển giao phụ trách nào được ghi nhận.
+                        </td>
+                      </tr>
+                    ) : (
+                      board.handoverHistory.map((item) => (
+                        <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px]">
+                            {item.created_at ? new Date(item.created_at).toLocaleString("vi-VN") : "—"}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="font-mono bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold text-[10px] mr-1.5">
+                              {item.requisition_code}
+                            </span>
+                            <span className="font-bold text-slate-900 block mt-0.5">
+                              {item.requisition_title}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 font-bold text-slate-700">
+                            {item.approver_name}
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                              item.action === "recruiter_handover"
+                                ? "bg-amber-50 text-amber-800 border-amber-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                            }`}>
+                              {item.action === "recruiter_handover" ? "Bàn giao phụ trách" : "Phân công mới"}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-700">
+                            {item.comment || "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* =================================================================== */}
@@ -921,18 +1148,24 @@ export default function HRRequisitionsPage() {
             {/* Modal Footer */}
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
               <span className="text-xs text-slate-400">
-                Thay đổi sẽ áp dụng cho tất cả các tờ trình tạo mới từ thời điểm lưu.
+                Cấu hình áp dụng trực tiếp cho các luồng duyệt tờ trình theo bậc lương & phòng ban.
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  showToast("Đã lưu ma trận luồng phê duyệt thành công!");
-                  setIsWorkflowModalOpen(false);
-                }}
-                className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 transition-all cursor-pointer"
-              >
-                Lưu cấu hình luồng duyệt
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsWorkflowModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <Link
+                  href="/hr/master-data/approval-flows"
+                  className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/20 transition-all cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <span>Quản trị Ma trận Phê duyệt</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -1006,6 +1239,118 @@ export default function HRRequisitionsPage() {
                   className="px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-500/20 transition-all cursor-pointer"
                 >
                   Xác nhận thay đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL 3: BÀN GIAO PHỤ TRÁCH RECRUITER (S1-10 & S3-06) */}
+      {/* =================================================================== */}
+      {isHandoverModalOpen && handoverReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                  <ArrowRightLeft className="w-4 h-4 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">
+                    Bàn Giao Phụ Trách Tuyển Dụng
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Chuyển giao quyền quản lý pipeline ứng viên & lưu vết kiểm toán (Audit Trail)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsHandoverModalOpen(false)}
+                className="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmHandover} className="p-6 space-y-4">
+              {/* Position Info */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                    {handoverReq.code}
+                  </span>
+                  <span className="text-slate-500 font-semibold">{handoverReq.department}</span>
+                </div>
+                <div className="font-extrabold text-slate-900 text-sm">
+                  {handoverReq.title}
+                </div>
+                <div className="text-[11px] text-slate-500 pt-1 flex items-center gap-2 border-t border-slate-200/60">
+                  <span>Phụ trách hiện tại:</span>
+                  <strong className={handoverReq.needsHandover ? "text-amber-700 font-bold" : "text-slate-800"}>
+                    {handoverReq.primaryRecruiter}
+                  </strong>
+                  {handoverReq.needsHandover && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-extrabold">
+                      Cần bàn giao
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Recruiter Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Chuyên viên Tuyển dụng (Recruiter) tiếp nhận <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={handoverRecruiterId || ""}
+                  onChange={(e) => setHandoverRecruiterId(Number(e.target.value))}
+                  className="w-full text-xs bg-white border border-slate-200 rounded-xl px-3 py-2.5 font-bold text-slate-800 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  required
+                >
+                  <option value="" disabled>-- Chọn Recruiter tiếp nhận --</option>
+                  {(board?.recruiters || [])
+                    .filter((u) => u.id !== handoverReq.primaryRecruiterId)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.full_name} ({u.email})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Handover Reason */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Lý do bàn giao / chuyển giao phụ trách <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={handoverReason}
+                  onChange={(e) => setHandoverReason(e.target.value)}
+                  placeholder="Ví dụ: Recruiter cũ nghỉ việc/khoá tài khoản (S1-10); Điều phối lại tải công việc giữa các thành viên (S3-06)..."
+                  className="w-full text-xs p-3 bg-white border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsHandoverModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingHandover}
+                  className="px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-xl transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+                >
+                  {isSubmittingHandover ? "Đang xử lý..." : "Xác nhận bàn giao"}
                 </button>
               </div>
             </form>

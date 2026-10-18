@@ -46,7 +46,21 @@ export interface RequisitionItem {
   job_title_name?: string | null;
   job_title_id?: number | null;
   salary_justification?: string | null;
-  recruiters?: Array<{ recruiter_id: number; full_name: string; assignment_type: string }>;
+  recruiters?: Array<{ recruiter_id: number; full_name: string; assignment_type: string; account_status?: string; is_active?: boolean }>;
+  needs_handover?: boolean;
+  handover_reason_flag?: string | null;
+}
+
+export interface HandoverHistoryItem {
+  id: number;
+  requisition_id: number;
+  requisition_code: string;
+  requisition_title: string;
+  approver_name: string;
+  action: string;
+  step_name: string;
+  comment: string;
+  created_at: string;
 }
 
 export const requisitionService = {
@@ -88,11 +102,21 @@ export const requisitionService = {
     });
   },
 
-  async assignRecruiter(id: number, recruiter_id: number, assignment_type: "primary" | "secondary" = "primary"): Promise<{ success: boolean; message: string }> {
+  async assignRecruiter(
+    id: number,
+    recruiter_id: number,
+    assignment_type: "primary" | "secondary" = "primary",
+    handover_reason?: string
+  ): Promise<{ success: boolean; message: string }> {
     return apiRequest(`/requisitions/${id}/assign-recruiters`, {
       method: "POST",
-      body: JSON.stringify({ recruiter_id, assignment_type }),
+      body: JSON.stringify({ recruiter_id, assignment_type, handover_reason }),
     });
+  },
+
+  async getHandoverHistory(requisition_id?: number): Promise<HandoverHistoryItem[]> {
+    const q = requisition_id ? `?requisition_id=${requisition_id}` : "";
+    return apiRequest<HandoverHistoryItem[]>(`/requisitions/handover-history${q}`);
   },
 
   async resumeRequisition(id: number, reason: string): Promise<RequisitionItem> {

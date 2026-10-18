@@ -4,6 +4,7 @@ import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { apiRequest, ApiError } from '@/lib/api-client';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 
@@ -108,6 +109,11 @@ function CandidateInterviewAction() {
 
     if (rescheduleType === 'reschedule' && (!proposedDate || !proposedTime)) {
       setFormError('Vui lòng chọn ngày và khung giờ bạn có thể tham gia thuận tiện.');
+      return;
+    }
+
+    if (rescheduleType === 'reschedule' && proposedDate && isPastDate(proposedDate)) {
+      setFormError('Ngày bạn chọn không được ở trong quá khứ.');
       return;
     }
 
@@ -337,6 +343,7 @@ function CandidateInterviewAction() {
                   <input
                     type="date"
                     required
+                    min={getLocalTodayDateString()}
                     value={proposedDate}
                     onChange={(e) => setProposedDate(e.target.value)}
                     className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-base font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"

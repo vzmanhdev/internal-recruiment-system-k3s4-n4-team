@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { getSearchScore } from '@/utils/vietnameseSearch';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
 import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Calendar as CalendarIcon,
@@ -281,6 +282,10 @@ export default function RecruiterInterviewsPage() {
       showToast('Giờ kết thúc phải sau giờ bắt đầu.');
       return;
     }
+    if (isPastDate(individualForm.date)) {
+      showToast('Không thể đặt lịch phỏng vấn trong quá khứ.');
+      return;
+    }
     if (individualForm.type === 'online' && !individualForm.meetLink.trim()) {
       showToast('Vui lòng nhập đường link phỏng vấn trực tuyến.');
       return;
@@ -316,6 +321,7 @@ export default function RecruiterInterviewsPage() {
     if (!count) { showToast('Vui lòng chọn ít nhất một ứng viên.'); return; }
     if (!bulkForm.interviewer) { showToast('Vui lòng chọn người phỏng vấn.'); return; }
     if (!bulkForm.date) { showToast('Vui lòng chọn ngày phỏng vấn.'); return; }
+    if (isPastDate(bulkForm.date)) { showToast('Không thể đặt lịch phỏng vấn trong quá khứ.'); return; }
     setSaving(true);
     try {
       const res = await apiRequest<{ created: InterviewItem[] }>('/interviews/bulk', {
@@ -356,6 +362,7 @@ export default function RecruiterInterviewsPage() {
     if (!sess) return;
     const duration = minutesBetween(rescheduleStartTime, rescheduleEndTime);
     if (duration <= 0) { showToast('Giờ kết thúc phải sau giờ bắt đầu.'); return; }
+    if (isPastDate(rescheduleDate)) { showToast('Không thể dời lịch phỏng vấn vào quá khứ.'); return; }
     setSaving(true);
     try {
       const updated = await apiRequest<InterviewItem>(`/interviews/${sess.interviewId}`, {
@@ -1013,6 +1020,7 @@ export default function RecruiterInterviewsPage() {
                       <input
                         type="date"
                         required
+                        min={getLocalTodayDateString()}
                         value={individualForm.date}
                         onChange={(e) =>
                           setIndividualForm({ ...individualForm, date: e.target.value })
@@ -1152,6 +1160,7 @@ export default function RecruiterInterviewsPage() {
                       <label className="block font-bold text-slate-800 mb-1">Ngày phỏng vấn</label>
                       <input
                         type="date"
+                        min={getLocalTodayDateString()}
                         value={bulkForm.date}
                         onChange={(e) => setBulkForm({ ...bulkForm, date: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
@@ -1308,6 +1317,7 @@ export default function RecruiterInterviewsPage() {
                 <input
                   type="date"
                   required
+                  min={getLocalTodayDateString()}
                   value={rescheduleDate}
                   onChange={(e) => setRescheduleDate(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800"

@@ -192,6 +192,14 @@ def create_job(
     if not db.query(Department.id).filter(Department.id == payload.department_id).first():
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
 
+    if payload.deadline:
+        try:
+            deadline_date = date.fromisoformat(payload.deadline[:10])
+            if deadline_date < date.today():
+                raise HTTPException(status_code=422, detail="Hạn nộp hồ sơ không được ở quá khứ.")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Hạn nộp hồ sơ không đúng định dạng YYYY-MM-DD.")
+
     base_slug = slugify(payload.title)
     slug = base_slug
     idx = 1
@@ -228,6 +236,14 @@ def update_job(
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
     if job.status == "closed":
         raise HTTPException(status_code=409, detail="Tin tuyển dụng đã đóng, không thể chỉnh sửa.")
+
+    if payload.deadline:
+        try:
+            deadline_date = date.fromisoformat(payload.deadline[:10])
+            if deadline_date < date.today():
+                raise HTTPException(status_code=422, detail="Hạn nộp hồ sơ không được ở quá khứ.")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Hạn nộp hồ sơ không đúng định dạng YYYY-MM-DD.")
 
     for field in ("title", "department_id", "department_name", "location", "type", "level", "salary_range",
                   "experience_level", "deadline", "description", "requirements", "benefits", "min_years_experience"):

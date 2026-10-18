@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { getSearchScore } from '@/utils/vietnameseSearch';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
 import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   FileText,
@@ -277,6 +278,10 @@ export default function RecruiterJobsPage() {
       showToast('Vui lòng nhập tiêu đề và mô tả công việc.', 'info');
       return;
     }
+    if (createForm.expiryDate && isPastDate(createForm.expiryDate)) {
+      showToast('Hạn nộp hồ sơ không được ở trong quá khứ.', 'info');
+      return;
+    }
     setSaving(true);
     try {
       const created = await jobService.createJob({
@@ -325,6 +330,10 @@ export default function RecruiterJobsPage() {
   const handleSaveExpiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!jobToSetExpiry || !newExpiryDate) return;
+    if (isPastDate(newExpiryDate)) {
+      showToast('Hạn nộp hồ sơ mới không được ở trong quá khứ.', 'info');
+      return;
+    }
     setSaving(true);
     try {
       const updated = await apiRequest<JobPostingItem>(`/jobs/${jobToSetExpiry.raw.id}`, {
@@ -1230,12 +1239,16 @@ export default function RecruiterJobsPage() {
                     <label className="block font-bold text-slate-700 mb-1">Ngày hết hạn tin</label>
                     <input
                       type="date"
+                      min={getLocalTodayDateString()}
                       value={createForm.expiryDate}
                       onChange={(e) =>
                         setCreateForm({ ...createForm, expiryDate: e.target.value })
                       }
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                     />
+                    {createForm.expiryDate && isPastDate(createForm.expiryDate) && (
+                      <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày hết hạn không được ở quá khứ</p>
+                    )}
                   </div>
 
                   <div className="pt-2 sm:pt-4">
@@ -1420,10 +1433,14 @@ export default function RecruiterJobsPage() {
                 <input
                   type="date"
                   required
+                  min={getLocalTodayDateString()}
                   value={newExpiryDate}
                   onChange={(e) => setNewExpiryDate(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                 />
+                {newExpiryDate && isPastDate(newExpiryDate) && (
+                  <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày hết hạn mới không được ở quá khứ</p>
+                )}
               </div>
 
               {/* Auto Unpublish checkbox */}

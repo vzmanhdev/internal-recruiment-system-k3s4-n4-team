@@ -5,6 +5,7 @@ import {
   X, Calendar, Clock, Video, MapPin, Users, 
   Check, AlertCircle, Plus 
 } from "lucide-react";
+import { getLocalTodayDateString, isPastDate } from "@/utils/dateUtils";
 
 export interface InterviewFormData {
   candidateName: string;
@@ -124,6 +125,10 @@ export const CreateInterviewModal: React.FC<CreateInterviewModalProps> = ({
       setErrorMsg("Vui lòng chọn ít nhất 1 thành viên hội đồng phỏng vấn!");
       return;
     }
+    if (isPastDate(interviewDate)) {
+      setErrorMsg("Ngày phỏng vấn không được ở trong quá khứ!");
+      return;
+    }
 
     onSubmit({
       candidateName,
@@ -231,11 +236,15 @@ export const CreateInterviewModal: React.FC<CreateInterviewModalProps> = ({
                 <input
                   type="date"
                   required
+                  min={getLocalTodayDateString()}
                   value={interviewDate}
                   onChange={(e) => setInterviewDate(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>
+              {interviewDate && isPastDate(interviewDate) && (
+                <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày phỏng vấn không được ở quá khứ</p>
+              )}
             </div>
 
             {/* TRƯỜNG 4 & 5: GIỜ BẮT ĐẦU & GIỜ KẾT THÚC (col-span-1) */}

@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  X, DollarSign, AlertTriangle, CheckCircle2, Calendar, 
+  X, Banknote, AlertTriangle, CheckCircle2, Calendar, 
   FileText, ShieldCheck, Sparkles 
 } from "lucide-react";
+import { getLocalTodayDateString, isPastDate, addDaysToDate } from "@/utils/dateUtils";
 
 export interface CandidateOfferOption {
   id: string;
@@ -68,15 +69,11 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
       }
     }
 
-    if (!startDate) {
-      const d = new Date();
-      d.setDate(d.getDate() + 14);
-      setStartDate(d.toISOString().split("T")[0]);
+    if (!startDate || isPastDate(startDate)) {
+      setStartDate(addDaysToDate(14));
     }
-    if (!deadlineDate) {
-      const d = new Date();
-      d.setDate(d.getDate() + 7);
-      setDeadlineDate(d.toISOString().split("T")[0]);
+    if (!deadlineDate || isPastDate(deadlineDate)) {
+      setDeadlineDate(addDaysToDate(7));
     }
   }, [isOpen, options, selectedCandidateId, proposedSalaryInput, startDate, deadlineDate]);
 
@@ -98,6 +95,21 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
     e.preventDefault();
     if (!normalizedSalary || normalizedSalary <= 0) {
       alert("Vui lòng nhập mức lương đề xuất hợp lệ.");
+      return;
+    }
+
+    if (isPastDate(startDate)) {
+      alert("Ngày dự kiến đi làm không được ở trong quá khứ.");
+      return;
+    }
+
+    if (isPastDate(deadlineDate)) {
+      alert("Hạn chót phản hồi offer không được ở trong quá khứ.");
+      return;
+    }
+
+    if (deadlineDate && startDate && deadlineDate > startDate) {
+      alert("Hạn chót phản hồi offer phải trước hoặc bằng ngày dự kiến đi làm.");
       return;
     }
 
@@ -134,8 +146,8 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-xs">
-              <DollarSign className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-xs font-bold text-lg select-none">
+              ₫
             </div>
             <div>
               <h3 className="text-xl font-bold text-slate-800">Tạo Thư Mời Nhận Việc (Offer)</h3>
@@ -206,11 +218,13 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                   step="500000"
                   value={proposedSalaryInput}
                   onChange={(e) => setProposedSalaryInput(e.target.value)}
-                  placeholder="Ví dụ: 50000000"
+                  placeholder="Ví dụ: 35000000 hoặc 35 (triệu)"
                   required
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono font-medium pl-10"
                 />
-                <DollarSign className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-sm select-none">
+                  ₫
+                </span>
               </div>
 
               {/* Quick Preset Buttons */}
@@ -221,21 +235,21 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                   onClick={() => setProposedSalaryInput(currentCandidate.maxBandSalary.toString())}
                   className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium cursor-pointer transition-colors"
                 >
-                  Bằng chuẩn ({currentCandidate.maxBandSalary / 1000000}tr)
+                  Bằng chuẩn ({currentCandidate.maxBandSalary / 1000000} triệu VNĐ)
                 </button>
                 <button
                   type="button"
                   onClick={() => setProposedSalaryInput((currentCandidate.maxBandSalary + 2000000).toString())}
                   className="text-[11px] px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 font-medium cursor-pointer transition-colors border border-amber-200"
                 >
-                  Vượt +2 triệu ({(currentCandidate.maxBandSalary + 2000000) / 1000000}tr)
+                  Vượt +2 triệu ({(currentCandidate.maxBandSalary + 2000000) / 1000000} triệu VNĐ)
                 </button>
                 <button
                   type="button"
                   onClick={() => setProposedSalaryInput((currentCandidate.maxBandSalary + 5000000).toString())}
                   className="text-[11px] px-2 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 font-medium cursor-pointer transition-colors border border-rose-200"
                 >
-                  Vượt +5 triệu ({(currentCandidate.maxBandSalary + 5000000) / 1000000}tr)
+                  Vượt +5 triệu ({(currentCandidate.maxBandSalary + 5000000) / 1000000} triệu VNĐ)
                 </button>
               </div>
             </div>
@@ -268,13 +282,23 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
               <div className="relative">
                 <input
                   type="date"
+                  min={getLocalTodayDateString()}
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setStartDate(val);
+                    if (deadlineDate && val && deadlineDate > val) {
+                      setDeadlineDate(val);
+                    }
+                  }}
                   required
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium pl-10"
                 />
                 <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               </div>
+              {startDate && isPastDate(startDate) && (
+                <p className="text-[11px] text-rose-500 mt-1 font-medium">⚠️ Ngày đi làm không được ở trong quá khứ</p>
+              )}
             </div>
 
             {/* Hạn chót phản hồi Offer */}
@@ -285,6 +309,8 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
               <div className="relative">
                 <input
                   type="date"
+                  min={getLocalTodayDateString()}
+                  max={startDate || undefined}
                   value={deadlineDate}
                   onChange={(e) => setDeadlineDate(e.target.value)}
                   required
@@ -292,6 +318,12 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                 />
                 <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               </div>
+              {deadlineDate && isPastDate(deadlineDate) && (
+                <p className="text-[11px] text-rose-500 mt-1 font-medium">⚠️ Hạn phản hồi không được ở trong quá khứ</p>
+              )}
+              {startDate && deadlineDate && deadlineDate > startDate && (
+                <p className="text-[11px] text-rose-500 mt-1 font-medium">⚠️ Hạn phản hồi phải trước hoặc bằng ngày nhận việc</p>
+              )}
             </div>
 
             {/* Trợ cấp & Ghi chú thêm (col-span-2) */}

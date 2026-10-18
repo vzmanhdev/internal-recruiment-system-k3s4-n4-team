@@ -1,10 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { 
   Users, Search, Filter, Star, Eye, ChevronRight, CheckCircle2, 
-  XCircle, Clock, FileText, ArrowRight, UserCheck, ShieldAlert, Sparkles
+  XCircle, Clock, FileText, ArrowRight, UserCheck, ShieldAlert, Sparkles,
+  ExternalLink, Mail, Phone, Calendar, ArrowUpRight
 } from 'lucide-react';
+import { openProtectedFile } from '@/services/file.service';
 import { apiRequest, ApiError } from '@/lib/api-client';
 import { interviewService } from '@/services/interview.service';
 import type { ApiApplication } from '@/features/candidates/api';
@@ -203,39 +206,133 @@ export default function HRCandidatesPage() {
         </div>
       )}
 
-      {/* Candidate Quick Action Modal */}
+      {/* Enterprise Candidate Detail & Stage Transition Modal */}
       {selectedCandidate && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Ứng Viên: {selectedCandidate.name}</h3>
-              <button onClick={() => setSelectedCandidate(null)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="font-bold text-slate-900">{selectedCandidate.position_applied}</div>
-                <div className="text-slate-500">Email: {selectedCandidate.email} | SĐT: {selectedCandidate.phone}</div>
-                {moveError && <div className="text-rose-600 font-semibold">{moveError}</div>}
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Chuyển Giai Đoạn Phễu Mới *</label>
-                <div className="space-y-1">
-                  {STAGES.map((st) => (
-                    <button 
-                      key={st.key}
-                      onClick={() => moveStage(selectedCandidate.id, st.key as CandidateItem["stage"])}
-                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between border ${
-                        selectedCandidate.stage === st.key ? 'bg-blue-50 border-blue-300 text-blue-700 font-bold' : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span>{st.label}</span>
-                      {selectedCandidate.stage === st.key && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-                    </button>
-                  ))}
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-extrabold flex items-center justify-center text-sm shadow-xs">
+                  {selectedCandidate.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-900">{selectedCandidate.name}</h3>
+                    <span className="font-mono text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200">
+                      #{selectedCandidate.id}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 font-medium">{selectedCandidate.position_applied}</div>
                 </div>
               </div>
+              <button 
+                onClick={() => setSelectedCandidate(null)} 
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              {/* Info Grid */}
+              <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50/80 p-3.5 rounded-xl border border-slate-200/70">
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span className="truncate">{selectedCandidate.email}</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>{selectedCandidate.phone || 'Chưa có SĐT'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span>Nộp ngày: {selectedCandidate.applied_at || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Star className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" />
+                  <span className="font-bold text-slate-800">Đánh giá: {selectedCandidate.rating}/5</span>
+                </div>
+                <div className="col-span-2 flex items-center justify-between pt-2 border-t border-slate-200/60 text-[11px]">
+                  <span className="text-slate-500">Nguồn ứng viên: <strong className="text-slate-800">{selectedCandidate.source}</strong></span>
+                  <span className="bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full font-bold border border-blue-200">
+                    {STAGES.find(s => s.key === selectedCandidate.stage)?.label}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <Link
+                  href={`/hr/candidates/${selectedCandidate.id}`}
+                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>Xem Toàn Diện Hồ Sơ (Unified Profile)</span>
+                  <ArrowUpRight className="w-3.5 h-3.5 opacity-70" />
+                </Link>
+
+                {selectedCandidate.resume_url && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedCandidate.resume_url) {
+                        openProtectedFile(selectedCandidate.resume_url).catch((err) => {
+                          alert(err instanceof Error ? err.message : 'Không mở được CV');
+                        });
+                      }
+                    }}
+                    className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    <span>Xem Tệp CV</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Stage Transition Control */}
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Chuyển Giai Đoạn Tuyển Dụng (Pipeline Stage):
+                </label>
+                {moveError && (
+                  <div className="mb-2 text-xs text-rose-600 bg-rose-50 border border-rose-200 p-2 rounded-lg font-semibold">
+                    {moveError}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  {STAGES.map((st) => {
+                    const isCurrent = selectedCandidate.stage === st.key;
+                    return (
+                      <button 
+                        key={st.key}
+                        type="button"
+                        onClick={() => moveStage(selectedCandidate.id, st.key as CandidateItem["stage"])}
+                        className={`text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between border transition-all cursor-pointer ${
+                          isCurrent 
+                            ? 'bg-blue-50 border-blue-300 text-blue-800 font-bold shadow-2xs' 
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="truncate">{st.label}</span>
+                        {isCurrent && <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 ml-1" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedCandidate(null)}
+                className="px-4 py-1.5 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 transition-colors cursor-pointer"
+              >
+                Đóng
+              </button>
             </div>
           </div>
         </div>

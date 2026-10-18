@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { apiRequest, ApiError } from '@/lib/api-client';
 import { interviewService, type InterviewItem as ApiInterview } from '@/services/interview.service';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 
@@ -108,6 +109,10 @@ export default function CandidateInterviewsPage() {
   const handleSubmitReschedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rescheduleReason.trim() || !rescheduleModalItem) return;
+    if (rescheduleDate && isPastDate(rescheduleDate)) {
+      toast('Ngày bạn chọn không được ở trong quá khứ.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -354,6 +359,7 @@ export default function CandidateInterviewsPage() {
                   </label>
                   <input
                     type="date"
+                    min={getLocalTodayDateString()}
                     value={rescheduleDate}
                     onChange={(e) => setRescheduleDate(e.target.value)}
                     className="w-full text-xs p-2.5 rounded-lg border border-slate-200"

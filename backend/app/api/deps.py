@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Set
-from fastapi import Depends, HTTPException, status, Header, Request
+from fastapi import Depends, HTTPException, status, Header, Request, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -150,9 +150,14 @@ def authenticate_access_token(token: str, db: Session, allow_expired_jwt: bool =
 
 def get_current_session_user(
     authorization: Optional[str] = Header(None),
+    token: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ) -> Tuple[User, AuthSession]:
-    """FastAPI dependency wrapper around authenticate_bearer. Returns (User, AuthSession)."""
+    """FastAPI dependency wrapper around authenticate_bearer or query token. Returns (User, AuthSession)."""
+    if authorization and authorization.startswith("Bearer "):
+        return authenticate_access_token(authorization.split(" ", 1)[1], db)
+    if token:
+        return authenticate_access_token(token, db)
     return authenticate_bearer(authorization, db)
 
 def get_current_user_obj(deps_data: Tuple[User, AuthSession] = Depends(get_current_session_user)) -> User:

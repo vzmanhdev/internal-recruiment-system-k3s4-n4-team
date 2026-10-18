@@ -29,6 +29,7 @@ export interface EvaluationItem {
   recommendation: "hire" | "hold" | "reject";
   comments?: string | null;
   strengths?: string | null;
+  weaknesses?: string | null;
   created_at?: string;
 }
 

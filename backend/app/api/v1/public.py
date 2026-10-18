@@ -71,7 +71,7 @@ def career_page(db: Session = Depends(get_db)):
             "contact_phone": d.get("contact_phone") or DEFAULT_CAREER_DATA["contact_phone"],
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }
-    return DEFAULT_CAREER_DATA
+    return {"configured": False}
 
 
 @router.post("/applications/status")
@@ -84,10 +84,7 @@ def lookup_status(payload: StatusLookup, db: Session = Depends(get_db)):
     return {
         "tracking_code": app.tracking_code,
         "job_title": view["job_title"],
-        "department": view["department"],
-        "candidate_name": app.full_name,
         "status": view["public_status"],
-        "internal_status": app.status,
         "applied_date": view["applied_date"],
     }
 

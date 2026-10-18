@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { ManagerAppShell } from '@/components/layout/ManagerAppShell';
 import { Pagination } from '@/components/ui/Pagination';
 import { managerApi, type ManagerRequisitionItem } from '@/features/manager/api';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { ApiError } from '@/lib/api-client';
@@ -124,6 +125,10 @@ function RequisitionsContent() {
   // Submit Duplicate Requisition (Trình duyệt)
   const handleSubmitDuplicate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (duplicateForm.targetDate && isPastDate(duplicateForm.targetDate)) {
+      showToast('Ngày cần người không được ở trong quá khứ.');
+      return;
+    }
     if (!selectedReqForDuplicate) {
       // create from scratch
       const deptId = chosenTitle?.department_id ?? titleData?.depts[0]?.id;
@@ -561,10 +566,14 @@ function RequisitionsContent() {
                     <input
                       type="date"
                       required
+                      min={getLocalTodayDateString()}
                       value={duplicateForm.targetDate}
                       onChange={(e) => setDuplicateForm({ ...duplicateForm, targetDate: e.target.value })}
                       className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                     />
+                    {duplicateForm.targetDate && isPastDate(duplicateForm.targetDate) && (
+                      <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày cần người không được ở quá khứ</p>
+                    )}
                   </div>
 
                   {/* Reason (Lý do tuyển dụng bổ sung - col-span-2) */}

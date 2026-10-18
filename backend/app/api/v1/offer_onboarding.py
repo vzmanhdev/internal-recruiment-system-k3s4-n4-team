@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.db.session import get_db
 from app.models.user import User
@@ -47,6 +47,16 @@ class OfferTerms(BaseModel):
     notes: Optional[str] = None
     salary_justification: Optional[str] = None
     response_deadline: Optional[str] = None
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _normalize_currency(cls, v):
+        if not v:
+            return "VND"
+        v_str = str(v).strip().upper()
+        if v_str in {"VNĐ", "VND", "Đ", "D"}:
+            return "VND"
+        return "VND"
 
 
 class OfferCreate(OfferTerms):
@@ -105,6 +115,8 @@ def _validate_terms(db: Session, app: JobApplication, terms: OfferTerms) -> bool
         deadline = _parse_date(terms.response_deadline, "Hạn phản hồi")
         if deadline < date.today():
             raise HTTPException(status_code=422, detail="Hạn phản hồi offer không được ở quá khứ.")
+        if deadline > start:
+            raise HTTPException(status_code=422, detail="Hạn chót phản hồi offer phải trước hoặc bằng ngày nhận việc.")
     band_min, band_max = _salary_band(db, app)
     out_of_band = (band_min is not None and terms.offered_salary < band_min) or (band_max is not None and terms.offered_salary > band_max)
     if out_of_band and not (terms.salary_justification or "").strip():
@@ -158,9 +170,19 @@ def _notify_offer_pending(db: Session, offer: JobOffer, actor_id: int) -> None:
 
 def _letter_variables(offer: JobOffer) -> dict:
     app = offer.application
-    return {"candidate_name": app.full_name, "job_title": app.job_posting.title if app.job_posting else "",
-            "offer_salary": f"{offer.offered_salary:,} {offer.currency}", "offer_allowance": f"{offer.allowance or 0:,} {offer.currency}",
-            "start_date": offer.start_date, "offer_deadline": offer.response_deadline or ""}
+    portal_link = f"http://localhost:3000/candidate/offer/{offer.id}"
+    return {
+        "candidate_name": app.full_name if app else "",
+        "job_title": app.job_posting.title if app and app.job_posting else "",
+        "offer_salary": f"{offer.offered_salary:,} {offer.currency}",
+        "offer_allowance": f"{offer.allowance or 0:,} {offer.currency}",
+        "start_date": offer.start_date,
+        "offer_deadline": offer.response_deadline or "",
+        "portal_link": portal_link,
+        "work_location": offer.work_location or "Hà Nội",
+        "probation_duration_months": str(offer.probation_duration_months or 2),
+        "probation_salary_percentage": str(offer.probation_salary_percentage or 85),
+    }
 
 
 def _onboarding_items(db: Session, offer: JobOffer) -> list:
@@ -523,9 +545,9 @@ def update_onboarding_item(
         item.is_completed = payload.is_completed
         item.completed_at = datetime.utcnow() if payload.is_completed else None
     db.flush()
-    db.refresh(offer)
     if offer.onboarding_items and all(i.is_completed for i in offer.onboarding_items):
-        _app_log(db, offer.application, current_user, "onboarded", "Hoàn tất checklist onboarding")
+        if offer.application:
+            _app_log(db, offer.application, current_user, "onboarded", "Hoàn tất checklist onboarding")
     db.commit()
     db.refresh(offer)
     return offer.to_dict()
@@ -541,5 +563,11 @@ def offer_letter_preview(offer_id: int, current_user: User = Depends(get_current
     tpl = db.query(EmailTemplate).filter(EmailTemplate.code == "OFFER_LETTER").first()
     variables = {"company_name": "", **_letter_variables(offer)}
     from app.core.config import settings
-    variables["company_name"] = settings.SMTP_FROM_NAME
-    return {"subject": render(tpl.subject, variables), "body_html": render(tpl.body_html, variables)}
+    variables["company_name"] = settings.SMTP_FROM_NAME or "Tuyển Dụng Nội Bộ"
+    subject = render(tpl.subject, variables) if tpl and tpl.subject else f"Thư mời nhận việc - {variables.get('job_title')}"
+    body_html = render(tpl.body_html, variables) if tpl and tpl.body_html else ""
+    return {
+        "subject": subject,
+        "body_html": body_html,
+        "offer": _offer_out(db, offer, current_user),
+    }

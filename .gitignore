@@ -10,6 +10,9 @@ reports/
 tmp_test/
 .tmp_test/
 /tmp/
+scratch/
+scratch_*.json
+/*.png
 
 # ------------------------------------------------------------------------------
 # 2. Environment Variables & Credentials (Biến môi trường & Bí mật)

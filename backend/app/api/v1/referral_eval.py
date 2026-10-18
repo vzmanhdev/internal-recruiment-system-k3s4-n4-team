@@ -171,8 +171,20 @@ def evaluation_summary(application_id: int, current_user: User = Depends(get_cur
     evals = db.query(CandidateEvaluation).filter(CandidateEvaluation.application_id == app.id).all()
     per_criterion = defaultdict(list)
     for e in evals:
-        for item in (json.loads(e.criteria_json) if e.criteria_json else []):
-            per_criterion[item["name"]].append(item["score"])
+        if not e.criteria_json:
+            continue
+        try:
+            raw = json.loads(e.criteria_json)
+            if isinstance(raw, dict):
+                for k, v in raw.items():
+                    per_criterion[str(k)].append(v if isinstance(v, (int, float)) else v.get("score", 0))
+            elif isinstance(raw, list):
+                for item in raw:
+                    if isinstance(item, dict):
+                        name = item.get("name") or item.get("code") or "Tiêu chí"
+                        per_criterion[str(name)].append(item.get("score", 0))
+        except Exception:
+            pass
     weighted = [e.weighted_score for e in evals if e.weighted_score is not None]
     return {
         "application_id": app.id, "candidate": app.full_name, "evaluation_count": len(evals),
@@ -196,8 +208,20 @@ def compare_candidates(job_id: int, current_user: User = Depends(get_current_use
             continue
         crit = defaultdict(list)
         for e in evals:
-            for item in (json.loads(e.criteria_json) if e.criteria_json else []):
-                crit[item["name"]].append(item["score"])
+            if not e.criteria_json:
+                continue
+            try:
+                raw = json.loads(e.criteria_json)
+                if isinstance(raw, dict):
+                    for k, v in raw.items():
+                        crit[str(k)].append(v if isinstance(v, (int, float)) else v.get("score", 0))
+                elif isinstance(raw, list):
+                    for item in raw:
+                        if isinstance(item, dict):
+                            name = item.get("name") or item.get("code") or "Tiêu chí"
+                            crit[str(name)].append(item.get("score", 0))
+            except Exception:
+                pass
         weighted = [e.weighted_score for e in evals if e.weighted_score is not None]
         legacy = [e.overall_score * 10 for e in evals if e.weighted_score is None and e.overall_score]
         scores = weighted + legacy

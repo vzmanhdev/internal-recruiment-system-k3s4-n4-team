@@ -82,6 +82,7 @@ import {
   Plus, Search, Filter, FileText, Send, Eye, Check, Calendar, ArrowUpRight
 } from 'lucide-react';
 import { CreateOfferModal, CreateOfferFormData } from '@/features/hr/components/CreateOfferModal';
+import { OfferDetailModal } from '@/features/offers/components/OfferDetailModal';
 
 interface OfferItem {
   id: string;
@@ -102,6 +103,8 @@ interface OfferItem {
 
 export default function HROffersPage() {
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
+  const [selectedOfferId, setSelectedOfferId] = useState<string | number | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -140,20 +143,9 @@ export default function HROffersPage() {
     }, 5000);
   };
 
-  // Offer letter with the offer's real data, shown in a sandboxed frame (no scripts)
-  const openLetter = async (id: string) => {
-    const win = window.open('', '_blank');
-    try {
-      const letter = await apiRequest<{ subject: string; body_html: string }>(`/offers/${id}/letter-preview`);
-      const esc = (h: string) => h.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-      const page = `<!doctype html><meta charset="utf-8"><title>${esc(letter.subject)}</title><iframe sandbox style="border:0;width:100%;height:100vh" srcdoc="${esc(letter.body_html)}"></iframe>`;
-      const url = URL.createObjectURL(new Blob([page], { type: 'text/html' }));
-      if (win) win.location.href = url; else window.open(url, '_blank');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      win?.close();
-      setToastMessage(err instanceof ApiError ? err.message : 'Không mở được thư mời.');
-    }
+  const handleOpenDetail = (id: string | number) => {
+    setSelectedOfferId(id);
+    setIsDetailModalOpen(true);
   };
 
   const filteredOffers = offers.filter((item) => {
@@ -328,7 +320,7 @@ export default function HROffersPage() {
 
                     <td className="p-4 text-right">
                       <button 
-                        onClick={() => openLetter(off.id)}
+                        onClick={() => handleOpenDetail(off.id)}
                         className="text-xs text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1 hover:underline cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
@@ -349,6 +341,17 @@ export default function HROffersPage() {
         onClose={() => setIsOfferModalOpen(false)}
         onSubmit={handleCreateOffer}
         candidates={data?.candidates || []}
+      />
+
+      {/* Modal Form Xem Chi Tiết Offer Chuẩn Doanh Nghiệp */}
+      <OfferDetailModal
+        isOpen={isDetailModalOpen}
+        offerId={selectedOfferId}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          setSelectedOfferId(null);
+        }}
+        onActionSuccess={reload}
       />
     </div>
   );

@@ -17,6 +17,7 @@ import {
   FileText
 } from "lucide-react";
 import { apiRequest, ApiError } from "@/lib/api-client";
+import { EmailLogDetailModal } from "@/features/automation/components/EmailLogDetailModal";
 
 interface EmailLog {
   id: number;
@@ -431,6 +432,14 @@ export default function EmailLogsPage() {
           </div>
         )}
       </div>
+
+      {/* Modal Xem Chi Tiết Email */}
+      <EmailLogDetailModal
+        isOpen={isDetailModalOpen}
+        log={selectedLog}
+        onClose={() => setIsDetailModalOpen(false)}
+        onRetry={handleRetry}
+      />
     </div>
   );
 }

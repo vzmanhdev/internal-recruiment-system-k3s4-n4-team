@@ -30,6 +30,7 @@ import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/providers/auth-provider";
 import { ErrorState, LoadingState } from "@/components/ui/DataStates";
 import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
+import { getLocalTodayDateString } from "@/utils/dateUtils";
 import clsx from "clsx";
 
 type Me = UserItem & {
@@ -480,6 +481,7 @@ export function ProfileView() {
                     </label>
                     <input
                       type="date"
+                      max={getLocalTodayDateString()}
                       value={form.date_of_birth}
                       onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
