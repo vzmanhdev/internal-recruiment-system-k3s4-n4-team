@@ -66,12 +66,20 @@ function RequisitionsContent() {
     reason: 'Bổ sung định biên sprint mới',
   });
 
-  // Feedback Toast
+  // Feedback Toast & Modal Error State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Helper: Default future date (today + 30 days) to prevent past date HTML5 validation block
+  const getDefaultFutureDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split('T')[0];
   };
 
   // Job titles (with their department) for a requisition created from scratch
@@ -88,26 +96,33 @@ function RequisitionsContent() {
     setSelectedReqForDuplicate(null);
     setNewTitleId('');
     setDuplicateForm({
-      title: '', department: '', level: '', salaryRange: '', targetCount: 1, targetDate: '',
+      title: '', department: '', level: '', salaryRange: '', targetCount: 1, targetDate: getDefaultFutureDate(),
       description: '', requirements: '', reason: '',
     });
+    setFormError(null);
     setIsDuplicateModalOpen(true);
   };
 
   // Open modal with pre-filled requisition data
   const handleOpenDuplicateModal = (req: ManagerRequisitionItem) => {
     setSelectedReqForDuplicate(req);
+    // If targetDate from original requisition is empty or in the past, prefill with a valid future date
+    const validTargetDate = (!req.targetDate || isPastDate(req.targetDate))
+      ? getDefaultFutureDate()
+      : req.targetDate;
+
     setDuplicateForm({
       title: `${req.title} (Bản sao)`,
       department: req.department,
       level: req.level,
       salaryRange: req.salaryRange,
       targetCount: 1,
-      targetDate: req.targetDate,
+      targetDate: validTargetDate,
       description: req.description,
       requirements: req.requirements,
       reason: 'Bổ sung định biên sprint mới (Sao chép từ ' + req.id + ')',
     });
+    setFormError(null);
     setIsDuplicateModalOpen(true);
   };
 
@@ -122,18 +137,25 @@ function RequisitionsContent() {
     }
   }, [searchParams, requisitions.length]); // re-run once the real list has loaded
 
-  // Submit Duplicate Requisition (Trình duyệt)
-  const handleSubmitDuplicate = async (e: React.FormEvent) => {
+  // Submit Duplicate Requisition (Lưu bản nháp hoặc Trình duyệt)
+  const handleSubmitDuplicate = async (e: React.FormEvent, submitForApproval = true) => {
     e.preventDefault();
+    setFormError(null);
+
     if (duplicateForm.targetDate && isPastDate(duplicateForm.targetDate)) {
-      showToast('Ngày cần người không được ở trong quá khứ.');
+      setFormError('Ngày cần người không được ở trong quá khứ. Vui lòng chọn ngày tương lai.');
       return;
     }
+    if (!duplicateForm.title.trim()) {
+      setFormError('Vui lòng nhập chức danh / tiêu đề yêu cầu tuyển dụng.');
+      return;
+    }
+
     if (!selectedReqForDuplicate) {
       // create from scratch
       const deptId = chosenTitle?.department_id ?? titleData?.depts[0]?.id;
       if (!chosenTitle || !deptId) {
-        showToast('Vui lòng chọn chức danh (thuộc một phòng ban) cho yêu cầu tuyển dụng.');
+        setFormError('Vui lòng chọn chức danh (thuộc một phòng ban) cho yêu cầu tuyển dụng.');
         return;
       }
       setSubmitting(true);
@@ -151,32 +173,51 @@ function RequisitionsContent() {
         setData((prev) => [created, ...(prev || [])]);
         setIsDuplicateModalOpen(false);
         showToast(`Đã tạo và trình duyệt yêu cầu ${created.id}: ${created.title}`);
+        await reload();
       } catch (err) {
-        showToast(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu tuyển dụng.');
+        setFormError(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu tuyển dụng.');
       } finally {
         setSubmitting(false);
       }
       return;
     }
+
     setSubmitting(true);
     try {
-      const result = await managerApi.copyAndSubmit(selectedReqForDuplicate.dbId, {
-        title: duplicateForm.title,
-        quantity: Number(duplicateForm.targetCount) || 1,
-        target_onboard_date: duplicateForm.targetDate || undefined,
-        job_description: duplicateForm.description,
-        requirements: duplicateForm.requirements,
-        reason_detail: duplicateForm.reason,
-      });
-      setData((prev) => [result.requisition, ...(prev || [])]);
-      setIsDuplicateModalOpen(false);
-      showToast(
-        result.submitted
-          ? `Đã tạo và trình duyệt yêu cầu ${result.requisition.id}: ${result.requisition.title}`
-          : `Đã tạo bản nháp ${result.requisition.id} nhưng chưa trình duyệt được: ${result.error instanceof ApiError ? result.error.message : 'lỗi không xác định'}`,
-      );
+      if (submitForApproval) {
+        // Save and submit for approval
+        const result = await managerApi.copyAndSubmit(selectedReqForDuplicate.dbId, {
+          title: duplicateForm.title,
+          quantity: Number(duplicateForm.targetCount) || 1,
+          target_onboard_date: duplicateForm.targetDate || undefined,
+          job_description: duplicateForm.description,
+          requirements: duplicateForm.requirements,
+          reason_detail: duplicateForm.reason,
+        });
+        setData((prev) => [result.requisition, ...(prev || [])]);
+        setIsDuplicateModalOpen(false);
+        showToast(
+          result.submitted
+            ? `Đã tạo và trình duyệt yêu cầu ${result.requisition.id}: ${result.requisition.title}`
+            : `Đã tạo bản sao ${result.requisition.id} nhưng chưa trình duyệt được: ${result.error instanceof ApiError ? result.error.message : 'lỗi không xác định'}`
+        );
+      } else {
+        // Save as Draft (S3-05: bản sao luôn bắt đầu ở trạng thái Nháp, không kế thừa lịch sử duyệt)
+        const draftReq = await managerApi.copyAsDraft(selectedReqForDuplicate.dbId, {
+          title: duplicateForm.title,
+          quantity: Number(duplicateForm.targetCount) || 1,
+          target_onboard_date: duplicateForm.targetDate || undefined,
+          job_description: duplicateForm.description,
+          requirements: duplicateForm.requirements,
+          reason_detail: duplicateForm.reason,
+        });
+        setData((prev) => [draftReq, ...(prev || [])]);
+        setIsDuplicateModalOpen(false);
+        showToast(`Đã tạo và lưu bản nháp yêu cầu ${draftReq.id}: ${draftReq.title} (chưa gửi duyệt)`);
+      }
+      await reload();
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu từ bản sao.');
+      setFormError(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu từ bản sao.');
     } finally {
       setSubmitting(false);
     }
@@ -220,7 +261,7 @@ function RequisitionsContent() {
     <div className="space-y-6">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <div className="fixed bottom-6 right-6 z-60 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
@@ -474,7 +515,13 @@ function RequisitionsContent() {
             </div>
 
             {/* Form Fields */}
-            <form onSubmit={handleSubmitDuplicate} className="space-y-4 text-xs">
+            <form onSubmit={(e) => handleSubmitDuplicate(e, true)} className="space-y-4 text-xs">
+              {formError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{formError}</span>
+                </div>
+              )}
               {/* Title & Department */}
               <div className="space-y-1.5">
                 <label className="block font-bold text-slate-700">Chức danh tuyển dụng *</label>
@@ -619,7 +666,7 @@ function RequisitionsContent() {
               </div>
 
               {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsDuplicateModalOpen(false)}
@@ -627,9 +674,21 @@ function RequisitionsContent() {
                 >
                   Hủy
                 </button>
+                {!isCreateMode && (
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={(e) => handleSubmitDuplicate(e, false)}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                  >
+                    <FileCheck className="w-4 h-4 text-slate-500" />
+                    <span>Lưu Bản Nháp</span>
+                  </button>
+                )}
                 <button
-                  type="submit"
+                  type="button"
                   disabled={submitting}
+                  onClick={(e) => handleSubmitDuplicate(e, true)}
                   className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-md shadow-blue-500/30 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />

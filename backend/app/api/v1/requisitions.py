@@ -66,6 +66,39 @@ class RequisitionCreate(BaseModel):
         return self
 
 
+class RequisitionUpdate(BaseModel):
+    title: Optional[str] = None
+    department_id: Optional[int] = None
+    quantity: Optional[int] = Field(default=None, ge=1)
+    reason: Optional[str] = None
+    reason_detail: Optional[str] = None
+    priority: Optional[str] = None
+    employment_type: Optional[str] = None
+    work_location: Optional[str] = None
+    min_salary: Optional[int] = Field(default=None, ge=0)
+    max_salary: Optional[int] = Field(default=None, ge=0)
+    is_salary_negotiable: Optional[bool] = None
+    target_onboard_date: Optional[str] = None
+    job_description: Optional[str] = None
+    requirements: Optional[str] = None
+    benefits: Optional[str] = None
+    job_title_id: Optional[int] = None
+    salary_justification: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_business_fields(self):
+        if self.min_salary is not None and self.max_salary is not None and self.min_salary > self.max_salary:
+            raise ValueError("Mức lương tối thiểu không được lớn hơn mức lương tối đa.")
+        if self.target_onboard_date:
+            try:
+                target = date.fromisoformat(self.target_onboard_date[:10])
+            except ValueError:
+                raise ValueError("Ngày cần người không đúng định dạng YYYY-MM-DD.")
+            if target < date.today():
+                raise ValueError("Ngày cần người không được ở quá khứ.")
+        return self
+
+
 class RequisitionApprovalAction(BaseModel):
     action: str = Field(..., example="approved")  # approved, rejected, changes_requested
     comment: Optional[str] = None
@@ -403,7 +436,7 @@ def create_requisition(
 @router.put("/{req_id}")
 def update_requisition(
     req_id: int,
-    payload: RequisitionCreate,
+    payload: RequisitionUpdate,
     current_user: User = Depends(require_permission("requisition:edit")),
     db: Session = Depends(get_db)
 ):
@@ -412,10 +445,11 @@ def update_requisition(
         raise HTTPException(status_code=403, detail="Chỉ người tạo tờ trình mới được chỉnh sửa.")
     if req.status not in DRAFT_STATES:
         raise HTTPException(status_code=409, detail=f"Chỉ sửa được tờ trình ở trạng thái Nháp hoặc Yêu cầu bổ sung (hiện tại: '{req.status}').")
-    if not db.query(Department).filter(Department.id == payload.department_id).first():
+    if payload.department_id and not db.query(Department).filter(Department.id == payload.department_id).first():
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
-    _check_salary_band(db, payload)
-    for key, value in payload.model_dump(exclude={"save_as_draft"}).items():
+    
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
         setattr(req, key, value)
     if payload.job_title_id:
         req.job_title_name = db.query(JobTitle.name).filter(JobTitle.id == payload.job_title_id).scalar()
