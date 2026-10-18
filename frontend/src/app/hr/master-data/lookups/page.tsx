@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { masterDataService } from '@/services/master-data.service';
 import { useApiData } from '@/hooks/useApiData';
@@ -10,11 +11,16 @@ import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 const LOOKUP_GROUPS: Record<string, { name: string; description: string }> = {
   candidate_source: { name: 'Nguồn Tuyển Dụng (Candidate Sources)', description: 'Các kênh thu hút hồ sơ ứng viên' },
   tag: { name: 'Nhãn Ứng Viên (Tags)', description: 'Nhãn dùng để gắn và lọc hồ sơ ứng viên' },
-  rejection_reason: { name: 'Lý Do Loại Hồ Sơ', description: 'Danh mục lý do bắt buộc khi loại ứng viên' },
+  rejection_reason: { name: 'Lý Do Loại Hồ Sơ (Rejection Reasons)', description: 'Danh mục lý do bắt buộc khi loại ứng viên' },
+  work_location: { name: 'Địa Điểm Làm Việc (Work Locations)', description: 'Các văn phòng, chi nhánh làm việc' },
+  work_locations: { name: 'Địa Điểm Làm Việc (Work Locations)', description: 'Các văn phòng, chi nhánh làm việc' },
+  work_type: { name: 'Hình Thức Làm Việc (Work Types)', description: 'Toàn thời gian, bán thời gian, linh hoạt, từ xa' },
+  contract_type: { name: 'Loại Hợp Đồng (Contract Types)', description: 'Thử việc, xác định thời hạn, không xác định thời hạn' },
+  approval_type: { name: 'Loại Luồng Phê Duyệt', description: 'Các loại luồng phê duyệt tờ trình và offer' },
   skill: { name: 'Danh Mục Kỹ Năng (Skill Tags)', description: 'Các kỹ năng chuyên môn chuẩn phục vụ tìm kiếm & lọc hồ sơ' },
 };
 import { 
-  Layers, Plus, Tag, MapPin, Share2, HelpCircle, CheckCircle2, Search, Check
+  Layers, Plus, Tag, MapPin, Share2, HelpCircle, CheckCircle2, Search, Check, ChevronRight
 } from 'lucide-react';
 import { 
   CreateLookupCategoryModal, 
@@ -121,6 +127,16 @@ export default function HRLookupsPage() {
                   </span>
                 ))}
               </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 mt-2">
+              <Link
+                href={`/hr/categories?type=${encodeURIComponent(cat.id)}`}
+                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white text-xs font-bold transition-all shadow-2xs group-hover:bg-blue-600 group-hover:text-white"
+              >
+                <span>Quản lý & Sắp xếp giá trị</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
           </div>
         ))}

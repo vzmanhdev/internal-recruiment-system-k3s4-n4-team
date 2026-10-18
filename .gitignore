@@ -13,6 +13,7 @@ tmp_test/
 scratch/
 scratch_*.json
 /*.png
+backend/storage/*
 
 # ------------------------------------------------------------------------------
 # 2. Environment Variables & Credentials (Biến môi trường & Bí mật)
@@ -109,4 +110,4 @@ Desktop.ini
 *.sublime-workspace
 Assets/database.sql
 backend/scripts/
-tests/
+/tests/

@@ -42,6 +42,7 @@ import clsx from 'clsx';
 import type { UnifiedCandidate } from '@/features/candidates/types';
 import { candidatesApi } from '@/features/candidates/api';
 import { jobService } from '@/services/job.service';
+import { masterDataService } from '@/services/master-data.service';
 import { uploadFile as uploadCvFile } from '@/services/file.service';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
@@ -52,6 +53,7 @@ export default function RecruiterCandidatesPage() {
   const candidates: UnifiedCandidate[] = useMemo(() => data || [], [data]);
   // Published postings a sourced candidate can be added to (S5-08).
   const { data: openJobs } = useApiData(() => jobService.getJobs());
+  const { data: sourceCategories } = useApiData(() => masterDataService.categories('candidate_source'));
   const [targetJobId, setTargetJobId] = useState<string>('');
   const [uploadedCvUrl, setUploadedCvUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -469,12 +471,20 @@ export default function RecruiterCandidatesPage() {
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
             >
               <option value="all">Tất cả nguồn</option>
-              <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
-              <option value="TopCV">TopCV</option>
-              <option value="VietnamWorks">VietnamWorks</option>
-              <option value="Referral Nội Bộ">Referral Nội Bộ</option>
-              <option value="Headhunter Agency">Headhunter Agency</option>
-              <option value="Website Công Ty">Website Công Ty</option>
+              {(sourceCategories && sourceCategories.length > 0) ? (
+                sourceCategories.filter((c) => c.is_active).map((c) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))
+              ) : (
+                <>
+                  <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
+                  <option value="TopCV">TopCV</option>
+                  <option value="VietnamWorks">VietnamWorks</option>
+                  <option value="Referral Nội Bộ">Referral Nội Bộ</option>
+                  <option value="Headhunter Agency">Headhunter Agency</option>
+                  <option value="Website Công Ty">Website Công Ty</option>
+                </>
+              )}
             </select>
           </div>
 

@@ -420,18 +420,32 @@ class CategoryUpdate(BaseModel):
 
 
 @router.get("/categories")
-def list_categories(category_type: Optional[str] = None, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+def list_categories(
+    category_type: Optional[str] = None,
+    search: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
     _authenticated(authorization, db)
     q = db.query(SharedCategory)
     if category_type:
         q = q.filter(SharedCategory.category_type == category_type)
+    if search and search.strip():
+        q = q.filter(SharedCategory.name.ilike(f"%{search.strip()}%"))
     rows = q.order_by(SharedCategory.category_type, SharedCategory.sort_order).all()
     out = []
     for item in rows:
         data = item.to_dict()
-        # how many applications reference this value (source or rejection reason) — read-only context
-        data["usage_count"] = db.query(JobApplication.id).filter(
+        # Reference counting across applications, postings and requisitions (S2-08 AC2)
+        app_count = db.query(JobApplication.id).filter(
             or_(JobApplication.source == item.name, JobApplication.rejection_reason == item.name)).count()
+        posting_count = db.query(JobPosting.id).filter(
+            or_(JobPosting.location == item.name, JobPosting.type == item.name)).count()
+        req_count = db.query(JobRequisition.id).filter(
+            or_(JobRequisition.work_location == item.name, JobRequisition.employment_type == item.name)).count()
+        total_usage = app_count + posting_count + req_count
+        data["usage_count"] = total_usage
+        data["in_use"] = (total_usage > 0)
         out.append(data)
     return out
 

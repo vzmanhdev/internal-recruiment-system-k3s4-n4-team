@@ -6,7 +6,15 @@ export interface Criterion { id?: string; code: string; name: string; descriptio
 export interface Framework { id: string; code: string; name: string; department?: string; applied_job_titles: string[]; status: string; criteria: Criterion[]; total_weight: number }
 export interface Question { id: string; code: string; content: string; criteria_id: string; criteria_name?: string; job_title?: string; difficulty: string; suggested_answer?: string; times_used?: number }
 export interface Headcount { id: number; department_id: number; year: number; budget_quantity: number; committed_quantity: number; remaining_quantity: number | null }
-export interface Category { id: number; category_type: string; name: string; sort_order: number; is_active: boolean }
+export interface Category {
+  id: number;
+  category_type: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  usage_count?: number;
+  in_use?: boolean;
+}
 
 export interface ApprovalFlowStep {
   step_num: number;
@@ -87,7 +95,13 @@ export const masterDataService = {
   headcounts: () => apiRequest<Headcount[]>("/hr/headcounts"),
   saveHeadcount: (h: { department_id: number; year: number; budget_quantity: number; reason?: string }) => apiRequest<Headcount>("/hr/headcounts", json("POST", h)),
 
-  categories: () => apiRequest<Category[]>("/hr/categories"),
+  categories: (type?: string, search?: string) => {
+    const params = new URLSearchParams();
+    if (type) params.append("category_type", type);
+    if (search) params.append("search", search);
+    const qs = params.toString();
+    return apiRequest<Category[]>(qs ? `/hr/categories?${qs}` : "/hr/categories");
+  },
   createCategory: (c: { category_type: string; name: string; sort_order: number }) => apiRequest<Category>("/hr/categories", json("POST", c)),
   updateCategory: (id: number, c: { name: string; is_active: boolean }) => apiRequest<Category>(`/hr/categories/${id}`, json("PUT", c)),
   deleteCategory: (id: number) => apiRequest(`/hr/categories/${id}`, { method: "DELETE" }),

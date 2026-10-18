@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { 
   Users, Search, Filter, Star, Eye, ChevronRight, CheckCircle2, 
   XCircle, Clock, FileText, ArrowRight, UserCheck, ShieldAlert, Sparkles,
-  ExternalLink, Mail, Phone, Calendar, ArrowUpRight
+  ExternalLink, Mail, Phone, Calendar, ArrowUpRight, Ban
 } from 'lucide-react';
 import { openProtectedFile } from '@/services/file.service';
 import { apiRequest, ApiError } from '@/lib/api-client';
 import { interviewService } from '@/services/interview.service';
+import { masterDataService } from '@/services/master-data.service';
 import type { ApiApplication } from '@/features/candidates/api';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
@@ -73,6 +74,11 @@ export default function HRCandidatesPage() {
 
   const [viewMode, setViewMode] = useState<'board' | 'table'>('board');
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateItem | null>(null);
+  const { data: rejectionCategories } = useApiData(() => masterDataService.categories('rejection_reason'), []);
+  const [rejectingCandidate, setRejectingCandidate] = useState<CandidateItem | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
+  const [rejectSaving, setRejectSaving] = useState(false);
+  const [rejectError, setRejectError] = useState('');
 
   const moveStage = async (candidateId: string, newStage: CandidateItem['stage']) => {
     const current = candidates.find((c) => c.id === candidateId);
@@ -87,6 +93,33 @@ export default function HRCandidatesPage() {
       reload();
     } catch (err) {
       setMoveError(err instanceof ApiError ? err.message : 'Không chuyển được giai đoạn.');
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectingCandidate) return;
+    if (!rejectionReason.trim()) {
+      setRejectError('Vui lòng chọn lý do loại ứng viên.');
+      return;
+    }
+    setRejectSaving(true);
+    setRejectError('');
+    try {
+      await apiRequest(`/applications/${rejectingCandidate.id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 'rejected',
+          rejection_reason: rejectionReason.trim(),
+        }),
+      });
+      setRejectingCandidate(null);
+      setSelectedCandidate(null);
+      setRejectionReason('');
+      reload();
+    } catch (err) {
+      setRejectError(err instanceof ApiError ? err.message : 'Không loại được hồ sơ.');
+    } finally {
+      setRejectSaving(false);
     }
   };
 
@@ -321,6 +354,21 @@ export default function HRCandidatesPage() {
                     );
                   })}
                 </div>
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Hoặc dừng quy trình ứng tuyển:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRejectingCandidate(selectedCandidate);
+                      setRejectionReason(rejectionCategories?.[0]?.name || '');
+                      setRejectError('');
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all border border-rose-200 cursor-pointer"
+                  >
+                    <Ban className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Loại hồ sơ (Reject)</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -332,6 +380,67 @@ export default function HRCandidatesPage() {
                 className="px-4 py-1.5 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 transition-colors cursor-pointer"
               >
                 Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Modal with Category Selection (S2-08) */}
+      {rejectingCandidate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 p-6 space-y-4 animate-in zoom-in-95 duration-200 text-xs">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+                <Ban className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">Xác Nhận Loại Hồ Sơ Ứng Viên</h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {rejectingCandidate.name} — {rejectingCandidate.position_applied}
+                </p>
+              </div>
+            </div>
+
+            {rejectError && (
+              <div className="text-xs text-rose-600 bg-rose-50 border border-rose-200 p-2.5 rounded-xl font-semibold">
+                {rejectError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Lý do loại hồ sơ (theo danh mục dùng chung S2-08) <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500 focus:bg-white cursor-pointer"
+              >
+                <option value="">— Chọn lý do loại hồ sơ —</option>
+                {(rejectionCategories || []).filter((c) => c.is_active).map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectingCandidate(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                disabled={rejectSaving || !rejectionReason.trim()}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-500/20 disabled:opacity-50 cursor-pointer"
+              >
+                {rejectSaving ? 'Đang xử lý...' : 'Xác nhận loại'}
               </button>
             </div>
           </div>

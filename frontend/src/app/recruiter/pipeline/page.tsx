@@ -47,6 +47,7 @@ import clsx from 'clsx';
 import { apiRequest, ApiError } from '@/lib/api-client';
 import { candidatesApi, type ApiApplication } from '@/features/candidates/api';
 import { jobService } from '@/services/job.service';
+import { masterDataService } from '@/services/master-data.service';
 import { uploadFile as uploadCvFile, openProtectedFile } from '@/services/file.service';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
@@ -220,6 +221,7 @@ export default function RecruiterPipelinePage() {
   const candidates = useMemo(() => data || [], [data]);
   const setCandidates = (fn: (prev: Candidate[]) => Candidate[]) => setData((prev) => fn(prev || []));
   const { data: openJobs } = useApiData(() => jobService.getJobs(), []);
+  const { data: sourceCategories } = useApiData(() => masterDataService.categories('candidate_source'), []);
   const [addJobId, setAddJobId] = useState('');
   const [addCvUrl, setAddCvUrl] = useState<string | null>(null);
   const [addSaving, setAddSaving] = useState(false);
@@ -1336,10 +1338,18 @@ export default function RecruiterPipelinePage() {
                     onChange={(e) => setAddForm({ ...addForm, source: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
                   >
-                    <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
-                    <option value="Headhunter Agency">Headhunter Agency</option>
-                    <option value="TopCV Chủ động">TopCV Chủ động</option>
-                    <option value="Giới thiệu trực tiếp">Giới thiệu trực tiếp</option>
+                    {(sourceCategories && sourceCategories.length > 0) ? (
+                      sourceCategories.filter((c) => c.is_active).map((c) => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
+                        <option value="Headhunter Agency">Headhunter Agency</option>
+                        <option value="TopCV Chủ động">TopCV Chủ động</option>
+                        <option value="Giới thiệu trực tiếp">Giới thiệu trực tiếp</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div>
