@@ -240,7 +240,9 @@ export default function HRApprovalFlowsPage() {
       setIsModalOpen(false);
       reload();
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Không thể lưu luồng phê duyệt', 'error');
+      const msg = err instanceof ApiError ? err.message : 'Không thể lưu luồng phê duyệt';
+      showToast(msg, 'error');
+      throw err;
     }
   };
 
@@ -344,13 +346,13 @@ export default function HRApprovalFlowsPage() {
 
   return (
     <div className="space-y-6 pt-1">
-      {/* Toast Alert */}
+      {/* Floating Toast Notification */}
       {toastMessage && (
         <div
-          className={`p-4 rounded-xl border text-xs font-semibold flex items-center justify-between shadow-sm animate-fadeIn ${
+          className={`fixed bottom-6 right-6 z-60 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-3 duration-200 ${
             toastMessage.type === 'error'
-              ? 'bg-rose-50 border-rose-200 text-rose-900'
-              : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              ? 'bg-rose-50 border-rose-200 text-rose-800'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-800'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -363,9 +365,9 @@ export default function HRApprovalFlowsPage() {
           </div>
           <button
             onClick={() => setToastMessage(null)}
-            className="text-xs underline font-medium hover:opacity-80 cursor-pointer ml-4"
+            className="text-xs opacity-60 hover:opacity-100 cursor-pointer ml-3 font-bold"
           >
-            Đóng
+            ✕
           </button>
         </div>
       )}

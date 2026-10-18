@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   Layers, X, Plus, Trash2, ShieldCheck, DollarSign, Lightbulb, 
-  AlertTriangle, Check, Search, ChevronDown, Eye, History
+  AlertTriangle, AlertCircle, Check, Search, ChevronDown, Eye, History
 } from "lucide-react";
 import { Department, ApprovalTypeOption, ApprovalRoleOption, ApprovalFlow, ApprovalFlowStep } from "@/services/master-data.service";
 import { formatVND, numberToWordsVietnamese } from "@/lib/currency";
@@ -63,6 +63,7 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
   const [flowStatus, setFlowStatus] = useState<"active" | "draft">("draft");
   const [description, setDescription] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleMinSalaryChange = (val: string) => {
     const digits = val.replace(/\D/g, "");
@@ -95,6 +96,7 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
   // Sync state on open / initialData change
   useEffect(() => {
     if (!isOpen) return;
+    setFormError(null);
 
     if (initialData) {
       setName(initialData.name || "");
@@ -232,18 +234,26 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
       return;
     }
 
+    setFormError(null);
+
     if (!name.trim()) {
-      alert("Vui lòng nhập tên luồng phê duyệt!");
+      setFormError("Vui lòng nhập tên luồng phê duyệt (ô 'Tên luồng duyệt' đang để trống)!");
       return;
     }
 
     if (steps.length === 0) {
-      alert("Luồng phê duyệt bắt buộc phải có ít nhất 1 cấp duyệt!");
+      setFormError("Luồng phê duyệt bắt buộc phải có ít nhất 1 cấp duyệt!");
       return;
     }
 
     if (maxSalary <= minSalary) {
-      alert("Mức tối đa phải lớn hơn mức tối thiểu!");
+      setFormError("Mức tối đa phải lớn hơn mức tối thiểu!");
+      return;
+    }
+
+    const stepRoles = steps.map((s) => s.role);
+    if (new Set(stepRoles).size !== stepRoles.length) {
+      setFormError("Các cấp duyệt không được trùng lặp vai trò trong cùng một chuỗi phê duyệt!");
       return;
     }
 
@@ -259,6 +269,8 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
         status: flowStatus,
         description: description.trim(),
       });
+    } catch (err: any) {
+      setFormError(err?.message || (typeof err === "string" ? err : "Không thể lưu luồng phê duyệt."));
     } finally {
       setIsSubmitting(false);
     }
@@ -308,6 +320,13 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
 
         {/* Scrollable Form Body */}
         <form onSubmit={handleSubmit} className="overflow-y-auto px-6 py-5 space-y-6 flex-1 text-xs">
+          {formError && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{formError}</span>
+            </div>
+          )}
+
           {/* 1. THÔNG TIN CHUNG */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -327,10 +346,17 @@ export const CreateApprovalFlowModal: React.FC<CreateApprovalFlowModalProps> = (
                   type="text"
                   required
                   disabled={isViewOnly}
-                  placeholder="Ví dụ: Luồng Tuyển Dụng Khối CNTT (Dưới 50 Tr VNĐ)"
+                  placeholder="Nhập tên luồng phê duyệt (bắt buộc)..."
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:bg-slate-100 disabled:text-slate-500"
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (formError) setFormError(null);
+                  }}
+                  className={`w-full bg-slate-50 border ${
+                    formError && !name.trim()
+                      ? "border-rose-400 ring-2 ring-rose-200 bg-rose-50/20"
+                      : "border-slate-200"
+                  } rounded-xl px-3.5 py-2.5 text-xs text-slate-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:bg-slate-100 disabled:text-slate-500`}
                 />
               </div>
 
