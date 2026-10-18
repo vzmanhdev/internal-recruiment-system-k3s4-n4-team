@@ -110,4 +110,4 @@ Desktop.ini
 *.sublime-workspace
 Assets/database.sql
 backend/scripts/
-/tests/
+tests/
