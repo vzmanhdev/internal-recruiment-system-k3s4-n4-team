@@ -83,8 +83,14 @@ export interface DictionaryItem {
 type DeptRow = Department & { head_name?: string | null; member_count?: number };
 type CategoryRow = Category & { usage_count?: number };
 const LEVELS: JobPosition["level"][] = ["Intern", "Junior", "Middle", "Senior", "Lead", "Manager", "Director"];
-// dictionary tab -> shared category type used by the workflow
-const DICT_TYPES = { sources: "candidate_source", reasons: "rejection_reason", contractTypes: "contract_type" } as const;
+// dictionary tab -> shared category type used by the workflow (S2-08: Nguồn ứng viên, lý do loại, địa điểm, hình thức làm việc)
+const DICT_TYPES = {
+  sources: "candidate_source",
+  reasons: "rejection_reason",
+  locations: "work_location",
+  workTypes: "work_type",
+  contractTypes: "contract_type",
+} as const;
 const codeOf = (description?: string | null) => /^\[([^\]]+)\]/.exec(description || "")?.[1] || "";
 const slug = (name: string) => name.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Đ/g, "D").replace(/[^A-Z0-9]+/g, "_").slice(0, 20);
 
@@ -194,13 +200,29 @@ function HRCategoriesContent() {
   const [posFormError, setPosFormError] = useState<string | null>(null);
 
   // State: Tab 3 (Danh mục chung)
-  const [activeDictionaryType, setActiveDictionaryType] = useState<"sources" | "reasons" | "contractTypes">(
-    requestedType === "rejection_reason" ? "reasons" : requestedType === "contract_type" ? "contractTypes" : "sources",
+  type DictKey = keyof typeof DICT_TYPES;
+  const [activeDictionaryType, setActiveDictionaryType] = useState<DictKey>(
+    requestedType === "rejection_reason"
+      ? "reasons"
+      : requestedType === "work_location" || requestedType === "work_locations"
+      ? "locations"
+      : requestedType === "work_type"
+      ? "workTypes"
+      : requestedType === "contract_type"
+      ? "contractTypes"
+      : "sources",
   );
   const dictionaries = useMemo(() => {
     const of = (type: string) => (md?.categories || []).filter((c) => c.category_type === type).map(toDictItem);
-    return { sources: of(DICT_TYPES.sources), reasons: of(DICT_TYPES.reasons), contractTypes: of(DICT_TYPES.contractTypes) };
+    return {
+      sources: of(DICT_TYPES.sources),
+      reasons: of(DICT_TYPES.reasons),
+      locations: of(DICT_TYPES.locations),
+      workTypes: of(DICT_TYPES.workTypes),
+      contractTypes: of(DICT_TYPES.contractTypes),
+    };
   }, [md]);
+  const [dictSearch, setDictSearch] = useState("");
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
   const [inlineEditValue, setInlineEditValue] = useState({ name: "", code: "", description: "" });
   const [quickAddName, setQuickAddName] = useState("");
@@ -348,18 +370,34 @@ function HRCategoriesContent() {
   const handleQuickAddDictionary = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!quickAddName.trim()) return;
-    const type = activeDictionaryType === "sources" && requestedType && !Object.values(DICT_TYPES).includes(requestedType as never)
-      ? requestedType : DICT_TYPES[activeDictionaryType];
+    const type = DICT_TYPES[activeDictionaryType];
     try {
       const created = await masterDataService.createCategory({
-        category_type: type, name: quickAddName.trim(), sort_order: dictionaries[activeDictionaryType].length,
+        category_type: type, name: quickAddName.trim(), sort_order: (dictionaries[activeDictionaryType] || []).length + 1,
       });
       setQuickAddName("");
       setQuickAddCode("");
-      showToast(`Đã thêm mới mục "${created.name}" vào từ điển hệ thống!`, "success");
+      showToast(`Đã thêm mới mục "${created.name}" thành công!`, "success");
       reload();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Không thêm được mục.", "error");
+    }
+  };
+
+  // Tab 3: Reorder (Move item up / down - S2-08 AC3: Sắp xếp được thứ tự hiển thị)
+  const handleMoveItem = async (index: number, direction: "up" | "down") => {
+    const list = [...(dictionaries[activeDictionaryType] || [])];
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    const temp = list[index];
+    list[index] = list[targetIndex];
+    list[targetIndex] = temp;
+    try {
+      await masterDataService.reorderCategories(list.map((i) => Number(i.id)));
+      showToast("Đã cập nhật thứ tự hiển thị!", "success");
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không thể sắp xếp thứ tự.", "error");
     }
   };
 
@@ -370,14 +408,14 @@ function HRCategoriesContent() {
     try {
       await masterDataService.updateCategory(Number(id), { name: inlineEditValue.name.trim(), is_active: current?.isActive ?? true });
       setInlineEditingId(null);
-      showToast("Cập nhật thông tin từ điển thành công!", "success");
+      showToast("Cập nhật thông tin danh mục thành công!", "success");
       reload();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Không cập nhật được mục.", "error");
     }
   };
 
-  // Tab 3: Delete dictionary item (values in use cannot be deleted — deactivate them instead)
+  // Tab 3: Delete dictionary item (values in use cannot be deleted — S2-08 AC2)
   const handleDeleteDictionaryItem = async (id: string, name: string) => {
     if (!confirm(`Bạn có chắc chắn muốn xóa mục "${name}" khỏi từ điển không?`)) return;
     try {
@@ -385,7 +423,7 @@ function HRCategoriesContent() {
       showToast(`Đã xóa mục "${name}"!`, "success");
       reload();
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : "Không xóa được mục.", "error");
+      showToast(err instanceof ApiError ? err.message : "Giá trị đang được tham chiếu nên không xoá được (S2-08).", "error");
     }
   };
 
@@ -879,12 +917,12 @@ function HRCategoriesContent() {
         {/* ========================================================================= */}
         {activeTab === "dictionary" && (
           <div className="space-y-6">
-            {/* Dictionary Selector Sub-Tabs */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Dictionary Selector Sub-Tabs (S2-08: Nguồn ứng viên, lý do loại, địa điểm, hình thức làm việc, hợp đồng) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
               <button
                 type="button"
-                onClick={() => setActiveDictionaryType("sources")}
-                className={`p-4 rounded-2xl border text-left transition-all cursor-pointer shadow-2xs ${
+                onClick={() => { setActiveDictionaryType("sources"); setDictSearch(""); }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer shadow-2xs ${
                   activeDictionaryType === "sources"
                     ? "bg-blue-50/70 border-blue-300 ring-2 ring-blue-500/20"
                     : "bg-white border-slate-200 hover:bg-slate-50"
@@ -893,218 +931,274 @@ function HRCategoriesContent() {
                 <div className="font-extrabold text-xs text-slate-900 flex items-center justify-between">
                   <span>1. Nguồn ứng viên</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
-                    {dictionaries.sources.length} mục
+                    {dictionaries.sources.length}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                  LinkedIn, Referral, VietnamWorks, TopCV, Sự kiện...
+                <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">
+                  LinkedIn, Referral, TopCV...
                 </p>
               </button>
 
               <button
                 type="button"
-                onClick={() => setActiveDictionaryType("reasons")}
-                className={`p-4 rounded-2xl border text-left transition-all cursor-pointer shadow-2xs ${
+                onClick={() => { setActiveDictionaryType("reasons"); setDictSearch(""); }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer shadow-2xs ${
                   activeDictionaryType === "reasons"
                     ? "bg-blue-50/70 border-blue-300 ring-2 ring-blue-500/20"
                     : "bg-white border-slate-200 hover:bg-slate-50"
                 }`}
               >
                 <div className="font-extrabold text-xs text-slate-900 flex items-center justify-between">
-                  <span>2. Lý do loại / từ chối</span>
+                  <span>2. Lý do loại</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
-                    {dictionaries.reasons.length} mục
+                    {dictionaries.reasons.length}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                  Trượt phỏng vấn kỹ thuật, lương vượt trần, văn hóa...
+                <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">
+                  Kỹ năng, lương, văn hóa...
                 </p>
               </button>
 
               <button
                 type="button"
-                onClick={() => setActiveDictionaryType("contractTypes")}
-                className={`p-4 rounded-2xl border text-left transition-all cursor-pointer shadow-2xs ${
+                onClick={() => { setActiveDictionaryType("locations"); setDictSearch(""); }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer shadow-2xs ${
+                  activeDictionaryType === "locations"
+                    ? "bg-blue-50/70 border-blue-300 ring-2 ring-blue-500/20"
+                    : "bg-white border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <div className="font-extrabold text-xs text-slate-900 flex items-center justify-between">
+                  <span>3. Địa điểm</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
+                    {dictionaries.locations.length}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">
+                  Hà Nội, TP.HCM, Đà Nẵng...
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setActiveDictionaryType("workTypes"); setDictSearch(""); }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer shadow-2xs ${
+                  activeDictionaryType === "workTypes"
+                    ? "bg-blue-50/70 border-blue-300 ring-2 ring-blue-500/20"
+                    : "bg-white border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <div className="font-extrabold text-xs text-slate-900 flex items-center justify-between">
+                  <span>4. Hình thức làm việc</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
+                    {dictionaries.workTypes.length}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">
+                  Full-time, Part-time, Remote...
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setActiveDictionaryType("contractTypes"); setDictSearch(""); }}
+                className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer shadow-2xs ${
                   activeDictionaryType === "contractTypes"
                     ? "bg-blue-50/70 border-blue-300 ring-2 ring-blue-500/20"
                     : "bg-white border-slate-200 hover:bg-slate-50"
                 }`}
               >
                 <div className="font-extrabold text-xs text-slate-900 flex items-center justify-between">
-                  <span>3. Loại hình hợp đồng</span>
+                  <span>5. Loại hợp đồng</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
-                    {dictionaries.contractTypes.length} mục
+                    {dictionaries.contractTypes.length}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                  Thử việc, xác định thời hạn 1 năm, không xác định thời hạn...
+                <p className="text-[10px] text-slate-500 mt-1 line-clamp-1">
+                  Thử việc, xác định thời hạn...
                 </p>
               </button>
             </div>
 
-            {/* Quick Add Bar */}
-            <form onSubmit={handleQuickAddDictionary} className="flex flex-col sm:flex-row gap-2.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200/90">
-              <input
-                type="text"
-                placeholder={`Nhập tên mục mới cho từ điển ${
-                  activeDictionaryType === "sources"
-                    ? "Nguồn ứng viên"
-                    : activeDictionaryType === "reasons"
-                    ? "Lý do loại"
-                    : "Loại hợp đồng"
-                }...`}
-                value={quickAddName}
-                onChange={(e) => setQuickAddName(e.target.value)}
-                className="flex-1 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-600"
-              />
-              <input
-                type="text"
-                placeholder="Mã code (Tùy chọn)"
-                value={quickAddCode}
-                onChange={(e) => setQuickAddCode(e.target.value)}
-                className="w-full sm:w-44 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 uppercase focus:outline-none focus:border-blue-600"
-              />
-              <button
-                type="submit"
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 active:scale-95"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Thêm nhanh</span>
-              </button>
-            </form>
+            {/* Search & Filter Bar (SCRUM-227 / SCRUM-229 / SCRUM-231) */}
+            <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm danh mục theo tên, mã..."
+                  value={dictSearch}
+                  onChange={(e) => setDictSearch(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white transition-all"
+                />
+              </div>
 
-            {/* Dictionary Items List with Inline Editing */}
+              {/* Quick Add Bar */}
+              <form onSubmit={handleQuickAddDictionary} className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto flex-1 max-w-xl">
+                <input
+                  type="text"
+                  placeholder={`Nhập tên mục mới cho ${
+                    activeDictionaryType === "sources"
+                      ? "Nguồn ứng viên"
+                      : activeDictionaryType === "reasons"
+                      ? "Lý do loại"
+                      : activeDictionaryType === "locations"
+                      ? "Địa điểm làm việc"
+                      : activeDictionaryType === "workTypes"
+                      ? "Hình thức làm việc"
+                      : "Loại hợp đồng"
+                  }...`}
+                  value={quickAddName}
+                  onChange={(e) => setQuickAddName(e.target.value)}
+                  className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 active:scale-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Thêm nhanh</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Dictionary Items List with Inline Editing & Sắp xếp thứ tự (S2-08 AC3) */}
             <div className="border border-slate-200/90 rounded-2xl overflow-hidden bg-white shadow-2xs">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200/90 text-slate-500 font-bold uppercase text-[11px] tracking-wider">
+                    <th className="py-3 px-4 text-center w-24">Thứ tự</th>
                     <th className="py-3 px-5">Tên Danh Mục (Hiển Thị)</th>
                     <th className="py-3 px-5">Mã Hệ Thống (Code)</th>
-                    <th className="py-3 px-5">Mô Tả / Ghi Chú</th>
                     <th className="py-3 px-5 text-center">Lượt Sử Dụng</th>
                     <th className="py-3 px-5 text-right">Thao Tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {dictionaries[activeDictionaryType].map((item) => {
-                    const isEditing = inlineEditingId === item.id;
+                  {dictionaries[activeDictionaryType]
+                    .filter((item) =>
+                      !dictSearch ||
+                      item.name.toLowerCase().includes(dictSearch.toLowerCase()) ||
+                      item.code.toLowerCase().includes(dictSearch.toLowerCase())
+                    )
+                    .map((item, idx) => {
+                      const isEditing = inlineEditingId === item.id;
 
-                    return (
-                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                        {/* Name Column */}
-                        <td className="py-3.5 px-5">
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              value={inlineEditValue.name}
-                              onChange={(e) =>
-                                setInlineEditValue({ ...inlineEditValue, name: e.target.value })
-                              }
-                              className="w-full px-2.5 py-1.5 bg-white border border-blue-400 rounded-lg text-xs font-bold text-slate-900 focus:outline-none"
-                            />
-                          ) : (
-                            <span className="font-extrabold text-slate-900">{item.name}</span>
-                          )}
-                        </td>
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                          {/* Sort Order Column (S2-08 AC3: Sắp xếp được thứ tự hiển thị) */}
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="flex items-center justify-center gap-1 text-slate-500">
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => handleMoveItem(idx, "up")}
+                                className="w-6 h-6 rounded flex items-center justify-center hover:bg-slate-200 text-slate-700 disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed font-bold"
+                                title="Chuyển lên trên"
+                              >
+                                ↑
+                              </button>
+                              <span className="font-mono text-xs font-bold text-slate-700 w-5 text-center">
+                                {idx + 1}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={idx === dictionaries[activeDictionaryType].length - 1}
+                                onClick={() => handleMoveItem(idx, "down")}
+                                className="w-6 h-6 rounded flex items-center justify-center hover:bg-slate-200 text-slate-700 disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed font-bold"
+                                title="Chuyển xuống dưới"
+                              >
+                                ↓
+                              </button>
+                            </div>
+                          </td>
 
-                        {/* Code Column */}
-                        <td className="py-3.5 px-5">
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              value={inlineEditValue.code}
-                              onChange={(e) =>
-                                setInlineEditValue({ ...inlineEditValue, code: e.target.value })
-                              }
-                              className="w-full px-2.5 py-1.5 bg-white border border-blue-400 rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none uppercase"
-                            />
-                          ) : (
+                          {/* Name Column */}
+                          <td className="py-3.5 px-5">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={inlineEditValue.name}
+                                onChange={(e) =>
+                                  setInlineEditValue({ ...inlineEditValue, name: e.target.value })
+                                }
+                                className="w-full px-2.5 py-1.5 bg-white border border-blue-400 rounded-lg text-xs font-bold text-slate-900 focus:outline-none"
+                              />
+                            ) : (
+                              <span className="font-extrabold text-slate-900">{item.name}</span>
+                            )}
+                          </td>
+
+                          {/* Code Column */}
+                          <td className="py-3.5 px-5">
                             <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-bold border border-slate-200">
                               {item.code}
                             </span>
-                          )}
-                        </td>
+                          </td>
 
-                        {/* Description Column */}
-                        <td className="py-3.5 px-5 text-slate-500">
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              value={inlineEditValue.description}
-                              onChange={(e) =>
-                                setInlineEditValue({
-                                  ...inlineEditValue,
-                                  description: e.target.value,
-                                })
-                              }
-                              className="w-full px-2.5 py-1.5 bg-white border border-blue-400 rounded-lg text-xs text-slate-700 focus:outline-none"
-                            />
-                          ) : (
-                            item.description || "---"
-                          )}
-                        </td>
+                          {/* Usage Count */}
+                          <td className="py-3.5 px-5 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                              item.usageCount > 0 ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
+                            }`}>
+                              {item.usageCount} hồ sơ
+                            </span>
+                          </td>
 
-                        {/* Usage Count */}
-                        <td className="py-3.5 px-5 text-center">
-                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold">
-                            {item.usageCount} hồ sơ
-                          </span>
-                        </td>
-
-                        {/* Actions (Inline Edit / Save) */}
-                        <td className="py-3.5 px-5 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {isEditing ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveInlineEdit(item.id)}
-                                  className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-bold transition-colors cursor-pointer"
-                                  title="Lưu thay đổi"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setInlineEditingId(null)}
-                                  className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
-                                  title="Hủy"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setInlineEditingId(item.id);
-                                    setInlineEditValue({
-                                      name: item.name,
-                                      code: item.code,
-                                      description: item.description || "",
-                                    });
-                                  }}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                                  title="Sửa nhanh (Inline edit)"
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteDictionaryItem(item.id, item.name)}
-                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                  title="Xóa mục"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          {/* Actions (Inline Edit / Save / Delete) */}
+                          <td className="py-3.5 px-5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveInlineEdit(item.id)}
+                                    className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-bold transition-colors cursor-pointer"
+                                    title="Lưu thay đổi"
+                                  >
+                                    <Check className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setInlineEditingId(null)}
+                                    className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
+                                    title="Hủy"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setInlineEditingId(item.id);
+                                      setInlineEditValue({
+                                        name: item.name,
+                                        code: item.code,
+                                        description: item.description || "",
+                                      });
+                                    }}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                                    title="Sửa nhanh (Inline edit)"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDictionaryItem(item.id, item.name)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Xóa mục"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
