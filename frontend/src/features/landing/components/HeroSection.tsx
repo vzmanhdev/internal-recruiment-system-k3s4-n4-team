@@ -63,6 +63,7 @@ export function HeroSection() {
                   src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop"
                   alt="Nhân sự công sở làm việc nhóm chuyên nghiệp"
                   fill
+                  unoptimized
                   priority
                   className="object-cover"
                   sizes="(max-width: 768px) 100vw, 45vw"

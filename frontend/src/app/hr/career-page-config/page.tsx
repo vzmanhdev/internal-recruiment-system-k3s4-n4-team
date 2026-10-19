@@ -128,6 +128,8 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
   const [website, setWebsite] = useState(initial.website || DEFAULT_CAREER_VALUES.website || "");
   const [logoUrl, setLogoUrl] = useState(initial.logo_url || "");
   const [bannerUrl, setBannerUrl] = useState(initial.banner_url || DEFAULT_CAREER_VALUES.banner_url || "");
+  const [logoError, setLogoError] = useState(false);
+  const [bannerError, setBannerError] = useState(false);
   const [aboutUs, setAboutUs] = useState(initial.about_us || DEFAULT_CAREER_VALUES.about_us || "");
 
   // Benefits list
@@ -195,6 +197,7 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
       const res = await uploadFile("company_logo", file);
       const publicPath = res.url;
       setLogoUrl(fileUrl(publicPath));
+      setLogoError(false);
       markDirty();
       showToast("Tải Logo doanh nghiệp thành công!");
     } catch (err) {
@@ -225,6 +228,7 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
       const res = await uploadFile("company_banner", file);
       const publicPath = res.url;
       setBannerUrl(fileUrl(publicPath));
+      setBannerError(false);
       markDirty();
       showToast("Tải ảnh bìa Banner thành công!");
     } catch (err) {
@@ -455,8 +459,18 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
                   <div className="flex items-center gap-4 p-4 bg-white rounded-xl border border-dashed border-slate-300 hover:border-blue-400 transition-colors">
                     {/* Logo Preview Box */}
                     <div className="w-20 h-20 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center p-1.5 shrink-0 overflow-hidden relative group">
-                      {logoUrl ? (
-                        <img src={logoUrl} alt="Company Logo" className="w-full h-full object-contain" />
+                      {logoUrl && !logoError ? (
+                        <img
+                          src={logoUrl}
+                          alt="Company Logo"
+                          className="w-full h-full object-contain"
+                          onError={() => setLogoError(true)}
+                        />
+                      ) : logoError ? (
+                        <div className="flex flex-col items-center justify-center text-center p-1">
+                          <AlertCircle className="w-5 h-5 text-amber-500 mb-0.5" />
+                          <span className="text-[9px] text-amber-600 font-bold leading-tight">Lỗi ảnh</span>
+                        </div>
                       ) : (
                         <Building2 className="w-8 h-8 text-slate-400" />
                       )}
@@ -465,6 +479,7 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
                           type="button"
                           onClick={() => {
                             setLogoUrl("");
+                            setLogoError(false);
                             markDirty();
                             showToast("Đã xóa Logo");
                           }}
@@ -503,6 +518,7 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
                         value={logoUrl}
                         onChange={(e) => {
                           setLogoUrl(e.target.value);
+                          setLogoError(false);
                           markDirty();
                         }}
                         placeholder="Hoặc dán đường dẫn ảnh logo (URL)..."
@@ -519,9 +535,19 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
                   </label>
                   <div className="space-y-2">
                     <div className="relative h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 group">
-                      {bannerUrl && (
-                        <img src={bannerUrl} alt="Banner Preview" className="w-full h-full object-cover" />
-                      )}
+                      {bannerUrl && !bannerError ? (
+                        <img
+                          src={bannerUrl}
+                          alt="Banner Preview"
+                          className="w-full h-full object-cover"
+                          onError={() => setBannerError(true)}
+                        />
+                      ) : bannerError ? (
+                        <div className="w-full h-full flex items-center justify-center bg-amber-50 text-amber-700 text-xs font-semibold gap-1.5 p-2">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>Không thể tải ảnh từ URL này (vui lòng kiểm tra lại)</span>
+                        </div>
+                      ) : null}
                       <div className="absolute inset-0 bg-slate-900/30 flex items-center justify-center gap-2">
                         <input
                           type="file"
@@ -550,6 +576,7 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
                       value={bannerUrl}
                       onChange={(e) => {
                         setBannerUrl(e.target.value);
+                        setBannerError(false);
                         markDirty();
                       }}
                       placeholder="URL Banner ảnh bìa..."
@@ -942,16 +969,18 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
                     </div>
                   </div>
 
-                  <div className="hidden sm:flex items-center gap-4 text-xs font-semibold text-slate-600">
-                    <span className="text-blue-600 font-bold">Về chúng tôi</span>
-                    <span>Vị trí tuyển dụng</span>
-                    <span>Quy trình</span>
-                    <span>Đãi ngộ</span>
-                  </div>
+                  {previewDevice !== "mobile" && (
+                    <div className="hidden sm:flex items-center gap-4 text-xs font-semibold text-slate-600">
+                      <span className="text-blue-600 font-bold">Về chúng tôi</span>
+                      <span>Vị trí tuyển dụng</span>
+                      <span>Quy trình</span>
+                      <span>Đãi ngộ</span>
+                    </div>
+                  )}
 
                   <button
                     type="button"
-                    className="px-4 py-1.5 bg-blue-600 text-white rounded-full text-xs font-bold shadow-xs hover:bg-blue-700"
+                    className="px-3 sm:px-4 py-1.5 bg-blue-600 text-white rounded-full text-[11px] sm:text-xs font-bold shadow-xs hover:bg-blue-700 shrink-0"
                   >
                     Ứng tuyển
                   </button>
@@ -960,9 +989,14 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
                 {/* 2. MOCK HERO COVER SECTION */}
                 <div className="relative h-64 sm:h-80 w-full overflow-hidden">
                   <img
-                    src={bannerUrl || DEFAULT_CAREER_VALUES.banner_url}
+                    src={bannerUrl && !bannerError ? bannerUrl : (DEFAULT_CAREER_VALUES.banner_url || "")}
                     alt="Career Cover"
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      if (DEFAULT_CAREER_VALUES.banner_url) {
+                        e.currentTarget.src = DEFAULT_CAREER_VALUES.banner_url;
+                      }
+                    }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/45 to-transparent flex flex-col justify-end p-6 sm:p-10 text-white space-y-3">
                     <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold border border-white/20 w-fit">
@@ -994,9 +1028,14 @@ function CareerPageEditor({ initial, onSaved }: { initial: CareerSettings; onSav
                     <div className="md:col-span-5 relative">
                       <div className="rounded-3xl overflow-hidden border-4 border-slate-100 shadow-xl aspect-[4/3] bg-slate-50">
                         <img
-                          src={bannerUrl || DEFAULT_CAREER_VALUES.banner_url}
+                          src={bannerUrl && !bannerError ? bannerUrl : (DEFAULT_CAREER_VALUES.banner_url || "")}
                           alt="Văn hóa làm việc"
                           className="w-full h-full object-cover"
+                          onError={(e) => {
+                            if (DEFAULT_CAREER_VALUES.banner_url) {
+                              e.currentTarget.src = DEFAULT_CAREER_VALUES.banner_url;
+                            }
+                          }}
                         />
                       </div>
                     </div>
