@@ -3,6 +3,23 @@
 Kept free of app imports so the dev bootstrap (run while app.main is importing) and Alembic can use it.
 """
 
+# Default role of every PUBLIC self-registration (assigned by the backend only). External portal actor:
+# never an internal employee; it receives no internal permission (see WORKSPACE_GRANTS / DEFAULT_GRANTED_MATRIX).
+PUBLIC_REGISTRATION_ROLE = "candidate"
+CANDIDATE_ROLE_DESCRIPTION = "Người nộp hồ sơ từ bên ngoài doanh nghiệp, sử dụng cổng tuyển dụng để nộp CV, theo dõi trạng thái hồ sơ, xác nhận phỏng vấn và phản hồi Offer."
+# Text used before 2026-10-16; replaced by migration f3c8a1d5e9b7 only where an admin has not edited it.
+CANDIDATE_ROLE_DESCRIPTION_OLD = "Ứng viên bên ngoài: theo dõi hồ sơ, lịch phỏng vấn và thư mời nhận việc của chính mình"
+
+# Role codes that no longer exist and the role that replaces them (2026-10-16: "employee" → "candidate",
+# migration a9d4e6b2c8f1). Legacy strings, imports and API callers that still send them are mapped here.
+RETIRED_ROLE_ALIASES = {"employee": "candidate"}
+
+
+def canonical_role(code: str) -> str:
+    code = (code or "").strip().lower()
+    return RETIRED_ROLE_ALIASES.get(code, code)
+
+
 ROLES_DATA = [
     {"code": "admin", "name": "Quản trị viên", "description": "Toàn quyền quản trị hệ thống và truy cập Admin Console"},
     {"code": "hr_manager", "name": "Trưởng phòng HR", "description": "Quản lý tổng quan tuyển dụng, định biên và quy trình"},
@@ -10,8 +27,7 @@ ROLES_DATA = [
     {"code": "hiring_manager", "name": "Trưởng bộ phận", "description": "Khởi tạo đề xuất nhu cầu và quyết định tuyển dụng"},
     {"code": "interviewer", "name": "Người phỏng vấn", "description": "Tham gia đánh giá và nộp phiếu phỏng vấn ứng viên"},
     {"code": "approver", "name": "Người duyệt", "description": "Phê duyệt các đề xuất tuyển dụng và đề nghị Offer"},
-    {"code": "employee", "name": "Nhân sự nội bộ", "description": "Xem cơ hội việc làm nội bộ, giới thiệu ứng viên và cập nhật hồ sơ"},
-    {"code": "candidate", "name": "Ứng viên", "description": "Ứng viên bên ngoài: theo dõi hồ sơ, lịch phỏng vấn và thư mời nhận việc của chính mình"},
+    {"code": "candidate", "name": "Ứng viên", "description": CANDIDATE_ROLE_DESCRIPTION},
 ]
 
 PERMISSIONS_DATA = [
@@ -78,7 +94,6 @@ WORKSPACE_GRANTS = {
     "hiring_manager": ["workspace:manager:access", "workspace:employee:access"],
     "interviewer": ["workspace:interviewer:access", "workspace:employee:access"],
     "approver": ["workspace:approver:access", "workspace:employee:access", "report:view"],
-    "employee": ["workspace:employee:access"],
     "candidate": ["workspace:candidate:access"],
 }
 
@@ -89,7 +104,6 @@ DEFAULT_GRANTED_MATRIX = {
     "hiring_manager": ["requisition:view", "requisition:create", "requisition:edit", "candidate:view", "candidate:evaluate", "interview:view", "interview:evaluate"],
     "interviewer": ["interview:view", "interview:evaluate", "candidate:view"],
     "approver": ["requisition:view", "requisition:approve", "offer:view", "offer:approve"],
-    "employee": ["requisition:view"],
 }
 for _role, _codes in WORKSPACE_GRANTS.items():
     DEFAULT_GRANTED_MATRIX.setdefault(_role, []).extend(c for c in _codes if c not in DEFAULT_GRANTED_MATRIX[_role])

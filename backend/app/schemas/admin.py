@@ -12,7 +12,6 @@ VALID_ROLES = {
     "hiring_manager",
     "interviewer",
     "approver",
-    "employee",
     "candidate",
     "manager",
     "dept_manager"
@@ -24,7 +23,7 @@ class AdminCreateUserRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
     phone: Optional[str] = Field(None, max_length=20)
-    roles: List[str] = Field(default_factory=lambda: ["employee"], min_length=1)
+    roles: List[str] = Field(default_factory=lambda: ["candidate"], min_length=1)
 
     @field_validator("password")
     @classmethod
@@ -36,7 +35,8 @@ class AdminCreateUserRequest(BaseModel):
     @field_validator("roles")
     @classmethod
     def validate_roles(cls, roles: List[str]) -> List[str]:
-        normalized = list(dict.fromkeys(roles))
+        from app.db.rbac_catalog import canonical_role
+        normalized = list(dict.fromkeys(canonical_role(r) for r in roles))
         if any(role not in VALID_ROLES for role in normalized):
             raise ValueError("Vai trò không hợp lệ")
         return normalized
@@ -48,7 +48,8 @@ class UpdateRolesRequest(BaseModel):
     @field_validator("roles")
     @classmethod
     def validate_roles(cls, roles: List[str]) -> List[str]:
-        normalized = list(dict.fromkeys(roles))
+        from app.db.rbac_catalog import canonical_role
+        normalized = list(dict.fromkeys(canonical_role(r) for r in roles))
         if any(role not in VALID_ROLES for role in normalized):
             raise ValueError("Vai trò không hợp lệ")
         return normalized

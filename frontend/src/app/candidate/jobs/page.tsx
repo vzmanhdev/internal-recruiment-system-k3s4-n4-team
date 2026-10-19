@@ -19,46 +19,63 @@ import {
   Users,
 } from 'lucide-react';
 import { BrandLogo } from '@/components/layout/BrandLogo';
-import { careerApi, type CandidateJob } from '@/features/candidate/api';
+import { careerApi, type CandidateJob, type CareerPageSettingsData } from '@/features/candidate/api';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { ApiError } from '@/lib/api-client';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
+import { getSearchScore } from '@/utils/vietnameseSearch';
 
 export default function CandidateJobsPage() {
-  const { data, error, loading, reload } = useApiData(() => careerApi.list(), []);
-  const CANDIDATE_JOBS: CandidateJob[] = useMemo(() => data || [], [data]);
+  const { data, error, loading, reload } = useApiData(
+    () => Promise.all([careerApi.list(), careerApi.getCareerPageSettings().catch(() => null)]),
+    []
+  );
+  const CANDIDATE_JOBS: CandidateJob[] = useMemo(() => data?.[0] || [], [data]);
+  const settings: CareerPageSettingsData | null = data?.[1] || null;
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   const [selectedLocation, setSelectedLocation] = useState('all');
 
   // Danh sách các phòng ban duy nhất
   const departments = useMemo(() => {
-    const list = Array.from(new Set(CANDIDATE_JOBS.map((j) => j.department)));
+    const list = Array.from(new Set(CANDIDATE_JOBS.map((j) => j.department).filter(Boolean)));
     return list;
   }, [CANDIDATE_JOBS]);
 
   // Danh sách các địa điểm duy nhất
   const locations = useMemo(() => {
-    const list = Array.from(new Set(CANDIDATE_JOBS.map((j) => j.location)));
+    const list = Array.from(new Set(CANDIDATE_JOBS.map((j) => j.location).filter(Boolean)));
     return list;
   }, [CANDIDATE_JOBS]);
 
-  // Lọc dữ liệu theo từ khóa, phòng ban, địa điểm
+  // Lọc dữ liệu theo từ khóa thông minh (tiếng Việt có dấu/không dấu), phòng ban, địa điểm
   const filteredJobs = useMemo(() => {
-    return CANDIDATE_JOBS.filter((job) => {
-      const matchSearch =
-        job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.tags.some((t) => t.toLowerCase().includes(searchTerm.toLowerCase()));
-
-      const matchDept =
-        selectedDepartment === 'all' || job.department === selectedDepartment;
-
-      const matchLoc =
-        selectedLocation === 'all' || job.location === selectedLocation;
-
-      return matchSearch && matchDept && matchLoc;
+    const term = searchTerm.trim();
+    const scoredList = CANDIDATE_JOBS.map((job) => {
+      let score = 0;
+      if (term) {
+        const titleScore = getSearchScore(term, job.title) * 3;
+        const deptScore = getSearchScore(term, job.department) * 1.5;
+        const tagScores = job.tags.map((t) => getSearchScore(term, t) * 2);
+        const maxTagScore = tagScores.length > 0 ? Math.max(...tagScores) : 0;
+        score = Math.max(titleScore, deptScore, maxTagScore);
+      } else {
+        score = 1;
+      }
+      return { job, score };
     });
+
+    return scoredList
+      .filter(({ job, score }) => {
+        if (term && score <= 0) return false;
+        const matchDept = selectedDepartment === 'all' || job.department === selectedDepartment;
+        const matchLoc = selectedLocation === 'all' || job.location === selectedLocation;
+        return matchDept && matchLoc;
+      })
+      .sort((a, b) => b.score - a.score)
+      .map(({ job }) => job);
   }, [CANDIDATE_JOBS, searchTerm, selectedDepartment, selectedLocation]);
 
   const handleResetFilters = () => {
@@ -77,7 +94,7 @@ export default function CandidateJobsPage() {
         <div className="relative z-10 max-w-3xl space-y-4">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-blue-100 text-xs font-extrabold">
             <Sparkles className="w-4 h-4 text-yellow-300" />
-            <span>Tuyển Dụng Nhân Tài 2026</span>
+            <span>{settings?.company_name || 'Tuyển Dụng Nhân Tài 2026'}</span>
           </div>
 
           <h1 className="text-2xl sm:text-4xl font-black tracking-tight leading-tight">
@@ -85,7 +102,7 @@ export default function CandidateJobsPage() {
           </h1>
 
           <p className="text-xs sm:text-base text-blue-100/90 font-medium leading-relaxed max-w-2xl">
-            Cùng chúng tôi kiến tạo các giải pháp công nghệ tiên phong, làm việc trong môi trường cởi mở, minh bạch với đãi ngộ xứng đáng và lộ trình thăng tiến rõ ràng.
+            {settings?.slogan || 'Cùng chúng tôi kiến tạo các giải pháp công nghệ tiên phong, làm việc trong môi trường cởi mở, minh bạch với đãi ngộ xứng đáng và lộ trình thăng tiến rõ ràng.'}
           </p>
 
           <div className="pt-1 flex items-center gap-4 text-xs font-semibold text-blue-200">
@@ -109,15 +126,14 @@ export default function CandidateJobsPage() {
       {/* 2. Thanh Tìm kiếm & Lọc (Mobile-first: Xếp dọc trên mobile, ngang trên PC) */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
-          {/* Ô tìm kiếm từ khóa */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-            <input
-              type="text"
+          {/* Ô tìm kiếm từ khóa với gợi ý thông minh */}
+          <div className="flex-1 min-w-0">
+            <SearchAutocompleteInput
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm theo chức danh, kỹ năng (Go, React, AI, Product...)..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:border-blue-500 transition-all placeholder:text-slate-400"
+              onChange={setSearchTerm}
+              scope="jobs"
+              size="md"
+              placeholder="Tìm theo chức danh, kỹ năng (Go, React, Kỹ sư, Product...)..."
             />
           </div>
 

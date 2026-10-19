@@ -31,6 +31,7 @@ from app.api.v1.notifications import router as notifications_router
 from app.api.v1.files import router as files_router
 from app.api.v1.public import router as public_router
 from app.api.v1.talent_pool import router as talent_pool_router
+from app.api.v1.search_suggestions import router as search_suggestions_router
 
 logger = logging.getLogger("app")
 
@@ -51,7 +52,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-    expose_headers=["X-Request-ID"],
+    expose_headers=["X-Request-ID", "Content-Disposition"],
 )
 
 
@@ -208,3 +209,4 @@ app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["
 app.include_router(files_router, prefix="/api/v1/files", tags=["Files"])
 app.include_router(public_router, prefix="/api/v1/public", tags=["Candidate self-service"])
 app.include_router(talent_pool_router, prefix="/api/v1/talent-pool", tags=["Talent pool"])
+app.include_router(search_suggestions_router, prefix="/api/v1")

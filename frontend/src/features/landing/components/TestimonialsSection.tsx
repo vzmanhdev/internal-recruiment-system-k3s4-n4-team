@@ -59,7 +59,7 @@ export function TestimonialsSection() {
 
               <div className="flex items-center gap-4 pt-4 border-t border-slate-100">
                 <div className="relative w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 border-blue-100">
-                  <Image src={item.avatar} alt={item.name} fill className="object-cover" />
+                  <Image src={item.avatar} alt={item.name} fill unoptimized sizes="48px" className="object-cover" />
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-[var(--color-heading)]">{item.name}</h4>

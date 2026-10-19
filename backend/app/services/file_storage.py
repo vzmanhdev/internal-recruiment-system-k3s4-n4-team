@@ -11,11 +11,26 @@ from fastapi import HTTPException
 
 from app.core.config import settings
 
-LIMITS = {"cv": 10 * 1024 * 1024, "avatar": 2 * 1024 * 1024}
-ALLOWED = {"cv": {"application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
-           "avatar": {"image/png", "image/jpeg"}}
-EXTENSIONS = {"application/pdf": ".pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-              "image/png": ".png", "image/jpeg": ".jpg"}
+LIMITS = {
+    "cv": 10 * 1024 * 1024,
+    "avatar": 2 * 1024 * 1024,
+    "company_logo": 5 * 1024 * 1024,
+    "company_banner": 10 * 1024 * 1024,
+}
+ALLOWED = {
+    "cv": {"application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+    "avatar": {"image/png", "image/jpeg"},
+    "company_logo": {"image/png", "image/jpeg", "image/webp", "image/svg+xml"},
+    "company_banner": {"image/png", "image/jpeg", "image/webp"},
+}
+EXTENSIONS = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/svg+xml": ".svg",
+}
 
 
 def storage_dir() -> str:
@@ -31,6 +46,11 @@ def detect_type(data: bytes) -> Optional[str]:
         return "image/png"
     if data.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
+    if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
+        return "image/webp"
+    stripped = data.lstrip()
+    if stripped.startswith(b"<svg") or (stripped.startswith(b"<?xml") and b"<svg" in data[:1024]):
+        return "image/svg+xml"
     if data.startswith(b"PK\x03\x04"):
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -43,7 +63,7 @@ def detect_type(data: bytes) -> Optional[str]:
 
 def validate(kind: str, data: bytes) -> str:
     if kind not in LIMITS:
-        raise HTTPException(status_code=422, detail="Loại tệp chỉ nhận 'cv' hoặc 'avatar'.")
+        raise HTTPException(status_code=422, detail="Loại tệp không được hỗ trợ (chỉ nhận 'cv', 'avatar', 'company_logo', 'company_banner').")
     if not data:
         raise HTTPException(status_code=422, detail="Tệp tải lên bị rỗng.")
     if len(data) > LIMITS[kind]:
@@ -51,7 +71,13 @@ def validate(kind: str, data: bytes) -> str:
         raise HTTPException(status_code=413, detail=f"Tệp vượt quá dung lượng cho phép ({mb}MB).")
     content_type = detect_type(data)
     if content_type not in ALLOWED[kind]:
-        allowed = "PDF hoặc DOCX" if kind == "cv" else "JPG hoặc PNG"
+        allowed_map = {
+            "cv": "PDF hoặc DOCX",
+            "avatar": "JPG hoặc PNG",
+            "company_logo": "PNG, JPG, WebP hoặc SVG",
+            "company_banner": "PNG, JPG hoặc WebP",
+        }
+        allowed = allowed_map.get(kind, "định dạng được hỗ trợ")
         raise HTTPException(status_code=415, detail=f"Định dạng tệp không được hỗ trợ — chỉ nhận {allowed}.")
     return content_type
 

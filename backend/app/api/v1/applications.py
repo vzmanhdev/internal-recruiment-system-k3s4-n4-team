@@ -23,6 +23,7 @@ from app.models.master_data import ApplicationNote, SavedFilter, StoredFile, Tal
 from app.models.referral_eval import CandidateEvaluation
 from app.api.deps import get_current_user_obj, authenticate_bearer
 from app.services.notification_service import notify
+from app.core.search import build_search_filter, build_search_score
 from app.services.email_dispatch import already_sent, frontend_link, new_link_token, queue_template_email, render
 from app.services.cv_parser import parse_cv
 from app.services import file_storage
@@ -232,11 +233,16 @@ def _filtered(db: Session, user: User, job_id=None, status_filter=None, search=N
         query = query.filter(JobApplication.created_at <= datetime.combine(date_to, datetime.max.time()))
     if overdue_only:
         query = query.filter(JobApplication.is_overdue == True)  # noqa: E712
-    if search:
-        like = f"%{search}%"
-        query = query.filter(JobApplication.full_name.ilike(like) | JobApplication.email.ilike(like)
-                             | JobApplication.phone.ilike(like) | JobApplication.cover_letter.ilike(like))
-    apps = query.order_by(JobApplication.created_at.desc()).all()
+    search_score = None
+    if search and search.strip():
+        search_cols = [JobApplication.full_name, JobApplication.email, JobApplication.phone, JobApplication.cover_letter]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
+
+    if search_score is not None:
+        apps = query.order_by(search_score.desc(), JobApplication.created_at.desc()).all()
+    else:
+        apps = query.order_by(JobApplication.created_at.desc()).all()
     if tag:
         apps = [a for a in apps if tag in a.tags()]
     return apps

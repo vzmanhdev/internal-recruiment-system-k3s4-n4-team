@@ -18,6 +18,7 @@ from app.api.deps import get_current_user_obj, require_permission
 from app.services.rbac_service import get_user_roles, get_effective_permissions
 from app.models.audit import AuditLog
 from app.services.notification_service import notify, users_with_roles
+from app.core.search import build_search_filter, build_search_score
 
 router = APIRouter()
 
@@ -65,6 +66,39 @@ class RequisitionCreate(BaseModel):
         return self
 
 
+class RequisitionUpdate(BaseModel):
+    title: Optional[str] = None
+    department_id: Optional[int] = None
+    quantity: Optional[int] = Field(default=None, ge=1)
+    reason: Optional[str] = None
+    reason_detail: Optional[str] = None
+    priority: Optional[str] = None
+    employment_type: Optional[str] = None
+    work_location: Optional[str] = None
+    min_salary: Optional[int] = Field(default=None, ge=0)
+    max_salary: Optional[int] = Field(default=None, ge=0)
+    is_salary_negotiable: Optional[bool] = None
+    target_onboard_date: Optional[str] = None
+    job_description: Optional[str] = None
+    requirements: Optional[str] = None
+    benefits: Optional[str] = None
+    job_title_id: Optional[int] = None
+    salary_justification: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_business_fields(self):
+        if self.min_salary is not None and self.max_salary is not None and self.min_salary > self.max_salary:
+            raise ValueError("Mức lương tối thiểu không được lớn hơn mức lương tối đa.")
+        if self.target_onboard_date:
+            try:
+                target = date.fromisoformat(self.target_onboard_date[:10])
+            except ValueError:
+                raise ValueError("Ngày cần người không đúng định dạng YYYY-MM-DD.")
+            if target < date.today():
+                raise ValueError("Ngày cần người không được ở quá khứ.")
+        return self
+
+
 class RequisitionApprovalAction(BaseModel):
     action: str = Field(..., example="approved")  # approved, rejected, changes_requested
     comment: Optional[str] = None
@@ -73,6 +107,7 @@ class RequisitionApprovalAction(BaseModel):
 class RecruiterAssignRequest(BaseModel):
     recruiter_id: int
     assignment_type: str = "primary"  # primary (chính), secondary (hỗ trợ)
+    handover_reason: Optional[str] = None
 
 
 class HeadcountOverrideRequest(BaseModel):
@@ -148,7 +183,7 @@ def resolve_approval_chain(db: Session, req: JobRequisition) -> list:
     """S3-01: pick the active flow for the department and proposed salary; department-specific flows win,
     then the flow with the highest matching salary threshold (so higher salaries escalate automatically)."""
     salary = req.max_salary or req.min_salary or 0
-    flows = db.query(ApprovalFlow).filter(ApprovalFlow.status == "active").all()
+    flows = db.query(ApprovalFlow).filter(ApprovalFlow.status == "active", ApprovalFlow.is_deleted == False).all()
     matching = [f for f in flows
                 if (f.department_id in (None, req.department_id))
                 and (f.min_salary_threshold or 0) <= salary < (f.max_salary_threshold or float("inf"))]
@@ -220,12 +255,14 @@ def _next_code(db: Session) -> str:
 
 @router.get("")
 def list_requisitions(
+    search: Optional[str] = None,
     status_filter: Optional[str] = None,
     department_id: Optional[int] = None,
     recruiter_id: Optional[int] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     overdue_only: bool = False,
+    needs_handover_only: bool = False,
     current_user: User = Depends(require_permission("requisition:view")),
     db: Session = Depends(get_db)
 ):
@@ -235,6 +272,11 @@ def list_requisitions(
         query = query.filter(
             (JobRequisition.created_by_id == current_user.id) | (JobRequisition.id.in_(assigned or {-1}))
         )
+    search_score = None
+    if search and search.strip():
+        search_cols = [JobRequisition.title, JobRequisition.code]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
     if status_filter:
         query = query.filter(JobRequisition.status == status_filter)
     if department_id:
@@ -246,19 +288,87 @@ def list_requisitions(
         query = query.filter(JobRequisition.created_at >= datetime.combine(date_from, datetime.min.time()))
     if date_to:
         query = query.filter(JobRequisition.created_at <= datetime.combine(date_to, datetime.max.time()))
-    rows = query.order_by(JobRequisition.created_at.desc()).all()
-    # S3-06: show who is in charge; one query for all assignments on the page.
+    if search_score is not None:
+        rows = query.order_by(search_score.desc(), JobRequisition.created_at.desc()).all()
+    else:
+        rows = query.order_by(JobRequisition.created_at.desc()).all()
+    # S3-06 & S1-10: show who is in charge and detect locked/inactive recruiters needing handover
     assigned = {}
+    rec_status_map = {}
     if rows:
-        for a, name in (db.query(RecruiterAssignment, User.full_name)
-                        .join(User, User.id == RecruiterAssignment.recruiter_id)
-                        .filter(RecruiterAssignment.requisition_id.in_([r.id for r in rows])).all()):
-            assigned.setdefault(a.requisition_id, []).append(
-                {"recruiter_id": a.recruiter_id, "full_name": name, "assignment_type": a.assignment_type})
-    reqs = [r.to_dict() | {"recruiters": assigned.get(r.id, [])} for r in rows]
+        for a, name, email, acc_status, is_act in (
+            db.query(RecruiterAssignment, User.full_name, User.email, User.account_status, User.is_active)
+            .join(User, User.id == RecruiterAssignment.recruiter_id)
+            .filter(RecruiterAssignment.requisition_id.in_([r.id for r in rows])).all()
+        ):
+            assigned.setdefault(a.requisition_id, []).append({
+                "recruiter_id": a.recruiter_id,
+                "full_name": name or email,
+                "assignment_type": a.assignment_type
+            })
+            rec_status_map[(a.requisition_id, a.recruiter_id)] = (acc_status, is_act, name or email)
+
+    reqs = []
+    for r in rows:
+        recs = assigned.get(r.id, [])
+        primary = next((x for x in recs if x["assignment_type"] == "primary"), None)
+        needs_handover = False
+        handover_reason_flag = None
+        if r.status in {"approved", "in_progress"}:
+            if not primary:
+                needs_handover = True
+                handover_reason_flag = "Chưa có chuyên viên tuyển dụng phụ trách chính"
+            else:
+                acc_status, is_act, full_name = rec_status_map.get((r.id, primary["recruiter_id"]), ("active", True, primary["full_name"]))
+                if acc_status != "active" or not is_act:
+                    needs_handover = True
+                    handover_reason_flag = f"Chuyên viên {full_name} đã bị khoá tài khoản/nghỉ việc"
+
+        item = r.to_dict() | {
+            "recruiters": recs,
+            "needs_handover": needs_handover,
+            "handover_reason_flag": handover_reason_flag,
+        }
+        reqs.append(item)
+
     if overdue_only:
         reqs = [r for r in reqs if r["is_overdue"]]
+    if needs_handover_only:
+        reqs = [r for r in reqs if r["needs_handover"]]
     return reqs
+
+
+@router.get("/handover-history")
+def get_handover_history(
+    requisition_id: Optional[int] = None,
+    current_user: User = Depends(require_permission("requisition:view")),
+    db: Session = Depends(get_db)
+):
+    """S3-06 & S1-10: Audit trail of recruiter assignments and handovers."""
+    query = (
+        db.query(RequisitionApprovalLog, JobRequisition.code, JobRequisition.title, User.full_name, User.email)
+        .join(JobRequisition, JobRequisition.id == RequisitionApprovalLog.requisition_id)
+        .outerjoin(User, User.id == RequisitionApprovalLog.approver_id)
+        .filter(RequisitionApprovalLog.action.in_(["recruiter_handover", "recruiter_assigned"]))
+    )
+    if requisition_id:
+        query = query.filter(RequisitionApprovalLog.requisition_id == requisition_id)
+    logs = query.order_by(RequisitionApprovalLog.created_at.desc()).limit(100).all()
+
+    return [
+        {
+            "id": log.id,
+            "requisition_id": log.requisition_id,
+            "requisition_code": code,
+            "requisition_title": title,
+            "approver_name": approver_name or approver_email or "Hệ thống",
+            "action": log.action,
+            "step_name": log.step_name,
+            "comment": log.comment,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        }
+        for log, code, title, approver_name, approver_email in logs
+    ]
 
 
 @router.get("/{req_id}")
@@ -326,7 +436,7 @@ def create_requisition(
 @router.put("/{req_id}")
 def update_requisition(
     req_id: int,
-    payload: RequisitionCreate,
+    payload: RequisitionUpdate,
     current_user: User = Depends(require_permission("requisition:edit")),
     db: Session = Depends(get_db)
 ):
@@ -335,10 +445,11 @@ def update_requisition(
         raise HTTPException(status_code=403, detail="Chỉ người tạo tờ trình mới được chỉnh sửa.")
     if req.status not in DRAFT_STATES:
         raise HTTPException(status_code=409, detail=f"Chỉ sửa được tờ trình ở trạng thái Nháp hoặc Yêu cầu bổ sung (hiện tại: '{req.status}').")
-    if not db.query(Department).filter(Department.id == payload.department_id).first():
+    if payload.department_id and not db.query(Department).filter(Department.id == payload.department_id).first():
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
-    _check_salary_band(db, payload)
-    for key, value in payload.model_dump(exclude={"save_as_draft"}).items():
+    
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
         setattr(req, key, value)
     if payload.job_title_id:
         req.job_title_name = db.query(JobTitle.name).filter(JobTitle.id == payload.job_title_id).scalar()
@@ -480,18 +591,32 @@ def assign_recruiter(
         existing.assignment_type = payload.assignment_type
     else:
         db.add(RecruiterAssignment(requisition_id=req.id, recruiter_id=recruiter.id, assignment_type=payload.assignment_type))
+
+    is_handover = bool(previous_primary or payload.handover_reason)
+    action_type = "recruiter_handover" if is_handover else "recruiter_assigned"
+    step_title = "Bàn giao / Phân công Recruiter" if is_handover else "Phân công recruiter"
+    log_comment = f"Recruiter: {recruiter.full_name or recruiter.email} ({payload.assignment_type})"
+    if payload.handover_reason:
+        log_comment += f" | Lý do bàn giao: {payload.handover_reason}"
+    if previous_primary:
+        log_comment += f" | Chuyển giao từ Recruiter #{previous_primary}"
+
     db.add(RequisitionApprovalLog(
-        requisition_id=req.id, approver_id=current_user.id, step_name="Phân công recruiter",
-        action="recruiter_assigned",
-        comment=f"Recruiter {recruiter.email} ({payload.assignment_type})"
-                + (f"; chuyển giao từ user #{previous_primary}" if previous_primary else ""),
+        requisition_id=req.id,
+        approver_id=current_user.id,
+        step_name=step_title,
+        action=action_type,
+        comment=log_comment,
     ))
-    _audit(db, current_user, "REQUISITION_ASSIGN_RECRUITER", req,
-           {"recruiter_id": recruiter.id, "type": payload.assignment_type, "previous_primary": previous_primary})
+    _audit(db, current_user, "REQUISITION_HANDOVER" if is_handover else "REQUISITION_ASSIGN_RECRUITER", req,
+           {"recruiter_id": recruiter.id, "type": payload.assignment_type, "previous_primary": previous_primary, "handover_reason": payload.handover_reason})
     notify(db, [recruiter.id], "recruiter_assigned", f"Bạn được phân công tờ trình {req.code}", req.title,
            link=f"/recruiter?requisition={req.id}", entity_type="REQUISITION", entity_id=req.id)
     db.commit()
-    return {"success": True, "message": f"Đã phân công Recruiter {recruiter.email} ({payload.assignment_type}) cho tờ trình {req.code}."}
+    return {
+        "success": True,
+        "message": f"Đã {'bàn giao' if is_handover else 'phân công'} Recruiter {recruiter.full_name or recruiter.email} ({payload.assignment_type}) cho tờ trình {req.code}."
+    }
 
 
 # Ghi đè Headcount khi vượt chỉ tiêu (S3-04 Override)

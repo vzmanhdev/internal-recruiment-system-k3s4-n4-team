@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 
-from fastapi import APIRouter, Depends
+from urllib.parse import quote
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -119,6 +120,98 @@ def get_analytics_overview(
         if req_by_dept.get(dept_id) or cand_by_dept.get(dept_id)
     ]
 
+    # S1-10 & S3-06: Handover alert positions
+    handover_reqs = []
+    for req in db.query(JobRequisition).filter(JobRequisition.status.in_(OPEN_REQ_STATUSES)).all():
+        primary = (
+            db.query(RecruiterAssignment, User.full_name, User.email, User.account_status, User.is_active)
+            .join(User, User.id == RecruiterAssignment.recruiter_id)
+            .filter(RecruiterAssignment.requisition_id == req.id, RecruiterAssignment.assignment_type == "primary")
+            .first()
+        )
+        if not primary:
+            handover_reqs.append({
+                "requisition_id": req.id,
+                "code": req.code,
+                "title": req.title,
+                "department": departments.get(req.department_id),
+                "reason": "Chưa có chuyên viên tuyển dụng phụ trách chính",
+                "priority": req.priority,
+                "status": req.status,
+            })
+        elif primary[3] != "active" or not primary[4]:
+            handover_reqs.append({
+                "requisition_id": req.id,
+                "code": req.code,
+                "title": req.title,
+                "department": departments.get(req.department_id),
+                "reason": f"Chuyên viên {primary[1] or primary[2]} đã bị khoá tài khoản/nghỉ việc",
+                "priority": req.priority,
+                "status": req.status,
+            })
+
+    # S3-04: Headcount budget alerts
+    headcount_warnings = []
+    for b in db.query(HeadcountBudget).all():
+        if b.budget_quantity and b.used_quantity >= b.budget_quantity:
+            headcount_warnings.append({
+                "department_id": b.department_id,
+                "department": departments.get(b.department_id, f"Phòng ban #{b.department_id}"),
+                "budget": b.budget_quantity,
+                "used": b.used_quantity,
+                "remaining": max(0, b.budget_quantity - b.used_quantity),
+                "message": f"Đã sử dụng {b.used_quantity}/{b.budget_quantity} chỉ tiêu định biên",
+            })
+
+    # S7-03 / S7-05: Over-band salary offers needing HR escalation
+    over_band_offers = []
+    for offer in db.query(JobOffer).filter(JobOffer.status == "pending_approval", JobOffer.requires_escalation == True).all():
+        app_name = offer.application.full_name if offer.application else f"Hồ sơ #{offer.application_id}"
+        posting = offer.application.job_posting if offer.application else None
+        req = posting.requisition if posting else None
+        over_band_offers.append({
+            "offer_id": offer.id,
+            "candidate_name": app_name,
+            "offered_salary": offer.offered_salary,
+            "department": departments.get(posting.department_id) if posting else None,
+            "position": posting.title if posting else None,
+            "justification": offer.salary_justification or "Cần ban giám đốc / HR Manager phê duyệt vượt dải",
+        })
+
+    # Stuck approvals (> 3 days in pending status)
+    stuck_approvals = []
+    stuck_threshold = now - timedelta(days=3)
+    for req in db.query(JobRequisition).filter(
+        JobRequisition.status.in_(PENDING_REQ_STATUSES),
+        JobRequisition.created_at <= stuck_threshold
+    ).all():
+        pending_days = (now - req.created_at).days if req.created_at else 0
+        stuck_approvals.append({
+            "requisition_id": req.id,
+            "code": req.code,
+            "title": req.title,
+            "department": departments.get(req.department_id),
+            "step": req.current_approval_step,
+            "pending_days": pending_days,
+            "message": f"Tắc nghẽn phê duyệt {pending_days} ngày tại bước {req.current_approval_step}",
+        })
+
+    hr_alerts = {
+        "total_alerts": len(overdue) + len(handover_reqs) + len(headcount_warnings) + len(over_band_offers) + len(stuck_approvals),
+        "overdue_count": len(overdue),
+        "handover_count": len(handover_reqs),
+        "headcount_warning_count": len(headcount_warnings),
+        "over_band_count": len(over_band_offers),
+        "stuck_approval_count": len(stuck_approvals),
+        "items": {
+            "overdue": overdue,
+            "handover": handover_reqs,
+            "headcount": headcount_warnings,
+            "over_band": over_band_offers,
+            "stuck_approvals": stuck_approvals,
+        }
+    }
+
     return {
         "generated_at": now.isoformat(),
         "kpis": {
@@ -137,6 +230,7 @@ def get_analytics_overview(
         "application_pipeline": pipeline,
         "overdue_requisitions": overdue,
         "hr_action_items": action_items,
+        "hr_alerts": hr_alerts,
         "department_metrics": department_metrics,
         "weekly_applications": reporting.weekly_applications(db),
         "monthly_closed_positions": reporting.monthly_closed_positions(db),
@@ -177,8 +271,18 @@ def get_hiring_metrics(date_from: _Optional[date] = None, date_to: _Optional[dat
     data = reporting.hiring_metrics(db, date_from, date_to)
     if export:
         buf = reporting.to_xlsx({"Theo phong ban": data["by_department"], "Theo chuc danh": data["by_job_title"]})
-        return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 headers={"Content-Disposition": f'attachment; filename="time-to-hire_cost-per-hire_{date.today().isoformat()}.xlsx"'})
+        content = buf.getvalue()
+        safe_filename = f"Bao_Cao_Tuyen_Dung_{date_from or 'all'}_den_{date_to or date.today().isoformat()}.xlsx"
+        encoded_filename = quote(safe_filename)
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}',
+                "Content-Length": str(len(content)),
+                "Access-Control-Expose-Headers": "Content-Disposition, Content-Length",
+            }
+        )
     return data
 
 
@@ -188,8 +292,18 @@ def get_source_effectiveness(date_from: _Optional[date] = None, date_to: _Option
     rows = reporting.source_effectiveness(db, date_from, date_to)
     if export:
         buf = reporting.to_xlsx({"Nguon ung vien": rows})
-        return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 headers={"Content-Disposition": f'attachment; filename="hieu-qua-nguon_{date.today().isoformat()}.xlsx"'})
+        content = buf.getvalue()
+        safe_filename = f"Hieu_Qua_Nguon_Tuyen_Dung_{date_from or 'all'}_den_{date_to or date.today().isoformat()}.xlsx"
+        encoded_filename = quote(safe_filename)
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_filename}"; filename*=UTF-8\'\'{encoded_filename}',
+                "Content-Length": str(len(content)),
+                "Access-Control-Expose-Headers": "Content-Disposition, Content-Length",
+            }
+        )
     return rows
 
 

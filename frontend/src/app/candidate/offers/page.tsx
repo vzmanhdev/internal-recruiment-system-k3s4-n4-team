@@ -139,7 +139,7 @@ export default function CandidateOffersPage() {
 
           <div className="pt-2 flex justify-center gap-3">
             <Link
-              href="/candidate/tracking"
+              href="/candidate/track"
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs sm:text-sm transition-colors"
             >
               Về trang tiến độ ứng tuyển

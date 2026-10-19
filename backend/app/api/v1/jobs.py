@@ -14,6 +14,7 @@ from app.models.requisition import JobRequisition
 from app.models.hr import Department
 from app.api.deps import get_current_user_obj, authenticate_bearer
 from app.services.access_scope import has_permission
+from app.core.search import build_search_filter, build_search_score
 
 router = APIRouter()
 
@@ -115,17 +116,23 @@ def list_jobs(
         query = query.filter(JobPosting.location == location)
     if type and type != "Tất cả":
         query = query.filter(JobPosting.type == type)
-    if search:
-        like = f"%{search}%"
-        query = query.filter(JobPosting.title.ilike(like) | JobPosting.description.ilike(like))  # S4-01 AC3
+    search_score = None
+    if search and search.strip():
+        search_cols = [JobPosting.title, JobPosting.description]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
 
-    jobs = query.order_by(JobPosting.created_at.desc()).all()
+    if search_score is not None:
+        jobs = query.order_by(search_score.desc(), JobPosting.created_at.desc()).all()
+    else:
+        jobs = query.order_by(JobPosting.created_at.desc()).all()
     return [_out(j) for j in jobs if not _is_expired(j)]  # S4-01 AC4: published AND not expired
 
 
 @router.get("/admin-list")
 def list_all_jobs_for_admin(
     status_filter: Optional[str] = None,
+    search: Optional[str] = None,
     current_user: User = Depends(get_current_user_obj),
     db: Session = Depends(get_db)
 ):
@@ -133,7 +140,15 @@ def list_all_jobs_for_admin(
     query = db.query(JobPosting)
     if status_filter:
         query = query.filter(JobPosting.status == status_filter)
-    jobs = query.order_by(JobPosting.created_at.desc()).all()
+    search_score = None
+    if search and search.strip():
+        search_cols = [JobPosting.title, JobPosting.description]
+        query = query.filter(build_search_filter(search_cols, search.strip()))
+        search_score = build_search_score(search_cols, search.strip())
+    if search_score is not None:
+        jobs = query.order_by(search_score.desc(), JobPosting.created_at.desc()).all()
+    else:
+        jobs = query.order_by(JobPosting.created_at.desc()).all()
     return [_out(j) for j in jobs]
 
 
@@ -177,6 +192,14 @@ def create_job(
     if not db.query(Department.id).filter(Department.id == payload.department_id).first():
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
 
+    if payload.deadline:
+        try:
+            deadline_date = date.fromisoformat(payload.deadline[:10])
+            if deadline_date < date.today():
+                raise HTTPException(status_code=422, detail="Hạn nộp hồ sơ không được ở quá khứ.")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Hạn nộp hồ sơ không đúng định dạng YYYY-MM-DD.")
+
     base_slug = slugify(payload.title)
     slug = base_slug
     idx = 1
@@ -213,6 +236,14 @@ def update_job(
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
     if job.status == "closed":
         raise HTTPException(status_code=409, detail="Tin tuyển dụng đã đóng, không thể chỉnh sửa.")
+
+    if payload.deadline:
+        try:
+            deadline_date = date.fromisoformat(payload.deadline[:10])
+            if deadline_date < date.today():
+                raise HTTPException(status_code=422, detail="Hạn nộp hồ sơ không được ở quá khứ.")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Hạn nộp hồ sơ không đúng định dạng YYYY-MM-DD.")
 
     for field in ("title", "department_id", "department_name", "location", "type", "level", "salary_range",
                   "experience_level", "deadline", "description", "requirements", "benefits", "min_years_experience"):

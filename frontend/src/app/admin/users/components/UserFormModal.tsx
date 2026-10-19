@@ -28,7 +28,7 @@ export function UserFormModal({
     employee_code: "",
     department: "Khối Công nghệ & Kỹ thuật",
     password: "",
-    roles: ["employee"] as string[],
+    roles: ["candidate"] as string[],
   });
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export function UserFormModal({
         employee_code: user.employee_code,
         department: user.department || "Khối Công nghệ & Kỹ thuật",
         password: "",
-        roles: user.roles && user.roles.length > 0 ? user.roles : ["employee"],
+        roles: user.roles && user.roles.length > 0 ? user.roles : ["candidate"],
       });
     } else {
       setFormData({
@@ -52,7 +52,7 @@ export function UserFormModal({
         employee_code: `NV-${Math.floor(200 + Math.random() * 800)}`,
         department: "Khối Công nghệ & Kỹ thuật",
         password: "",
-        roles: ["employee"],
+        roles: ["candidate"],
       });
     }
     setErrorMsg(null);

@@ -2,6 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -279,6 +282,10 @@ export default function RecruiterInterviewsPage() {
       showToast('Giờ kết thúc phải sau giờ bắt đầu.');
       return;
     }
+    if (isPastDate(individualForm.date)) {
+      showToast('Không thể đặt lịch phỏng vấn trong quá khứ.');
+      return;
+    }
     if (individualForm.type === 'online' && !individualForm.meetLink.trim()) {
       showToast('Vui lòng nhập đường link phỏng vấn trực tuyến.');
       return;
@@ -314,6 +321,7 @@ export default function RecruiterInterviewsPage() {
     if (!count) { showToast('Vui lòng chọn ít nhất một ứng viên.'); return; }
     if (!bulkForm.interviewer) { showToast('Vui lòng chọn người phỏng vấn.'); return; }
     if (!bulkForm.date) { showToast('Vui lòng chọn ngày phỏng vấn.'); return; }
+    if (isPastDate(bulkForm.date)) { showToast('Không thể đặt lịch phỏng vấn trong quá khứ.'); return; }
     setSaving(true);
     try {
       const res = await apiRequest<{ created: InterviewItem[] }>('/interviews/bulk', {
@@ -354,6 +362,7 @@ export default function RecruiterInterviewsPage() {
     if (!sess) return;
     const duration = minutesBetween(rescheduleStartTime, rescheduleEndTime);
     if (duration <= 0) { showToast('Giờ kết thúc phải sau giờ bắt đầu.'); return; }
+    if (isPastDate(rescheduleDate)) { showToast('Không thể dời lịch phỏng vấn vào quá khứ.'); return; }
     setSaving(true);
     try {
       const updated = await apiRequest<InterviewItem>(`/interviews/${sess.interviewId}`, {
@@ -407,14 +416,34 @@ export default function RecruiterInterviewsPage() {
   // FILTERING LOGIC
   // ==========================================
   const filteredInterviews = useMemo(() => {
+    const q = searchTerm.trim();
     return interviews.filter((s) => {
-      const matchSearch =
-        s.candidateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.interviewers.some((i) => i.toLowerCase().includes(searchTerm.toLowerCase()));
+      if (q) {
+        const score = Math.max(
+          getSearchScore(s.candidateName, q),
+          getSearchScore(s.position, q),
+          ...s.interviewers.map((i) => getSearchScore(i, q))
+        );
+        if (score === 0) return false;
+      }
 
       const matchType = typeFilter === 'all' || s.type === typeFilter;
-      return matchSearch && matchType;
+      return matchType;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.candidateName, q),
+          getSearchScore(a.position, q),
+          ...a.interviewers.map((i) => getSearchScore(i, q))
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.candidateName, q),
+          getSearchScore(b.position, q),
+          ...b.interviewers.map((i) => getSearchScore(i, q))
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [interviews, searchTerm, typeFilter]);
 
@@ -518,13 +547,19 @@ export default function RecruiterInterviewsPage() {
         {/* Search & Type filter */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
           <div className="relative flex-1 max-w-xs">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
+            <SearchAutocompleteInput
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(val) => setSearchTerm(val)}
+              onSelectSuggestion={(item) => setSearchTerm(item.title)}
               placeholder="Tìm theo ứng viên, vị trí, interviewer..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              size="sm"
+              localSuggestions={interviews.map((s) => ({
+                id: String(s.interviewId),
+                title: s.candidateName,
+                subtitle: `${s.position} • Interviewer: ${s.interviewers.join(', ')}`,
+                category: "candidate",
+                category_label: "Phỏng vấn",
+              }))}
             />
           </div>
 
@@ -985,6 +1020,7 @@ export default function RecruiterInterviewsPage() {
                       <input
                         type="date"
                         required
+                        min={getLocalTodayDateString()}
                         value={individualForm.date}
                         onChange={(e) =>
                           setIndividualForm({ ...individualForm, date: e.target.value })
@@ -1124,6 +1160,7 @@ export default function RecruiterInterviewsPage() {
                       <label className="block font-bold text-slate-800 mb-1">Ngày phỏng vấn</label>
                       <input
                         type="date"
+                        min={getLocalTodayDateString()}
                         value={bulkForm.date}
                         onChange={(e) => setBulkForm({ ...bulkForm, date: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
@@ -1280,6 +1317,7 @@ export default function RecruiterInterviewsPage() {
                 <input
                   type="date"
                   required
+                  min={getLocalTodayDateString()}
                   value={rescheduleDate}
                   onChange={(e) => setRescheduleDate(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800"

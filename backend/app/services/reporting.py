@@ -169,15 +169,87 @@ def source_effectiveness(db: Session, date_from: Optional[date] = None, date_to:
 
 def to_xlsx(sheets: Dict[str, List[dict]]) -> io.BytesIO:
     import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    col_name_map = {
+        "department": "Phòng Ban",
+        "job_title": "Chức Danh Tuyển Dụng",
+        "hires": "Số Lượng Tuyển Được",
+        "avg_time_to_hire_days": "Thời Gian Tuyển TB (Ngày)",
+        "total_cost": "Tổng Chi Phí (VND)",
+        "cost_per_hire": "Chi Phí / Tuyển Dụng (VND)",
+        "source": "Nguồn Tuyển Dụng",
+        "applications": "Số Lượng Ứng Tuyển",
+        "passed_screening": "Qua Vòng Hồ Sơ",
+        "screening_pass_rate": "Tỷ Lệ Qua Hồ Sơ (%)",
+        "hired": "Trúng Tuyển",
+        "hire_rate": "Tỷ Lệ Trúng Tuyển (%)",
+        "avg_evaluation_score": "Điểm Đánh Giá TB",
+        "best_quality": "Nguồn Tốt Nhất",
+    }
+
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+    regular_font = Font(name="Calibri", size=11)
+    thin_border = Border(
+        left=Side(style="thin", color="E2E8F0"),
+        right=Side(style="thin", color="E2E8F0"),
+        top=Side(style="thin", color="E2E8F0"),
+        bottom=Side(style="thin", color="E2E8F0"),
+    )
+
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     for name, rows in sheets.items():
         ws = wb.create_sheet(name[:31])
+        ws.views.sheetView[0].showGridLines = True
         if rows:
-            headers = list(rows[0].keys())
-            ws.append(headers)
-            for r in rows:
-                ws.append([r.get(h) for h in headers])
+            raw_headers = list(rows[0].keys())
+            display_headers = [col_name_map.get(h, h) for h in raw_headers]
+            ws.append(display_headers)
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = thin_border
+            ws.row_dimensions[1].height = 28
+
+            for row_idx, r in enumerate(rows, start=2):
+                row_vals = []
+                for h in raw_headers:
+                    val = r.get(h)
+                    if isinstance(val, bool):
+                        val = "✓ Đạt" if val else ""
+                    elif val is None:
+                        val = "—"
+                    row_vals.append(val)
+                ws.append(row_vals)
+                for col_idx, cell in enumerate(ws[row_idx], start=1):
+                    cell.font = regular_font
+                    cell.border = thin_border
+                    raw_h = raw_headers[col_idx - 1]
+                    if raw_h in ("total_cost", "cost_per_hire") and isinstance(cell.value, (int, float)):
+                        cell.number_format = "#,##0"
+                        cell.alignment = Alignment(horizontal="right", vertical="center")
+                    elif isinstance(cell.value, (int, float)):
+                        cell.alignment = Alignment(horizontal="right", vertical="center")
+                    else:
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+                ws.row_dimensions[row_idx].height = 22
+
+            # Auto fit column widths
+            for col in ws.columns:
+                max_len = 0
+                col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    val_str = str(cell.value or "")
+                    max_len = max(max_len, len(val_str))
+                ws.column_dimensions[col_letter].width = max(max_len + 4, 14)
+        else:
+            ws.append(["Chưa có dữ liệu phát sinh trong kỳ"])
+            ws.column_dimensions["A"].width = 35
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

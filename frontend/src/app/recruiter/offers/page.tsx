@@ -2,6 +2,10 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
+import { OfferDetailModal } from '@/features/offers/components/OfferDetailModal';
 import {
   Mail,
   Plus,
@@ -193,6 +197,8 @@ const REJECTION_LABELS: Record<RejectionReasonCategory, { label: string; color: 
 
 export default function RecruiterOffersPage() {
   const [activeTab, setActiveTab] = useState<'offers' | 'letters'>('offers');
+  const [selectedDetailOfferId, setSelectedDetailOfferId] = useState<string | number | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const { data: offerRows, error, loading, reload, setData: setOfferRows } = useApiData(() => offerService.getOffers(), []);
   const offers = useMemo(() => (offerRows || []).map(toOffer), [offerRows]);
   const putOfferRow = (row: OfferItem) =>
@@ -259,6 +265,18 @@ export default function RecruiterOffersPage() {
     }
     if (!newOfferForm.baseSalary || !newOfferForm.startDate) {
       showToast('Vui lòng nhập mức lương và ngày nhận việc.');
+      return;
+    }
+    if (isPastDate(newOfferForm.startDate)) {
+      showToast('Ngày nhận việc dự kiến không được ở trong quá khứ.');
+      return;
+    }
+    if (newOfferForm.deadlineDate && isPastDate(newOfferForm.deadlineDate)) {
+      showToast('Hạn chót phản hồi offer không được ở trong quá khứ.');
+      return;
+    }
+    if (newOfferForm.deadlineDate && newOfferForm.startDate && newOfferForm.deadlineDate > newOfferForm.startDate) {
+      showToast('Hạn chót phản hồi offer phải trước hoặc bằng ngày nhận việc.');
       return;
     }
     setSaving(true);
@@ -348,20 +366,10 @@ export default function RecruiterOffersPage() {
     }
   };
 
-  // Offer letter rendered by the server with the offer's real data, shown in a sandboxed frame (no scripts)
-  const handleOpenLetter = async (offer: OfferProposal) => {
-    const win = window.open('', '_blank');
-    try {
-      const letter = await apiRequest<{ subject: string; body_html: string }>(`/offers/${offer.raw.id}/letter-preview`);
-      const page = `<!doctype html><meta charset="utf-8"><title>${escapeAttr(letter.subject)}</title>` +
-        `<iframe sandbox style="border:0;width:100%;height:100vh" srcdoc="${escapeAttr(letter.body_html)}"></iframe>`;
-      const url = URL.createObjectURL(new Blob([page], { type: 'text/html' }));
-      if (win) win.location.href = url; else window.open(url, '_blank');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      win?.close();
-      showToast(errorText(err, 'Không mở được thư mời nhận việc.'));
-    }
+  // Open Enterprise Offer Detail Modal
+  const handleOpenLetter = (offer: OfferProposal) => {
+    setSelectedDetailOfferId(offer.raw.id);
+    setIsDetailModalOpen(true);
   };
 
   // ==========================================
@@ -470,13 +478,33 @@ export default function RecruiterOffersPage() {
   }, [offers]);
 
   const filteredOffers = useMemo(() => {
+    const q = offerSearch.trim();
     return offers.filter((o) => {
-      const matchSearch =
-        o.candidateName.toLowerCase().includes(offerSearch.toLowerCase()) ||
-        o.position.toLowerCase().includes(offerSearch.toLowerCase()) ||
-        o.id.toLowerCase().includes(offerSearch.toLowerCase());
+      if (q) {
+        const score = Math.max(
+          getSearchScore(o.candidateName, q),
+          getSearchScore(o.position, q),
+          getSearchScore(o.id, q)
+        );
+        if (score === 0) return false;
+      }
       const matchStatus = offerStatusFilter === 'all' || o.status === offerStatusFilter;
-      return matchSearch && matchStatus;
+      return matchStatus;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.candidateName, q),
+          getSearchScore(a.position, q),
+          getSearchScore(a.id, q)
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.candidateName, q),
+          getSearchScore(b.position, q),
+          getSearchScore(b.id, q)
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [offers, offerSearch, offerStatusFilter]);
 
@@ -696,13 +724,19 @@ export default function RecruiterOffersPage() {
           {/* TOOLBAR: SEARCH & STATUS FILTER */}
           <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-100 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             <div className="relative flex-1 max-w-sm">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
+              <SearchAutocompleteInput
                 value={offerSearch}
-                onChange={(e) => setOfferSearch(e.target.value)}
+                onChange={(val) => setOfferSearch(val)}
+                onSelectSuggestion={(item) => setOfferSearch(item.title)}
                 placeholder="Tìm theo ứng viên, vị trí, mã offer..."
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                size="sm"
+                localSuggestions={offers.map((o) => ({
+                  id: o.id,
+                  title: o.candidateName,
+                  subtitle: `${o.position} • Lương: ${o.baseSalary ? o.baseSalary.toLocaleString('vi-VN') + ' đ' : 'Thoả thuận'} • ${o.status}`,
+                  category: "candidate",
+                  category_label: "Offer",
+                }))}
               />
             </div>
 
@@ -1279,19 +1313,32 @@ export default function RecruiterOffersPage() {
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Mức lương cơ bản (VNĐ / tháng) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    step={1000000}
-                    value={newOfferForm.baseSalary}
-                    onChange={(e) =>
-                      setNewOfferForm({ ...newOfferForm, baseSalary: Number(e.target.value) })
-                    }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-blue-600"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700">
+                      Mức lương cơ bản (VNĐ / tháng) *
+                    </label>
+                    {newOfferForm.baseSalary > 0 && (
+                      <span className="text-[11px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                        {newOfferForm.baseSalary.toLocaleString('vi-VN')} VNĐ
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      required
+                      step={500000}
+                      placeholder="Ví dụ: 30000000"
+                      value={newOfferForm.baseSalary || ''}
+                      onChange={(e) =>
+                        setNewOfferForm({ ...newOfferForm, baseSalary: Number(e.target.value) })
+                      }
+                      className="w-full px-3 py-2 pl-8 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-blue-600 focus:outline-none focus:border-blue-500 font-mono"
+                    />
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold select-none text-xs">
+                      ₫
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1318,12 +1365,23 @@ export default function RecruiterOffersPage() {
                   <input
                     type="date"
                     required
+                    min={getLocalTodayDateString()}
                     value={newOfferForm.startDate}
-                    onChange={(e) =>
-                      setNewOfferForm({ ...newOfferForm, startDate: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewOfferForm({
+                        ...newOfferForm,
+                        startDate: val,
+                        ...(newOfferForm.deadlineDate && val && newOfferForm.deadlineDate > val
+                          ? { deadlineDate: val }
+                          : {}),
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                   />
+                  {newOfferForm.startDate && isPastDate(newOfferForm.startDate) && (
+                    <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày nhận việc không được ở quá khứ</p>
+                  )}
                 </div>
 
                 <div>
@@ -1333,12 +1391,20 @@ export default function RecruiterOffersPage() {
                   <input
                     type="date"
                     required
+                    min={getLocalTodayDateString()}
+                    max={newOfferForm.startDate || undefined}
                     value={newOfferForm.deadlineDate}
                     onChange={(e) =>
                       setNewOfferForm({ ...newOfferForm, deadlineDate: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                   />
+                  {newOfferForm.deadlineDate && isPastDate(newOfferForm.deadlineDate) && (
+                    <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Hạn phản hồi không được ở quá khứ</p>
+                  )}
+                  {newOfferForm.startDate && newOfferForm.deadlineDate && newOfferForm.deadlineDate > newOfferForm.startDate && (
+                    <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Hạn phản hồi phải trước ngày nhận việc</p>
+                  )}
                 </div>
               </div>
 
@@ -1499,6 +1565,17 @@ export default function RecruiterOffersPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Form Xem Chi Tiết Offer Chuẩn Doanh Nghiệp */}
+      <OfferDetailModal
+        isOpen={isDetailModalOpen}
+        offerId={selectedDetailOfferId}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          setSelectedDetailOfferId(null);
+        }}
+        onActionSuccess={reload}
+      />
     </div>
   );
 }

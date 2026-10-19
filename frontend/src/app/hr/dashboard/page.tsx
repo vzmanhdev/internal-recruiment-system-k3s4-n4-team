@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { apiRequest, API_BASE_URL } from "@/lib/api-client";
 import { useApiData } from "@/hooks/useApiData";
+import { triggerFileDownload } from "@/utils/fileDownload";
 import { ErrorState, LoadingState } from "@/components/ui/DataStates";
 import Link from "next/link";
 
@@ -27,6 +28,7 @@ import {
   Layers as LayersIcon,
   Building2 as Building2Icon,
   Percent,
+  ArrowRightLeft as ArrowRightLeftIcon,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -57,17 +59,102 @@ const TARGET_SLA_DAYS = 25; // committed time-to-hire target shown as the refere
 interface FunnelResp { total: number; stages: Array<{ stage: string; label: string; count: number; conversion_from_previous: number | null }>; biggest_drop: { from: string; to: string; lost: number } | null }
 interface SourceRow { source: string; applications: number; passed_screening: number; hired: number; hire_rate: number }
 interface Metrics { total_hires: number; avg_time_to_hire_days: number | null; cost_per_hire: number | null }
-interface Overview { kpis: { active_requisitions: number; pending_approvals: number; total_applications: number; new_candidates_this_week: number } }
+interface Overview {
+  kpis: {
+    active_requisitions: number;
+    pending_approvals: number;
+    total_applications: number;
+    new_candidates_this_week: number;
+    interviews_this_week?: number;
+    pending_offers?: number;
+    hired_count?: number;
+    remaining_headcount?: number;
+    budget_usage_percent?: number | null;
+  };
+  overdue_requisitions?: Array<{
+    id: string;
+    requisition_id: number;
+    title: string;
+    department: string;
+    target_date: string;
+    delay_days: number;
+    recruiter: string | null;
+    status: string;
+  }>;
+  hr_alerts?: {
+    total_alerts: number;
+    overdue_count: number;
+    handover_count: number;
+    headcount_warning_count: number;
+    over_band_count: number;
+    stuck_approval_count: number;
+    items: {
+      overdue: Array<{
+        id: string;
+        requisition_id: number;
+        title: string;
+        department: string;
+        target_date: string;
+        delay_days: number;
+        recruiter: string | null;
+        status: string;
+      }>;
+      handover: Array<{
+        requisition_id: number;
+        code: string;
+        title: string;
+        department: string;
+        reason: string;
+        priority: string;
+        status: string;
+      }>;
+      headcount: Array<{
+        department_id: number;
+        department: string;
+        budget: number;
+        used: number;
+        remaining: number;
+        message: string;
+      }>;
+      over_band: Array<{
+        offer_id: number;
+        candidate_name: string;
+        offered_salary: number;
+        department: string;
+        position: string;
+        justification: string;
+      }>;
+      stuck_approvals: Array<{
+        requisition_id: number;
+        code: string;
+        title: string;
+        department: string;
+        step: string;
+        pending_days: number;
+        message: string;
+      }>;
+    };
+  };
+}
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-async function loadDashboard(range: string) {
+async function loadDashboard(range: string, customStartDate?: string, customEndDate?: string) {
   const now = new Date();
-  const from = new Date(now);
-  if (range === "30d") from.setDate(now.getDate() - 30);
-  else if (range === "quarter") from.setMonth(now.getMonth() - 3);
-  else from.setFullYear(now.getFullYear() - 1);
-  const q = `date_from=${iso(from)}&date_to=${iso(now)}`;
+  let from = new Date(now);
+  let to = new Date(now);
+
+  if (range === "custom" && customStartDate && customEndDate) {
+    from = new Date(customStartDate);
+    to = new Date(customEndDate);
+  } else if (range === "30d") {
+    from.setDate(now.getDate() - 30);
+  } else if (range === "quarter") {
+    from.setMonth(now.getMonth() - 3);
+  } else {
+    from.setFullYear(now.getFullYear() - 1);
+  }
+  const q = `date_from=${iso(from)}&date_to=${iso(to)}`;
   // last 10 months for the time-to-hire / cost-per-hire trend
   const months = Array.from({ length: 10 }, (_, k) => {
     const start = new Date(now.getFullYear(), now.getMonth() - (9 - k), 1);
@@ -90,24 +177,47 @@ async function loadDashboard(range: string) {
   const SOURCE_PIE_DATA = sources.map((r, i) => ({
     name: r.source, value: r.applications, percentage: Math.round((r.applications / totalApps) * 100), color: SOURCE_COLORS[i % SOURCE_COLORS.length],
   }));
-  const SOURCE_EFFICIENCY_TABLE = sources.map((r) => ({
-    source: r.source, applied: r.applications, interviewed: r.passed_screening, hired: r.hired, hireRate: `${r.hire_rate}%`,
-    costPerHire: "—",
-    roi: r.hire_rate >= 4 ? "Hiệu quả cao" : r.hire_rate >= 2 ? "Ổn định" : r.applications ? "Cần cải thiện chất lượng" : "Chưa có dữ liệu",
-    badgeColor: r.hire_rate >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : r.hire_rate >= 2 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200",
-  }));
+  const SOURCE_EFFICIENCY_TABLE = sources.map((r) => {
+    const cost = r.hired && metrics.cost_per_hire ? `${(metrics.cost_per_hire / 1_000_000).toFixed(1)} tr` : "—";
+    return {
+      source: r.source, applied: r.applications, interviewed: r.passed_screening, hired: r.hired, hireRate: `${r.hire_rate}%`,
+      costPerHire: cost,
+      roi: r.hire_rate >= 4 ? "Hiệu quả cao" : r.hire_rate >= 2 ? "Ổn định" : r.applications ? "Cần cải thiện chất lượng" : "Chưa có dữ liệu",
+      badgeColor: r.hire_rate >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : r.hire_rate >= 2 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200",
+    };
+  });
   const hired = funnel.stages.find((x) => x.stage === "hired")?.count ?? 0;
   const overall = funnel.total ? Math.round((hired / funnel.total) * 10000) / 100 : 0;
   const withData = trend.filter((t) => t.hires > 0);
   const worst = withData.reduce<typeof withData[number] | null>((w, t) => (!w || t.timeToHire > w.timeToHire ? t : w), null);
-  return { overview, funnel, FUNNEL_DATA, SOURCE_PIE_DATA, SOURCE_EFFICIENCY_TABLE, MONTHLY_TREND_DATA: trend, metrics, overall, worst, latest: withData[withData.length - 1] || null, from: iso(from), to: iso(now) };
+  return { overview, funnel, FUNNEL_DATA, SOURCE_PIE_DATA, SOURCE_EFFICIENCY_TABLE, MONTHLY_TREND_DATA: trend, metrics, overall, worst, latest: withData[withData.length - 1] || null, from: iso(from), to: iso(to) };
 }
 
 export default function HRDashboardPage() {
+  const nowStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const thirtyDaysAgoStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  }, []);
 
-  const [timeRange, setTimeRange] = useState("30d");
+  const [timeRange, setTimeRange] = useState<"30d" | "quarter" | "year" | "custom">("30d");
+  const [customFrom, setCustomFrom] = useState(thirtyDaysAgoStr);
+  const [customTo, setCustomTo] = useState(nowStr);
+  const [appliedCustomDates, setAppliedCustomDates] = useState<{ from: string; to: string } | null>(null);
+
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const { data: dash, error, loading, reload } = useApiData(() => loadDashboard(timeRange), [timeRange]);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const { data: dash, error, loading, reload } = useApiData(
+    () =>
+      loadDashboard(
+        timeRange,
+        timeRange === "custom" ? (appliedCustomDates?.from || customFrom) : undefined,
+        timeRange === "custom" ? (appliedCustomDates?.to || customTo) : undefined
+      ),
+    [timeRange, appliedCustomDates]
+  );
   const FUNNEL_DATA = dash?.FUNNEL_DATA || [];
   const SOURCE_PIE_DATA = dash?.SOURCE_PIE_DATA || [];
   const SOURCE_EFFICIENCY_TABLE = dash?.SOURCE_EFFICIENCY_TABLE || [];
@@ -123,19 +233,37 @@ export default function HRDashboardPage() {
 
   // Server-generated Excel (time-to-hire & cost-per-hire by department / job title) for the selected period
   const handleExportExcel = async () => {
-    if (!dash) return;
-    const token = localStorage.getItem("access_token");
-    const res = await fetch(`${API_BASE_URL}/analytics/hiring-metrics?date_from=${dash.from}&date_to=${dash.to}&export=true`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: "include",
-    });
-    if (!res.ok) return;
-    const name = /filename="?([^"]+)"?/.exec(res.headers.get("content-disposition") || "")?.[1] || "bao-cao-tuyen-dung.xlsx";
-    const url = URL.createObjectURL(await res.blob());
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!dash || isExporting) return;
+    setIsExporting(true);
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+      const filename = `Bao_Cao_Tuyen_Dung_${dash.from}_den_${dash.to}.xlsx`;
+      const exportUrl = `${API_BASE_URL}/analytics/hiring-metrics?date_from=${dash.from}&date_to=${dash.to}&export=true`;
+
+      const res = await fetch(exportUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Không thể tải báo cáo từ máy chủ.");
+      }
+
+      const disposition = res.headers.get("content-disposition") || "";
+      let resolvedFilename = filename;
+      const match = /filename\*?=['"]?(?:UTF-8'')?([^"';]+)['"]?/i.exec(disposition);
+      if (match?.[1]) {
+        resolvedFilename = decodeURIComponent(match[1]);
+      }
+
+      const buffer = await res.arrayBuffer();
+      triggerFileDownload(buffer, resolvedFilename);
+    } catch (err) {
+      console.error("Export error:", err);
+      alert("Đã xảy ra lỗi khi xuất báo cáo Excel. Vui lòng thử lại.");
+    } finally {
+      setTimeout(() => setIsExporting(false), 600);
+    }
   };
 
   if (loading && !dash) return <LoadingState />;
@@ -147,32 +275,32 @@ export default function HRDashboardPage() {
       {/* HEADER SECTION: TIÊU ĐỀ & THANH CÔNG CỤ ĐIỀU HÀNH                        */}
       {/* ========================================================================= */}
       <div className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8 space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px] tracking-wider uppercase border border-blue-100">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px] tracking-wider uppercase border border-blue-100 shrink-0">
                 Executive Control Center
               </span>
               <span className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
-                <SparklesIcon className="w-3.5 h-3.5 text-amber-500" />
+                <SparklesIcon className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 Cập nhật tự động theo thời gian thực (Live Analytics)
               </span>
             </div>
             <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1 tracking-tight">
               Báo Cáo & Điều Hành Tuyển Dụng Toàn Công Ty
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
               Tổng quan hiệu suất tuyển dụng, phân tích chuyển đổi phễu ứng viên, đo lường nguồn thu hút và phát hiện điểm nghẽn SLA.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <div className="flex items-center gap-2.5 shrink-0 self-start xl:self-auto flex-nowrap">
             {/* Bộ lọc khoảng thời gian */}
-            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-1 text-xs font-bold">
+            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-1 text-xs font-bold shrink-0">
               <button
                 type="button"
                 onClick={() => setTimeRange("30d")}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   timeRange === "30d"
                     ? "bg-white text-blue-600 shadow-2xs"
                     : "text-slate-600 hover:text-slate-900"
@@ -183,24 +311,39 @@ export default function HRDashboardPage() {
               <button
                 type="button"
                 onClick={() => setTimeRange("quarter")}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   timeRange === "quarter"
                     ? "bg-white text-blue-600 shadow-2xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Quý 3/2026
+                Quý {Math.floor(new Date().getMonth() / 3) + 1}/{new Date().getFullYear()}
               </button>
               <button
                 type="button"
                 onClick={() => setTimeRange("year")}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   timeRange === "year"
                     ? "bg-white text-blue-600 shadow-2xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Năm 2026
+                Năm {new Date().getFullYear()}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeRange("custom");
+                  setAppliedCustomDates({ from: customFrom, to: customTo });
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  timeRange === "custom"
+                    ? "bg-white text-blue-600 shadow-2xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <CalendarIcon className="w-3.5 h-3.5" />
+                <span>Tùy chỉnh</span>
               </button>
             </div>
 
@@ -208,7 +351,7 @@ export default function HRDashboardPage() {
             <button
               type="button"
               onClick={handleRefresh}
-              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
+              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer shrink-0"
               title="Làm mới dữ liệu"
             >
               <RefreshCwIcon
@@ -219,14 +362,65 @@ export default function HRDashboardPage() {
             {/* Nút Xuất Excel */}
             <button
               type="button"
+              disabled={isExporting}
               onClick={handleExportExcel}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
+              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all cursor-pointer disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
             >
-              <FileSpreadsheetIcon className="w-4 h-4" />
-              <span>Xuất Báo Cáo Excel</span>
+              <FileSpreadsheetIcon className={`w-4 h-4 ${isExporting ? "animate-spin" : ""}`} />
+              <span>{isExporting ? "Đang Xuất Excel..." : "Xuất Báo Cáo Excel"}</span>
             </button>
           </div>
         </div>
+
+        {/* Thanh chọn ngày tùy chỉnh khi kích hoạt Tùy chỉnh */}
+        {timeRange === "custom" && (
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-blue-50/70 border border-blue-200/80 rounded-xl px-4 py-2.5 text-xs animate-in fade-in slide-in-from-top-1 duration-150">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5 text-blue-800 font-bold">
+                <CalendarIcon className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Khoảng ngày tùy chỉnh:</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500">Từ:</span>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    max={customTo || nowStr}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-hidden"
+                  />
+                </div>
+                <span className="text-slate-400 font-bold">→</span>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500">Đến:</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    min={customFrom}
+                    max={nowStr}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-hidden"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customFrom && customTo && customFrom <= customTo) {
+                      setAppliedCustomDates({ from: customFrom, to: customTo });
+                    }
+                  }}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                >
+                  Áp dụng
+                </button>
+              </div>
+            </div>
+            <div className="text-[11px] text-blue-700 font-medium">
+              * Dữ liệu dashboard & file Excel xuất ra sẽ được lọc theo khoảng thời gian này
+            </div>
+          </div>
+        )}
 
         {/* ===================================================================== */}
         {/* YÊU CẦU 1: OVERVIEW DASHBOARD (2 PHÚT MỖI SÁNG - 4 THẺ KPI NỔI BẬT)     */}
@@ -316,6 +510,213 @@ export default function HRDashboardPage() {
                   <span>Theo chi phí tuyển dụng đã ghi nhận trong kỳ</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ===================================================================== */}
+        {/* TRUNG TÂM CẢNH BÁO HR & ĐIỂM NGHẼN TUYỂN DỤNG (HR ALERTS CENTER)      */}
+        {/* ===================================================================== */}
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-rose-500/10 border border-amber-200/80 rounded-2xl shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/20 shrink-0">
+                <AlertTriangleIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm md:text-base font-black text-slate-900 tracking-tight">
+                    Trung Tâm Cảnh Báo & Rủi Ro Tuyển Dụng
+                  </h2>
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                    {dash?.overview.hr_alerts?.total_alerts || 0} Cảnh Báo Cần Xử Lý
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Tự động phát hiện các vị trí trễ hạn SLA, vị trí cần bàn giao do Recruiter nghỉ/khoá tài khoản, vượt trần định biên và tắc nghẽn phê duyệt.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <Link
+                href="/hr/requisitions"
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
+              >
+                <span>Điều phối Yêu cầu</span>
+                <ArrowUpRightIcon className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+
+          {/* 5 Risk Metric Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* Card 1: Vị trí trễ hạn SLA */}
+            <Link
+              href="/hr/requisitions"
+              className="p-3.5 rounded-2xl border bg-white border-rose-200 hover:border-rose-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-rose-600">
+                <span className="text-[11px] font-bold">Trễ Hạn Tuyển Dụng</span>
+                <ClockIcon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.overdue_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">vị trí</span>
+              </div>
+              <p className="text-[10px] text-rose-700 font-semibold mt-1">
+                Quá ngày cần nhân sự
+              </p>
+            </Link>
+
+            {/* Card 2: Cần bàn giao Recruiter */}
+            <Link
+              href="/hr/requisitions"
+              className="p-3.5 rounded-2xl border bg-white border-amber-200 hover:border-amber-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-amber-700">
+                <span className="text-[11px] font-bold">Cần Bàn Giao (S1-10)</span>
+                <UsersIcon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.handover_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">vị trí</span>
+              </div>
+              <p className="text-[10px] text-amber-800 font-semibold mt-1">
+                Recruiter khoá / Chưa gán
+              </p>
+            </Link>
+
+            {/* Card 3: Cảnh báo vượt định biên */}
+            <Link
+              href="/hr/requisitions"
+              className="p-3.5 rounded-2xl border bg-white border-purple-200 hover:border-purple-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-purple-700">
+                <span className="text-[11px] font-bold">Vượt Định Biên (S3-04)</span>
+                <Building2Icon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.headcount_warning_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">phòng ban</span>
+              </div>
+              <p className="text-[10px] text-purple-800 font-semibold mt-1">
+                Cần HR xác nhận ghi đè
+              </p>
+            </Link>
+
+            {/* Card 4: Offer vượt khung lương */}
+            <Link
+              href="/hr/offers"
+              className="p-3.5 rounded-2xl border bg-white border-indigo-200 hover:border-indigo-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-indigo-700">
+                <span className="text-[11px] font-bold">Offer Vượt Khung</span>
+                <DollarSignIcon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.over_band_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">hồ sơ</span>
+              </div>
+              <p className="text-[10px] text-indigo-800 font-semibold mt-1">
+                Leo thang cấp duyệt (S7-03)
+              </p>
+            </Link>
+
+            {/* Card 5: Tắc nghẽn phê duyệt */}
+            <Link
+              href="/hr/approvals"
+              className="p-3.5 rounded-2xl border bg-white border-blue-200 hover:border-blue-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-blue-700">
+                <span className="text-[11px] font-bold">Tắc Nghẽn Duyệt</span>
+                <AlertTriangleIcon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.stuck_approval_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">tờ trình</span>
+              </div>
+              <p className="text-[10px] text-blue-800 font-semibold mt-1">
+                Kẹt &gt; 3 ngày SLA
+              </p>
+            </Link>
+          </div>
+
+          {/* Bảng Xếp Hạng Vị Trí Tuyển Dụng Trễ Hạn Tuyển (S8-05 AC3, S3-08) */}
+          <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-extrabold text-slate-900">
+                  Bảng Xếp Hạng Vị Trí Tuyển Dụng Trễ Hạn (S8-05 AC3)
+                </span>
+                <span className="text-[10px] font-bold text-slate-400">
+                  (Sắp xếp theo số ngày chậm tiến độ giảm dần)
+                </span>
+              </div>
+              <span className="text-xs font-bold text-rose-700">
+                {(dash?.overview.overdue_requisitions || []).length} vị trí quá hạn
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+                    <th className="py-3 px-4 w-40">Mã REQ & Chức danh</th>
+                    <th className="py-3 px-3">Phòng ban</th>
+                    <th className="py-3 px-3">Hạn cần nhân sự</th>
+                    <th className="py-3 px-3">Mức độ trễ hạn SLA</th>
+                    <th className="py-3 px-3">Recruiter phụ trách</th>
+                    <th className="py-3 px-4 text-right w-36">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white font-medium">
+                  {(!dash?.overview.overdue_requisitions || dash.overview.overdue_requisitions.length === 0) ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 text-xs">
+                        🎉 Tuyệt vời! Hiện không có vị trí tuyển dụng nào bị quá hạn SLA.
+                      </td>
+                    </tr>
+                  ) : (
+                    dash.overview.overdue_requisitions.map((req) => (
+                      <tr key={req.id} className="hover:bg-rose-50/20 transition-colors">
+                        <td className="py-3 px-4">
+                          <span className="font-mono bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold text-[10px] mr-1.5">
+                            {req.id}
+                          </span>
+                          <span className="font-extrabold text-slate-900">
+                            {req.title}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-700">
+                          {req.department || "—"}
+                        </td>
+                        <td className="py-3 px-3 text-slate-600 font-bold">
+                          {req.target_date}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 shadow-2xs">
+                            <ClockIcon className="w-3 h-3 text-rose-600" />
+                            <span>Trễ {req.delay_days} ngày</span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-800 font-bold">
+                          {req.recruiter ? `👤 ${req.recruiter}` : <span className="text-amber-700 font-bold">⚠️ Chưa có</span>}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Link
+                            href="/hr/requisitions"
+                            className="px-3 py-1 bg-white hover:bg-slate-50 text-blue-700 rounded-xl text-xs font-bold transition-all border border-blue-200 inline-flex items-center gap-1 shadow-2xs"
+                          >
+                            <span>Xử lý & Bàn giao</span>
+                            <ArrowRightLeftIcon className="w-3 h-3" />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

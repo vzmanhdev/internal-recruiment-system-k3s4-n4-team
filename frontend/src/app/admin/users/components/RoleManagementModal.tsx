@@ -22,7 +22,7 @@ export function RoleManagementModal({
 
   useEffect(() => {
     if (user) {
-      setSelectedRoles(user.roles && user.roles.length > 0 ? [...user.roles] : [user.role || "employee"]);
+      setSelectedRoles(user.roles && user.roles.length > 0 ? [...user.roles] : [user.role || "candidate"]);
       setErrorMsg(null);
     }
   }, [user]);

@@ -3,6 +3,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Pagination } from '@/components/ui/Pagination';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Users,
   Search,
@@ -40,6 +42,7 @@ import clsx from 'clsx';
 import type { UnifiedCandidate } from '@/features/candidates/types';
 import { candidatesApi } from '@/features/candidates/api';
 import { jobService } from '@/services/job.service';
+import { masterDataService } from '@/services/master-data.service';
 import { uploadFile as uploadCvFile } from '@/services/file.service';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
@@ -50,6 +53,7 @@ export default function RecruiterCandidatesPage() {
   const candidates: UnifiedCandidate[] = useMemo(() => data || [], [data]);
   // Published postings a sourced candidate can be added to (S5-08).
   const { data: openJobs } = useApiData(() => jobService.getJobs());
+  const { data: sourceCategories } = useApiData(() => masterDataService.categories('candidate_source'));
   const [targetJobId, setTargetJobId] = useState<string>('');
   const [uploadedCvUrl, setUploadedCvUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -175,16 +179,18 @@ export default function RecruiterCandidatesPage() {
   // ==========================================
   const filteredCandidates = useMemo(() => {
     return candidates.filter((c) => {
-      // 1. Search keyword
-      const matchesSearch =
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone.includes(searchTerm) ||
-        c.latestPosition.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.university.toLowerCase().includes(searchTerm.toLowerCase());
-
-      if (!matchesSearch) return false;
+      // 1. Search keyword (case-insensitive & accent-insensitive)
+      if (searchTerm.trim()) {
+        const s = Math.max(
+          getSearchScore(c.name, searchTerm),
+          getSearchScore(c.id, searchTerm),
+          getSearchScore(c.email, searchTerm),
+          getSearchScore(c.phone, searchTerm),
+          getSearchScore(c.latestPosition, searchTerm),
+          getSearchScore(c.university, searchTerm)
+        );
+        if (s === 0) return false;
+      }
 
       // 2. Tag filter
       if (selectedTag !== 'all' && !c.tags.includes(selectedTag)) {
@@ -212,6 +218,27 @@ export default function RecruiterCandidatesPage() {
       }
 
       return true;
+    }).sort((a, b) => {
+      if (searchTerm.trim()) {
+        const scoreA = Math.max(
+          getSearchScore(a.name, searchTerm),
+          getSearchScore(a.id, searchTerm),
+          getSearchScore(a.email, searchTerm),
+          getSearchScore(a.phone, searchTerm),
+          getSearchScore(a.latestPosition, searchTerm),
+          getSearchScore(a.university, searchTerm)
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.name, searchTerm),
+          getSearchScore(b.id, searchTerm),
+          getSearchScore(b.email, searchTerm),
+          getSearchScore(b.phone, searchTerm),
+          getSearchScore(b.latestPosition, searchTerm),
+          getSearchScore(b.university, searchTerm)
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [candidates, searchTerm, selectedTag, selectedStatus, selectedSource, selectedSalaryRange, selectedSkill]);
 
@@ -349,13 +376,20 @@ export default function RecruiterCandidatesPage() {
         {/* Row 1: Search box & Export Excel Button (User Story 3) */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-lg">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
+            <SearchAutocompleteInput
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm theo tên, email, số điện thoại, vị trí hoặc trường đại học..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              onChange={(val) => setSearchTerm(val)}
+              onSelectSuggestion={(item) => setSearchTerm(item.title)}
+              placeholder="Tìm theo tên, email, SĐT, vị trí, trường (có dấu hoặc không dấu)..."
+              scope="candidates"
+              size="sm"
+              localSuggestions={candidates.map((c) => ({
+                id: c.id,
+                title: c.name,
+                subtitle: `${c.email} • ${c.phone} • ${c.latestPosition}`,
+                category: "candidate",
+                category_label: "Ứng viên",
+              }))}
             />
           </div>
 
@@ -437,12 +471,20 @@ export default function RecruiterCandidatesPage() {
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
             >
               <option value="all">Tất cả nguồn</option>
-              <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
-              <option value="TopCV">TopCV</option>
-              <option value="VietnamWorks">VietnamWorks</option>
-              <option value="Referral Nội Bộ">Referral Nội Bộ</option>
-              <option value="Headhunter Agency">Headhunter Agency</option>
-              <option value="Website Công Ty">Website Công Ty</option>
+              {(sourceCategories && sourceCategories.length > 0) ? (
+                sourceCategories.filter((c) => c.is_active).map((c) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))
+              ) : (
+                <>
+                  <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
+                  <option value="TopCV">TopCV</option>
+                  <option value="VietnamWorks">VietnamWorks</option>
+                  <option value="Referral Nội Bộ">Referral Nội Bộ</option>
+                  <option value="Headhunter Agency">Headhunter Agency</option>
+                  <option value="Website Công Ty">Website Công Ty</option>
+                </>
+              )}
             </select>
           </div>
 

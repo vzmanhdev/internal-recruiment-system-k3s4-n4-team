@@ -95,8 +95,14 @@ export const managerApi = {
   async copyAndSubmit(sourceId: number, edits: { title: string; quantity: number; target_onboard_date?: string; job_description: string; requirements: string; reason_detail: string }) {
     const draft = await requisitionService.copyRequisition(sourceId);
     const updated = await requisitionService.updateRequisition(draft.id, {
-      title: edits.title, quantity: edits.quantity, target_onboard_date: edits.target_onboard_date,
-      job_description: edits.job_description, requirements: edits.requirements, reason_detail: edits.reason_detail,
+      department_id: draft.department_id,
+      job_title_id: draft.job_title_id,
+      title: edits.title,
+      quantity: edits.quantity,
+      target_onboard_date: edits.target_onboard_date,
+      job_description: edits.job_description,
+      requirements: edits.requirements,
+      reason_detail: edits.reason_detail,
     });
     try {
       const submitted = await requisitionService.submitRequisition(updated.id);
@@ -104,6 +110,21 @@ export const managerApi = {
     } catch (error) {
       return { requisition: toManagerRequisition(updated), submitted: false as const, error };
     }
+  },
+
+  async copyAsDraft(sourceId: number, edits: { title: string; quantity: number; target_onboard_date?: string; job_description: string; requirements: string; reason_detail: string }) {
+    const draft = await requisitionService.copyRequisition(sourceId);
+    const updated = await requisitionService.updateRequisition(draft.id, {
+      department_id: draft.department_id,
+      job_title_id: draft.job_title_id,
+      title: edits.title,
+      quantity: edits.quantity,
+      target_onboard_date: edits.target_onboard_date,
+      job_description: edits.job_description,
+      requirements: edits.requirements,
+      reason_detail: edits.reason_detail,
+    });
+    return toManagerRequisition(updated);
   },
 };
 

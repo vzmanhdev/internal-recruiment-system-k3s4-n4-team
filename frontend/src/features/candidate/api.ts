@@ -77,19 +77,52 @@ export function toCandidateJob(j: ApiJob, now: number): CandidateJob {
   };
 }
 
+export interface CareerPageSettingsData {
+  configured: boolean;
+  company_name: string;
+  slogan: string;
+  contact_email: string;
+  contact_phone: string;
+  banner_url?: string;
+  about_us?: string;
+  benefits?: Array<{ title: string; description: string; icon?: string }>;
+  updated_at?: string | null;
+}
+
 export const careerApi = {
+  async getCareerPageSettings(): Promise<CareerPageSettingsData> {
+    return apiRequest<CareerPageSettingsData>("/public/career-page");
+  },
+
   async list(): Promise<CandidateJob[]> {
-    const rows = (await jobService.getJobs()) as ApiJob[];
+    const [rows, settings] = await Promise.all([
+      jobService.getJobs() as Promise<ApiJob[]>,
+      apiRequest<CareerPageSettingsData>("/public/career-page").catch(() => null),
+    ]);
     const now = Date.now();
-    return rows.map((j) => toCandidateJob(j, now));
+    return rows.map((j) => {
+      const job = toCandidateJob(j, now);
+      if (settings?.contact_email) {
+        job.contactEmail = settings.contact_email;
+      }
+      return job;
+    });
   },
 
   async get(idOrSlug: string): Promise<CandidateJob> {
-    return toCandidateJob((await jobService.getJobByIdOrSlug(idOrSlug)) as ApiJob, Date.now());
+    const [raw, settings] = await Promise.all([
+      jobService.getJobByIdOrSlug(idOrSlug) as Promise<ApiJob>,
+      apiRequest<CareerPageSettingsData>("/public/career-page").catch(() => null),
+    ]);
+    const job = toCandidateJob(raw, Date.now());
+    if (settings?.contact_email) {
+      job.contactEmail = settings.contact_email;
+    }
+    return job;
   },
 
   /** Upload the CV (PDF/DOCX ≤ 10MB, validated server-side) and submit the application. */
-  async apply(job: CandidateJob, data: { full_name: string; email: string; phone: string; cover_letter?: string; file?: File | null; cv_url?: string; website?: string }) {
+  async apply(job: CandidateJob, data: { full_name: string; email: string; phone: string; cover_letter?: string; file?: File | null; cv_url?: string; website?: string; referral_code?: string }) {
     const cv_url = data.file ? (await uploadFile("cv", data.file)).url : data.cv_url || undefined;
     return apiRequest<{ id: number; tracking_code: string; job_title?: string; public_status?: string }>("/applications", {
       method: "POST",
@@ -101,7 +134,9 @@ export const careerApi = {
         cv_url,
         cover_letter: data.cover_letter || undefined,
         website: data.website || undefined,
+        referral_code: data.referral_code || undefined,
       }),
     });
   },
 };
+

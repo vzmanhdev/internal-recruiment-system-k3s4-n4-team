@@ -5,6 +5,8 @@ import { apiRequest, ApiError } from "@/lib/api-client";
 import { candidatesApi, STAGE_LABEL, type ApiApplication } from "@/features/candidates/api";
 import { useApiData } from "@/hooks/useApiData";
 import { ErrorState, LoadingState } from "@/components/ui/DataStates";
+import { getSearchScore } from "@/utils/vietnameseSearch";
+import { SearchAutocompleteInput } from "@/components/ui/SearchAutocompleteInput";
 import {
   Sparkles,
   Search,
@@ -184,14 +186,18 @@ export default function HRTalentPoolPage() {
   };
 
   // Filtered Talents
-  const q = searchQuery.trim().toLowerCase();
+  const q = searchQuery.trim();
   const filteredTalents = talents.filter((t) => {
-      const matchSearch =
-        !q ||
-        t.name.toLowerCase().includes(q) ||
-        t.email.toLowerCase().includes(q) ||
-        t.appliedPosition.toLowerCase().includes(q) ||
-        t.skills.some((s) => s.toLowerCase().includes(q));
+      let matchSearch = true;
+      if (q) {
+        const scores = [
+          getSearchScore(t.name, q),
+          getSearchScore(t.email, q),
+          getSearchScore(t.appliedPosition, q),
+          ...t.skills.map((s) => getSearchScore(s, q)),
+        ];
+        matchSearch = Math.max(...scores) > 0;
+      }
 
       const matchCategory = selectedCategory === "all" || t.category === selectedCategory;
       const matchRating =
@@ -199,6 +205,23 @@ export default function HRTalentPoolPage() {
       const matchSilver = !onlySilverMedalists || t.isSilverMedalist;
 
       return matchSearch && matchCategory && matchRating && matchSilver;
+  }).sort((a, b) => {
+    if (q) {
+      const scoreA = Math.max(
+        getSearchScore(a.name, q),
+        getSearchScore(a.email, q),
+        getSearchScore(a.appliedPosition, q),
+        ...a.skills.map((s) => getSearchScore(s, q))
+      );
+      const scoreB = Math.max(
+        getSearchScore(b.name, q),
+        getSearchScore(b.email, q),
+        getSearchScore(b.appliedPosition, q),
+        ...b.skills.map((s) => getSearchScore(s, q))
+      );
+      if (scoreA !== scoreB) return scoreB - scoreA;
+    }
+    return 0;
   });
 
   // Handle Send Bulk Email: one real (queued) e-mail per selected candidate through their source application
@@ -292,15 +315,21 @@ export default function HRTalentPoolPage() {
         {/* Filter Bar */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
           <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[220px] max-w-sm">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Tìm theo tên, email, kỹ năng (Python, Figma, AI...)"
+            {/* Search với Autocomplete Suggestions */}
+            <div className="relative flex-1 min-w-[260px] max-w-md">
+              <SearchAutocompleteInput
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-blue-500 focus:outline-hidden font-medium"
+                onChange={(val) => setSearchQuery(val)}
+                onSelectSuggestion={(item) => setSearchQuery(item.title)}
+                placeholder="Tìm theo tên, email, kỹ năng (Python, Figma, AI...)"
+                size="sm"
+                localSuggestions={talents.map((t) => ({
+                  id: t.id,
+                  title: t.name,
+                  subtitle: `${t.appliedPosition} • ${t.email} • ${t.skills.join(', ')}`,
+                  category: "candidate",
+                  category_label: "Nhân tài",
+                }))}
               />
             </div>
 

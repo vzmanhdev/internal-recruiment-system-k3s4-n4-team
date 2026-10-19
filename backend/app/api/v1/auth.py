@@ -16,7 +16,9 @@ from app.core.security import (
 )
 from app.api.deps import get_current_session_user, authenticate_bearer
 from app.schemas.auth import (
-    ChangePasswordRequest, ProfileUpdateRequest, RegistrationResponse, UserRegister, UserLogin,
+    ChangePasswordRequest, ProfileUpdateRequest, UserLogin,
+    RegistrationStartRequest, RegistrationVerifyRequest, RegistrationResendRequest,
+    RegistrationChallengeResponse, RegistrationCompletedResponse,
     Token, UserResponse, ErrorResponse, RefreshRequest, SessionResponse,
     PasswordResetInitRequest, PasswordResetInitResponse,
     PasswordResetVerifyRequest, PasswordResetVerifyResponse,
@@ -52,56 +54,62 @@ def _set_route_cookie(resp: JSONResponse, access_token: str) -> None:
 def _clear_route_cookie(resp: JSONResponse) -> None:
     resp.delete_cookie(ROUTE_ACCESS_COOKIE, path="/")
 
-@router.post(
-    "/register",
-    response_model=RegistrationResponse,
-    status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"model": ErrorResponse, "description": "Lỗi dữ liệu đầu vào hoặc Email đã tồn tại"},
-        422: {"model": ErrorResponse, "description": "Sai định dạng dữ liệu"}
-    }
-)
-def register(user_in: UserRegister, db: Session = Depends(get_db)):
-    # Check if email exists
-    existing_user = db.query(User).filter(User.email == user_in.email).first()
-    if existing_user:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={
-                "detail": "Email này đã được đăng ký trên hệ thống. Vui lòng sử dụng email khác hoặc Đăng nhập.",
-                "field_errors": {
-                    "email": "Email này đã được đăng ký trên hệ thống."
-                }
-            }
-        )
+# ---------------------------------------------------------------------------------------------
+# Public candidate self-registration with e-mail OTP (no admin approval; see registration_service)
+# ---------------------------------------------------------------------------------------------
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "127.0.0.1"
 
-    # Generate random unique employee_code (e.g. NV-839201)
-    import random
-    while True:
-        emp_code = f"NV-{random.randint(100000, 999999)}"
-        if not db.query(User).filter(User.employee_code == emp_code).first():
-            break
 
-    # Create new user
-    hashed_pwd = hash_password(user_in.password)
-    new_user = User(
-        email=user_in.email,
-        hashed_password=hashed_pwd,
-        full_name=user_in.full_name,
-        phone=user_in.phone,
-        employee_code=emp_code,
-        role="employee",
-        is_active=False,
-        account_status="pending"
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+REGISTRATION_ERRORS = {
+    404: {"model": ErrorResponse, "description": "OTP_CHALLENGE_NOT_FOUND"},
+    409: {"model": ErrorResponse, "description": "EMAIL_ALREADY_REGISTERED / OTP_ALREADY_USED / OTP_SUPERSEDED"},
+    410: {"model": ErrorResponse, "description": "OTP_EXPIRED / OTP_CHALLENGE_CANCELLED"},
+    422: {"model": ErrorResponse, "description": "Sai định dạng dữ liệu / EMAIL_DOMAIN_NOT_ALLOWED"},
+    429: {"model": ErrorResponse, "description": "OTP_RESEND_COOLDOWN / REGISTRATION_RATE_LIMITED / REGISTRATION_TEMPORARILY_BLOCKED"},
+    502: {"model": ErrorResponse, "description": "EMAIL_DELIVERY_FAILED"},
+    503: {"model": ErrorResponse, "description": "EMAIL_DELIVERY_UNAVAILABLE"},
+}
 
-    return {
-        "message": "Yêu cầu đăng ký đã được gửi. Tài khoản sẽ sử dụng được sau khi Quản trị viên phê duyệt.",
-        "user": new_user.to_dict()
-    }
+
+@router.post("/register/start", response_model=RegistrationChallengeResponse, status_code=status.HTTP_202_ACCEPTED,
+             responses=REGISTRATION_ERRORS)
+def register_start(payload: RegistrationStartRequest, request: Request, db: Session = Depends(get_db)):
+    """Validate the registration and e-mail a 6-digit code. No account exists until /register/verify succeeds."""
+    from app.services import registration_service
+    return registration_service.start_registration(
+        db, full_name=payload.full_name, email=payload.email, password=payload.password,
+        phone=payload.phone, client_ip=_client_ip(request))
+
+
+# Legacy path kept for existing clients: it now only STARTS a registration (it never creates an account).
+router.add_api_route("/register", register_start, methods=["POST"], response_model=RegistrationChallengeResponse,
+                     status_code=status.HTTP_202_ACCEPTED, responses=REGISTRATION_ERRORS, include_in_schema=False)
+
+
+@router.post("/register/verify", response_model=RegistrationCompletedResponse, status_code=status.HTTP_201_CREATED,
+             responses={400: {"model": ErrorResponse, "description": "OTP_INVALID (remaining_attempts)"},
+                        423: {"model": ErrorResponse, "description": "OTP_CHALLENGE_BLOCKED"}, **REGISTRATION_ERRORS})
+def register_verify(payload: RegistrationVerifyRequest, request: Request, db: Session = Depends(get_db)):
+    """Check the code; on success create the active, e-mail-verified candidate account (role: candidate)."""
+    from app.services import registration_service
+    return registration_service.verify_otp(db, payload.challenge_id, payload.otp, _client_ip(request))
+
+
+@router.post("/register/resend-otp", response_model=RegistrationChallengeResponse, status_code=status.HTTP_202_ACCEPTED,
+             responses=REGISTRATION_ERRORS)
+def register_resend_otp(payload: RegistrationResendRequest, request: Request, db: Session = Depends(get_db)):
+    """Issue a NEW challenge (new id, new code, fresh attempt counter); the previous one is invalidated."""
+    from app.services import registration_service
+    return registration_service.resend_otp(db, payload.challenge_id, _client_ip(request))
+
+
+@router.get("/register/challenge-status", response_model=RegistrationChallengeResponse, responses=REGISTRATION_ERRORS)
+def register_challenge_status(challenge_id: str = Query(..., min_length=20, max_length=64), db: Session = Depends(get_db)):
+    """Server-side state of a challenge, so a reloaded page shows the real lockout / remaining attempts."""
+    from app.services import registration_service
+    return registration_service.challenge_status(db, challenge_id)
+
 
 def get_role_redirect_url(role: str) -> str:
     normalized = (role or "").lower().strip()
@@ -151,7 +159,7 @@ def _locked_response(remaining_secs: int) -> JSONResponse:
         content={
             "detail": f"Phiên đăng nhập trên trình duyệt này đang bị tạm khóa {login_guard.LOCK_MINUTES} phút do nhập sai {login_guard.MAX_FAILURES}/{login_guard.MAX_FAILURES} lần liên tiếp. "
                       f"Vui lòng thử lại sau {remaining_mins} phút.",
-            "field_errors": {"password": f"Tạm khóa đăng nhập trên trình duyệt này. Thử lại sau {remaining_mins} phút ({remaining_secs} giây)."},
+            # "field_errors": {"password": f"Tạm khóa đăng nhập trên trình duyệt này. Thử lại sau {remaining_mins} phút ({remaining_secs} giây)."},
         },
     )
 

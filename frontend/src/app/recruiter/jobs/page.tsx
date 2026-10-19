@@ -2,6 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   FileText,
   Plus,
@@ -275,6 +278,10 @@ export default function RecruiterJobsPage() {
       showToast('Vui lòng nhập tiêu đề và mô tả công việc.', 'info');
       return;
     }
+    if (createForm.expiryDate && isPastDate(createForm.expiryDate)) {
+      showToast('Hạn nộp hồ sơ không được ở trong quá khứ.', 'info');
+      return;
+    }
     setSaving(true);
     try {
       const created = await jobService.createJob({
@@ -323,6 +330,10 @@ export default function RecruiterJobsPage() {
   const handleSaveExpiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!jobToSetExpiry || !newExpiryDate) return;
+    if (isPastDate(newExpiryDate)) {
+      showToast('Hạn nộp hồ sơ mới không được ở trong quá khứ.', 'info');
+      return;
+    }
     setSaving(true);
     try {
       const updated = await apiRequest<JobPostingItem>(`/jobs/${jobToSetExpiry.raw.id}`, {
@@ -389,19 +400,37 @@ export default function RecruiterJobsPage() {
   // ==========================================
 
   const filteredJobs = useMemo(() => {
+    const q = searchTerm.trim();
     return jobs.filter((job) => {
-      // 1. Search term
-      const matchesSearch =
-        job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.department.toLowerCase().includes(searchTerm.toLowerCase());
-
-      if (!matchesSearch) return false;
+      // 1. Search term (accent & case-insensitive)
+      if (q) {
+        const score = Math.max(
+          getSearchScore(job.title, q),
+          getSearchScore(job.id, q),
+          getSearchScore(job.department, q)
+        );
+        if (score === 0) return false;
+      }
 
       // 2. Status filter
       if (statusFilter === 'all') return true;
       if (statusFilter === 'expiring') return job.isExpiringSoon && job.status === 'active';
       return job.status === statusFilter;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.title, q),
+          getSearchScore(a.id, q),
+          getSearchScore(a.department, q)
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.title, q),
+          getSearchScore(b.id, q),
+          getSearchScore(b.department, q)
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [jobs, searchTerm, statusFilter]);
 
@@ -549,15 +578,22 @@ export default function RecruiterJobsPage() {
 
       {/* 3. FILTER BAR & VIEW TOGGLE */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-100 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        {/* Left: Search box */}
+        {/* Left: Search box với Autocomplete Suggestions */}
         <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
+          <SearchAutocompleteInput
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(val) => setSearchTerm(val)}
+            onSelectSuggestion={(item) => setSearchTerm(item.title)}
             placeholder="Tìm theo tiêu đề tin, mã JOB hoặc phòng ban..."
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+            scope="jobs"
+            size="sm"
+            localSuggestions={jobs.map((j) => ({
+              id: j.id,
+              title: j.title,
+              subtitle: `${j.department} • Mã: ${j.id} • ${j.status}`,
+              category: "job",
+              category_label: "Việc làm",
+            }))}
           />
         </div>
 
@@ -1203,12 +1239,16 @@ export default function RecruiterJobsPage() {
                     <label className="block font-bold text-slate-700 mb-1">Ngày hết hạn tin</label>
                     <input
                       type="date"
+                      min={getLocalTodayDateString()}
                       value={createForm.expiryDate}
                       onChange={(e) =>
                         setCreateForm({ ...createForm, expiryDate: e.target.value })
                       }
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                     />
+                    {createForm.expiryDate && isPastDate(createForm.expiryDate) && (
+                      <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày hết hạn không được ở quá khứ</p>
+                    )}
                   </div>
 
                   <div className="pt-2 sm:pt-4">
@@ -1393,10 +1433,14 @@ export default function RecruiterJobsPage() {
                 <input
                   type="date"
                   required
+                  min={getLocalTodayDateString()}
                   value={newExpiryDate}
                   onChange={(e) => setNewExpiryDate(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                 />
+                {newExpiryDate && isPastDate(newExpiryDate) && (
+                  <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày hết hạn mới không được ở quá khứ</p>
+                )}
               </div>
 
               {/* Auto Unpublish checkbox */}

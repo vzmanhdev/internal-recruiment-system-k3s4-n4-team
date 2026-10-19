@@ -4,6 +4,7 @@ import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { apiRequest, ApiError } from '@/lib/api-client';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 
@@ -111,6 +112,11 @@ function CandidateInterviewAction() {
       return;
     }
 
+    if (rescheduleType === 'reschedule' && proposedDate && isPastDate(proposedDate)) {
+      setFormError('Ngày bạn chọn không được ở trong quá khứ.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const note = rescheduleType === 'cancel'
@@ -135,7 +141,7 @@ function CandidateInterviewAction() {
       {/* Breadcrumb quay về trang chủ ứng viên */}
       <nav className="flex items-center justify-between text-xs text-slate-500 font-medium">
         <Link
-          href="/candidate/tracking"
+          href="/candidate/track"
           className="hover:text-blue-600 transition-colors flex items-center gap-1.5 py-1"
         >
           <ChevronLeft className="w-4 h-4" />
@@ -337,6 +343,7 @@ function CandidateInterviewAction() {
                   <input
                     type="date"
                     required
+                    min={getLocalTodayDateString()}
                     value={proposedDate}
                     onChange={(e) => setProposedDate(e.target.value)}
                     className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-base font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"

@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -12,6 +14,8 @@ export interface BrandLogoProps {
   href?: string;
   className?: string;
   onClick?: () => void;
+  logoUrl?: string;
+  companyName?: string;
 }
 
 /**
@@ -119,15 +123,32 @@ export function BrandLogo({
   href = "/",
   className,
   onClick,
+  logoUrl,
+  companyName,
 }: BrandLogoProps) {
+  const [imgError, setImgError] = React.useState(false);
+
+  const displayTitle = companyName || "Tuyển dụng nội bộ";
+
   const content = (
     <div className={cn("inline-flex items-center gap-2.5 select-none group", className)}>
-      <TDSparkEmblem className={cn(emblemSizes[size], "group-hover:scale-105 transition-transform duration-200")} />
+      {logoUrl && !imgError ? (
+        <div className={cn(emblemSizes[size], "relative rounded-xl overflow-hidden bg-white/80 border border-slate-200/80 p-0.5 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform duration-200")}>
+          <img
+            src={logoUrl}
+            alt={displayTitle}
+            className="w-full h-full object-contain"
+            onError={() => setImgError(true)}
+          />
+        </div>
+      ) : (
+        <TDSparkEmblem className={cn(emblemSizes[size], "group-hover:scale-105 transition-transform duration-200")} />
+      )}
 
       {showText && (
         <div className="leading-tight text-left">
-          <span className={cn("block text-slate-900 group-hover:text-blue-600 transition-colors", titleSizes[size])}>
-            Tuyển dụng nội bộ
+          <span className={cn("block text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-1", titleSizes[size])}>
+            {displayTitle}
           </span>
           {showSubtitle && (
             <span className={cn("block font-medium text-slate-400 tracking-tight", subtitleSizes[size])}>

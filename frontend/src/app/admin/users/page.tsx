@@ -29,6 +29,7 @@ import { ExcelImportModal } from "./components/ExcelImportModal";
 import { UserFormModal } from "./components/UserFormModal";
 import { userService } from "@/services/user.service";
 import { Pagination } from "@/components/ui/Pagination";
+import { SearchAutocompleteInput } from "@/components/ui/SearchAutocompleteInput";
 
 export default function AdminUsersManagementPage() {
   // Server-side data state
@@ -182,7 +183,7 @@ export default function AdminUsersManagementPage() {
           email: formData.email || "",
           password: "Password123!",
           phone: formData.phone,
-          roles: formData.roles || [formData.role || "employee"],
+          roles: formData.roles || [formData.role || "candidate"],
           department: formData.department,
         });
         showToast(`Tạo mới tài khoản ${formData.full_name} thành công!`, "success");
@@ -255,24 +256,18 @@ export default function AdminUsersManagementPage() {
 
         {/* 1. THANH CÔNG CỤ TRÊN CÙNG (TOP ACTION BAR) */}
         <div className="flex flex-col xl:flex-row items-center justify-between gap-4">
-          {/* Ô Search input lớn tìm kiếm theo Tên, Email hoặc Mã nhân viên */}
+          {/* Ô Search input lớn tìm kiếm theo Tên, Email hoặc Mã nhân viên với Autocomplete Suggestions */}
           <div className="relative flex-1 w-full">
-            <Search className="w-5 h-5 text-slate-400 absolute left-4 top-3.5 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Tìm kiếm theo Tên, Email hoặc Mã nhân viên..."
+            <SearchAutocompleteInput
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-12 pl-12 pr-10 bg-slate-50 border border-slate-200/90 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+              onChange={(val) => setSearchQuery(val)}
+              onSelectSuggestion={(item) => {
+                setSearchQuery(item.title);
+              }}
+              placeholder="Tìm kiếm theo Tên, Email hoặc Mã nhân viên (có dấu hoặc không dấu)..."
+              scope="users"
+              size="md"
             />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3.5 top-3.5 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
           </div>
 
           {/* Bộ lọc kết hợp & Nút hành động */}
@@ -406,7 +401,7 @@ export default function AdminUsersManagementPage() {
                   {users.map((user) => {
                     const isLocked = !user.is_active || user.account_status === "locked";
                     const userRoleList =
-                      user.roles && user.roles.length > 0 ? user.roles : [user.role || "employee"];
+                      user.roles && user.roles.length > 0 ? user.roles : [user.role || "candidate"];
 
                     return (
                       <tr

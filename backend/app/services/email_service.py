@@ -444,3 +444,50 @@ def send_account_locked_temp_email(to_email: str, full_name: str, lock_minutes: 
 
 
 
+REGISTRATION_OTP_SUBJECT = "Mã xác thực đăng ký tài khoản Tuyển dụng nội bộ"
+
+
+def send_registration_otp_email(to_email: str, full_name: str, otp_code: str, expires_in_minutes: int = 10) -> str:
+    """Deliver the candidate-registration OTP NOW (synchronously) and return the real outcome.
+
+    Returns "sent", "skipped" (SMTP not configured), "failed" or "error" (log could not be written).
+    The OTP is never written to logs, the console or the EmailLog body.
+    """
+    from app.db.session import SessionLocal
+    from app.models.email_automation import EmailLog
+    from html import escape
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px;">
+      <div style="max-width: 500px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 32px;">
+        <div style="font-size: 18px; font-weight: 800; color: #0284c7; text-align: center; margin-bottom: 24px; text-transform: uppercase;">TUYỂN DỤNG NỘI BỘ</div>
+        <div style="font-size: 20px; font-weight: 700; color: #0f172a; text-align: center; margin-bottom: 8px;">Xác Thực Đăng Ký Tài Khoản</div>
+        <p style="font-size: 14px; color: #334155; line-height: 1.6;">Xin chào <strong>{escape(full_name)}</strong>,</p>
+        <p style="font-size: 14px; color: #334155; line-height: 1.6;">Mã xác thực của bạn là:</p>
+        <div style="background: #f0f9ff; border: 2px dashed #0284c7; border-radius: 12px; padding: 20px; text-align: center; margin: 16px 0;">
+          <div style="font-size: 36px; font-weight: 800; color: #0369a1; letter-spacing: 10px; font-family: monospace;">{otp_code}</div>
+        </div>
+        <p style="font-size: 14px; color: #334155; line-height: 1.6;">Mã có hiệu lực trong <strong>{expires_in_minutes} phút</strong>. Không chia sẻ mã này với người khác.</p>
+        <p style="font-size: 12px; color: #64748b; line-height: 1.6; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px;">Nếu bạn không yêu cầu tạo tài khoản, vui lòng bỏ qua email này. Tài khoản chỉ được tạo sau khi mã được xác thực.</p>
+      </div>
+    </body>
+    </html>
+    """
+    db = SessionLocal()
+    try:
+        log = EmailLog(template_code="CANDIDATE_REGISTRATION_OTP", recipient_name=full_name or to_email,
+                       recipient_email=to_email, subject=REGISTRATION_OTP_SUBJECT,
+                       body_html=SENSITIVE_BODY_PLACEHOLDER, status="queued")
+        db.add(log)
+        db.commit()
+        log_id = log.id
+    except Exception:
+        db.rollback()
+        logger.exception("Could not persist registration OTP email log for %s", _mask(to_email))
+        return "error"
+    finally:
+        db.close()
+    return deliver_email_log(log_id, html_content)

@@ -18,15 +18,20 @@ interface UserProfile {
 }
 
 export const NAV_SECTIONS = [
-  { id: "home", label: "Trang chủ" },
-  { id: "jobs", label: "Cơ hội nghề nghiệp" },
-  { id: "career-path", label: "Lộ trình phát triển" },
-  { id: "process", label: "Quy trình" },
-  { id: "news", label: "Tin tức nội bộ" },
-  { id: "faq", label: "FAQ" },
+  { id: "home", label: "Trang Chủ" },
+  { id: "about", label: "Về Chúng Tôi" },
+  { id: "jobs", label: "Cơ Hội Nghề Nghiệp" },
+  { id: "process", label: "Quy Trình" },
+  { id: "news", label: "Tin Tức" },
+  { id: "faq", label: "Hỗ Trợ" },
 ];
 
-export function Header() {
+export interface HeaderProps {
+  logoUrl?: string;
+  companyName?: string;
+}
+
+export function Header({ logoUrl, companyName }: HeaderProps = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const isHomePage = pathname === "/";
@@ -40,6 +45,16 @@ export function Header() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     const loadAvatar = () => {
@@ -99,7 +114,7 @@ export function Header() {
     if (roles.includes("hiring_manager") || roles.includes("manager")) return "/manager";
     if (roles.includes("interviewer")) return "/interviewer";
     if (roles.includes("approver")) return "/approver";
-    if (roles.includes("employee")) return "/employee";
+    if (roles.includes("candidate")) return "/candidate";
     return "/jobs";
   };
 
@@ -129,11 +144,17 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[var(--color-border)] shadow-sm transition-all">
+    <header
+      className={`sticky top-0 z-50 transition-all duration-300 ${
+        isHomePage && !isScrolled
+          ? "bg-transparent border-b border-transparent shadow-none"
+          : "bg-white/85 backdrop-blur-md border-b border-slate-200/60 shadow-xs"
+      }`}
+    >
       <Container className="max-w-[1400px]">
         <div className="flex items-center justify-between h-20">
           {/* Brand Logo */}
-          <BrandLogo size="md" href="/" />
+          <BrandLogo size="md" href="/" logoUrl={logoUrl} companyName={companyName} />
 
           {/* Desktop Navigation Links with Active State & Smooth Scrolling */}
           <nav className="hidden lg:flex items-center gap-1.5 xl:gap-2">
@@ -144,15 +165,15 @@ export function Header() {
                   key={item.id}
                   href={isHomePage ? `#${item.id}` : `/#${item.id}`}
                   onClick={(e) => handleNavClick(e, item.id)}
-                  className={`relative px-3.5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 cursor-pointer ${
+                  className={`relative px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 cursor-pointer ${
                     isActive
-                      ? "text-blue-600 bg-blue-50/80 shadow-xs"
-                      : "text-slate-600 hover:text-blue-600 hover:bg-slate-50/80"
+                      ? "text-blue-600 font-bold bg-blue-50/80 shadow-xs"
+                      : "text-slate-700 hover:text-blue-600 hover:bg-white/60"
                   }`}
                 >
                   <span>{item.label}</span>
                   {isActive && (
-                    <span className="absolute bottom-0 left-3.5 right-3.5 h-[2.5px] bg-blue-600 rounded-full" />
+                    <span className="absolute bottom-1 left-4 right-4 h-[2px] bg-blue-600 rounded-full" />
                   )}
                 </Link>
               );
@@ -160,12 +181,12 @@ export function Header() {
           </nav>
 
           {/* Desktop Actions */}
-          <div className="hidden lg:flex items-center gap-4">
+          <div className="hidden lg:flex items-center gap-3">
             <button
               type="button"
               aria-label="Tìm kiếm cơ hội nghề nghiệp"
               onClick={handleSearchClick}
-              className="p-2.5 text-slate-500 hover:text-blue-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              className="p-2.5 text-slate-600 hover:text-blue-600 rounded-full hover:bg-white/60 transition-colors cursor-pointer"
               title="Tìm kiếm vị trí tuyển dụng"
             >
               <Search className="w-5 h-5" />
@@ -175,7 +196,7 @@ export function Header() {
               <div className="flex items-center gap-3">
                 <Link
                   href={getWorkspaceUrl(user.role)}
-                  className="flex items-center gap-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 px-3.5 py-1.5 rounded-full transition-all group cursor-pointer"
+                  className="flex items-center gap-2.5 bg-white/80 hover:bg-white border border-slate-200/80 px-3.5 py-1.5 rounded-full transition-all group cursor-pointer shadow-2xs"
                 >
                   <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs shadow-sm overflow-hidden">
                     {avatarUrl ? (
@@ -212,14 +233,21 @@ export function Header() {
                 </button>
               </div>
             ) : (
-              <>
-                <Button variant="ghost" href="/login">
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/login"
+                  className="px-5 py-2.5 rounded-full text-sm font-bold text-blue-600 bg-blue-50/90 hover:bg-blue-100 hover:text-blue-700 border border-blue-200/80 shadow-xs transition-all cursor-pointer"
+                >
                   Đăng nhập
-                </Button>
-                <Button variant="primary" href="/register">
-                  Đăng ký
-                </Button>
-              </>
+                </Link>
+                <Link
+                  href="/register"
+                  className="btn-pill-apply px-5 py-2.5 rounded-full text-white !text-white font-bold text-sm shadow-md shadow-blue-500/25 hover:shadow-blue-500/40 transition-all cursor-pointer"
+                  style={{ color: "#ffffff", backgroundColor: "#2563eb" }}
+                >
+                  <span style={{ color: "#ffffff" }}>Đăng ký</span>
+                </Link>
+              </div>
             )}
           </div>
 

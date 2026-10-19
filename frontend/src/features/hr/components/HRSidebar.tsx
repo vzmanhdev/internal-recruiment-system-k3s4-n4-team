@@ -46,7 +46,6 @@ const hrNavigationGroups: NavGroup[] = [
   {
     groupName: "QUẢN TRỊ NGHIỆP VỤ",
     items: [
-      { label: "Danh Mục & Cơ Cấu Tổ Chức", href: "/hr/categories", icon: Building2, badge: "Hub" },
       { label: "Cơ cấu phòng ban", href: "/hr/master-data/departments", icon: Building2 },
       { label: "Chức danh & Dải lương", href: "/hr/master-data/positions", icon: Award },
       { label: "Ngân sách Headcount", href: "/hr/master-data/headcount", icon: Target, badge: "Override" },

@@ -28,17 +28,24 @@ import {
   Layers,
   ArrowRight,
 } from 'lucide-react';
-import { careerApi, type CandidateJob } from '@/features/candidate/api';
+import { careerApi, type CandidateJob, type CareerPageSettingsData } from '@/features/candidate/api';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { ApiError } from '@/lib/api-client';
+import { useAuth } from '@/providers/auth-provider';
 
 export default function CandidateJobDetailPage() {
   const params = useParams();
   const router = useRouter();
   const jobId = (params?.id as string) || '';
+  const { user } = useAuth();
 
-  const { data: job, loading: jobLoading } = useApiData(() => careerApi.get(jobId), [jobId]);
+  const { data, loading: jobLoading } = useApiData(
+    () => Promise.all([careerApi.get(jobId), careerApi.getCareerPageSettings().catch(() => null)]),
+    [jobId]
+  );
+  const job: CandidateJob | null = data?.[0] || null;
+  const settings: CareerPageSettingsData | null = data?.[1] || null;
 
   // Modal State: Ứng tuyển nhanh (Không cần tài khoản)
   const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
@@ -46,7 +53,7 @@ export default function CandidateJobDetailPage() {
   const [isSubmitSuccess, setIsSubmitSuccess] = useState(false);
   const [appliedAppId, setAppliedAppId] = useState('');
 
-  // Form State
+  // Form State (Auto-prefilled from user if logged in)
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -56,6 +63,15 @@ export default function CandidateJobDetailPage() {
   const [coverNote, setCoverNote] = useState('');
   const [formError, setFormError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Auto-prefill authenticated user info
+  React.useEffect(() => {
+    if (user) {
+      if (!fullName && user.full_name) setFullName(user.full_name);
+      if (!email && user.email) setEmail(user.email);
+      if (!phone && user.phone) setPhone(user.phone);
+    }
+  }, [user]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -394,11 +410,11 @@ export default function CandidateJobDetailPage() {
             <div className="space-y-1.5 pt-1 font-semibold text-slate-700">
               <div className="flex items-center gap-2">
                 <Mail className="w-3.5 h-3.5 text-blue-600" />
-                <span>{job.contactEmail}</span>
+                <span>{job.contactEmail || settings?.contact_email || 'tuyendung@enterprise.com'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Phone className="w-3.5 h-3.5 text-blue-600" />
-                <span>(024) 3789 9999 (Ext: 102)</span>
+                <span>{settings?.contact_phone || '1900 6868'}</span>
               </div>
             </div>
           </div>
@@ -486,7 +502,7 @@ export default function CandidateJobDetailPage() {
 
                   <div className="pt-3 space-y-2">
                     <Link
-                      href="/candidate/track"
+                      href={`/candidate/track?code=${encodeURIComponent(appliedAppId)}&email=${encodeURIComponent(email)}`}
                       onClick={handleCloseModal}
                       className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
                     >

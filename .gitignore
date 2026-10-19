@@ -10,17 +10,21 @@ reports/
 tmp_test/
 .tmp_test/
 /tmp/
+scratch/
+scratch_*.json
+/*.png
+backend/storage/*
 
 # ------------------------------------------------------------------------------
 # 2. Environment Variables & Credentials (Biến môi trường & Bí mật)
 # ------------------------------------------------------------------------------
-.env
+
 .env.local
 .env.*.local
 .env.development
 .env.test
 .env.production
-*.env
+
 
 # Cho phép commit file mẫu .env.example
 !.env.example
@@ -43,10 +47,10 @@ develop-eggs/
 dist/
 downloads/
 eggs/
-.eggs/
-lib/
-lib64/
-parts/
+/lib/
+/lib64/
+!frontend/src/lib/
+!frontend/src/lib/**
 sdist/
 var/
 wheels/
@@ -104,3 +108,6 @@ Desktop.ini
 .idea/
 *.sublime-project
 *.sublime-workspace
+Assets/database.sql
+backend/scripts/
+tests/
