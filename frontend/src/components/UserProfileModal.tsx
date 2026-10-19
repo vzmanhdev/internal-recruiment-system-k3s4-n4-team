@@ -23,6 +23,7 @@ import {
 import { AvatarCropModal } from "@/components/AvatarCropModal";
 import { CroppedAvatarResult } from "@/lib/cropImage";
 import { authService } from "@/features/auth/services/auth.service";
+import { getLocalTodayDateString } from "@/utils/dateUtils";
 
 export interface UserProfileData {
   employeeCode?: string;
@@ -552,6 +553,7 @@ export function UserProfileModal({
                     </label>
                     <input
                       type="date"
+                      max={getLocalTodayDateString()}
                       value={profile.dateOfBirth || "1992-06-18"}
                       onChange={(e) =>
                         setProfile((prev) => ({

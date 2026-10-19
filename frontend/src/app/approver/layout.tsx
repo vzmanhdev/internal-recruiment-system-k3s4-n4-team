@@ -1,5 +1,4 @@
 import React from 'react';
-import { ApproverAppShell } from '@/components/layout/ApproverAppShell';
 
 export const metadata = {
   title: 'Trung Tâm Phê Duyệt | Ban Giám Đốc | Enterprise ATS',
@@ -11,5 +10,6 @@ export default function ApproverLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <ApproverAppShell>{children}</ApproverAppShell>;
+  // The unified, permission-driven AppShell is mounted once in the root layout.
+  return <>{children}</>;
 }

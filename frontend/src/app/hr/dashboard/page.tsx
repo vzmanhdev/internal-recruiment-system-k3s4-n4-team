@@ -1,6 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { apiRequest, API_BASE_URL } from "@/lib/api-client";
+import { useApiData } from "@/hooks/useApiData";
+import { triggerFileDownload } from "@/utils/fileDownload";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
 import Link from "next/link";
 
 import {
@@ -24,6 +28,7 @@ import {
   Layers as LayersIcon,
   Building2 as Building2Icon,
   Percent,
+  ArrowRightLeft as ArrowRightLeftIcon,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -44,113 +49,225 @@ import {
 } from "recharts";
 
 // =============================================================================
-// MOCK DATA & DEFINITIONS
+// REAL ANALYTICS (S8-05 … S8-09) -> CHART MODELS
 // =============================================================================
 
-// 1. Phễu Tuyển dụng (Recruitment Funnel)
-const FUNNEL_DATA = [
-  { stage: "Hồ sơ tiếp nhận (CV)", count: 1250, conversionFromPrev: 100, color: "#3B82F6", dropOff: 0 },
-  { stage: "Sàng lọc hồ sơ (Screening)", count: 680, conversionFromPrev: 54.4, color: "#6366F1", dropOff: 45.6 },
-  { stage: "Phỏng vấn chuyên môn (Interview)", count: 210, conversionFromPrev: 30.9, color: "#8B5CF6", dropOff: 69.1 },
-  { stage: "Gửi thư mời (Offer Sent)", count: 48, conversionFromPrev: 22.9, color: "#EC4899", dropOff: 77.1 },
-  { stage: "Đã nhận việc (Hired)", count: 36, conversionFromPrev: 75.0, color: "#10B981", dropOff: 25.0 },
-];
+const FUNNEL_COLORS = ["#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#10B981", "#14B8A6"];
+const SOURCE_COLORS = ["#0A66C2", "#10B981", "#1877F2", "#8B5CF6", "#F59E0B", "#EF4444", "#64748B"];
+const TARGET_SLA_DAYS = 25; // committed time-to-hire target shown as the reference line
 
-// 2. Hiệu quả Nguồn tuyển dụng (Source of Hire)
-const SOURCE_PIE_DATA = [
-  { name: "LinkedIn", value: 438, percentage: 35, color: "#0A66C2" },
-  { name: "Nội bộ giới thiệu", value: 350, percentage: 28, color: "#10B981" },
-  { name: "Facebook & Mạng XH", value: 225, percentage: 18, color: "#1877F2" },
-  { name: "Cổng tuyển dụng Portal", value: 150, percentage: 12, color: "#8B5CF6" },
-  { name: "Headhunter / Agency", value: 87, percentage: 7, color: "#F59E0B" },
-];
+interface FunnelResp { total: number; stages: Array<{ stage: string; label: string; count: number; conversion_from_previous: number | null }>; biggest_drop: { from: string; to: string; lost: number } | null }
+interface SourceRow { source: string; applications: number; passed_screening: number; hired: number; hire_rate: number }
+interface Metrics { total_hires: number; avg_time_to_hire_days: number | null; cost_per_hire: number | null }
+interface Overview {
+  kpis: {
+    active_requisitions: number;
+    pending_approvals: number;
+    total_applications: number;
+    new_candidates_this_week: number;
+    interviews_this_week?: number;
+    pending_offers?: number;
+    hired_count?: number;
+    remaining_headcount?: number;
+    budget_usage_percent?: number | null;
+  };
+  overdue_requisitions?: Array<{
+    id: string;
+    requisition_id: number;
+    title: string;
+    department: string;
+    target_date: string;
+    delay_days: number;
+    recruiter: string | null;
+    status: string;
+  }>;
+  hr_alerts?: {
+    total_alerts: number;
+    overdue_count: number;
+    handover_count: number;
+    headcount_warning_count: number;
+    over_band_count: number;
+    stuck_approval_count: number;
+    items: {
+      overdue: Array<{
+        id: string;
+        requisition_id: number;
+        title: string;
+        department: string;
+        target_date: string;
+        delay_days: number;
+        recruiter: string | null;
+        status: string;
+      }>;
+      handover: Array<{
+        requisition_id: number;
+        code: string;
+        title: string;
+        department: string;
+        reason: string;
+        priority: string;
+        status: string;
+      }>;
+      headcount: Array<{
+        department_id: number;
+        department: string;
+        budget: number;
+        used: number;
+        remaining: number;
+        message: string;
+      }>;
+      over_band: Array<{
+        offer_id: number;
+        candidate_name: string;
+        offered_salary: number;
+        department: string;
+        position: string;
+        justification: string;
+      }>;
+      stuck_approvals: Array<{
+        requisition_id: number;
+        code: string;
+        title: string;
+        department: string;
+        step: string;
+        pending_days: number;
+        message: string;
+      }>;
+    };
+  };
+}
 
-const SOURCE_EFFICIENCY_TABLE = [
-  {
-    source: "Nội bộ giới thiệu (Referral)",
-    applied: 350,
-    interviewed: 112,
-    hired: 16,
-    hireRate: "4.57%",
-    costPerHire: "3.500.000 ₫",
-    roi: "Xuất sắc (Tối ưu)",
-    badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  },
-  {
-    source: "LinkedIn Talent Solutions",
-    applied: 438,
-    interviewed: 58,
-    hired: 11,
-    hireRate: "2.51%",
-    costPerHire: "6.200.000 ₫",
-    roi: "Rất tốt (Chất lượng cao)",
-    badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
-  },
-  {
-    source: "Cổng tuyển dụng Career Portal",
-    applied: 150,
-    interviewed: 24,
-    hired: 5,
-    hireRate: "3.33%",
-    costPerHire: "1.800.000 ₫",
-    roi: "Chi phí thấp nhất",
-    badgeColor: "bg-purple-50 text-purple-700 border-purple-200",
-  },
-  {
-    source: "Facebook & Mạng xã hội",
-    applied: 225,
-    interviewed: 12,
-    hired: 2,
-    hireRate: "0.89%",
-    costPerHire: "8.500.000 ₫",
-    roi: "Cần cải thiện chất lượng",
-    badgeColor: "bg-amber-50 text-amber-700 border-amber-200",
-  },
-  {
-    source: "Headhunter / Agency",
-    applied: 87,
-    interviewed: 18,
-    hired: 2,
-    hireRate: "2.30%",
-    costPerHire: "28.000.000 ₫",
-    roi: "Chi phí cao (Dành cho C-Level)",
-    badgeColor: "bg-rose-50 text-rose-700 border-rose-200",
-  },
-];
+const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-// 3. Biến động Thời gian & Chi phí tuyển dụng theo tháng (Time-to-Hire & Cost-per-Hire)
-const MONTHLY_TREND_DATA = [
-  { month: "T1", timeToHire: 32.5, costPerHire: 9.8, targetSLA: 25 },
-  { month: "T2", timeToHire: 30.2, costPerHire: 9.2, targetSLA: 25 },
-  { month: "T3", timeToHire: 28.6, costPerHire: 8.7, targetSLA: 25 },
-  { month: "T4", timeToHire: 27.4, costPerHire: 8.5, targetSLA: 25 },
-  { month: "T5", timeToHire: 26.1, costPerHire: 8.1, targetSLA: 25 },
-  { month: "T6", timeToHire: 25.8, costPerHire: 7.8, targetSLA: 25 },
-  { month: "T7", timeToHire: 29.4, costPerHire: 8.4, targetSLA: 25 }, // Điểm nghẽn mùa tuyển dụng
-  { month: "T8", timeToHire: 24.6, costPerHire: 7.2, targetSLA: 25 },
-  { month: "T9", timeToHire: 23.5, costPerHire: 7.0, targetSLA: 25 },
-  { month: "T10 (Nay)", timeToHire: 22.4, costPerHire: 6.85, targetSLA: 25 },
-];
+async function loadDashboard(range: string, customStartDate?: string, customEndDate?: string) {
+  const now = new Date();
+  let from = new Date(now);
+  let to = new Date(now);
+
+  if (range === "custom" && customStartDate && customEndDate) {
+    from = new Date(customStartDate);
+    to = new Date(customEndDate);
+  } else if (range === "30d") {
+    from.setDate(now.getDate() - 30);
+  } else if (range === "quarter") {
+    from.setMonth(now.getMonth() - 3);
+  } else {
+    from.setFullYear(now.getFullYear() - 1);
+  }
+  const q = `date_from=${iso(from)}&date_to=${iso(to)}`;
+  // last 10 months for the time-to-hire / cost-per-hire trend
+  const months = Array.from({ length: 10 }, (_, k) => {
+    const start = new Date(now.getFullYear(), now.getMonth() - (9 - k), 1);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+    return { start, end, label: `T${start.getMonth() + 1}${k === 9 ? " (Nay)" : ""}` };
+  });
+  const [overview, funnel, sources, metrics, trend] = await Promise.all([
+    apiRequest<Overview>("/analytics/overview"),
+    apiRequest<FunnelResp>(`/analytics/funnel?${q}`),
+    apiRequest<SourceRow[]>(`/analytics/sources?${q}`),
+    apiRequest<Metrics>(`/analytics/hiring-metrics?${q}`),
+    Promise.all(months.map((m) => apiRequest<Metrics>(`/analytics/hiring-metrics?date_from=${iso(m.start)}&date_to=${iso(m.end)}`)
+      .then((r) => ({ month: m.label, timeToHire: r.avg_time_to_hire_days ?? 0, costPerHire: r.cost_per_hire ? Math.round(r.cost_per_hire / 100_000) / 10 : 0, targetSLA: TARGET_SLA_DAYS, hires: r.total_hires })))),
+  ]);
+  const totalApps = sources.reduce((n, r) => n + r.applications, 0) || 1;
+  const FUNNEL_DATA = funnel.stages.map((st, i) => ({
+    stage: st.label, count: st.count, conversionFromPrev: st.conversion_from_previous ?? 0,
+    color: FUNNEL_COLORS[i % FUNNEL_COLORS.length], dropOff: i === 0 || st.conversion_from_previous == null ? 0 : Math.round((100 - st.conversion_from_previous) * 10) / 10,
+  }));
+  const SOURCE_PIE_DATA = sources.map((r, i) => ({
+    name: r.source, value: r.applications, percentage: Math.round((r.applications / totalApps) * 100), color: SOURCE_COLORS[i % SOURCE_COLORS.length],
+  }));
+  const SOURCE_EFFICIENCY_TABLE = sources.map((r) => {
+    const cost = r.hired && metrics.cost_per_hire ? `${(metrics.cost_per_hire / 1_000_000).toFixed(1)} tr` : "—";
+    return {
+      source: r.source, applied: r.applications, interviewed: r.passed_screening, hired: r.hired, hireRate: `${r.hire_rate}%`,
+      costPerHire: cost,
+      roi: r.hire_rate >= 4 ? "Hiệu quả cao" : r.hire_rate >= 2 ? "Ổn định" : r.applications ? "Cần cải thiện chất lượng" : "Chưa có dữ liệu",
+      badgeColor: r.hire_rate >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : r.hire_rate >= 2 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200",
+    };
+  });
+  const hired = funnel.stages.find((x) => x.stage === "hired")?.count ?? 0;
+  const overall = funnel.total ? Math.round((hired / funnel.total) * 10000) / 100 : 0;
+  const withData = trend.filter((t) => t.hires > 0);
+  const worst = withData.reduce<typeof withData[number] | null>((w, t) => (!w || t.timeToHire > w.timeToHire ? t : w), null);
+  return { overview, funnel, FUNNEL_DATA, SOURCE_PIE_DATA, SOURCE_EFFICIENCY_TABLE, MONTHLY_TREND_DATA: trend, metrics, overall, worst, latest: withData[withData.length - 1] || null, from: iso(from), to: iso(to) };
+}
 
 export default function HRDashboardPage() {
-  const [mounted, setMounted] = useState(false);
-  const [timeRange, setTimeRange] = useState("30d");
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
+  const nowStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const thirtyDaysAgoStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
   }, []);
+
+  const [timeRange, setTimeRange] = useState<"30d" | "quarter" | "year" | "custom">("30d");
+  const [customFrom, setCustomFrom] = useState(thirtyDaysAgoStr);
+  const [customTo, setCustomTo] = useState(nowStr);
+  const [appliedCustomDates, setAppliedCustomDates] = useState<{ from: string; to: string } | null>(null);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const { data: dash, error, loading, reload } = useApiData(
+    () =>
+      loadDashboard(
+        timeRange,
+        timeRange === "custom" ? (appliedCustomDates?.from || customFrom) : undefined,
+        timeRange === "custom" ? (appliedCustomDates?.to || customTo) : undefined
+      ),
+    [timeRange, appliedCustomDates]
+  );
+  const FUNNEL_DATA = dash?.FUNNEL_DATA || [];
+  const SOURCE_PIE_DATA = dash?.SOURCE_PIE_DATA || [];
+  const SOURCE_EFFICIENCY_TABLE = dash?.SOURCE_EFFICIENCY_TABLE || [];
+  const MONTHLY_TREND_DATA = dash?.MONTHLY_TREND_DATA || [];
+  const mounted = !!dash; // charts render on the client once the data is loaded
+
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 600);
+    reload();
+    setTimeout(() => setIsRefreshing(false), 600);
   };
 
-  const handleExportExcel = () => {
-    alert("Đang trích xuất báo cáo phân tích tuyển dụng định dạng Excel (.xlsx)...");
+  // Server-generated Excel (time-to-hire & cost-per-hire by department / job title) for the selected period
+  const handleExportExcel = async () => {
+    if (!dash || isExporting) return;
+    setIsExporting(true);
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+      const filename = `Bao_Cao_Tuyen_Dung_${dash.from}_den_${dash.to}.xlsx`;
+      const exportUrl = `${API_BASE_URL}/analytics/hiring-metrics?date_from=${dash.from}&date_to=${dash.to}&export=true`;
+
+      const res = await fetch(exportUrl, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Không thể tải báo cáo từ máy chủ.");
+      }
+
+      const disposition = res.headers.get("content-disposition") || "";
+      let resolvedFilename = filename;
+      const match = /filename\*?=['"]?(?:UTF-8'')?([^"';]+)['"]?/i.exec(disposition);
+      if (match?.[1]) {
+        resolvedFilename = decodeURIComponent(match[1]);
+      }
+
+      const buffer = await res.arrayBuffer();
+      triggerFileDownload(buffer, resolvedFilename);
+    } catch (err) {
+      console.error("Export error:", err);
+      alert("Đã xảy ra lỗi khi xuất báo cáo Excel. Vui lòng thử lại.");
+    } finally {
+      setTimeout(() => setIsExporting(false), 600);
+    }
   };
+
+  if (loading && !dash) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">
@@ -158,32 +275,32 @@ export default function HRDashboardPage() {
       {/* HEADER SECTION: TIÊU ĐỀ & THANH CÔNG CỤ ĐIỀU HÀNH                        */}
       {/* ========================================================================= */}
       <div className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-6 md:p-8 space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px] tracking-wider uppercase border border-blue-100">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px] tracking-wider uppercase border border-blue-100 shrink-0">
                 Executive Control Center
               </span>
               <span className="flex items-center gap-1 text-[11px] text-slate-500 font-medium">
-                <SparklesIcon className="w-3.5 h-3.5 text-amber-500" />
+                <SparklesIcon className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 Cập nhật tự động theo thời gian thực (Live Analytics)
               </span>
             </div>
             <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1 tracking-tight">
               Báo Cáo & Điều Hành Tuyển Dụng Toàn Công Ty
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
               Tổng quan hiệu suất tuyển dụng, phân tích chuyển đổi phễu ứng viên, đo lường nguồn thu hút và phát hiện điểm nghẽn SLA.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          <div className="flex items-center gap-2.5 shrink-0 self-start xl:self-auto flex-nowrap">
             {/* Bộ lọc khoảng thời gian */}
-            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-1 text-xs font-bold">
+            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-1 text-xs font-bold shrink-0">
               <button
                 type="button"
                 onClick={() => setTimeRange("30d")}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   timeRange === "30d"
                     ? "bg-white text-blue-600 shadow-2xs"
                     : "text-slate-600 hover:text-slate-900"
@@ -194,24 +311,39 @@ export default function HRDashboardPage() {
               <button
                 type="button"
                 onClick={() => setTimeRange("quarter")}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   timeRange === "quarter"
                     ? "bg-white text-blue-600 shadow-2xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Quý 3/2026
+                Quý {Math.floor(new Date().getMonth() / 3) + 1}/{new Date().getFullYear()}
               </button>
               <button
                 type="button"
                 onClick={() => setTimeRange("year")}
-                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                   timeRange === "year"
                     ? "bg-white text-blue-600 shadow-2xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Năm 2026
+                Năm {new Date().getFullYear()}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeRange("custom");
+                  setAppliedCustomDates({ from: customFrom, to: customTo });
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  timeRange === "custom"
+                    ? "bg-white text-blue-600 shadow-2xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <CalendarIcon className="w-3.5 h-3.5" />
+                <span>Tùy chỉnh</span>
               </button>
             </div>
 
@@ -219,7 +351,7 @@ export default function HRDashboardPage() {
             <button
               type="button"
               onClick={handleRefresh}
-              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer"
+              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer shrink-0"
               title="Làm mới dữ liệu"
             >
               <RefreshCwIcon
@@ -230,14 +362,65 @@ export default function HRDashboardPage() {
             {/* Nút Xuất Excel */}
             <button
               type="button"
+              disabled={isExporting}
               onClick={handleExportExcel}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
+              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 transition-all cursor-pointer disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
             >
-              <FileSpreadsheetIcon className="w-4 h-4" />
-              <span>Xuất Báo Cáo Excel</span>
+              <FileSpreadsheetIcon className={`w-4 h-4 ${isExporting ? "animate-spin" : ""}`} />
+              <span>{isExporting ? "Đang Xuất Excel..." : "Xuất Báo Cáo Excel"}</span>
             </button>
           </div>
         </div>
+
+        {/* Thanh chọn ngày tùy chỉnh khi kích hoạt Tùy chỉnh */}
+        {timeRange === "custom" && (
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-blue-50/70 border border-blue-200/80 rounded-xl px-4 py-2.5 text-xs animate-in fade-in slide-in-from-top-1 duration-150">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5 text-blue-800 font-bold">
+                <CalendarIcon className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>Khoảng ngày tùy chỉnh:</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500">Từ:</span>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    max={customTo || nowStr}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-hidden"
+                  />
+                </div>
+                <span className="text-slate-400 font-bold">→</span>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1 shadow-2xs">
+                  <span className="text-[11px] font-bold text-slate-500">Đến:</span>
+                  <input
+                    type="date"
+                    value={customTo}
+                    min={customFrom}
+                    max={nowStr}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-hidden"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customFrom && customTo && customFrom <= customTo) {
+                      setAppliedCustomDates({ from: customFrom, to: customTo });
+                    }
+                  }}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                >
+                  Áp dụng
+                </button>
+              </div>
+            </div>
+            <div className="text-[11px] text-blue-700 font-medium">
+              * Dữ liệu dashboard & file Excel xuất ra sẽ được lọc theo khoảng thời gian này
+            </div>
+          </div>
+        )}
 
         {/* ===================================================================== */}
         {/* YÊU CẦU 1: OVERVIEW DASHBOARD (2 PHÚT MỖI SÁNG - 4 THẺ KPI NỔI BẬT)     */}
@@ -263,11 +446,11 @@ export default function HRDashboardPage() {
               </div>
               <div className="mt-3">
                 <div className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-                  14 <span className="text-sm font-bold text-slate-400">vị trí</span>
+                  {dash?.overview.kpis.active_requisitions ?? 0} <span className="text-sm font-bold text-slate-400">vị trí</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-600">
                   <ArrowUpRightIcon className="w-3.5 h-3.5" />
-                  <span>+2 vị trí mới trong tháng</span>
+                  <span>{dash?.overview.kpis.pending_approvals ?? 0} yêu cầu đang chờ phê duyệt</span>
                 </div>
               </div>
             </div>
@@ -282,11 +465,11 @@ export default function HRDashboardPage() {
               </div>
               <div className="mt-3">
                 <div className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">
-                  1,250 <span className="text-sm font-bold text-slate-400">hồ sơ</span>
+                  {(dash?.funnel.total ?? 0).toLocaleString("vi-VN")} <span className="text-sm font-bold text-slate-400">hồ sơ</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-600">
                   <ArrowUpRightIcon className="w-3.5 h-3.5" />
-                  <span>+18.4% so với tháng trước</span>
+                  <span>+{dash?.overview.kpis.new_candidates_this_week ?? 0} hồ sơ trong 7 ngày qua</span>
                 </div>
               </div>
             </div>
@@ -301,11 +484,11 @@ export default function HRDashboardPage() {
               </div>
               <div className="mt-3">
                 <div className="text-2xl md:text-3xl font-black text-purple-700 tracking-tight">
-                  22.4 <span className="text-sm font-bold text-slate-400">ngày</span>
+                  {dash?.metrics.avg_time_to_hire_days ?? "—"} <span className="text-sm font-bold text-slate-400">ngày</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-600">
                   <ArrowDownRightIcon className="w-3.5 h-3.5" />
-                  <span>Rút ngắn 3.2 ngày (SLA cam kết: 25 ngày)</span>
+                  <span>{dash?.metrics.total_hires ?? 0} lượt tuyển trong kỳ (SLA cam kết: {TARGET_SLA_DAYS} ngày)</span>
                 </div>
               </div>
             </div>
@@ -320,13 +503,220 @@ export default function HRDashboardPage() {
               </div>
               <div className="mt-3">
                 <div className="text-2xl md:text-3xl font-black text-emerald-700 tracking-tight">
-                  6.85 <span className="text-sm font-bold text-slate-400">triệu VNĐ</span>
+                  {dash?.metrics.cost_per_hire ? (dash.metrics.cost_per_hire / 1_000_000).toFixed(2) : "—"} <span className="text-sm font-bold text-slate-400">triệu VNĐ</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-emerald-600">
                   <ArrowDownRightIcon className="w-3.5 h-3.5" />
-                  <span>Tiết kiệm 12% so với định mức ngân sách</span>
+                  <span>Theo chi phí tuyển dụng đã ghi nhận trong kỳ</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ===================================================================== */}
+        {/* TRUNG TÂM CẢNH BÁO HR & ĐIỂM NGHẼN TUYỂN DỤNG (HR ALERTS CENTER)      */}
+        {/* ===================================================================== */}
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-rose-500/10 border border-amber-200/80 rounded-2xl shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/20 shrink-0">
+                <AlertTriangleIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm md:text-base font-black text-slate-900 tracking-tight">
+                    Trung Tâm Cảnh Báo & Rủi Ro Tuyển Dụng
+                  </h2>
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200">
+                    {dash?.overview.hr_alerts?.total_alerts || 0} Cảnh Báo Cần Xử Lý
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Tự động phát hiện các vị trí trễ hạn SLA, vị trí cần bàn giao do Recruiter nghỉ/khoá tài khoản, vượt trần định biên và tắc nghẽn phê duyệt.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <Link
+                href="/hr/requisitions"
+                className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
+              >
+                <span>Điều phối Yêu cầu</span>
+                <ArrowUpRightIcon className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+
+          {/* 5 Risk Metric Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* Card 1: Vị trí trễ hạn SLA */}
+            <Link
+              href="/hr/requisitions"
+              className="p-3.5 rounded-2xl border bg-white border-rose-200 hover:border-rose-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-rose-600">
+                <span className="text-[11px] font-bold">Trễ Hạn Tuyển Dụng</span>
+                <ClockIcon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.overdue_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">vị trí</span>
+              </div>
+              <p className="text-[10px] text-rose-700 font-semibold mt-1">
+                Quá ngày cần nhân sự
+              </p>
+            </Link>
+
+            {/* Card 2: Cần bàn giao Recruiter */}
+            <Link
+              href="/hr/requisitions"
+              className="p-3.5 rounded-2xl border bg-white border-amber-200 hover:border-amber-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-amber-700">
+                <span className="text-[11px] font-bold">Cần Bàn Giao (S1-10)</span>
+                <UsersIcon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.handover_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">vị trí</span>
+              </div>
+              <p className="text-[10px] text-amber-800 font-semibold mt-1">
+                Recruiter khoá / Chưa gán
+              </p>
+            </Link>
+
+            {/* Card 3: Cảnh báo vượt định biên */}
+            <Link
+              href="/hr/requisitions"
+              className="p-3.5 rounded-2xl border bg-white border-purple-200 hover:border-purple-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-purple-700">
+                <span className="text-[11px] font-bold">Vượt Định Biên (S3-04)</span>
+                <Building2Icon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.headcount_warning_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">phòng ban</span>
+              </div>
+              <p className="text-[10px] text-purple-800 font-semibold mt-1">
+                Cần HR xác nhận ghi đè
+              </p>
+            </Link>
+
+            {/* Card 4: Offer vượt khung lương */}
+            <Link
+              href="/hr/offers"
+              className="p-3.5 rounded-2xl border bg-white border-indigo-200 hover:border-indigo-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-indigo-700">
+                <span className="text-[11px] font-bold">Offer Vượt Khung</span>
+                <DollarSignIcon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.over_band_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">hồ sơ</span>
+              </div>
+              <p className="text-[10px] text-indigo-800 font-semibold mt-1">
+                Leo thang cấp duyệt (S7-03)
+              </p>
+            </Link>
+
+            {/* Card 5: Tắc nghẽn phê duyệt */}
+            <Link
+              href="/hr/approvals"
+              className="p-3.5 rounded-2xl border bg-white border-blue-200 hover:border-blue-300 hover:shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between text-blue-700">
+                <span className="text-[11px] font-bold">Tắc Nghẽn Duyệt</span>
+                <AlertTriangleIcon className="w-4 h-4" />
+              </div>
+              <div className="text-xl font-black text-slate-900 mt-1.5">
+                {dash?.overview.hr_alerts?.stuck_approval_count || 0}{" "}
+                <span className="text-xs font-bold text-slate-400">tờ trình</span>
+              </div>
+              <p className="text-[10px] text-blue-800 font-semibold mt-1">
+                Kẹt &gt; 3 ngày SLA
+              </p>
+            </Link>
+          </div>
+
+          {/* Bảng Xếp Hạng Vị Trí Tuyển Dụng Trễ Hạn Tuyển (S8-05 AC3, S3-08) */}
+          <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-extrabold text-slate-900">
+                  Bảng Xếp Hạng Vị Trí Tuyển Dụng Trễ Hạn (S8-05 AC3)
+                </span>
+                <span className="text-[10px] font-bold text-slate-400">
+                  (Sắp xếp theo số ngày chậm tiến độ giảm dần)
+                </span>
+              </div>
+              <span className="text-xs font-bold text-rose-700">
+                {(dash?.overview.overdue_requisitions || []).length} vị trí quá hạn
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+                    <th className="py-3 px-4 w-40">Mã REQ & Chức danh</th>
+                    <th className="py-3 px-3">Phòng ban</th>
+                    <th className="py-3 px-3">Hạn cần nhân sự</th>
+                    <th className="py-3 px-3">Mức độ trễ hạn SLA</th>
+                    <th className="py-3 px-3">Recruiter phụ trách</th>
+                    <th className="py-3 px-4 text-right w-36">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white font-medium">
+                  {(!dash?.overview.overdue_requisitions || dash.overview.overdue_requisitions.length === 0) ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 text-xs">
+                        🎉 Tuyệt vời! Hiện không có vị trí tuyển dụng nào bị quá hạn SLA.
+                      </td>
+                    </tr>
+                  ) : (
+                    dash.overview.overdue_requisitions.map((req) => (
+                      <tr key={req.id} className="hover:bg-rose-50/20 transition-colors">
+                        <td className="py-3 px-4">
+                          <span className="font-mono bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold text-[10px] mr-1.5">
+                            {req.id}
+                          </span>
+                          <span className="font-extrabold text-slate-900">
+                            {req.title}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-700">
+                          {req.department || "—"}
+                        </td>
+                        <td className="py-3 px-3 text-slate-600 font-bold">
+                          {req.target_date}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 shadow-2xs">
+                            <ClockIcon className="w-3 h-3 text-rose-600" />
+                            <span>Trễ {req.delay_days} ngày</span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-800 font-bold">
+                          {req.recruiter ? `👤 ${req.recruiter}` : <span className="text-amber-700 font-bold">⚠️ Chưa có</span>}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Link
+                            href="/hr/requisitions"
+                            className="px-3 py-1 bg-white hover:bg-slate-50 text-blue-700 rounded-xl text-xs font-bold transition-all border border-blue-200 inline-flex items-center gap-1 shadow-2xs"
+                          >
+                            <span>Xử lý & Bàn giao</span>
+                            <ArrowRightLeftIcon className="w-3 h-3" />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -352,14 +742,14 @@ export default function HRDashboardPage() {
 
               <div className="text-right">
                 <span className="text-[10px] text-slate-400 font-bold block">Tỷ lệ trúng tuyển toàn phễu</span>
-                <span className="text-base font-black text-emerald-600">2.88%</span>
+                <span className="text-base font-black text-emerald-600">{dash?.overall ?? 0}%</span>
               </div>
             </div>
 
             {/* Horizontal Bar Visual Funnel */}
             <div className="space-y-3.5">
               {FUNNEL_DATA.map((step, idx) => {
-                const widthPercent = (step.count / FUNNEL_DATA[0].count) * 100;
+                const widthPercent = FUNNEL_DATA[0].count ? (step.count / FUNNEL_DATA[0].count) * 100 : 0;
 
                 return (
                   <div key={idx} className="space-y-1">
@@ -406,10 +796,12 @@ export default function HRDashboardPage() {
             <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-xs space-y-1.5 text-slate-600">
               <div className="flex items-center justify-between font-bold">
                 <span>Điểm thắt cổ chai lớn nhất:</span>
-                <span className="text-purple-700">Vòng Phỏng vấn chuyên môn (Chỉ 22.9% được Offer)</span>
+                <span className="text-purple-700">
+                  {dash?.funnel.biggest_drop ? `${dash.funnel.biggest_drop.from} → ${dash.funnel.biggest_drop.to} (mất ${dash.funnel.biggest_drop.lost} hồ sơ)` : "Chưa đủ dữ liệu"}
+                </span>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Đề xuất: Tối ưu lại bộ lọc bài test đầu vào để giảm thời gian phỏng vấn không phù hợp cho Trưởng bộ phận.
+                Số liệu tính trên các hồ sơ nộp từ {dash?.from} đến {dash?.to}.
               </p>
             </div>
           </div>
@@ -454,8 +846,8 @@ export default function HRDashboardPage() {
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(val: any, name: any, item: any) => [
-                          `${val} CV (${item.payload.percentage}%)`,
+                        formatter={(val, name, item) => [
+                          `${val} CV (${(item.payload as { percentage?: number } | undefined)?.percentage ?? 0}%)`,
                           name,
                         ]}
                         contentStyle={{
@@ -601,7 +993,7 @@ export default function HRDashboardPage() {
                         border: "1px solid #e2e8f0",
                         fontSize: "12px",
                       }}
-                      formatter={(val: any, name: any) => {
+                      formatter={(val, name) => {
                         if (name === "timeToHire") return [`${val} ngày`, "Thời gian tuyển TB"];
                         if (name === "costPerHire") return [`${val} triệu VNĐ`, "Chi phí / Hire"];
                         return [val, name];
@@ -652,7 +1044,15 @@ export default function HRDashboardPage() {
               <span>Phân tích điểm nghẽn tự động:</span>
             </div>
             <p className="leading-relaxed">
-              Tháng 7 ghi nhận mức thời gian tuyển tăng vọt lên <strong className="text-amber-900">29.4 ngày</strong> (vượt trần cam kết SLA 25 ngày) do khối Công nghệ dồn lịch phỏng vấn và vòng duyệt lương BOD bị trễ. Từ Tháng 8, sau khi áp dụng <em>Luồng duyệt động 3 cấp</em> và <em>Khung năng lực số hóa</em>, thời gian đã giảm đều đặn xuống <strong className="text-emerald-700 font-bold">22.4 ngày</strong> trong Tháng 10.
+              {dash?.worst ? (
+                <>
+                  Thời gian tuyển cao nhất trong 10 tháng gần đây: <strong className="text-amber-900">{dash.worst.timeToHire} ngày</strong> ({dash.worst.month}
+                  {dash.worst.timeToHire > TARGET_SLA_DAYS ? `, vượt mục tiêu ${TARGET_SLA_DAYS} ngày` : ", trong mục tiêu"}). Tháng gần nhất có tuyển dụng ({dash.latest?.month}):{" "}
+                  <strong className="text-emerald-700 font-bold">{dash.latest?.timeToHire} ngày</strong>.
+                </>
+              ) : (
+                <>Chưa có lượt tuyển nào hoàn tất trong 10 tháng gần đây để phân tích thời gian tuyển.</>
+              )}
             </p>
           </div>
         </div>

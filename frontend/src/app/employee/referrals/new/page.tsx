@@ -1,15 +1,25 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { jobService } from "@/services/job.service";
+import { referralService } from "@/services/referral.service";
+import { uploadFile } from "@/services/file.service";
+import { useApiData } from "@/hooks/useApiData";
+import { ApiError } from "@/lib/api-client";
 import { EmployeeAppShell } from "@/components/layout/EmployeeAppShell";
 import { UserPlus, Upload, CheckCircle2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
-export default function NewReferralPage() {
+function NewReferralForm() {
   const [candidateName, setCandidateName] = useState("");
   const [candidateEmail, setCandidateEmail] = useState("");
   const [candidatePhone, setCandidatePhone] = useState("");
-  const [selectedJob, setSelectedJob] = useState("");
+  const searchParams = useSearchParams();
+  const [selectedJob, setSelectedJob] = useState(searchParams.get("jobId") || "");
+  const { data: openJobs } = useApiData(() => jobService.getJobs(), []);
+  const [cvUrl, setCvUrl] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
   const [relationship, setRelationship] = useState("Đồng nghiệp cũ");
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -17,13 +27,40 @@ export default function NewReferralPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setErrorMsg("");
+    try {
+      const stored = await uploadFile("cv", f);
+      setFile(f);
+      setCvUrl(stored.url);
+    } catch (err) {
+      setFile(null);
+      setCvUrl(null);
+      setErrorMsg(err instanceof ApiError ? err.message : "Không tải được CV lên.");
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    setErrorMsg("");
+    try {
+      await referralService.createReferral({
+        candidate_name: candidateName.trim(),
+        candidate_email: candidateEmail.trim(),
+        candidate_phone: candidatePhone.trim(),
+        job_posting_id: Number(selectedJob),
+        cv_url: cvUrl || undefined,
+        relationship_note: [relationship, notes.trim()].filter(Boolean).join(" — "),
+      });
       setSuccessMsg(true);
-    }, 1000);
+    } catch (err) {
+      setErrorMsg(err instanceof ApiError ? err.message : "Không gửi được giới thiệu.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -70,6 +107,9 @@ export default function NewReferralPage() {
                   setCandidateName("");
                   setCandidateEmail("");
                   setCandidatePhone("");
+                  setNotes("");
+                  setFile(null);
+                  setCvUrl(null);
                 }}
                 className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold hover:bg-slate-200"
               >
@@ -126,10 +166,9 @@ export default function NewReferralPage() {
                   required
                 >
                   <option value="">-- Chọn vị trí tuyển dụng --</option>
-                  <option value="1">Chuyên Viên Tuyển Dụng Cao Cấp (HR Specialist)</option>
-                  <option value="2">Senior Backend Engineer</option>
-                  <option value="3">Trưởng Nhóm Sản Phẩm</option>
-                  <option value="4">Chuyên Viên Marketing Internal</option>
+                  {(openJobs || []).map((j) => (
+                    <option key={j.id} value={j.id}>{j.title}</option>
+                  ))}
                 </select>
               </div>
 
@@ -149,13 +188,14 @@ export default function NewReferralPage() {
 
               <div>
                 <label className="block font-bold text-slate-800 mb-1">Tải lên file CV (PDF / DOCX)</label>
-                <div className="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center space-y-2 hover:border-blue-300 transition-colors">
+                <label className="block border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center space-y-2 hover:border-blue-300 transition-colors cursor-pointer">
+                  <input type="file" accept=".pdf,.docx" className="hidden" onChange={handleFile} />
                   <Upload className="w-8 h-8 text-slate-400 mx-auto" />
                   <div className="text-slate-600 font-medium">
-                    Kéo thả file CV vào đây hoặc <span className="text-[#4285F4] font-bold">chọn file từ máy</span>
+                    {file ? file.name : <>Kéo thả file CV vào đây hoặc <span className="text-[#4285F4] font-bold">chọn file từ máy</span></>}
                   </div>
                   <p className="text-[11px] text-slate-400">Hỗ trợ định dạng .pdf, .docx (tối đa 10MB)</p>
-                </div>
+                </label>
               </div>
 
               <div>
@@ -168,6 +208,8 @@ export default function NewReferralPage() {
                   className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-[#4285F4]"
                 ></textarea>
               </div>
+
+              {errorMsg && <p className="text-xs font-semibold text-rose-600">{errorMsg}</p>}
 
               <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
                 <Link
@@ -189,5 +231,14 @@ export default function NewReferralPage() {
         )}
       </div>
     </EmployeeAppShell>
+  );
+}
+
+// useSearchParams (?jobId=) needs a Suspense boundary for static rendering
+export default function NewReferralPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewReferralForm />
+    </Suspense>
   );
 }

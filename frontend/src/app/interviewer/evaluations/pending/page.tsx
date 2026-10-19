@@ -2,41 +2,14 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { FileEdit, Clock, AlertCircle, Eye, ArrowRight, User } from 'lucide-react';
+import { FileEdit, ArrowRight } from 'lucide-react';
+import { interviewerApi } from '@/features/interviewer/api';
+import { useApiData } from '@/hooks/useApiData';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataStates';
 
 export default function PendingEvaluationsPage() {
-  const pendingScorecards = [
-    {
-      id: 1,
-      candidate: 'Lê Hoàng Cường',
-      position: 'Kỹ sư Frontend Lead',
-      interviewDate: '12/10/2026',
-      timeSlot: '14:00 - 15:00',
-      dueTime: 'Hạn nộp: 18:00 Hôm nay',
-      urgency: 'Khẩn cấp',
-      urgencyClass: 'bg-rose-50 text-rose-700 border-rose-200/80',
-    },
-    {
-      id: 2,
-      candidate: 'Ngô Quốc Bảo',
-      position: 'DevOps Engineer',
-      interviewDate: '11/10/2026',
-      timeSlot: '10:00 - 11:00',
-      dueTime: 'Quá hạn 1 ngày',
-      urgency: 'Quá hạn',
-      urgencyClass: 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold',
-    },
-    {
-      id: 3,
-      candidate: 'Trần Thị Mai',
-      position: 'UI/UX Designer Senior',
-      interviewDate: '12/10/2026',
-      timeSlot: '11:00 - 12:00',
-      dueTime: 'Hạn nộp: 23:59 Hôm nay',
-      urgency: 'Cần nộp',
-      urgencyClass: 'bg-amber-50 text-amber-700 border-amber-200/80',
-    },
-  ];
+  const { data, error, loading, reload } = useApiData(() => interviewerApi.pendingScorecards());
+  const pendingScorecards = (data || []).map((p) => ({ ...p, candidate: p.candidateName, dueTime: p.dueWarning }));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -50,7 +23,7 @@ export default function PendingEvaluationsPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">Phiếu Đánh Giá Chờ Nộp</h1>
               <span className="bg-rose-100 text-rose-700 text-xs font-extrabold px-2.5 py-0.5 rounded-full">
-                3 Phiếu
+                {pendingScorecards.length} Phiếu
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -62,6 +35,9 @@ export default function PendingEvaluationsPage() {
 
       {/* List of Pending Scorecards */}
       <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-4">
+        {loading && <LoadingState />}
+        {!loading && !!error && <ErrorState error={error} onRetry={reload} />}
+        {!loading && !error && pendingScorecards.length === 0 && <EmptyState hint="Bạn không còn phiếu đánh giá nào cần nộp." />}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {pendingScorecards.map((item) => (
             <div

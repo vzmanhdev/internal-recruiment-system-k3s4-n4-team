@@ -10,13 +10,16 @@ import {
   AlertCircle,
   FileText,
   Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import { UserItem } from "./types";
+import { userService, ImportPreviewResponse, ImportCommitResponse } from "@/services/user.service";
+import { API_BASE_URL } from "@/lib/api-client";
 
 interface ExcelImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImportSuccess: (importedCount: number, sampleUsers: UserItem[]) => void;
+  onImportSuccess: (importedCount: number, sampleUsers?: UserItem[]) => void;
 }
 
 export function ExcelImportModal({
@@ -27,9 +30,10 @@ export function ExcelImportModal({
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState("");
-  const [isDone, setIsDone] = useState(false);
+  const [previewResult, setPreviewResult] = useState<ImportPreviewResponse | null>(null);
+  const [commitResult, setCommitResult] = useState<ImportCommitResponse | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -50,12 +54,14 @@ export function ExcelImportModal({
       const droppedFile = e.dataTransfer.files[0];
       if (
         droppedFile.name.endsWith(".xlsx") ||
-        droppedFile.name.endsWith(".xls") ||
-        droppedFile.name.endsWith(".csv")
+        droppedFile.name.endsWith(".xls")
       ) {
         setFile(droppedFile);
+        setErrorMessage(null);
+        setPreviewResult(null);
+        setCommitResult(null);
       } else {
-        alert("Vui lòng tải lên file định dạng Excel (.xlsx, .xls) hoặc CSV");
+        setErrorMessage("Vui lòng tải lên file định dạng Excel (.xlsx hoặc .xls)");
       }
     }
   };
@@ -63,85 +69,76 @@ export function ExcelImportModal({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
+      setErrorMessage(null);
+      setPreviewResult(null);
+      setCommitResult(null);
     }
   };
 
-  const handleDownloadTemplate = () => {
-    // Generate a downloadable CSV template directly in browser
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      encodeURIComponent(
-        "Mã nhân viên,Họ và tên,Email công ty,Số điện thoại,Phòng ban,Vai trò\n" +
-        "NV-201,Trần Văn Mẫu,mau.tran@company.com,0987111222,Khối Công nghệ & Kỹ thuật,hiring_manager;interviewer\n" +
-        "NV-202,Lê Thị Hằng,hang.le@company.com,0987333444,Phòng Quản trị Nhân sự,recruiter\n" +
-        "NV-203,Vũ Đức Hoàng,hoang.vu@company.com,0987555666,Khối Kinh doanh,employee\n"
-      );
-    const downloadAnchor = document.createElement("a");
-    downloadAnchor.setAttribute("href", csvContent);
-    downloadAnchor.setAttribute("download", "Mau_Nhap_Nhan_Su_ATS.csv");
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+  const handleDownloadTemplate = async () => {
+    try {
+      await userService.downloadTemplate();
+    } catch (err: any) {
+      setErrorMessage(err.message || "Không thể tải file mẫu. Vui lòng thử lại.");
+    }
   };
 
-  const handleUploadAndProcess = () => {
-    if (!file && !isDone) {
-      // Auto assign a default demo file if user clicks directly
-      const dummyFile = new File(["dummy content"], "danh_sach_nhan_su_2026.xlsx", {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      setFile(dummyFile);
+  const handleUploadAndProcess = async () => {
+    if (!file) {
+      setErrorMessage("Vui lòng chọn một file Excel trước khi tiến hành xử lý.");
+      return;
     }
 
     setIsProcessing(true);
-    setProgress(15);
-    setStatusText("Đang phân tích cấu trúc bảng tính Excel...");
+    setErrorMessage(null);
+    setStatusText("Đang tải lên và kiểm tra tính hợp lệ của dữ liệu...");
 
-    setTimeout(() => {
-      setProgress(40);
-      setStatusText("Đang kiểm tra trùng lặp email và chuẩn hóa mã nhân viên...");
-    }, 700);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
 
-    setTimeout(() => {
-      setProgress(75);
-      setStatusText("Đang thiết lập ma trận phân quyền Multi-Role RBAC...");
-    }, 1500);
+      // Phase 1: Upload & Staged Preview Validation
+      const preview = await userService.previewImport(formData);
+      setPreviewResult(preview);
 
-    setTimeout(() => {
-      setProgress(100);
-      setStatusText("Hoàn tất xử lý! Đã nhập thành công 15 tài khoản nhân sự mới.");
+      if (preview.valid_count === 0 && preview.error_count > 0) {
+        setIsProcessing(false);
+        setErrorMessage(
+          `Tất cả ${preview.total} dòng đều có lỗi hoặc trùng lặp email. Vui lòng kiểm tra lại file dữ liệu.`
+        );
+        return;
+      }
+
+      // Phase 2: Batch commit
+      setStatusText(
+        `Đang tiến hành nhập ${preview.valid_count} tài khoản hợp lệ vào cơ sở dữ liệu...`
+      );
+
+      const commit = await userService.commitImport(preview.job_id, true);
+      setCommitResult(commit);
       setIsProcessing(false);
-      setIsDone(true);
 
-      // Create 15 sample newly imported users
-      const newImportedUsers: UserItem[] = Array.from({ length: 15 }, (_, idx) => {
-        const id = 151 + idx;
-        return {
-          id,
-          employee_code: `NV-${String(id).padStart(3, "0")}`,
-          full_name: `Nhân sự mới ${idx + 1} (Excel)`,
-          email: `imported.user${idx + 1}@company.com`,
-          phone: `0988${String(100000 + idx * 1111).slice(0, 6)}`,
-          department: "Khối Công nghệ & Kỹ thuật",
-          role: idx % 3 === 0 ? "hiring_manager" : idx % 2 === 0 ? "interviewer" : "employee",
-          roles: idx % 3 === 0 ? ["hiring_manager", "interviewer"] : ["employee"],
-          is_active: true,
-          account_status: "active",
-          created_at: new Date().toISOString().slice(0, 10),
-          avatar_color: "bg-emerald-600 text-white",
-        };
-      });
-
-      onImportSuccess(15, newImportedUsers);
-    }, 2300);
+      if (commit.imported > 0) {
+        onImportSuccess(commit.imported);
+      }
+    } catch (err: any) {
+      setIsProcessing(false);
+      setErrorMessage(
+        err.message || "Đã xảy ra lỗi trong quá trình xử lý file Excel. Vui lòng thử lại."
+      );
+    }
   };
 
   const handleReset = () => {
     setFile(null);
     setIsProcessing(false);
-    setProgress(0);
     setStatusText("");
-    setIsDone(false);
+    setPreviewResult(null);
+    setCommitResult(null);
+    setErrorMessage(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   return (
@@ -158,7 +155,7 @@ export function ExcelImportModal({
                 Nhập Tài Khoản Hàng Loạt từ Excel
               </h3>
               <p className="text-xs text-slate-500 font-medium">
-                Tạo nhanh danh sách tài khoản nhân sự từ file bảng tính
+                Tạo nhanh danh sách tài khoản nhân sự và phân quyền RBAC
               </p>
             </div>
           </div>
@@ -183,132 +180,172 @@ export function ExcelImportModal({
             <button
               type="button"
               onClick={handleDownloadTemplate}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 bg-white hover:bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200 transition-all flex items-center gap-1.5 shadow-2xs"
+              className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1.5 transition-colors cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-blue-200/60 shadow-2xs hover:shadow-xs"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Tải file Excel mẫu (Template)</span>
+              <span>Tải file mẫu (.xlsx)</span>
             </button>
           </div>
 
-          {/* Drag & Drop Zone */}
-          {!isDone ? (
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-3xl p-8 text-center transition-all cursor-pointer ${
-                isDragging
-                  ? "border-blue-500 bg-blue-50/50 scale-[0.99]"
-                  : file
-                  ? "border-emerald-300 bg-emerald-50/20"
-                  : "border-slate-300 hover:border-blue-400 bg-slate-50/70 hover:bg-blue-50/20"
-              }`}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-
-              {file ? (
-                <div className="space-y-2">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 mx-auto flex items-center justify-center">
-                    <FileSpreadsheet className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="font-bold text-xs text-slate-900">{file.name}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      {(file.size / 1024).toFixed(1)} KB • Định dạng hợp lệ
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-blue-600 font-semibold pt-1">
-                    Nhấn vào đây để chọn file khác
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 mx-auto flex items-center justify-center">
-                    <Upload className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">
-                      Kéo thả file Excel vào đây, hoặc{" "}
-                      <span className="text-blue-600 underline">duyệt từ máy tính</span>
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-1 font-medium">
-                      Hỗ trợ định dạng .xlsx, .xls, .csv (Tối đa 10MB)
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center">
-                <CheckCircle2 className="w-7 h-7" />
-              </div>
-              <div>
-                <h4 className="font-bold text-sm text-emerald-900">
-                  Nhập dữ liệu thành công!
-                </h4>
-                <p className="text-xs text-emerald-700 mt-1">
-                  Đã thêm thành công 15 tài khoản nhân sự mới vào hệ thống.
-                </p>
+          {/* Error Message Alert */}
+          {errorMessage && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold">Lỗi xử lý file</p>
+                <p>{errorMessage}</p>
               </div>
             </div>
           )}
 
-          {/* Progress Bar (Simulated UI) */}
-          {isProcessing && (
-            <div className="space-y-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 animate-in fade-in">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                  {statusText}
-                </span>
-                <span className="font-mono font-bold text-blue-600">{progress}%</span>
+          {/* Success Summary View */}
+          {commitResult ? (
+            <div className="space-y-4">
+              <div className="p-5 bg-emerald-50/60 rounded-2xl border border-emerald-100 flex items-start gap-3">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-emerald-950">
+                    Nhập dữ liệu hoàn tất!
+                  </h4>
+                  <p className="text-xs text-emerald-700">
+                    Đã nhập thành công <strong>{commitResult.imported}</strong> trên tổng số{" "}
+                    <strong>{commitResult.total}</strong> tài khoản từ file.
+                  </p>
+                  {commitResult.failed > 0 && (
+                    <p className="text-xs text-amber-700 font-medium">
+                      Bỏ qua {commitResult.failed} dòng không hợp lệ hoặc trùng email.
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-out"
-                  style={{ width: `${progress}%` }}
+
+              {commitResult.errors && commitResult.errors.length > 0 && (
+                <div className="max-h-32 overflow-y-auto p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] space-y-1">
+                  <div className="font-bold text-slate-700 mb-1">Chi tiết lỗi các dòng bỏ qua:</div>
+                  {commitResult.errors.map((err, idx) => (
+                    <div key={idx} className="text-rose-600">
+                      • Dòng {err.row_number} ({err.email}): {err.reason}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : !isProcessing ? (
+            /* Upload Drop Area */
+            <div>
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-all ${
+                  isDragging
+                    ? "border-blue-500 bg-blue-50/50 scale-[1.01]"
+                    : file
+                    ? "border-emerald-400 bg-emerald-50/20"
+                    : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                }`}
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept=".xlsx, .xls"
+                  className="hidden"
                 />
+
+                {file ? (
+                  <div className="space-y-3">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-100/70 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
+                      <FileSpreadsheet className="w-7 h-7" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-extrabold text-slate-900 line-clamp-1">
+                        {file.name}
+                      </p>
+                      <p className="text-xs text-slate-500 font-medium mt-0.5">
+                        {(file.size / 1024).toFixed(1)} KB • Sẵn sàng tải lên và xử lý
+                      </p>
+                    </div>
+                    <span className="inline-block text-[11px] font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                      Nhấn để chọn file khác
+                    </span>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
+                      <Upload className="w-6 h-6 text-slate-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-extrabold text-slate-800">
+                        Kéo thả file Excel vào đây, hoặc{" "}
+                        <span className="text-blue-600 hover:underline">duyệt tìm file</span>
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Hỗ trợ định dạng .xlsx, .xls (Dung lượng tối đa 10MB)
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Real Processing State */
+            <div className="py-8 space-y-5 text-center">
+              <Loader2 className="w-10 h-10 text-blue-600 animate-spin mx-auto" />
+              <div className="space-y-1">
+                <p className="text-sm font-bold text-slate-800">Đang xử lý dữ liệu</p>
+                <p className="text-xs text-slate-500">{statusText}</p>
               </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50/70 border-t border-slate-100 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/60 transition-colors"
-          >
-            {isDone ? "Đóng" : "Hủy"}
-          </button>
-          {!isDone && (
+        <div className="px-6 py-4.5 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between">
+          {commitResult ? (
             <button
-              type="button"
-              disabled={isProcessing}
-              onClick={handleUploadAndProcess}
-              className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/20 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 cursor-pointer"
+              onClick={() => {
+                handleReset();
+                onClose();
+              }}
+              className="w-full py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-500/20"
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>{isProcessing ? "Đang xử lý..." : "Tải lên và Xử lý"}</span>
+              Hoàn tất & Đóng
             </button>
-          )}
-          {isDone && (
-            <button
-              type="button"
-              onClick={handleReset}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-all"
-            >
-              Nhập thêm file khác
-            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isProcessing}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+
+              <div className="flex items-center gap-2">
+                {file && (
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    disabled={isProcessing}
+                    className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                  >
+                    Chọn lại
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleUploadAndProcess}
+                  disabled={!file || isProcessing}
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-all flex items-center gap-2 shadow-md shadow-blue-500/20 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isProcessing && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>{isProcessing ? "Đang xử lý..." : "Tải lên & Xử lý"}</span>
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>

@@ -3,37 +3,18 @@
 import React from 'react';
 import Link from 'next/link';
 import { History, Search, Star, Eye } from 'lucide-react';
+import { interviewerApi } from '@/features/interviewer/api';
+import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/providers/auth-provider';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataStates';
 
 export default function EvaluationHistoryPage() {
-  const historyList = [
-    {
-      id: 1,
-      candidate: 'Nguyễn Văn Nam',
-      position: 'Senior Java Developer',
-      department: 'Khối Công Nghệ',
-      score: '4.5 / 5.0',
-      recommendation: 'Đạt - Đề xuất Offer',
-      date: '05/10/2026',
-    },
-    {
-      id: 2,
-      candidate: 'Trần Minh Đức',
-      position: 'DevOps Specialist',
-      department: 'Hạ Tầng Điện Toán',
-      score: '3.8 / 5.0',
-      recommendation: 'Đạt - Cân nhắc Level',
-      date: '02/10/2026',
-    },
-    {
-      id: 3,
-      candidate: 'Vũ Thị Hằng',
-      position: 'QA Lead',
-      department: 'Khối Đảm Bảo Chất Lượng',
-      score: '4.8 / 5.0',
-      recommendation: 'Xuất sắc - Tuyển dụng gấp',
-      date: '28/09/2026',
-    },
-  ];
+  const { user } = useAuth();
+  const { data, error, loading, reload } = useApiData(
+    () => (user ? interviewerApi.history(user.id) : Promise.resolve([])),
+    [user?.id],
+  );
+  const historyList = data || [];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -77,6 +58,11 @@ export default function EvaluationHistoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
+              {(loading || !!error || historyList.length === 0) && (
+                <tr><td colSpan={6}>
+                  {loading ? <LoadingState /> : error ? <ErrorState error={error} onRetry={reload} /> : <EmptyState hint="Bạn chưa nộp phiếu đánh giá nào." />}
+                </td></tr>
+              )}
               {historyList.map((item) => (
                 <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
                   <td className="py-3.5 px-5 font-bold text-slate-900">{item.candidate}</td>
@@ -93,13 +79,15 @@ export default function EvaluationHistoryPage() {
                   <td className="py-3.5 px-4 font-semibold text-emerald-700">{item.recommendation}</td>
                   <td className="py-3.5 px-4 text-slate-500">{item.date}</td>
                   <td className="py-3.5 px-5 text-right">
-                    <button
-                      onClick={() => alert(`Xem lại phiếu đánh giá của ${item.candidate}`)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Xem lại</span>
-                    </button>
+                    {item.interviewId ? (
+                      <Link
+                        href={`/interviewer/evaluations/${item.interviewId}`}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Xem lại</span>
+                      </Link>
+                    ) : null}
                   </td>
                 </tr>
               ))}

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import { Lock, ShieldCheck, Check, X, Save, RefreshCw, AlertTriangle, CheckCircle2, ShieldAlert } from "lucide-react";
 import { authService } from "@/features/auth/services/auth.service";
+import { API_BASE_URL } from "@/lib/api-client";
 
 interface ModulePermission {
   id: string;
@@ -111,7 +112,7 @@ export default function PermissionsMatrixPage() {
     setIsLoading(true);
     try {
       const token = authService.getToken();
-      const res = await fetch("http://localhost:8000/api/v1/admin/permissions/matrix", {
+      const res = await fetch(`${API_BASE_URL}/admin/permissions/matrix`, {
         headers: {
           Authorization: token ? `Bearer ${token}` : "",
         },
@@ -158,7 +159,7 @@ export default function PermissionsMatrixPage() {
     setIsSaving(true);
     try {
       const token = authService.getToken();
-      const res = await fetch("http://localhost:8000/api/v1/admin/permissions/matrix", {
+      const res = await fetch(`${API_BASE_URL}/admin/permissions/matrix`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { interviewService, type InterviewItem as ApiInterview } from '@/services/interview.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import Link from 'next/link';
 import { Pagination } from '@/components/ui/Pagination';
 import {
@@ -37,90 +40,39 @@ interface InterviewItem {
   status: 'UPCOMING' | 'TODAY' | 'COMPLETED';
 }
 
-const MOCK_INTERVIEWS: InterviewItem[] = [
-  {
-    id: 'INT-001',
-    candidateName: 'Nguyễn Quốc Bảo',
-    candidateEmail: 'bao.nguyen@devtech.io',
-    candidatePhone: '0912 345 678',
-    positionTitle: 'Senior Frontend Engineer (React/Next.js)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    round: 'Vòng 2: Chuyên Sâu Kiến Trúc Frontend & System Design',
-    dateLabel: 'Hôm nay - Thứ Bảy, 10/01/2026',
-    time: '14:30 - 15:30',
-    meetingPlatform: 'Microsoft Teams',
-    meetingUrl: 'https://teams.microsoft.com/l/meetup-join/int001',
-    interviewers: [
-      { name: 'Lê Trưởng Nhóm', role: 'Hiring Manager (Lead)' },
-      { name: 'Nguyễn Thị Thu Hà', role: 'HR Manager' },
-    ],
-    cvUrl: '#',
-    status: 'TODAY',
-  },
-  {
-    id: 'INT-002',
-    candidateName: 'Trần Văn Hoàng',
-    candidateEmail: 'hoang.tran@cloudinfra.com',
-    candidatePhone: '0933 887 665',
-    positionTitle: 'DevOps / Site Reliability Engineer (SRE)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    round: 'Vòng 1: Kỹ Năng Kubernetes & CI/CD Pipeline',
-    dateLabel: 'Hôm nay - Thứ Bảy, 10/01/2026',
-    time: '16:00 - 17:00',
-    meetingPlatform: 'Google Meet',
-    meetingUrl: 'https://meet.google.com/xyz-tech-ats',
-    interviewers: [
-      { name: 'Lê Trưởng Nhóm', role: 'Hiring Manager' },
-      { name: 'Phan Văn Hải', role: 'DevOps Lead' },
-    ],
-    cvUrl: '#',
-    status: 'TODAY',
-  },
-  {
-    id: 'INT-003',
-    candidateName: 'Vũ Hải Đăng',
-    candidateEmail: 'dang.vu@techhub.vn',
-    candidatePhone: '0988 776 554',
-    positionTitle: 'Senior Backend Engineer (Golang/FastAPI)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    round: 'Vòng 2: Văn Hóa Làm Việc & Trao Đổi Đãi Ngộ',
-    dateLabel: 'Thứ Hai, 12/01/2026',
-    time: '10:00 - 11:00',
-    meetingPlatform: 'Microsoft Teams',
-    meetingUrl: 'https://teams.microsoft.com/l/meetup-join/int003',
-    interviewers: [
-      { name: 'Lê Trưởng Nhóm', role: 'Hiring Manager' },
-      { name: 'Trần Văn Đức', role: 'CTO' },
-    ],
-    cvUrl: '#',
-    status: 'UPCOMING',
-  },
-  {
-    id: 'INT-004',
-    candidateName: 'Phạm Thu Thảo',
-    candidateEmail: 'thao.pham@designlab.co',
-    candidatePhone: '0903 221 443',
-    positionTitle: 'Chuyên viên Thiết Kế Trải Nghiệm (UI/UX Designer)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    round: 'Vòng 1: Đánh Giá Portfolio & Design System',
-    dateLabel: '08/01/2026',
-    time: '09:00 - 10:00',
-    meetingPlatform: 'Microsoft Teams',
-    meetingUrl: 'https://teams.microsoft.com/l/meetup-join/int004',
-    interviewers: [
-      { name: 'Lê Trưởng Nhóm', role: 'Hiring Manager' },
-    ],
-    cvUrl: '#',
-    status: 'COMPLETED',
-  },
-];
+function toInterviewItem(i: ApiInterview): InterviewItem {
+  const when = new Date(i.scheduled_time);
+  const today = new Date();
+  const sameDay = when.toDateString() === today.toDateString();
+  const end = new Date(when.getTime() + (i.duration_minutes || 60) * 60000);
+  const hm = (d: Date) => d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  return {
+    id: String(i.id),
+    candidateName: i.candidate_name || "—",
+    candidateEmail: i.candidate_email || "",
+    candidatePhone: "",
+    positionTitle: i.job_title || "",
+    department: "",
+    round: i.round_name || `Vòng ${i.round_number}`,
+    dateLabel: sameDay ? "Hôm nay" : when.toLocaleDateString("vi-VN", { weekday: "short", day: "2-digit", month: "2-digit" }),
+    time: `${hm(when)} - ${hm(end)}`,
+    meetingPlatform: i.meeting_link ? "Trực tuyến" : i.location || "Trực tiếp",
+    meetingUrl: i.meeting_link || "",
+    interviewers: (i.interviewers || []).map((x: { interviewer_name?: string; role_in_interview?: string }) => ({ name: x.interviewer_name || "—", role: x.role_in_interview || "" })),
+    cvUrl: i.cv_url || "",
+    status: i.status === "completed" || when < today && !sameDay ? "COMPLETED" : sameDay ? "TODAY" : "UPCOMING",
+  };
+}
 
 export default function InterviewsPage() {
+  const { data, error, loading, reload } = useApiData(async () =>
+    (await interviewService.getInterviews()).filter((i) => i.status !== "cancelled").map(toInterviewItem));
+  const allInterviews = useMemo(() => data || [], [data]);
   const [tabFilter, setTabFilter] = useState<'ALL' | 'TODAY' | 'UPCOMING' | 'COMPLETED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const filtered = MOCK_INTERVIEWS.filter((item) => {
+  const filtered = allInterviews.filter((item) => {
     if (tabFilter === 'TODAY' && item.status !== 'TODAY') return false;
     if (tabFilter === 'UPCOMING' && item.status !== 'UPCOMING') return false;
     if (tabFilter === 'COMPLETED' && item.status !== 'COMPLETED') return false;
@@ -151,14 +103,21 @@ export default function InterviewsPage() {
     return filtered.slice(start, start + ITEMS_PER_PAGE);
   }, [filtered, currentPage]);
 
-  const todayCount = MOCK_INTERVIEWS.filter((i) => i.status === 'TODAY').length;
-  const upcomingCount = MOCK_INTERVIEWS.filter((i) => i.status === 'UPCOMING').length;
+  const todayCount = allInterviews.filter((i) => i.status === 'TODAY').length;
+  const upcomingCount = allInterviews.filter((i) => i.status === 'UPCOMING').length;
 
   const handleJoinMeeting = (meetingUrl: string, candidateName: string) => {
-    setToastMessage(`Đang mở liên kết phòng họp cho ứng viên ${candidateName}...`);
-    window.open(meetingUrl, '_blank');
+    if (!meetingUrl) {
+      setToastMessage(`Buổi phỏng vấn với ${candidateName} diễn ra trực tiếp, không có liên kết họp.`);
+    } else {
+      setToastMessage(`Đang mở liên kết phòng họp cho ứng viên ${candidateName}...`);
+      window.open(meetingUrl, '_blank', 'noopener');
+    }
     setTimeout(() => setToastMessage(null), 3000);
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -222,7 +181,7 @@ export default function InterviewsPage() {
                 : 'text-slate-600 hover:text-slate-900'
             )}
           >
-            Tất cả ({MOCK_INTERVIEWS.length})
+            Tất cả ({allInterviews.length})
           </button>
           <button
             onClick={() => setTabFilter('TODAY')}
@@ -305,8 +264,12 @@ export default function InterviewsPage() {
                       <span className="text-sm font-bold text-slate-900">{item.candidateName}</span>
                       <span className="text-xs text-slate-300">•</span>
                       <span className="text-xs text-slate-500">{item.candidateEmail}</span>
-                      <span className="text-xs text-slate-300">•</span>
-                      <span className="text-xs text-slate-500">{item.candidatePhone}</span>
+                      {item.candidatePhone && (
+                        <>
+                          <span className="text-xs text-slate-300">•</span>
+                          <span className="text-xs text-slate-500">{item.candidatePhone}</span>
+                        </>
+                      )}
                     </div>
 
                     <div className="font-bold text-xs text-slate-800">

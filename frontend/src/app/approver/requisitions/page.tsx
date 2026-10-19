@@ -26,10 +26,18 @@ import {
 import clsx from 'clsx';
 import { ApprovalTimeline } from '@/features/approver/components/ApprovalTimeline';
 import type { RequisitionApprovalItem, ApprovalTimelineItem } from '@/features/approver/types';
-import { INITIAL_REQUISITIONS } from '@/features/approver/mock-data';
+import { approverApi, isPendingRequisition } from '@/features/approver/api';
+import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/providers/auth-provider';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 
 export default function ApproverRequisitionsPage() {
-  const [requisitions, setRequisitions] = useState<RequisitionApprovalItem[]>(INITIAL_REQUISITIONS);
+  const { user } = useAuth();
+  // Real approval queue: requisitions waiting on an approval step (backend decides who may act on it).
+  const { data, error, loading, reload, setData } = useApiData(async () => (await approverApi.requisitions()).filter(isPendingRequisition));
+  const requisitions = data || [];
+  const setRequisitions = (fn: (prev: RequisitionApprovalItem[]) => RequisitionApprovalItem[]) => setData((prev) => fn(prev || []));
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [selectedPriority, setSelectedPriority] = useState('ALL');
@@ -93,52 +101,23 @@ export default function ApproverRequisitionsPage() {
 
     setIsSubmitting(true);
     try {
-      const timestamp =
-        new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) +
-        ' - ' +
-        new Date().toLocaleDateString('vi-VN');
-
-      let actionText = '';
-      let newStatus: RequisitionApprovalItem['status'] = 'approved';
-
-      if (action === 'approved') {
-        actionText = `PHÊ DUYỆT THÀNH CÔNG: Tờ trình ${selectedReq.code} (${selectedReq.title}) đã được thông qua!`;
-        newStatus = 'approved';
-      } else if (action === 'rejected') {
-        actionText = `ĐÃ BÁC BỎ TỜ TRÌNH: Tờ trình ${selectedReq.code} đã bị từ chối phê duyệt.`;
-        newStatus = 'rejected';
-      } else {
-        actionText = `YÊU CẦU HIỆU CHỈNH: Đã gửi thông báo yêu cầu người lập hoàn thiện lại tờ trình ${selectedReq.code}!`;
-        newStatus = 'changes_requested';
-      }
-
-      const newTimelineLog: ApprovalTimelineItem = {
-        id: Date.now(),
-        step_name: 'Phê Duyệt Cấp Cuối (Ban Giám Đốc)',
-        approver_name: 'Phạm Văn Hùng',
-        approver_role: 'Phó Tổng Giám Đốc / Ban Giám Đốc',
-        action: action,
-        comment: actionComment.trim() || (action === 'approved' ? 'Đã phê duyệt chỉ tiêu & ngân sách tuyển dụng.' : ''),
-        created_at: timestamp,
-      };
-
+      const updated = await approverApi.decideRequisition(selectedReq.id, action, actionComment.trim() || undefined);
+      // Still pending (moved to the next level) stays in the queue; otherwise it leaves the queue.
       setRequisitions((prev) =>
-        prev.map((r) =>
-          r.id === selectedReq.id
-            ? {
-                ...r,
-                status: newStatus,
-                current_approval_step: action === 'approved' ? 'completed' : r.current_approval_step,
-                timeline: [...r.timeline, newTimelineLog],
-              }
-            : r
-        )
+        isPendingRequisition(updated) && updated.current_approval_step !== selectedReq.current_approval_step
+          ? prev.map((r) => (r.id === updated.id ? updated : r))
+          : prev.filter((r) => r.id !== updated.id),
       );
-
+      const actionText =
+        action === 'approved'
+          ? `Đã phê duyệt tờ trình ${updated.code}.${isPendingRequisition(updated) ? ' Tờ trình chuyển sang cấp duyệt kế tiếp.' : ''}`
+          : action === 'rejected'
+            ? `Đã từ chối tờ trình ${updated.code}.`
+            : `Đã yêu cầu người lập bổ sung tờ trình ${updated.code}.`;
       showToast(actionText, action === 'approved' ? 'success' : action === 'rejected' ? 'error' : 'warning');
       handleCloseModal();
     } catch (err) {
-      showToast('Có lỗi xảy ra khi xử lý tờ trình.', 'error');
+      showToast(err instanceof ApiError ? err.message : 'Có lỗi xảy ra khi xử lý tờ trình.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -200,12 +179,9 @@ export default function ApproverRequisitionsPage() {
 
         <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
           <div className="px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 text-right">
-            <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Hội Đồng Phê Duyệt</span>
-            <span className="text-sm font-extrabold text-slate-900 block">Ban Giám Đốc (BOD)</span>
-            <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-end gap-1 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Thẩm Định Cấp 2 / Cấp Cuối
-            </span>
+            <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Người thẩm định</span>
+            <span className="text-sm font-extrabold text-slate-900 block">{user?.full_name || '—'}</span>
+            <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">{requisitions.length} tờ trình đang chờ duyệt</span>
           </div>
         </div>
       </div>
@@ -242,10 +218,9 @@ export default function ApproverRequisitionsPage() {
               className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600 cursor-pointer"
             >
               <option value="ALL">Tất Cả Phòng Ban</option>
-              <option value="Công Nghệ">Công Nghệ Thông Tin</option>
-              <option value="Marketing">Marketing & Truyền Thông</option>
-              <option value="Sản Phẩm">Khối Sản Phẩm</option>
-              <option value="Dữ Liệu">Phân Tích Dữ Liệu</option>
+              {Array.from(new Set(requisitions.map((r) => r.department).filter(Boolean))).map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
             </select>
 
             {/* Filter Priority */}
@@ -264,7 +239,11 @@ export default function ApproverRequisitionsPage() {
 
         {/* 3. Bảng REQ Full Màn Hình */}
         <div className="p-6">
-          {filteredRequisitions.length === 0 ? (
+          {loading ? (
+            <LoadingState />
+          ) : error ? (
+            <ErrorState error={error} onRetry={reload} />
+          ) : filteredRequisitions.length === 0 ? (
             <div className="py-16 text-center text-slate-400">
               <FileText className="w-12 h-12 mx-auto mb-3 text-slate-300 stroke-[1.5]" />
               <p className="text-sm font-bold text-slate-700">Không có yêu cầu tuyển dụng nào phù hợp</p>

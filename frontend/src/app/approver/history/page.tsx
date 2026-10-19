@@ -17,127 +17,20 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { ApprovalTimeline } from '@/features/approver/components/ApprovalTimeline';
-import type { ApprovalTimelineItem } from '@/features/approver/types';
+import { myDecisions, type MyDecision } from '@/features/approver/api';
+import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/providers/auth-provider';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataStates';
 
-interface HistoryRecord {
-  id: string;
-  type: 'REQ' | 'OFFER';
-  code: string;
-  title: string;
-  department: string;
-  amountOrQuantity: string;
-  decision: 'approved' | 'rejected';
-  decidedAt: string;
-  decidedBy: string;
-  note: string;
-  timeline: ApprovalTimelineItem[];
-}
-
-const HISTORICAL_APPROVALS: HistoryRecord[] = [
-  {
-    id: 'HIST-01',
-    type: 'REQ',
-    code: 'REQ-2026-002',
-    title: 'Senior Frontend Engineer (React/Next.js)',
-    department: 'Công Nghệ Thông Tin',
-    amountOrQuantity: '2 nhân sự (22tr - 30tr VNĐ)',
-    decision: 'approved',
-    decidedAt: '16:45 - 08/10/2026',
-    decidedBy: 'Phạm Văn Hùng (Ban Giám Đốc)',
-    note: 'Đã thẩm định và thông qua kế hoạch bổ sung nguồn lực.',
-    timeline: [
-      {
-        id: 1,
-        step_name: 'Khởi tạo tờ trình',
-        approver_name: 'Lê Trưởng Nhóm',
-        approver_role: 'Trưởng Khối Công Nghệ',
-        action: 'submitted',
-        created_at: '09:00 - 07/10/2026',
-      },
-      {
-        id: 2,
-        step_name: 'Thẩm định HR Manager',
-        approver_name: 'Trần Thị Thu Hà',
-        approver_role: 'Giám Đốc Nhân Sự',
-        action: 'approved',
-        created_at: '11:30 - 08/10/2026',
-      },
-      {
-        id: 3,
-        step_name: 'Phê duyệt Ban Giám Đốc',
-        approver_name: 'Phạm Văn Hùng',
-        approver_role: 'Ban Giám Đốc',
-        action: 'approved',
-        comment: 'Đã thẩm định và thông qua kế hoạch bổ sung nguồn lực.',
-        created_at: '16:45 - 08/10/2026',
-      },
-    ],
-  },
-  {
-    id: 'HIST-02',
-    type: 'OFFER',
-    code: 'OFFER-2026-079',
-    title: 'Đề xuất Offer: Lê Hoàng Yến (Lead Product Designer)',
-    department: 'Khối Thiết Kế Sản Phẩm',
-    amountOrQuantity: '38.000.000 VNĐ / tháng',
-    decision: 'approved',
-    decidedAt: '10:15 - 05/10/2026',
-    decidedBy: 'Phạm Văn Hùng (Ban Giám Đốc)',
-    note: 'Chấp thuận mức lương trong dải chuẩn cho ứng viên xuất sắc.',
-    timeline: [
-      {
-        id: 4,
-        step_name: 'Đề xuất Offer từ Tuyển Dụng',
-        approver_name: 'Vũ Minh Anh',
-        approver_role: 'Lead Recruiter',
-        action: 'submitted',
-        created_at: '14:00 - 04/10/2026',
-      },
-      {
-        id: 5,
-        step_name: 'Phê duyệt Ban Giám Đốc',
-        approver_name: 'Phạm Văn Hùng',
-        approver_role: 'Ban Giám Đốc',
-        action: 'approved',
-        comment: 'Chấp thuận mức lương trong dải chuẩn cho ứng viên xuất sắc.',
-        created_at: '10:15 - 05/10/2026',
-      },
-    ],
-  },
-  {
-    id: 'HIST-03',
-    type: 'REQ',
-    code: 'REQ-2026-005',
-    title: 'Trợ Lý Điều Hành Sản Phẩm AI (Vượt định biên)',
-    department: 'Khối Đổi Mới Sáng Tạo',
-    amountOrQuantity: '3 nhân sự (15tr - 20tr VNĐ)',
-    decision: 'rejected',
-    decidedAt: '15:20 - 03/10/2026',
-    decidedBy: 'Phạm Văn Hùng (Ban Giám Đốc)',
-    note: 'Chưa đủ cơ sở mở rộng định biên quý này. Đề xuất luân chuyển nội bộ.',
-    timeline: [
-      {
-        id: 6,
-        step_name: 'Khởi tạo tờ trình',
-        approver_name: 'Nguyễn Văn Minh',
-        approver_role: 'Trưởng Khối AI',
-        action: 'submitted',
-        created_at: '10:00 - 02/10/2026',
-      },
-      {
-        id: 7,
-        step_name: 'Phê duyệt Ban Giám Đốc',
-        approver_name: 'Phạm Văn Hùng',
-        approver_role: 'Ban Giám Đốc',
-        action: 'rejected',
-        comment: 'Chưa đủ cơ sở mở rộng định biên quý này. Đề xuất luân chuyển nội bộ.',
-        created_at: '15:20 - 03/10/2026',
-      },
-    ],
-  },
-];
+type HistoryRecord = MyDecision;
 
 export default function ApproverHistoryPage() {
+  const { user } = useAuth();
+  const { data, error, loading, reload } = useApiData(
+    () => (user ? myDecisions(user.id, user.full_name) : Promise.resolve([] as MyDecision[])),
+    [user?.id],
+  );
+  const HISTORICAL_APPROVALS = data || [];
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [selectedRecord, setSelectedRecord] = useState<HistoryRecord | null>(null);
@@ -207,6 +100,9 @@ export default function ApproverHistoryPage() {
       {/* Grid List */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-3">
+          {loading && <LoadingState />}
+          {!loading && !!error && <ErrorState error={error} onRetry={reload} />}
+          {!loading && !error && filtered.length === 0 && <EmptyState hint="Bạn chưa có quyết định phê duyệt nào được ghi nhận." />}
           {filtered.map((item) => (
             <div
               key={item.id}
@@ -225,6 +121,10 @@ export default function ApproverHistoryPage() {
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
                     <CheckCircle2 className="w-3 h-3" />
                     ĐÃ PHÊ DUYỆT
+                  </span>
+                ) : item.decision === 'changes_requested' ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200">
+                    YÊU CẦU BỔ SUNG
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">

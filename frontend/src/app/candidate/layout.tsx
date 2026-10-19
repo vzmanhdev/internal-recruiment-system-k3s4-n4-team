@@ -1,424 +1,202 @@
-'use client';
+"use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import {
-  LayoutDashboard,
-  Briefcase,
-  Activity,
-  Calendar,
-  MailOpen,
-  User,
-  Bell,
-  LogOut,
-  ChevronDown,
-  ExternalLink,
-  Menu,
-  X,
-} from 'lucide-react';
-import clsx from 'clsx';
-import { authService } from '@/features/auth/services/auth.service';
+import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { policyFor } from "@/lib/auth/route-registry";
+import { useAuth } from "@/providers/auth-provider";
+import { ChevronDown, LayoutDashboard, LogOut, User } from "lucide-react";
 
-interface NavItem {
-  id: string;
-  label: string;
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
+function initialsOf(name?: string | null) {
+  return (name || "?").split(" ").filter(Boolean).slice(-2).map((x) => x[0]).join("").toUpperCase();
 }
 
-interface NavGroup {
-  label: string;
-  items: NavItem[];
+function getRoleLabel(role?: string, roles?: Array<string | { code: string; name: string }>) {
+  const allRoles = [
+    role || "",
+    ...(roles || []).map((r) => (typeof r === "string" ? r : r.name || r.code)),
+  ].join(", ").toLowerCase();
+  if (allRoles.includes("admin")) return "Quản trị viên";
+  if (allRoles.includes("hr")) return "Nhân sự (HR)";
+  if (allRoles.includes("recruiter")) return "Tuyển dụng";
+  if (allRoles.includes("manager")) return "Quản lý";
+  if (allRoles.includes("interviewer")) return "Phỏng vấn viên";
+  if (allRoles.includes("approver")) return "Người duyệt";
+  return "Ứng viên / Nhân viên";
 }
 
-export default function CandidateLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function getWorkspaceUrl(user: any): string {
+  if (!user) return "/candidate/jobs";
+  if (user.redirect_url) return user.redirect_url;
+  const roles = (user.roles || []).map((r: any) => (typeof r === "string" ? r : r.code)).join(",");
+  const roleStr = `${user.role || ""},${roles}`.toLowerCase();
+  if (roleStr.includes("admin")) return "/admin";
+  if (roleStr.includes("hr_manager") || roleStr.includes("hr")) return "/hr/dashboard";
+  if (roleStr.includes("recruiter")) return "/recruiter";
+  if (roleStr.includes("hiring_manager") || roleStr.includes("manager")) return "/manager";
+  if (roleStr.includes("interviewer")) return "/interviewer";
+  if (roleStr.includes("approver")) return "/approver";
+  return "/candidate";
+}
+
+/**
+ * Candidate area. Signed-in candidate pages use the unified AppShell (root layout); the public pages
+ * (job board, apply, status lookup, e-mail links) get a light public frame that responds to auth state.
+ */
+export default function CandidateLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { user, status, logout } = useAuth();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
-  const profileDropdownRef = useRef<HTMLDivElement>(null);
-
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-
-  const [candidateProfile, setCandidateProfile] = useState({
-    name: 'Nguyễn Văn A',
-    email: 'nguyen.van.a@gmail.com',
-    role: 'Ứng viên',
-    badge: 'Tài khoản Ứng viên',
-  });
-
-  // Tải avatar đã lưu từ localStorage nếu có
   useEffect(() => {
-    const loadAvatar = () => {
-      const saved = localStorage.getItem('user_avatar_url');
-      if (saved) setAvatarUrl(saved);
-    };
-    loadAvatar();
-    window.addEventListener('avatar_updated', loadAvatar);
-    return () => window.removeEventListener('avatar_updated', loadAvatar);
-  }, []);
-
-  // Lấy thông tin người dùng từ authService nếu có đăng nhập
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const user = await authService.getCurrentUser();
-        if (user) {
-          setCandidateProfile({
-            name: user.full_name || 'Nguyễn Văn A',
-            email: user.email || 'nguyen.van.a@gmail.com',
-            role: 'Ứng viên',
-            badge: 'Tài khoản Ứng viên',
-          });
-          if (user.avatar_url && !localStorage.getItem('user_avatar_url')) {
-            setAvatarUrl(user.avatar_url);
-          }
-        }
-      } catch {
-        // Fallback mặc định
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
       }
     };
-    fetchUser();
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
-  // Xử lý click ra ngoài để đóng User Dropdown
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        profileDropdownRef.current &&
-        !profileDropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsProfileDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  if (!policyFor(pathname)?.public) return <>{children}</>;
 
-  const handleLogout = () => {
-    authService.logout();
-    router.push('/login');
-  };
+  const workspaceUrl = getWorkspaceUrl(user);
+  const roleLabel = getRoleLabel(user?.role, user?.roles);
 
-  // Cấu trúc danh sách Menu chia theo từng nhóm chuẩn Admin
-  const navGroups: NavGroup[] = [
-    {
-      label: 'TỔNG QUAN',
-      items: [
-        {
-          id: 'overview',
-          label: 'Tổng quan',
-          href: '/candidate',
-          icon: LayoutDashboard,
-        },
-      ],
-    },
-    {
-      label: 'QUẢN LÝ ỨNG TUYỂN',
-      items: [
-        {
-          id: 'jobs',
-          label: 'Vị trí tuyển dụng',
-          href: '/candidate/jobs',
-          icon: Briefcase,
-        },
-        {
-          id: 'tracking',
-          label: 'Tiến độ ứng tuyển',
-          href: '/candidate/tracking',
-          icon: Activity,
-        },
-      ],
-    },
-    {
-      label: 'LỊCH & KẾT QUẢ',
-      items: [
-        {
-          id: 'interviews',
-          label: 'Lịch phỏng vấn',
-          href: '/candidate/interviews',
-          icon: Calendar,
-        },
-        {
-          id: 'offers',
-          label: 'Thư mời nhận việc',
-          href: '/candidate/offers',
-          icon: MailOpen,
-        },
-      ],
-    },
-    {
-      label: 'CÁ NHÂN',
-      items: [
-        {
-          id: 'profile',
-          label: 'Hồ sơ cá nhân',
-          href: '/candidate/profile',
-          icon: User,
-        },
-        {
-          id: 'settings',
-          label: 'Cấu hình thông báo',
-          href: '/candidate/settings',
-          icon: Bell,
-        },
-      ],
-    },
-  ];
-
-  // Kiểm tra route active
-  const isCurrentTab = (itemHref: string) => {
-    if (itemHref === '/candidate') {
-      return pathname === '/candidate';
-    }
-    if (itemHref === '/candidate/tracking') {
-      return pathname === '/candidate/tracking' || pathname.startsWith('/candidate/track');
-    }
-    if (itemHref === '/candidate/interviews') {
-      return pathname === '/candidate/interviews' || pathname.startsWith('/candidate/interview');
-    }
-    if (itemHref === '/candidate/offers') {
-      return pathname === '/candidate/offers' || pathname.startsWith('/candidate/offer');
-    }
-    return pathname === itemHref || pathname.startsWith(itemHref + '/');
+  const handleLogout = async () => {
+    setDropdownOpen(false);
+    await logout();
+    router.push("/login");
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-800">
-      {/* Mobile backdrop */}
-      {isMobileMenuOpen && (
-        <div
-          onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 lg:hidden"
-        />
-      )}
-
-      {/* 2. THANH MENU DỌC BÊN TRÁI (SIDEBAR) */}
-      <aside
-        className={clsx(
-          'fixed lg:static inset-y-0 left-0 z-40 w-[280px] bg-white border-r border-slate-200 flex flex-col h-full shrink-0 transition-transform duration-200 ease-in-out',
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        )}
-      >
-        {/* Header Logo (Hàng đầu tiên): h-20 flex items-center px-6 gap-3 border-b border-slate-100 */}
-        <div className="h-20 flex items-center px-6 gap-3 border-b border-slate-100 shrink-0">
-          <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-extrabold flex items-center justify-center text-sm shadow-md shadow-blue-500/20 shrink-0">
-            ATS
-          </div>
-          <div className="min-w-0">
-            <div className="font-extrabold text-sm text-slate-900 tracking-tight leading-tight truncate">
-              Hệ Thống Tuyển Dụng
-            </div>
-            <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mt-0.5">
-              CANDIDATE PORTAL
-            </div>
-          </div>
-        </div>
-
-        {/* Danh sách Menu (Scrollable) */}
-        <nav className="flex-1 overflow-y-auto py-2">
-          {navGroups.map((group, groupIdx) => (
-            <div key={groupIdx}>
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2 mt-6 px-6">
-                {group.label}
-              </div>
-              <div className="space-y-1">
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const active = isCurrentTab(item.href);
-
-                  return (
-                    <Link
-                      key={item.id}
-                      href={item.href}
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className={clsx(
-                        'flex items-center gap-3 px-4 py-2.5 mx-4 rounded-xl transition-all font-medium text-xs sm:text-sm group',
-                        active
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-200 font-semibold'
-                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                      )}
-                    >
-                      <Icon
-                        className={clsx(
-                          'w-4 h-4 shrink-0 transition-transform duration-200 group-hover:scale-105',
-                          active ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'
-                        )}
-                      />
-                      <span className="truncate">{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </nav>
-
-        {/* Bottom Widget (Trạng thái máy chủ - Online nền xanh ngọc bg-emerald-50 y hệt Admin) */}
-        <div className="p-4 border-t border-slate-100 shrink-0">
-          <div className="bg-emerald-50 rounded-2xl p-3.5 border border-emerald-100/80 text-xs space-y-1 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-bold text-emerald-900">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Trạng thái máy chủ</span>
-              </div>
-              <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                Online
-              </span>
-            </div>
-            <p className="text-[11px] text-emerald-700/80 font-medium leading-relaxed">
-              Hệ thống hoạt động bình thường
-            </p>
-          </div>
-        </div>
-      </aside>
-
-      {/* 3. KHU VỰC NỘI DUNG PHẢI & TOPBAR (RIGHT CONTENT) */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Topbar (Header trên cùng): h-20 flex justify-end items-center px-8 gap-4 bg-slate-50 */}
-        <header className="h-20 flex justify-between lg:justify-end items-center px-6 md:px-8 gap-4 bg-slate-50 border-b border-slate-200/60 shrink-0">
-          {/* Mobile hamburger button */}
-          <div className="flex items-center gap-3 lg:hidden">
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-2 rounded-xl text-slate-600 hover:bg-white border border-slate-200/80 cursor-pointer transition-colors"
-              aria-label="Toggle navigation menu"
-            >
-              {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs">
-                ATS
-              </div>
-              <span className="font-extrabold text-xs text-slate-900">Candidate Portal</span>
-            </div>
-          </div>
-
-          {/* Right Action Widgets */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            {/* Nút "Cổng Việc Làm" (Outline button kèm icon ExternalLink) */}
+    <div className="min-h-screen bg-[#F7F9FC] text-[#0F172A]">
+      <header className="h-14 bg-white border-b border-[#E2E8F0] flex items-center justify-between px-4 lg:px-6 sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          <Link href="/candidate/jobs" className="flex items-center gap-2">
+            <span className="w-8 h-8 rounded-lg bg-[#2563EB] text-white text-sm font-bold flex items-center justify-center">TD</span>
+            <span className="text-[15px] font-bold">Cơ hội nghề nghiệp</span>
+          </Link>
+          <nav className="flex items-center gap-1 ml-4 text-[13px]">
             <Link
               href="/candidate/jobs"
-              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className={`px-3 py-1.5 rounded-lg transition-colors ${
+                pathname === "/candidate/jobs"
+                  ? "text-[#2563EB] bg-blue-50 font-bold"
+                  : "text-[#334155] hover:bg-slate-100"
+              }`}
             >
-              <span>Cổng Việc Làm</span>
-              <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+              Việc làm
             </Link>
-
-            {/* Chuông thông báo: Icon Bell có chấm đỏ góc trên */}
             <Link
-              href="/candidate/settings"
-              className="p-2.5 rounded-xl text-slate-500 hover:bg-white hover:text-slate-800 transition-colors relative cursor-pointer"
-              title="Thông báo hệ thống"
+              href="/candidate/track"
+              className={`px-3 py-1.5 rounded-lg transition-colors ${
+                pathname.startsWith("/candidate/track")
+                  ? "text-[#2563EB] bg-blue-50 font-bold"
+                  : "text-[#334155] hover:bg-slate-100"
+              }`}
             >
-              <Bell className="w-5 h-5" />
-              <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-2 right-2 ring-2 ring-slate-50"></span>
+              Tra cứu hồ sơ
             </Link>
-
-            {/* User Dropdown */}
-            <div className="relative" ref={profileDropdownRef}>
-              <button
-                onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-                className="flex items-center gap-2.5 p-1.5 pl-2 rounded-2xl hover:bg-white transition-all border border-transparent hover:border-slate-200 cursor-pointer"
+            {user && (
+              <Link
+                href="/candidate"
+                className={`px-3 py-1.5 rounded-lg transition-colors ${
+                  pathname === "/candidate"
+                    ? "text-[#2563EB] bg-blue-50 font-bold"
+                    : "text-[#334155] hover:bg-slate-100"
+                }`}
               >
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center text-xs border border-blue-200 shadow-2xs overflow-hidden shrink-0">
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt={candidateProfile.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    candidateProfile.name.charAt(0)
-                  )}
-                </div>
-                <div className="text-left hidden sm:block">
-                  <div className="text-xs font-bold text-slate-900 leading-tight">
-                    {candidateProfile.name}
-                  </div>
-                  <div className="text-[10px] text-slate-400 font-semibold">
-                    {candidateProfile.role}
-                  </div>
-                </div>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              </button>
+                Hồ sơ của tôi
+              </Link>
+            )}
+          </nav>
+        </div>
 
-              {/* Dropdown Menu Card */}
-              {isProfileDropdownOpen && (
-                <div className="absolute right-0 mt-2 top-full w-64 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                  {/* Khối thông tin: Tên, Email, Badge "Tài khoản Ứng viên" */}
-                  <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm overflow-hidden shrink-0">
-                      {avatarUrl ? (
-                        <img
-                          src={avatarUrl}
-                          alt={candidateProfile.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        candidateProfile.name.charAt(0)
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-xs text-slate-900 truncate">
-                        {candidateProfile.name}
-                      </div>
-                      <div className="text-[11px] text-slate-400 truncate max-w-[150px]">
-                        {candidateProfile.email}
-                      </div>
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100">
-                        {candidateProfile.badge}
-                      </span>
-                    </div>
-                  </div>
+        <div className="flex items-center gap-2.5">
+          {user ? (
+            <>
+              <Link
+                href={workspaceUrl}
+                className="hidden sm:flex items-center gap-1.5 h-8 px-3 rounded-lg bg-blue-50 text-[#2563EB] hover:bg-blue-100 text-xs font-bold transition-colors"
+                title="Đến Không gian làm việc"
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                <span>Không gian làm việc</span>
+              </Link>
 
-                  {/* Các menu */}
-                  <div className="py-1 text-xs">
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setDropdownOpen((v) => !v)}
+                  className="flex items-center gap-2 rounded-lg p-1 hover:bg-slate-100 transition-colors cursor-pointer border border-transparent hover:border-slate-200"
+                >
+                  <span className="w-7 h-7 rounded-full bg-[#2563EB] text-white text-xs font-bold flex items-center justify-center overflow-hidden">
+                    {user.avatar_url ? (
+                      <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      initialsOf(user.full_name)
+                    )}
+                  </span>
+                  <span className="text-left leading-tight hidden md:block max-w-[150px]">
+                    <span className="block text-xs font-bold text-[#0F172A] truncate">
+                      {user.full_name || user.email}
+                    </span>
+                    <span className="block text-[10px] text-[#64748B] truncate font-medium">
+                      {roleLabel}
+                    </span>
+                  </span>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+                </button>
+
+                {dropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-white border border-[#E2E8F0] rounded-xl shadow-lg py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="px-3 py-2 border-b border-[#E2E8F0]">
+                      <div className="text-xs font-bold text-[#0F172A] truncate">{user.full_name}</div>
+                      <div className="text-[11px] text-[#64748B] truncate">{user.email}</div>
+                    </div>
                     <Link
-                      href="/candidate/profile"
-                      onClick={() => setIsProfileDropdownOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 font-medium transition-colors"
+                      href={workspaceUrl}
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-[#334155] hover:bg-slate-50 transition-colors"
                     >
-                      <User className="w-4 h-4 text-slate-400" />
-                      <span>Hồ sơ cá nhân</span>
+                      <LayoutDashboard className="w-4 h-4 text-[#2563EB]" />
+                      <span>Không gian làm việc</span>
                     </Link>
                     <Link
-                      href="/candidate/settings"
-                      onClick={() => setIsProfileDropdownOpen(false)}
-                      className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 font-medium transition-colors"
+                      href="/candidate"
+                      onClick={() => setDropdownOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-[#334155] hover:bg-slate-50 transition-colors"
                     >
-                      <Bell className="w-4 h-4 text-slate-400" />
-                      <span>Cấu hình thông báo</span>
+                      <User className="w-4 h-4 text-slate-500" />
+                      <span>Bàn làm việc của tôi</span>
                     </Link>
-                  </div>
-
-                  {/* Divider & Nút Đăng xuất */}
-                  <div className="border-t border-slate-100 pt-1">
+                    <div className="h-px bg-[#E2E8F0] my-1" />
                     <button
+                      type="button"
                       onClick={handleLogout}
-                      className="w-full flex items-center gap-2.5 px-4 py-2 text-rose-600 hover:bg-rose-50 text-xs font-bold transition-colors cursor-pointer"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                     >
-                      <LogOut className="w-4 h-4 text-rose-500" />
-                      <span>Đăng xuất hệ thống</span>
+                      <LogOut className="w-4 h-4" />
+                      <span>Đăng xuất</span>
                     </button>
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
-
-        {/* Vùng chứa Page Content (Children): Có thể cuộn độc lập với thanh Sidebar */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8">
-          {children}
-        </main>
-      </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="h-9 px-3.5 rounded-lg border border-[#E2E8F0] text-[13px] font-semibold flex items-center hover:bg-slate-50 text-[#0F172A] transition-colors"
+            >
+              Đăng nhập
+            </Link>
+          )}
+        </div>
+      </header>
+      <main className="px-4 lg:px-6 py-5">{children}</main>
     </div>
   );
 }

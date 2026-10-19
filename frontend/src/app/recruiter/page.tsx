@@ -20,117 +20,115 @@ import {
   Sparkles,
   Award,
 } from 'lucide-react';
+import { apiRequest } from '@/lib/api-client';
+import { STAGE_LABEL, type ApiApplication } from '@/features/candidates/api';
+import { interviewService } from '@/services/interview.service';
+import { offerService } from '@/services/offer.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { useAuth } from '@/providers/auth-provider';
+
+const DAY_MS = 86_400_000;
+const OPEN = new Set(['submitted', 'screening', 'interviewing', 'offered']);
+const pad = (n: number) => String(n).padStart(2, '0');
+const hm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+/** Everything the overview shows, computed from the recruiter's scoped data. */
+async function loadOverview() {
+  const [apps, interviews, offers] = await Promise.all([
+    apiRequest<Array<ApiApplication & { stage_entered_at?: string | null }>>('/applications'),
+    interviewService.getInterviews(),
+    offerService.getOffers().catch(() => []),
+  ]);
+  const now = Date.now();
+  const today = new Date(now).toDateString();
+  const weekAgo = now - 7 * DAY_MS;
+  const open = apps.filter((a) => OPEN.has(a.status));
+  const daysIn = (a: { stage_entered_at?: string | null; created_at?: string | null }) => {
+    const t = a.stage_entered_at || a.created_at;
+    return t ? Math.floor((now - new Date(t).getTime()) / DAY_MS) : 0;
+  };
+  const newThisWeek = apps.filter((a) => a.created_at && new Date(a.created_at).getTime() >= weekAgo).length;
+  const newCount = apps.filter((a) => a.status === 'submitted').length;
+  const screening = apps.filter((a) => a.status === 'screening').length;
+  const upcoming = interviews.filter((i) => i.status === 'scheduled');
+  const weekEnd = now + 7 * DAY_MS;
+  const thisWeek = upcoming.filter((i) => { const t = new Date(i.scheduled_time).getTime(); return t >= now - DAY_MS && t <= weekEnd; });
+  const todayRows = upcoming.filter((i) => new Date(i.scheduled_time).toDateString() === today)
+    .sort((x, y) => x.scheduled_time.localeCompare(y.scheduled_time));
+  const answered = offers.filter((o) => ['accepted', 'declined', 'expired'].includes(o.status));
+  const accepted = answered.filter((o) => o.status === 'accepted').length;
+  return {
+    newCount, newThisWeek, openCount: open.length, screening,
+    weekInterviews: thisWeek.length,
+    acceptRate: answered.length ? `${((accepted / answered.length) * 100).toFixed(1)}%` : '—',
+    answeredOffers: answered.length,
+    urgent: [...open].sort((a, b) => daysIn(b) - daysIn(a)).slice(0, 4).map((a) => ({
+      id: String(a.id), name: a.full_name, position: a.job_title || '', stage: STAGE_LABEL[a.status] || a.status,
+      slaHours: `${daysIn(a)} ngày ở giai đoạn này`, matchScore: Math.round(a.match_score ?? 0), source: a.source || 'Không rõ', avatar: '',
+    })),
+    today: todayRows.map((i) => {
+      const start = new Date(i.scheduled_time);
+      const end = new Date(start.getTime() + i.duration_minutes * 60_000);
+      const panel = (i.interviewers || []) as Array<{ interviewer_name?: string | null }>;
+      return {
+        time: `${hm(start)} - ${hm(end)}`, candidate: i.candidate_name || '', position: i.job_title || '', round: i.round_name,
+        interviewer: panel.map((x) => x.interviewer_name).filter(Boolean).join(', ') || '—',
+        status: i.candidate_response === 'confirmed' ? 'Đã xác nhận' : i.candidate_response === 'reschedule_requested' ? 'Xin đổi lịch' : 'Chờ xác nhận',
+      };
+    }),
+  };
+}
 
 export default function RecruiterOverviewPage() {
   const [searchQuery, setSearchQuery] = useState('');
+
+  const { user } = useAuth();
+  const { data: ov, error, loading, reload } = useApiData(loadOverview, []);
+  if (loading) return <LoadingState />;
+  if (error || !ov) return <ErrorState error={error} onRetry={reload} />;
 
   // 4 KPI Stats Cards
   const stats = [
     {
       label: 'CV Mới Tiếp Nhận',
-      value: '24',
-      change: '+12% tuần này',
+      value: String(ov.newCount),
+      change: `${ov.newThisWeek} hồ sơ trong 7 ngày qua`,
       trend: 'up',
       icon: Users,
       color: 'bg-blue-50 text-blue-600 border-blue-100',
     },
     {
       label: 'Đang Trong Pipeline',
-      value: '42',
-      change: '18 đang sàng lọc',
+      value: String(ov.openCount),
+      change: `${ov.screening} đang sàng lọc`,
       trend: 'neutral',
       icon: Kanban,
       color: 'bg-indigo-50 text-indigo-600 border-indigo-100',
     },
     {
       label: 'Lịch Phỏng Vấn Tuần',
-      value: '9',
-      change: '3 lịch hôm nay',
+      value: String(ov.weekInterviews),
+      change: `${ov.today.length} lịch hôm nay`,
       trend: 'up',
       icon: Calendar,
       color: 'bg-amber-50 text-amber-600 border-amber-100',
     },
     {
       label: 'Tỷ Lệ Nhận Offer',
-      value: '91.5%',
-      change: '+4.2% so với tháng trước',
+      value: ov.acceptRate,
+      change: `trên ${ov.answeredOffers} offer đã có phản hồi`,
       trend: 'up',
       icon: Award,
       color: 'bg-emerald-50 text-emerald-600 border-emerald-100',
     },
   ];
 
-  // Candidates requiring immediate review (SLA Alert)
-  const urgentCandidates = [
-    {
-      id: 'CAN-089',
-      name: 'Nguyễn Văn An',
-      position: 'Senior Backend Engineer (Go/Python)',
-      stage: 'Sàng lọc CV',
-      slaHours: '4h còn lại',
-      matchScore: 94,
-      source: 'LinkedIn',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
-    },
-    {
-      id: 'CAN-092',
-      name: 'Trần Minh Quân',
-      position: 'React Native Mobile Developer',
-      stage: 'Chờ xếp lịch PV',
-      slaHours: '8h còn lại',
-      matchScore: 89,
-      source: 'VietnamWorks',
-      avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?q=80&w=120&auto=format&fit=crop',
-    },
-    {
-      id: 'CAN-095',
-      name: 'Lê Hoàng Yến',
-      position: 'Product Owner / BA Lead',
-      stage: 'Đề xuất Offer',
-      slaHours: '12h còn lại',
-      matchScore: 96,
-      source: 'Referral Nội Bộ',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=120&auto=format&fit=crop',
-    },
-    {
-      id: 'CAN-101',
-      name: 'Vũ Đức Thịnh',
-      position: 'DevOps / Site Reliability Engineer',
-      stage: 'CV Mới nộp',
-      slaHours: '18h còn lại',
-      matchScore: 82,
-      source: 'TopCV',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=120&auto=format&fit=crop',
-    },
-  ];
+  // Open applications that have waited longest in their current stage
+  const urgentCandidates = ov.urgent;
 
   // Today's interviews
-  const todayInterviews = [
-    {
-      time: '09:30 - 10:30',
-      candidate: 'Nguyễn Văn An',
-      position: 'Senior Backend Engineer',
-      round: 'Vòng 2: Kỹ thuật chuyên sâu',
-      interviewer: 'Lê Trưởng Nhóm (HM)',
-      status: 'Sắp diễn ra',
-    },
-    {
-      time: '14:00 - 15:00',
-      candidate: 'Đỗ Thùy Trang',
-      position: 'UI/UX Designer',
-      round: 'Vòng 1: Đánh giá Portfolio',
-      interviewer: 'Phạm Văn Interviewer',
-      status: 'Đã xác nhận',
-    },
-    {
-      time: '16:00 - 16:45',
-      candidate: 'Lê Hoàng Yến',
-      position: 'Product Owner',
-      round: 'Vòng 3: Trao đổi Offer & Văn hóa',
-      interviewer: 'Trần Thị Recruiter',
-      status: 'Đã sẵn sàng link Meet',
-    },
-  ];
+  const todayInterviews = ov.today;
 
   return (
     <div className="space-y-6">
@@ -144,10 +142,10 @@ export default function RecruiterOverviewPage() {
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight mt-1">
-            Xin chào, Trần Thị Recruiter! 👋
+            Xin chào, {user?.full_name || 'bạn'}! 👋
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">
-            Hôm nay bạn có <strong className="text-slate-800">24 ứng viên mới</strong> cần sàng lọc và <strong className="text-slate-800">3 buổi phỏng vấn</strong> được xếp lịch.
+            Hôm nay bạn có <strong className="text-slate-800">{ov.newCount} ứng viên mới</strong> cần sàng lọc và <strong className="text-slate-800">{ov.today.length} buổi phỏng vấn</strong> được xếp lịch.
           </p>
         </div>
 
@@ -219,11 +217,17 @@ export default function RecruiterOverviewPage() {
                 className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/80 -mx-2 px-2 rounded-xl transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <img
-                    src={cand.avatar}
-                    alt={cand.name}
-                    className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                  />
+                  {cand.avatar ? (
+                    <img
+                      src={cand.avatar}
+                      alt={cand.name}
+                      className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-sky-100 text-[#0284C7] font-extrabold text-sm flex items-center justify-center border border-sky-200 shrink-0 select-none">
+                      {(cand.name || "U").trim().split(" ").slice(-1)[0][0]?.toUpperCase() || "U"}
+                    </div>
+                  )}
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-extrabold text-xs text-slate-900">{cand.name}</span>
@@ -250,7 +254,7 @@ export default function RecruiterOverviewPage() {
                   </div>
 
                   <Link
-                    href={`/recruiter/pipeline?candidate=${cand.id}`}
+                    href={`/recruiter/candidates/${cand.id}`}
                     className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors"
                   >
                     Xử lý
@@ -271,7 +275,7 @@ export default function RecruiterOverviewPage() {
                 <span>Lịch Phỏng Vấn Hôm Nay</span>
               </h3>
               <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-extrabold text-[10px]">
-                3 Lịch
+                {todayInterviews.length} Lịch
               </span>
             </div>
 
@@ -312,9 +316,9 @@ export default function RecruiterOverviewPage() {
               </span>
               <Sparkles className="w-4 h-4 text-yellow-300" />
             </div>
-            <div className="text-xl font-black">42 Ứng viên đang điều phối</div>
+            <div className="text-xl font-black">{ov.openCount} Ứng viên đang điều phối</div>
             <p className="text-xs text-blue-100/90 leading-relaxed font-medium">
-              Bạn đang vượt 15% chỉ tiêu tuyển dụng tháng 10. Tiếp tục duy trì tốc độ xử lý CV nhé!
+              {ov.newThisWeek} hồ sơ mới trong 7 ngày qua · {ov.weekInterviews} buổi phỏng vấn trong tuần.
             </p>
             <div className="pt-2">
               <Link

@@ -2,6 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   FileText,
   Plus,
@@ -34,6 +37,11 @@ import {
   ArrowRight,
   TrendingUp,
 } from 'lucide-react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { jobService, type JobPostingItem } from '@/services/job.service';
+import { requisitionService, type RequisitionItem } from '@/services/requisition.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import clsx from 'clsx';
 
 // ==========================================
@@ -44,6 +52,7 @@ export type JobStatus = 'active' | 'expired' | 'draft';
 
 export interface ApprovedRequisition {
   id: string;
+  departmentId: number;
   code: string;
   title: string;
   department: string;
@@ -79,249 +88,102 @@ export interface JobPosting {
   description: string;
   requirements: string;
   benefits: string;
+  raw: JobPostingItem & { is_expired?: boolean };
 }
 
 // ==========================================
-// 2. MOCK DATA
+// 2. REAL DATA MAPPING (job postings + approved requisitions)
 // ==========================================
 
-// Danh sách Yêu cầu tuyển dụng ĐÃ DUYỆT (Approved Requisitions)
-const APPROVED_REQUISITIONS: ApprovedRequisition[] = [
-  {
-    id: 'req-01',
-    code: 'REQ-2026-08',
-    title: 'Senior Backend Engineer (Go/Python)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    location: 'Hà Nội (Keangnam Landmark 72)',
-    salary: '35 - 55 Triệu VNĐ',
-    headcount: 3,
-    level: 'Senior',
-    employmentType: 'Toàn thời gian (Hybrid)',
-    hiringManager: 'Nguyễn Tiến Dũng (Engineering Director)',
-    approvedDate: '28/09/2026',
-    description:
-      'Phát triển và tối ưu hóa hệ thống microservices backend xử lý dữ liệu giao dịch quy mô lớn. Xây dựng RESTful API và gRPC services với hiệu năng cao, độ trễ thấp và khả năng mở rộng hàng triệu requests/phút.',
-    requirements:
-      '- Tối thiểu 4+ năm kinh nghiệm làm việc chuyên sâu với Golang hoặc Python.\n- Thành thạo PostgreSQL, Redis, Kafka hoặc RabbitMQ.\n- Có kinh nghiệm với Docker, Kubernetes, CI/CD pipeline.\n- Tư duy giải quyết vấn đề tốt, hiểu sâu về System Design và Clean Architecture.',
-    benefits:
-      '- Thu nhập cạnh tranh: Lương cứng 35-55M + Thưởng hiệu quả kinh doanh (lên đến 3-5 tháng lương).\n- Bảo hiểm sức khỏe PVI Premium cho bản thân và người thân.\n- Cấp mới MacBook Pro M3 Max khi nhận việc.\n- 15 ngày phép năm + chế độ Hybrid 2 ngày Remote/tuần.',
-  },
-  {
-    id: 'req-02',
-    code: 'REQ-2026-12',
-    title: 'Frontend React Lead (Next.js & Design System)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    location: 'Hà Nội (Keangnam Landmark 72)',
-    salary: '40 - 60 Triệu VNĐ',
-    headcount: 1,
-    level: 'Lead',
-    employmentType: 'Toàn thời gian',
-    hiringManager: 'Phạm Văn Tuấn (Tech Lead)',
-    approvedDate: '01/10/2026',
-    description:
-      'Dẫn dắt kiến trúc Frontend cho toàn bộ hệ sinh thái sản phẩm Enterprise ATS và Internal Portal. Định hình chuẩn UI/UX, tối ưu hóa Web Vitals, xây dựng Design System component thư viện dùng chung cho toàn công ty.',
-    requirements:
-      '- 5+ năm kinh nghiệm Frontend, thành thạo React, Next.js App Router, TypeScript, Tailwind CSS.\n- Khả năng lead team 5-8 kỹ sư, review code và thiết lập CI/CD frontend.\n- Am hiểu sâu về Performance optimization, Accessibility (a11y) và State Management.',
-    benefits:
-      '- Gói ESOP cổ phần đãi ngộ hấp dẫn cho cấp Lead.\n- Thưởng dự án hàng quý theo tiến độ sản phẩm.\n- Tài trợ ngân sách học tập và chứng chỉ quốc tế 25.000.000 VNĐ/năm.',
-  },
-  {
-    id: 'req-03',
-    code: 'REQ-2026-15',
-    title: 'AI/ML Research Engineer (LLM & CV Matching)',
-    department: 'Ban Công Nghệ AI & Dữ Liệu',
-    location: 'Hà Nội (Lotte Center)',
-    salary: '45 - 70 Triệu VNĐ',
-    headcount: 2,
-    level: 'Specialist / Senior',
-    employmentType: 'Toàn thời gian (Linh hoạt)',
-    hiringManager: 'TS. Hoàng Minh Quân (Head of AI)',
-    approvedDate: '02/10/2026',
-    description:
-      'Nghiên cứu và phát triển các mô hình xử lý ngôn ngữ tự nhiên (NLP) phục vụ việc phân tích hồ sơ CV ứng viên, trích xuất thực thể (NER), tự động tóm tắt hồ sơ và matching kỹ năng ứng viên với JD tuyển dụng.',
-    requirements:
-      '- Có kinh nghiệm thực chiến với PyTorch/TensorFlow, Transformers, HuggingFace.\n- Hiểu sâu về Fine-tuning LLM (Llama, Mistral) và kiến trúc RAG.\n- Ưu tiên ứng viên có công bố khoa học hoặc sản phẩm AI thực tế đã launch production.',
-    benefits:
-      '- Hạ tầng GPU Cloud (NVIDIA H100/A100) không giới hạn phục vụ R&D.\n- Môi trường nghiên cứu chuyên nghiệp cùng các chuyên gia hàng đầu.\n- Thời gian làm việc linh hoạt Work from Anywhere 2 ngày/tuần.',
-  },
-  {
-    id: 'req-04',
-    code: 'REQ-2026-19',
-    title: 'Product Manager (B2B SaaS / HR Tech)',
-    department: 'Phòng Phát Triển Sản Phẩm',
-    location: 'Hà Nội',
-    salary: '35 - 50 Triệu VNĐ',
-    headcount: 1,
-    level: 'Senior',
-    employmentType: 'Toàn thời gian',
-    hiringManager: 'Lê Thị Bích Ngọc (CPO)',
-    approvedDate: '05/10/2026',
-    description:
-      'Định hình Roadmap và chiến lược sản phẩm hệ thống Tuyển Dụng Nội Bộ. Làm việc chặt chẽ với Stakeholders (HR, Hiring Managers, Ban Giám Đốc) để chuyển hóa Business Needs thành User Stories và Epic chi tiết.',
-    requirements:
-      '- 3+ năm kinh nghiệm làm PM cho các sản phẩm B2B hoặc HR Tech.\n- Kỹ năng phân tích số liệu (Product Analytics), Wireframing và quản trị Agile/Scrum xuất sắc.\n- Kỹ năng giao tiếp và thuyết trình song ngữ Anh - Việt thành thạo.',
-    benefits:
-      '- Lương tháng 13 + thưởng KPI năm lên đến 4 tháng lương.\n- Tham gia hoạch định chiến lược sản phẩm cốt lõi của tập đoàn.\n- Nghỉ dưỡng 5 sao 2 lần/năm cùng công ty.',
-  },
-  {
-    id: 'req-05',
-    code: 'REQ-2026-22',
-    title: 'DevOps / Site Reliability Engineer (SRE)',
-    department: 'Khối Vận Hành & Hạ Tầng',
-    location: 'Hà Nội (Hybrid)',
-    salary: '30 - 48 Triệu VNĐ',
-    headcount: 2,
-    level: 'Mid-Senior',
-    employmentType: 'Toàn thời gian',
-    hiringManager: 'Trần Quang Huy (Infra Director)',
-    approvedDate: '08/10/2026',
-    description:
-      'Vận hành và tối ưu hóa cụm Kubernetes trên AWS/GCP. Xây dựng GitOps pipeline, giám sát hạ tầng với Prometheus, Grafana, Datadog và đảm bảo SLA 99.99% cho hệ thống tuyển dụng.',
-    requirements:
-      '- 3+ năm kinh nghiệm với Kubernetes, Terraform, Helm, Docker.\n- Thành thạo CI/CD (GitHub Actions / GitLab CI) và an ninh mạng hạ tầng Cloud.\n- Có chứng chỉ CKA hoặc AWS Solution Architect là lợi thế lớn.',
-    benefits:
-      '- Thưởng on-call và phụ cấp ca trực hấp dẫn.\n- Tài trợ 100% lệ phí thi chứng chỉ quốc tế AWS, CKA.\n- Phụ cấp ăn trưa và gửi xe miễn phí tại tòa nhà hạng A.',
-  },
-];
+const DAY_MS = 86_400_000;
+const money = (n?: number | null) => (n ? `${Math.round(n / 1_000_000)}` : '');
 
-// Danh sách Tin tuyển dụng ban đầu
-const INITIAL_JOBS: JobPosting[] = [
-  {
-    id: 'JOB-2026-01',
-    requisitionCode: 'REQ-2026-08',
-    title: 'Senior Backend Engineer (Go/Python)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    location: 'Hà Nội (Keangnam Landmark 72)',
-    salary: '35 - 55 Triệu VNĐ',
-    headcount: 3,
-    level: 'Senior',
-    employmentType: 'Toàn thời gian (Hybrid)',
-    applicantsCount: 14,
-    status: 'active',
-    postedDate: '2026-10-01',
-    expiryDate: '2026-10-15', // Còn 4 ngày -> Sắp hết hạn!
-    daysLeft: 4,
-    isExpiringSoon: true,
-    autoUnpublish: true,
-    description:
-      'Phát triển và tối ưu hóa hệ thống microservices backend xử lý dữ liệu giao dịch quy mô lớn...',
-    requirements: 'Tối thiểu 4+ năm kinh nghiệm với Golang hoặc Python...',
-    benefits: 'Lương tháng 13 + thưởng hiệu quả kinh doanh lên tới 3-5 tháng lương...',
-  },
-  {
-    id: 'JOB-2026-02',
-    requisitionCode: 'REQ-2026-12',
-    title: 'Frontend React Lead (Next.js & Design System)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    location: 'Hà Nội (Keangnam Landmark 72)',
-    salary: '40 - 60 Triệu VNĐ',
-    headcount: 1,
-    level: 'Lead',
-    employmentType: 'Toàn thời gian',
-    applicantsCount: 8,
-    status: 'active',
-    postedDate: '2026-10-02',
-    expiryDate: '2026-10-31', // Còn 20 ngày -> An toàn
-    daysLeft: 20,
-    isExpiringSoon: false,
-    autoUnpublish: true,
-    description:
-      'Dẫn dắt kiến trúc Frontend cho toàn bộ hệ sinh thái sản phẩm Enterprise ATS...',
-    requirements: '5+ năm kinh nghiệm Frontend, thành thạo React, Next.js App Router...',
-    benefits: 'Gói ESOP đãi ngộ hấp dẫn cho cấp Lead...',
-  },
-  {
-    id: 'JOB-2026-03',
-    requisitionCode: 'REQ-2026-04',
-    title: 'Product Owner / BA Lead',
-    department: 'Phòng Phát Triển Sản Phẩm',
-    location: 'Hà Nội',
-    salary: '30 - 45 Triệu VNĐ',
-    headcount: 2,
-    level: 'Lead',
-    employmentType: 'Toàn thời gian',
-    applicantsCount: 11,
-    status: 'expired', // Đã hết hạn -> Màu đỏ
-    postedDate: '2026-09-01',
-    expiryDate: '2026-10-05', // Đã quá hạn 6 ngày
-    daysLeft: -6,
-    isExpiringSoon: true,
-    autoUnpublish: true,
-    description: 'Quản lý yêu cầu nghiệp vụ và backlog sản phẩm...',
-    requirements: 'Kinh nghiệm BA/PO từ 4 năm trở lên...',
-    benefits: 'Chế độ đãi ngộ cạnh tranh...',
-  },
-  {
-    id: 'JOB-2026-04',
-    requisitionCode: 'REQ-2026-22',
-    title: 'DevOps / Site Reliability Engineer (SRE)',
-    department: 'Khối Vận Hành & Hạ Tầng',
-    location: 'Hà Nội (Hybrid)',
-    salary: '30 - 48 Triệu VNĐ',
-    headcount: 2,
-    level: 'Mid-Senior',
-    employmentType: 'Toàn thời gian',
-    applicantsCount: 6,
-    status: 'active',
-    postedDate: '2026-10-03',
-    expiryDate: '2026-10-14', // Còn 3 ngày -> Sắp hết hạn!
-    daysLeft: 3,
-    isExpiringSoon: true,
-    autoUnpublish: true,
-    description: 'Vận hành và tối ưu hóa cụm Kubernetes trên AWS/GCP...',
-    requirements: '3+ năm kinh nghiệm với Kubernetes, Terraform, Helm...',
-    benefits: 'Thưởng on-call và phụ cấp ca trực hấp dẫn...',
-  },
-  {
-    id: 'JOB-2026-05',
-    requisitionCode: 'REQ-2026-11',
-    title: 'UI/UX Designer Senior (Figma & Design Tokens)',
-    department: 'Phòng Phát Triển Sản Phẩm',
-    location: 'Hà Nội',
-    salary: '25 - 38 Triệu VNĐ',
-    headcount: 1,
-    level: 'Senior',
-    employmentType: 'Toàn thời gian',
-    applicantsCount: 0,
-    status: 'draft', // Bản nháp -> Màu xám
-    postedDate: '2026-10-05',
-    expiryDate: '2026-11-15',
-    daysLeft: 35,
-    isExpiringSoon: false,
-    autoUnpublish: false,
-    description: 'Thiết kế giao diện người dùng cho ứng dụng web và mobile...',
-    requirements: 'Thành thạo Figma, Design Tokens, UX Research...',
-    benefits: 'Môi trường làm việc trẻ trung, sáng tạo...',
-  },
-  {
-    id: 'JOB-2026-06',
-    requisitionCode: 'REQ-2026-15',
-    title: 'AI/ML Research Engineer (LLM & CV Matching)',
-    department: 'Ban Công Nghệ AI & Dữ Liệu',
-    location: 'Hà Nội (Lotte Center)',
-    salary: '45 - 70 Triệu VNĐ',
-    headcount: 2,
-    level: 'Senior',
-    employmentType: 'Toàn thời gian',
-    applicantsCount: 7,
-    status: 'active',
-    postedDate: '2026-10-08',
-    expiryDate: '2026-11-08',
-    daysLeft: 28,
-    isExpiringSoon: false,
-    autoUnpublish: true,
-    description: 'Nghiên cứu và phát triển các mô hình xử lý ngôn ngữ tự nhiên (NLP)...',
-    requirements: 'Kinh nghiệm với PyTorch/TensorFlow, Transformers, HuggingFace...',
-    benefits: 'Hạ tầng GPU Cloud không giới hạn...',
-  },
-];
+function salaryText(r: RequisitionItem) {
+  if (r.is_salary_negotiable) return 'Thỏa thuận';
+  const lo = money(r.min_salary), hi = money(r.max_salary);
+  return lo || hi ? `${lo || '?'} - ${hi || '?'} Triệu VNĐ` : 'Thỏa thuận';
+}
+
+function toRequisition(r: RequisitionItem): ApprovedRequisition {
+  return {
+    id: String(r.id),
+    departmentId: r.department_id,
+    code: r.code || `REQ-${r.id}`,
+    title: r.title,
+    department: r.department_name || '',
+    location: r.work_location || '',
+    salary: salaryText(r),
+    headcount: r.quantity || 1,
+    level: r.job_title_name || '',
+    employmentType: r.employment_type || '',
+    hiringManager: r.creator_name || '',
+    approvedDate: '',
+    description: r.job_description || '',
+    requirements: r.requirements || '',
+    benefits: r.benefits || '',
+  };
+}
+
+function toJob(j: JobPostingItem & { is_expired?: boolean; openings?: number | null }, reqCodes: Map<number, string>, now: number): JobPosting {
+  const daysLeft = j.deadline ? Math.ceil((new Date(j.deadline.slice(0, 10)).getTime() - now) / DAY_MS) : 999;
+  const status: JobStatus =
+    j.status === 'draft' || j.status === 'pending_review' ? 'draft'
+      : j.status === 'closed' || j.is_expired ? 'expired' : 'active';
+  return {
+    id: String(j.id),
+    requisitionCode: j.requisition_id ? reqCodes.get(j.requisition_id) || `REQ-${j.requisition_id}` : undefined,
+    title: j.title,
+    department: j.department_name || j.department || '',
+    location: j.location,
+    salary: j.salary_range || 'Thỏa thuận',
+    headcount: j.openings || 1,
+    level: j.level,
+    employmentType: j.type,
+    applicantsCount: j.applications_count || 0,
+    status,
+    postedDate: (j.published_at || j.created_at || '').slice(0, 10),
+    expiryDate: j.deadline ? j.deadline.slice(0, 10) : '',
+    daysLeft: Math.max(0, daysLeft),
+    isExpiringSoon: status !== 'draft' && daysLeft <= 5,
+    autoUnpublish: true, // expired postings are always hidden from the public portal (S4-01 AC4)
+    description: j.description,
+    requirements: j.requirements || '',
+    benefits: j.benefits || '',
+    raw: j,
+  };
+}
+
+/** PUT /jobs/{id} needs the whole posting; build it from the server copy with the given overrides. */
+function jobPayload(j: JobPostingItem, overrides: Partial<Record<'deadline' | 'status', string>>) {
+  return {
+    title: j.title, requisition_id: j.requisition_id, department_id: j.department_id, department_name: j.department_name || j.department,
+    location: j.location, type: j.type, level: j.level, salary_range: j.salary_range, experience_level: j.experience_level,
+    deadline: j.deadline, description: j.description, requirements: j.requirements, benefits: j.benefits, status: j.status,
+    ...overrides,
+  };
+}
+
+const isoDaysFromToday = (days: number) => new Date(Date.now() + days * DAY_MS).toISOString().slice(0, 10);
+const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
 
 // ==========================================
 // 3. MAIN COMPONENT
 // ==========================================
 
 export default function RecruiterJobsPage() {
-  const [jobs, setJobs] = useState<JobPosting[]>(INITIAL_JOBS);
+  const { data: reqRows } = useApiData(() => requisitionService.getRequisitions(), []);
+  const APPROVED_REQUISITIONS = useMemo(
+    () => (reqRows || []).filter((r) => r.status === 'approved').map(toRequisition),
+    [reqRows],
+  );
+  const reqCodes = useMemo(() => new Map((reqRows || []).map((r) => [r.id, r.code])), [reqRows]);
+  const { data: jobRows, error, loading, reload, setData: setJobRows } = useApiData(() => jobService.getAdminJobs(), []);
+  // reference time for 'days left', taken when the list was loaded (render must stay pure)
+  const [loadedAt] = useState(() => Date.now());
+  const jobs = useMemo(() => (jobRows || []).map((j) => toJob(j, reqCodes, loadedAt)), [jobRows, reqCodes, loadedAt]);
+  const putJobRow = (row: JobPostingItem) =>
+    setJobRows((prev) => (prev || []).some((x) => x.id === row.id) ? (prev || []).map((x) => (x.id === row.id ? row : x)) : [row, ...(prev || [])]);
+  const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | JobStatus | 'expiring'>('all');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -332,13 +194,13 @@ export default function RecruiterJobsPage() {
   const [selectedReqId, setSelectedReqId] = useState<string>('');
   const [createForm, setCreateForm] = useState({
     title: '',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    location: 'Hà Nội (Keangnam Landmark 72)',
+    department: '',
+    location: '',
     salary: '',
     headcount: 1,
     level: 'Senior',
     employmentType: 'Toàn thời gian',
-    expiryDate: '2026-11-15',
+    expiryDate: '',
     autoUnpublish: true,
     description: '',
     requirements: '',
@@ -389,7 +251,7 @@ export default function RecruiterJobsPage() {
         headcount: req.headcount,
         level: req.level,
         employmentType: req.employmentType,
-        expiryDate: '2026-11-15',
+        expiryDate: createForm.expiryDate,
         autoUnpublish: true,
         description: req.description,
         requirements: req.requirements,
@@ -399,50 +261,60 @@ export default function RecruiterJobsPage() {
       });
 
       setPrefillNotice(
-        `✅ Đã tự động điền thông tin từ Yêu cầu tuyển dụng đã duyệt ${req.code} (${req.hiringManager}).`
+        `✅ Đã tự động điền thông tin từ Yêu cầu tuyển dụng đã duyệt ${req.code}${req.hiringManager ? ` (${req.hiringManager})` : ''}.`
       );
     }
   };
 
   // 2. Submit form tạo tin tuyển dụng mới
-  const handleCreateJob = (e: React.FormEvent) => {
+  const handleCreateJob = async (e: React.FormEvent, asStatus: JobStatus = createForm.status) => {
     e.preventDefault();
-
-    if (!createForm.title.trim()) {
-      alert('Vui lòng nhập tiêu đề tin tuyển dụng');
+    const req = APPROVED_REQUISITIONS.find((r) => r.id === selectedReqId);
+    if (!req) {
+      showToast('Tin tuyển dụng phải được tạo từ một yêu cầu tuyển dụng đã duyệt.', 'info');
       return;
     }
-
-    const newId = `JOB-2026-0${jobs.length + 1}`;
-    const newJob: JobPosting = {
-      id: newId,
-      requisitionCode: createForm.requisitionCode || 'REQ-CUSTOM',
-      title: createForm.title,
-      department: createForm.department,
-      location: createForm.location,
-      salary: createForm.salary || 'Thỏa thuận',
-      headcount: Number(createForm.headcount) || 1,
-      level: createForm.level,
-      employmentType: createForm.employmentType,
-      applicantsCount: 0,
-      status: createForm.status,
-      postedDate: new Date().toISOString().split('T')[0],
-      expiryDate: createForm.expiryDate,
-      daysLeft: 30,
-      isExpiringSoon: false,
-      autoUnpublish: createForm.autoUnpublish,
-      description: createForm.description,
-      requirements: createForm.requirements,
-      benefits: createForm.benefits,
-    };
-
-    setJobs([newJob, ...jobs]);
-    setIsCreateModalOpen(false);
-    showToast(`Tạo tin tuyển dụng "${newJob.title}" (${newJob.id}) thành công!`);
-
-    // Reset form
-    setSelectedReqId('');
-    setPrefillNotice(null);
+    if (!createForm.title.trim() || !createForm.description.trim()) {
+      showToast('Vui lòng nhập tiêu đề và mô tả công việc.', 'info');
+      return;
+    }
+    if (createForm.expiryDate && isPastDate(createForm.expiryDate)) {
+      showToast('Hạn nộp hồ sơ không được ở trong quá khứ.', 'info');
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await jobService.createJob({
+        title: createForm.title.trim(),
+        requisition_id: Number(req.id),
+        department_id: req.departmentId,
+        department_name: createForm.department || req.department,
+        location: createForm.location || 'Hà Nội',
+        type: createForm.employmentType || 'Full-time',
+        level: createForm.level || 'Mid-Level',
+        salary_range: createForm.salary || 'Thỏa thuận',
+        deadline: createForm.expiryDate || undefined,
+        description: createForm.description,
+        requirements: createForm.requirements,
+        benefits: createForm.benefits,
+        status: asStatus === 'draft' ? 'draft' : 'published',
+      });
+      putJobRow(created);
+      setIsCreateModalOpen(false);
+      showToast(
+        created.status === 'published'
+          ? `Đã đăng tin tuyển dụng "${created.title}".`
+          : created.status === 'pending_review'
+            ? `Đã gửi tin "${created.title}" cho Trưởng phòng Nhân sự duyệt trước khi đăng.`
+            : `Đã lưu bản nháp "${created.title}".`,
+      );
+      setSelectedReqId('');
+      setPrefillNotice(null);
+    } catch (err) {
+      showToast(errorText(err, 'Không tạo được tin tuyển dụng.'), 'info');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 3. Mở Modal Cài đặt tự động hết hạn
@@ -455,35 +327,30 @@ export default function RecruiterJobsPage() {
   };
 
   // 4. Lưu cài đặt tự động hết hạn
-  const handleSaveExpiry = (e: React.FormEvent) => {
+  const handleSaveExpiry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!jobToSetExpiry || !newExpiryDate) return;
-
-    // Giả lập tính số ngày còn lại
-    const today = new Date('2026-10-11');
-    const target = new Date(newExpiryDate);
-    const diffTime = target.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const isSoon = diffDays <= 5;
-
-    setJobs((prev) =>
-      prev.map((j) => {
-        if (j.id === jobToSetExpiry.id) {
-          return {
-            ...j,
-            expiryDate: newExpiryDate,
-            daysLeft: diffDays,
-            isExpiringSoon: isSoon,
-            autoUnpublish: newAutoUnpublish,
-            status: diffDays < 0 ? 'expired' : j.status === 'expired' ? 'active' : j.status,
-          };
-        }
-        return j;
-      })
-    );
-
-    setIsExpiryModalOpen(false);
-    showToast(`Đã cập nhật ngày hết hạn cho tin ${jobToSetExpiry.id} đến ngày ${newExpiryDate}.`);
+    if (isPastDate(newExpiryDate)) {
+      showToast('Hạn nộp hồ sơ mới không được ở trong quá khứ.', 'info');
+      return;
+    }
+    setSaving(true);
+    try {
+      const updated = await apiRequest<JobPostingItem>(`/jobs/${jobToSetExpiry.raw.id}`, {
+        method: 'PUT', body: JSON.stringify(jobPayload(jobToSetExpiry.raw, { deadline: newExpiryDate })),
+      });
+      putJobRow(updated);
+      setIsExpiryModalOpen(false);
+      showToast(
+        updated.status === 'pending_review'
+          ? `Đã cập nhật hạn nộp đến ${newExpiryDate}; tin cần Trưởng phòng Nhân sự duyệt lại.`
+          : `Đã cập nhật ngày hết hạn cho tin #${jobToSetExpiry.id} đến ngày ${newExpiryDate}.`,
+      );
+    } catch (err) {
+      showToast(errorText(err, 'Không cập nhật được ngày hết hạn.'), 'info');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 5. Mở Modal xác nhận Gỡ tin ngay (Unpublish)
@@ -494,45 +361,38 @@ export default function RecruiterJobsPage() {
   };
 
   // 6. Xác nhận Gỡ tin ngay
-  const handleConfirmUnpublish = () => {
+  const handleConfirmUnpublish = async () => {
     if (!jobToUnpublish) return;
-
-    setJobs((prev) =>
-      prev.map((j) => {
-        if (j.id === jobToUnpublish.id) {
-          return {
-            ...j,
-            status: 'expired',
-            daysLeft: 0,
-            isExpiringSoon: true,
-          };
-        }
-        return j;
-      })
-    );
-
-    setIsUnpublishModalOpen(false);
-    showToast(`Đã gỡ tin tuyển dụng ${jobToUnpublish.id} khỏi cổng việc làm công khai.`);
+    setSaving(true);
+    try {
+      putJobRow(await jobService.closeJob(jobToUnpublish.raw.id));
+      setIsUnpublishModalOpen(false);
+      showToast(`Đã gỡ tin tuyển dụng #${jobToUnpublish.id} khỏi cổng việc làm công khai.`);
+    } catch (err) {
+      showToast(errorText(err, 'Không gỡ được tin.'), 'info');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // 7. Đăng lại tin tuyển dụng đã hết hạn
-  const handleRepublish = (job: JobPosting) => {
-    setJobs((prev) =>
-      prev.map((j) => {
-        if (j.id === job.id) {
-          return {
-            ...j,
-            status: 'active',
-            expiryDate: '2026-11-15',
-            daysLeft: 35,
-            isExpiringSoon: false,
-          };
-        }
-        return j;
-      })
-    );
+  // Re-open an expired posting = move its deadline 30 days ahead (a closed posting cannot be reopened)
+  const handleRepublish = async (job: JobPosting) => {
     setOpenActionMenuId(null);
-    showToast(`Đã tái kích hoạt tin tuyển dụng ${job.id} thành công!`);
+    if (job.raw.status === 'closed') {
+      showToast('Tin đã đóng không thể đăng lại — hãy tạo tin mới từ yêu cầu tuyển dụng.', 'info');
+      return;
+    }
+    const next = isoDaysFromToday(30);
+    try {
+      const updated = await apiRequest<JobPostingItem>(`/jobs/${job.raw.id}`, {
+        method: 'PUT', body: JSON.stringify(jobPayload(job.raw, { deadline: next })),
+      });
+      putJobRow(updated);
+      showToast(`Đã gia hạn tin tuyển dụng #${job.id} đến ${next}.`);
+    } catch (err) {
+      showToast(errorText(err, 'Không đăng lại được tin.'), 'info');
+    }
   };
 
   // ==========================================
@@ -540,19 +400,37 @@ export default function RecruiterJobsPage() {
   // ==========================================
 
   const filteredJobs = useMemo(() => {
+    const q = searchTerm.trim();
     return jobs.filter((job) => {
-      // 1. Search term
-      const matchesSearch =
-        job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.department.toLowerCase().includes(searchTerm.toLowerCase());
-
-      if (!matchesSearch) return false;
+      // 1. Search term (accent & case-insensitive)
+      if (q) {
+        const score = Math.max(
+          getSearchScore(job.title, q),
+          getSearchScore(job.id, q),
+          getSearchScore(job.department, q)
+        );
+        if (score === 0) return false;
+      }
 
       // 2. Status filter
       if (statusFilter === 'all') return true;
       if (statusFilter === 'expiring') return job.isExpiringSoon && job.status === 'active';
       return job.status === statusFilter;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.title, q),
+          getSearchScore(a.id, q),
+          getSearchScore(a.department, q)
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.title, q),
+          getSearchScore(b.id, q),
+          getSearchScore(b.department, q)
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [jobs, searchTerm, statusFilter]);
 
@@ -574,6 +452,9 @@ export default function RecruiterJobsPage() {
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return isoStr;
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6 antialiased font-sans">
@@ -697,15 +578,22 @@ export default function RecruiterJobsPage() {
 
       {/* 3. FILTER BAR & VIEW TOGGLE */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-100 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        {/* Left: Search box */}
+        {/* Left: Search box với Autocomplete Suggestions */}
         <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-          <input
-            type="text"
+          <SearchAutocompleteInput
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(val) => setSearchTerm(val)}
+            onSelectSuggestion={(item) => setSearchTerm(item.title)}
             placeholder="Tìm theo tiêu đề tin, mã JOB hoặc phòng ban..."
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+            scope="jobs"
+            size="sm"
+            localSuggestions={jobs.map((j) => ({
+              id: j.id,
+              title: j.title,
+              subtitle: `${j.department} • Mã: ${j.id} • ${j.status}`,
+              category: "job",
+              category_label: "Việc làm",
+            }))}
           />
         </div>
 
@@ -1032,7 +920,7 @@ export default function RecruiterJobsPage() {
                                   type="button"
                                   onClick={() => {
                                     navigator.clipboard.writeText(
-                                      `https://careers.company.com/jobs/${job.id}`
+                                      `${window.location.origin}/candidate/jobs/${job.raw.slug || job.id}`
                                     );
                                     showToast('Đã sao chép liên kết tuyển dụng vào bộ nhớ tạm!');
                                     setOpenActionMenuId(null);
@@ -1351,12 +1239,16 @@ export default function RecruiterJobsPage() {
                     <label className="block font-bold text-slate-700 mb-1">Ngày hết hạn tin</label>
                     <input
                       type="date"
+                      min={getLocalTodayDateString()}
                       value={createForm.expiryDate}
                       onChange={(e) =>
                         setCreateForm({ ...createForm, expiryDate: e.target.value })
                       }
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                     />
+                    {createForm.expiryDate && isPastDate(createForm.expiryDate) && (
+                      <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày hết hạn không được ở quá khứ</p>
+                    )}
                   </div>
 
                   <div className="pt-2 sm:pt-4">
@@ -1439,13 +1331,8 @@ export default function RecruiterJobsPage() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setCreateForm({ ...createForm, status: 'draft' });
-                    setTimeout(() => {
-                      const dummyEvent = { preventDefault: () => {} } as React.FormEvent;
-                      handleCreateJob(dummyEvent);
-                    }, 50);
-                  }}
+                  disabled={saving}
+                  onClick={(e) => handleCreateJob(e, 'draft')}
                   className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold transition-colors cursor-pointer"
                 >
                   Lưu bản nháp
@@ -1453,7 +1340,8 @@ export default function RecruiterJobsPage() {
 
                 <button
                   type="submit"
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-md shadow-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-2"
+                  disabled={saving}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-md shadow-blue-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60"
                 >
                   <Check className="w-4 h-4 stroke-[3]" />
                   <span>Xuất Bản & Đăng Tin Ngay</span>
@@ -1545,10 +1433,14 @@ export default function RecruiterJobsPage() {
                 <input
                   type="date"
                   required
+                  min={getLocalTodayDateString()}
                   value={newExpiryDate}
                   onChange={(e) => setNewExpiryDate(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                 />
+                {newExpiryDate && isPastDate(newExpiryDate) && (
+                  <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày hết hạn mới không được ở quá khứ</p>
+                )}
               </div>
 
               {/* Auto Unpublish checkbox */}
@@ -1565,7 +1457,7 @@ export default function RecruiterJobsPage() {
                   </span>
                 </label>
                 <p className="text-[10px] text-blue-700 ml-6">
-                  Tin sẽ tự động chuyển sang trạng thái "Hết hạn" và ẩn khỏi website công khai.
+                  Tin sẽ tự động chuyển sang trạng thái &quot;Hết hạn&quot; và ẩn khỏi website công khai.
                 </p>
               </div>
 

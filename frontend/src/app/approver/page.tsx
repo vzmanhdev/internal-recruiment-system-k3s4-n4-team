@@ -35,278 +35,27 @@ import {
 import clsx from 'clsx';
 import { ApprovalTimeline } from '@/features/approver/components/ApprovalTimeline';
 import type { RequisitionApprovalItem, OfferApprovalItem, ApprovalTimelineItem } from '@/features/approver/types';
-import { apiRequest } from '@/lib/api-client';
+import { ApiError } from '@/lib/api-client';
+import { approverApi, isPendingRequisition } from '@/features/approver/api';
+import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/providers/auth-provider';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 
 // Initial Mock Data cho Requisitions Chờ Duyệt
-const INITIAL_REQUISITIONS: RequisitionApprovalItem[] = [
-  {
-    id: 1,
-    code: 'REQ-2026-001',
-    title: 'Kỹ Sư Backend Senior (Python/FastAPI)',
-    department: 'Công Nghệ Thông Tin',
-    quantity: 2,
-    reason: 'expansion',
-    reason_detail: 'Mở rộng quy mô khối dịch vụ Core Banking & Microservices chịu tải cao Q1/2026',
-    priority: 'high',
-    employment_type: 'Full-time',
-    work_location: 'Hà Nội (Trụ sở chính)',
-    salary_range: '25.000.000 - 35.000.000 VNĐ',
-    min_salary: 25000000,
-    max_salary: 35000000,
-    target_onboard_date: '15/11/2026',
-    job_description:
-      'Thiết kế, xây dựng và bảo trì các RESTful API và microservices hiệu năng cao sử dụng FastAPI, PostgreSQL và Redis. Tham gia thiết kế hệ thống phân tán, xử lý hàng triệu bản ghi mỗi ngày.',
-    requirements:
-      'Tối thiểu 4 năm kinh nghiệm với Python/FastAPI/Django. Nắm vững kiến trúc microservices, Docker, Kubernetes, CI/CD và cơ sở dữ liệu quan hệ (PostgreSQL). Kỹ năng tối ưu hóa truy vấn chuyên sâu.',
-    benefits:
-      'Lương thưởng cạnh tranh, tháng lương 13+, thưởng KPI quý. Gói bảo hiểm sức khỏe quốc tế PTI/Bảo Việt. Cung cấp MacBook Pro M3 Pro & màn hình 4K.',
-    created_by: 'Lê Trưởng Nhóm',
-    created_by_role: 'Trưởng Khối Công Nghệ',
-    created_at: '08:30 - 10/10/2026',
-    status: 'pending_board',
-    current_approval_step: 'board',
-    timeline: [
-      {
-        id: 101,
-        step_name: 'Khởi tạo tờ trình',
-        approver_name: 'Lê Trưởng Nhóm',
-        approver_role: 'Trưởng Khối Công Nghệ',
-        action: 'submitted',
-        comment: 'Đã hoàn thiện bản mô tả công việc và định biên ngân sách phòng ban.',
-        created_at: '08:30 - 10/10/2026',
-      },
-      {
-        id: 102,
-        step_name: 'Cấp 1: Thẩm định HR & Ngân Sách',
-        approver_name: 'Trần Thị Thu Hà',
-        approver_role: 'Giám Đốc Nhân Sự (HR Manager)',
-        action: 'approved',
-        comment: 'Đã đối soát quỹ lương phòng ban và định biên nhân sự 2026. Đạt tiêu chuẩn, chuyển Ban Giám Đốc phê duyệt cuối cùng.',
-        created_at: '14:20 - 11/10/2026',
-      },
-    ],
-  },
-  {
-    id: 2,
-    code: 'REQ-2026-004',
-    title: 'Trưởng Nhóm Digital Marketing Performance',
-    department: 'Khối Marketing & Truyền Thông',
-    quantity: 1,
-    reason: 'replacement',
-    reason_detail: 'Thay thế nhân sự cấp quản lý chuyển công tác sang thị trường quốc tế',
-    priority: 'urgent',
-    employment_type: 'Full-time',
-    work_location: 'Hồ Chí Minh',
-    salary_range: '32.000.000 - 45.000.000 VNĐ',
-    min_salary: 32000000,
-    max_salary: 45000000,
-    target_onboard_date: '01/11/2026',
-    job_description:
-      'Chịu trách nhiệm toàn diện về các chiến dịch Paid Ads (Facebook, Google, TikTok, Programmatic). Tối ưu hóa chỉ số CAC, LTV và ROAS cho các dòng sản phẩm EdTech chủ lực.',
-    requirements:
-      'Tối thiểu 3 năm kinh nghiệm Lead Performance Team quản lý ngân sách từ 1 tỷ/tháng trở lên. Khả năng phân tích dữ liệu tốt với Google Analytics 4, AppsFlyer, BigQuery.',
-    benefits:
-      'Lương cứng hấp dẫn kèm thưởng hoa hồng chiến dịch không giới hạn. Xem xét tăng lương 6 tháng/lần. Được tài trợ ngân sách tham gia các khóa học chuyên môn quốc tế.',
-    created_by: 'Nguyễn Minh Tuấn',
-    created_by_role: 'Trưởng Phòng Marketing',
-    created_at: '09:15 - 11/10/2026',
-    status: 'pending_board',
-    current_approval_step: 'board',
-    timeline: [
-      {
-        id: 103,
-        step_name: 'Khởi tạo tờ trình',
-        approver_name: 'Nguyễn Minh Tuấn',
-        approver_role: 'Trưởng Phòng Marketing',
-        action: 'submitted',
-        comment: 'Đề xuất tuyển gấp để kịp triển khai chiến dịch kích cầu người học quý 4.',
-        created_at: '09:15 - 11/10/2026',
-      },
-      {
-        id: 104,
-        step_name: 'Cấp 1: Thẩm định HR & Ngân Sách',
-        approver_name: 'Trần Thị Thu Hà',
-        approver_role: 'Giám Đốc Nhân Sự',
-        action: 'approved',
-        comment: 'Đã kiểm tra dải ngân sách, hoàn toàn phù hợp với vị trí Lead. Kính trình Ban Giám Đốc phê duyệt.',
-        created_at: '16:00 - 11/10/2026',
-      },
-    ],
-  },
-  {
-    id: 3,
-    code: 'REQ-2026-007',
-    title: 'Product Owner (Nền Tảng Đào Tạo LMS)',
-    department: 'Khối Sản Phẩm & Nghiên Cứu',
-    quantity: 1,
-    reason: 'expansion',
-    reason_detail: 'Phát triển module thi trực tuyến và hệ thống AI chấm bài tự động',
-    priority: 'medium',
-    employment_type: 'Full-time',
-    work_location: 'Hà Nội',
-    salary_range: '30.000.000 - 40.000.000 VNĐ',
-    min_salary: 30000000,
-    max_salary: 40000000,
-    target_onboard_date: '30/11/2026',
-    job_description:
-      'Định hình lộ trình phát triển sản phẩm (Product Roadmap), quản lý Product Backlog, làm việc trực tiếp với đội ngũ kỹ thuật và người dùng để tối ưu hóa trải nghiệm học tập số.',
-    requirements:
-      'Tối thiểu 3 năm kinh nghiệm làm PO hoặc Senior BA cho các sản phẩm SaaS/EdTech. Thành thạo Agile/Scrum, Jira, Confluence, Figma.',
-    benefits:
-      'Môi trường làm việc năng động, trẻ trung. Trợ cấp ăn trưa, gửi xe, thiết bị làm việc công nghệ cao.',
-    created_by: 'Hoàng Anh Dũng',
-    created_by_role: 'Giám Đốc Sản Phẩm',
-    created_at: '11:00 - 12/10/2026',
-    status: 'pending_board',
-    current_approval_step: 'board',
-    timeline: [
-      {
-        id: 105,
-        step_name: 'Khởi tạo tờ trình',
-        approver_name: 'Hoàng Anh Dũng',
-        approver_role: 'Giám Đốc Sản Phẩm',
-        action: 'submitted',
-        comment: 'Tờ trình bổ sung PO phụ trách dự án AI LMS trọng điểm.',
-        created_at: '11:00 - 12/10/2026',
-      },
-    ],
-  },
-];
-
-// Initial Mock Data cho Offers Chờ Duyệt
-const INITIAL_OFFERS: OfferApprovalItem[] = [
-  {
-    id: 88,
-    code: 'OFFER-2026-088',
-    candidate_name: 'Đỗ Hoàng Long',
-    candidate_email: 'long.do@example.com',
-    candidate_phone: '0987 654 321',
-    job_title: 'Chuyên Viên Phân Tích Dữ Liệu Senior (Data Analytics Lead)',
-    department: 'Khối Phân Tích Dữ Liệu & BI',
-    offered_salary: 45000000,
-    standard_salary_min: 30000000,
-    standard_salary_max: 40000000,
-    is_over_budget: true,
-    over_percentage: 12.5, // 45tr so với trần 40tr = vượt 12.5%
-    probation_salary_percentage: 85,
-    probation_duration_months: 2,
-    start_date: '01/11/2026',
-    work_location: 'Hà Nội',
-    notes:
-      'Ứng viên có 6 năm kinh nghiệm, từng lead hệ thống Data Warehouse lớn tại ngân hàng số. Kỹ năng vượt trội về dbt, BigQuery và Apache Superset. Mức lương hiện tại của ứng viên đã là 42tr nên đề xuất 45tr để thu hút nhân tài.',
-    created_by: 'Trần Thị Thu Hà (HR Manager)',
-    created_by_role: 'Giám Đốc Nhân Sự',
-    created_at: '10:00 - 11/10/2026',
-    status: 'pending',
-    timeline: [
-      {
-        id: 201,
-        step_name: 'Đề xuất Offer từ Tuyển Dụng',
-        approver_name: 'Vũ Minh Anh',
-        approver_role: 'Chuyên Viên Tuyển Dụng (Recruiter)',
-        action: 'submitted',
-        comment: 'Đã phỏng vấn 3 vòng, chuyên môn xếp loại Xuất sắc (9.2/10).',
-        created_at: '10:00 - 11/10/2026',
-      },
-      {
-        id: 202,
-        step_name: 'Thẩm định dải lương HR Manager',
-        approver_name: 'Trần Thị Thu Hà',
-        approver_role: 'Giám Đốc Nhân Sự',
-        action: 'approved',
-        comment: 'Xác nhận vượt trần dải chuẩn 12.5% (+5.000.000 VNĐ). Đề xuất chuyển Ban Giám Đốc phê duyệt hạn mức đặc biệt.',
-        created_at: '15:30 - 11/10/2026',
-      },
-    ],
-  },
-  {
-    id: 92,
-    code: 'OFFER-2026-092',
-    candidate_name: 'Nguyễn Thị Mai Anh',
-    candidate_email: 'maianh.nguyen@example.com',
-    candidate_phone: '0912 345 678',
-    job_title: 'Chuyên Viên Thiết Kế UI/UX Senior',
-    department: 'Khối Thiết Kế Trải Nghiệm Người Dùng',
-    offered_salary: 32000000,
-    standard_salary_min: 28000000,
-    standard_salary_max: 36000000,
-    is_over_budget: false,
-    over_percentage: 0,
-    probation_salary_percentage: 85,
-    probation_duration_months: 2,
-    start_date: '15/11/2026',
-    work_location: 'Hà Nội',
-    notes:
-      'Ứng viên hoàn thành bài test xuất sắc, đạt portfolio thẩm mỹ quốc tế. Mức lương nằm hoàn toàn trong khung ngân sách vị trí.',
-    created_by: 'Lê Văn Khang',
-    created_by_role: 'Talent Acquisition Specialist',
-    created_at: '14:00 - 11/10/2026',
-    status: 'pending',
-    timeline: [
-      {
-        id: 203,
-        step_name: 'Đề xuất Offer từ Tuyển Dụng',
-        approver_name: 'Lê Văn Khang',
-        approver_role: 'Chuyên Viên Tuyển Dụng',
-        action: 'submitted',
-        comment: 'Ứng viên đồng thuận mức lương 32.000.000 VNĐ, cam kết onboard đúng hạn.',
-        created_at: '14:00 - 11/10/2026',
-      },
-    ],
-  },
-  {
-    id: 95,
-    code: 'OFFER-2026-095',
-    candidate_name: 'Trần Quốc Tuấn',
-    candidate_email: 'tuan.tran@example.com',
-    candidate_phone: '0909 888 777',
-    job_title: 'Chuyên Gia Kỹ Sư AI/LLM Specialist',
-    department: 'Phòng Nghiên Cứu Trí Tuệ Nhân Tạo (AI Lab)',
-    offered_salary: 65000000,
-    standard_salary_min: 45000000,
-    standard_salary_max: 55000000,
-    is_over_budget: true,
-    over_percentage: 18.2, // 65tr so với trần 55tr = vượt 18.2%
-    probation_salary_percentage: 90,
-    probation_duration_months: 2,
-    start_date: '01/12/2026',
-    work_location: 'Hà Nội',
-    notes:
-      'Ứng viên có bằng Thạc sĩ Khoa học Máy tính từ ĐH Bách Khoa, có 2 bài báo quốc tế về NLP và 3 năm kinh nghiệm fine-tuning mô hình ngôn ngữ lớn (LLM). Mức đề xuất 65tr tuy vượt trần 10tr nhưng rất xứng đáng với dự án chiến lược của công ty.',
-    created_by: 'Trần Thị Thu Hà (HR Manager)',
-    created_by_role: 'Giám Đốc Nhân Sự',
-    created_at: '09:00 - 12/10/2026',
-    status: 'pending',
-    timeline: [
-      {
-        id: 204,
-        step_name: 'Đề xuất Offer từ Tuyển Dụng',
-        approver_name: 'Vũ Minh Anh',
-        approver_role: 'Lead Recruiter',
-        action: 'submitted',
-        comment: 'Đã thẩm định hồ sơ cùng Ban Cố Vấn Kỹ Thuật.',
-        created_at: '09:00 - 12/10/2026',
-      },
-      {
-        id: 205,
-        step_name: 'Thẩm định HR Manager',
-        approver_name: 'Trần Thị Thu Hà',
-        approver_role: 'Giám Đốc Nhân Sự',
-        action: 'approved',
-        comment: 'Cảnh báo vượt trần 18.2%. Kính chuyển Ban Giám Đốc xem xét phê duyệt ngoại lệ.',
-        created_at: '11:15 - 12/10/2026',
-      },
-    ],
-  },
-];
 
 export default function ApproverWorkspacePage() {
+  const { user } = useAuth();
   // 1. Tab State: 'requisitions' | 'offers'
   const [activeTab, setActiveTab] = useState<'requisitions' | 'offers'>('requisitions');
 
   // 2. Data State
-  const [requisitions, setRequisitions] = useState<RequisitionApprovalItem[]>(INITIAL_REQUISITIONS);
-  const [offers, setOffers] = useState<OfferApprovalItem[]>(INITIAL_OFFERS);
+  // Real data (requisitions + offers visible to this user); KPIs below are computed from them.
+  const reqData = useApiData(() => approverApi.requisitions());
+  const offerData = useApiData(() => approverApi.offers());
+  const requisitions = reqData.data || [];
+  const offers = offerData.data || [];
+  const setRequisitions = (fn: (prev: RequisitionApprovalItem[]) => RequisitionApprovalItem[]) => reqData.setData((prev) => fn(prev || []));
+  const setOffers = (fn: (prev: OfferApprovalItem[]) => OfferApprovalItem[]) => offerData.setData((prev) => fn(prev || []));
 
   // 3. Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -335,21 +84,6 @@ export default function ApproverWorkspacePage() {
       setToast(null);
     }, 4500);
   };
-
-  // Fetch data từ Backend khi mount (với fallback)
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const backendReqs = await apiRequest<any[]>('/requisitions');
-        if (backendReqs && Array.isArray(backendReqs) && backendReqs.length > 0) {
-          // Merge hoặc cập nhật nếu có
-        }
-      } catch (err) {
-        // Giữ mock data hoàn chỉnh
-      }
-    };
-    fetchData();
-  }, []);
 
   // Filtered lists
   const filteredRequisitions = useMemo(() => {
@@ -381,7 +115,7 @@ export default function ApproverWorkspacePage() {
   }, [offers, searchQuery, selectedDept, selectedPriority]);
 
   // KPIs
-  const pendingReqCount = requisitions.filter((r) => r.status.startsWith('pending')).length;
+  const pendingReqCount = requisitions.filter(isPendingRequisition).length;
   const pendingOfferCount = offers.filter((o) => o.status === 'pending').length;
   const overBudgetOfferCount = offers.filter((o) => o.is_over_budget && o.status === 'pending').length;
   const totalPending = pendingReqCount + pendingOfferCount;
@@ -422,63 +156,20 @@ export default function ApproverWorkspacePage() {
 
     setIsSubmitting(true);
     try {
-      // Gọi Backend nếu có thể
-      try {
-        await apiRequest(`/requisitions/${selectedReq.id}/approve`, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: action === 'approved' ? 'approved' : 'rejected',
-            comment: actionComment.trim() || 'Đã thẩm định và thông qua bởi Ban Giám Đốc',
-          }),
-        });
-      } catch (e) {
-        // Mock fallback
-      }
-
-      const timestamp = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' - ' + new Date().toLocaleDateString('vi-VN');
-
-      let actionText = '';
-      let newStatus: RequisitionApprovalItem['status'] = 'approved';
-
-      if (action === 'approved') {
-        actionText = 'ĐÃ DUYỆT HOÀN TẤT: Tờ trình đã được phê duyệt chính thức và chuyển sang trạng thái tuyển dụng!';
-        newStatus = 'approved';
-      } else if (action === 'rejected') {
-        actionText = `ĐÃ TỪ CHỐI TỜ TRÌNH: ${actionComment.trim()}`;
-        newStatus = 'rejected';
-      } else {
-        actionText = `YÊU CẦU BỔ SUNG: Trả hồ sơ về Trưởng Bộ Phận để làm rõ: "${actionComment.trim()}"`;
-        newStatus = 'changes_requested';
-      }
-
-      const newTimelineLog: ApprovalTimelineItem = {
-        id: Date.now(),
-        step_name: 'Phê duyệt Ban Giám Đốc',
-        approver_name: 'Phạm Văn Hùng',
-        approver_role: 'Phó Tổng Giám Đốc / Ban Giám Đốc',
-        action: action,
-        comment: actionComment.trim() || (action === 'approved' ? 'Phê duyệt hoàn tất theo định biên công ty.' : ''),
-        created_at: timestamp,
-      };
-
-      // Cập nhật state danh sách
-      setRequisitions((prev) =>
-        prev.map((r) =>
-          r.id === selectedReq.id
-            ? {
-                ...r,
-                status: newStatus,
-                current_approval_step: 'completed',
-                timeline: [...r.timeline, newTimelineLog],
-              }
-            : r
-        )
-      );
-
+      const updated = await approverApi.decideRequisition(selectedReq.id, action, actionComment.trim() || undefined);
+      setRequisitions((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      const actionText =
+        action === 'approved'
+          ? isPendingRequisition(updated)
+            ? `Đã duyệt tờ trình ${updated.code}; tờ trình chuyển sang cấp duyệt kế tiếp.`
+            : `Đã duyệt hoàn tất tờ trình ${updated.code}.`
+          : action === 'rejected'
+            ? `Đã từ chối tờ trình ${updated.code}.`
+            : `Đã trả tờ trình ${updated.code} về người lập để bổ sung.`;
       showToast(actionText, action === 'approved' ? 'success' : action === 'rejected' ? 'error' : 'warning');
       handleCloseModal();
     } catch (err) {
-      showToast('Có lỗi xảy ra trong quá trình xử lý phê duyệt.', 'error');
+      showToast(err instanceof ApiError ? err.message : 'Có lỗi xảy ra trong quá trình xử lý phê duyệt.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -496,60 +187,19 @@ export default function ApproverWorkspacePage() {
 
     setIsSubmitting(true);
     try {
-      try {
-        await apiRequest(`/offers/${selectedOffer.id}/status`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            status: action === 'approved' ? 'sent' : 'declined',
-            decline_reason: actionComment.trim(),
-          }),
-        });
-      } catch (e) {
-        // Mock fallback
-      }
-
-      const timestamp = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' - ' + new Date().toLocaleDateString('vi-VN');
-
-      let actionText = '';
-      let newStatus: OfferApprovalItem['status'] = 'sent';
-
-      if (action === 'approved') {
-        actionText = `ĐÃ DUYỆT OFFER: Đề xuất lương ${selectedOffer.offered_salary.toLocaleString('vi-VN')} VNĐ cho ứng viên ${selectedOffer.candidate_name} đã được Ban Giám Đốc thông qua!`;
-        newStatus = 'sent';
-      } else if (action === 'rejected') {
-        actionText = `ĐÃ BÁC BỎ OFFER: Hồ sơ đề xuất của ứng viên ${selectedOffer.candidate_name} đã bị từ chối.`;
-        newStatus = 'rejected';
-      } else {
-        actionText = `YÊU CẦU ĐÀM PHÁN LẠI: Đã gửi thông báo yêu cầu HR Manager đàm phán lại mức lương với ứng viên!`;
-        newStatus = 'changes_requested';
-      }
-
-      const newTimelineLog: ApprovalTimelineItem = {
-        id: Date.now(),
-        step_name: 'Thẩm định Hạn Mức Ban Giám Đốc',
-        approver_name: 'Phạm Văn Hùng',
-        approver_role: 'Phó Tổng Giám Đốc / Ban Giám Đốc',
-        action: action,
-        comment: actionComment.trim() || (action === 'approved' ? 'Đã phê duyệt mức lương theo thẩm quyền Ban Giám Đốc.' : ''),
-        created_at: timestamp,
-      };
-
-      setOffers((prev) =>
-        prev.map((o) =>
-          o.id === selectedOffer.id
-            ? {
-                ...o,
-                status: newStatus,
-                timeline: [...o.timeline, newTimelineLog],
-              }
-            : o
-        )
-      );
-
+      const apiAction = action === 'renegotiate' ? 'changes_requested' : action;
+      const updated = await approverApi.decideOffer(selectedOffer.id, apiAction, actionComment.trim() || undefined);
+      setOffers((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      const actionText =
+        action === 'approved'
+          ? `Đã duyệt offer của ứng viên ${updated.candidate_name}.`
+          : action === 'rejected'
+            ? `Đã từ chối offer của ứng viên ${updated.candidate_name}.`
+            : `Đã yêu cầu điều chỉnh offer của ứng viên ${updated.candidate_name}.`;
       showToast(actionText, action === 'approved' ? 'success' : action === 'rejected' ? 'error' : 'warning');
       handleCloseModal();
     } catch (err) {
-      showToast('Có lỗi xảy ra trong quá trình xử lý phê duyệt.', 'error');
+      showToast(err instanceof ApiError ? err.message : 'Có lỗi xảy ra trong quá trình xử lý phê duyệt.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -607,12 +257,9 @@ export default function ApproverWorkspacePage() {
 
           <div className="flex items-center gap-3">
             <div className="px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 text-right">
-              <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Hội Đồng Phê Duyệt</span>
-              <span className="text-sm font-extrabold text-slate-900 block">Ban Giám Đốc (BOD)</span>
-              <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-end gap-1 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Quyền Duyệt Cấp Cuối
-              </span>
+              <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Người thẩm định</span>
+              <span className="text-sm font-extrabold text-slate-900 block">{user?.full_name || '—'}</span>
+              <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">{totalPending} mục đang chờ duyệt</span>
             </div>
           </div>
         </div>
@@ -774,10 +421,9 @@ export default function ApproverWorkspacePage() {
               className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600 cursor-pointer"
             >
               <option value="ALL">Tất Cả Phòng Ban</option>
-              <option value="Công Nghệ">Công Nghệ Thông Tin</option>
-              <option value="Marketing">Marketing & Truyền Thông</option>
-              <option value="Sản Phẩm">Khối Sản Phẩm</option>
-              <option value="Dữ Liệu">Phân Tích Dữ Liệu</option>
+              {Array.from(new Set([...requisitions.map((r) => r.department), ...offers.map((o) => o.department)].filter(Boolean))).map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
             </select>
 
             {/* Filter Priority / Budget */}
@@ -807,7 +453,11 @@ export default function ApproverWorkspacePage() {
         {/* 3. TAB 1: REQUISITIONS LIST */}
         {activeTab === 'requisitions' && (
           <div className="p-6">
-            {filteredRequisitions.length === 0 ? (
+            {reqData.loading ? (
+              <LoadingState />
+            ) : reqData.error ? (
+              <ErrorState error={reqData.error} onRetry={reqData.reload} />
+            ) : filteredRequisitions.length === 0 ? (
               <div className="py-16 text-center text-slate-400">
                 <FileText className="w-12 h-12 mx-auto mb-3 text-slate-300 stroke-[1.5]" />
                 <p className="text-sm font-bold text-slate-700">Không có yêu cầu tuyển dụng nào phù hợp</p>
@@ -939,7 +589,11 @@ export default function ApproverWorkspacePage() {
         {/* 4. TAB 2: OFFERS LIST */}
         {activeTab === 'offers' && (
           <div className="p-6">
-            {filteredOffers.length === 0 ? (
+            {offerData.loading ? (
+              <LoadingState />
+            ) : offerData.error ? (
+              <ErrorState error={offerData.error} onRetry={offerData.reload} />
+            ) : filteredOffers.length === 0 ? (
               <div className="py-16 text-center text-slate-400">
                 <DollarSign className="w-12 h-12 mx-auto mb-3 text-slate-300 stroke-[1.5]" />
                 <p className="text-sm font-bold text-slate-700">Không có đề xuất offer nào phù hợp</p>

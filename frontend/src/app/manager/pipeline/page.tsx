@@ -22,6 +22,10 @@ import {
   Award,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { managerApi } from '@/features/manager/api';
+import { requisitionService } from '@/services/requisition.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 
 interface FunnelStage {
   id: string;
@@ -33,12 +37,12 @@ interface FunnelStage {
   description: string;
 }
 
-const FUNNEL_STAGES: FunnelStage[] = [
+const FUNNEL_TEMPLATE: FunnelStage[] = [
   {
     id: 'applied',
     name: '1. Tiếp Nhận CV',
-    count: 240,
-    conversionRate: '100%',
+    count: 0,
+    conversionRate: '—',
     slaRole: 'HR Sàng lọc ban đầu',
     badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
     description: 'Từ Cổng nội bộ & Giới thiệu nhân viên',
@@ -46,8 +50,8 @@ const FUNNEL_STAGES: FunnelStage[] = [
   {
     id: 'screened',
     name: '2. Đạt Sàng Lọc',
-    count: 45,
-    conversionRate: '18.8%',
+    count: 0,
+    conversionRate: '—',
     slaRole: 'HR kiểm tra kinh nghiệm',
     badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     description: 'CV phù hợp bộ tiêu chuẩn chuyên môn',
@@ -55,8 +59,8 @@ const FUNNEL_STAGES: FunnelStage[] = [
   {
     id: 'interviewed',
     name: '3. Phỏng Vấn Kỹ Thuật',
-    count: 18,
-    conversionRate: '40.0%',
+    count: 0,
+    conversionRate: '—',
     slaRole: 'Hiring Manager chấm điểm',
     badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
     description: 'Trưởng bộ phận trực tiếp phỏng vấn',
@@ -64,8 +68,8 @@ const FUNNEL_STAGES: FunnelStage[] = [
   {
     id: 'offered',
     name: '4. Đề Xuất Offer',
-    count: 6,
-    conversionRate: '33.3%',
+    count: 0,
+    conversionRate: '—',
     slaRole: 'Phê duyệt 4 cấp ngân sách',
     badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
     description: 'Đã phát hành thư mời làm việc',
@@ -73,8 +77,8 @@ const FUNNEL_STAGES: FunnelStage[] = [
   {
     id: 'hired',
     name: '5. Nhận Việc (Onboard)',
-    count: 4,
-    conversionRate: '66.7%',
+    count: 0,
+    conversionRate: '—',
     slaRole: 'Đã hoàn tất chỉ tiêu',
     badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     description: 'Ứng viên đã chính thức nhận việc',
@@ -94,63 +98,54 @@ interface PositionPipelineItem {
   status: 'FULL' | 'IN_PROGRESS';
 }
 
-const POSITION_PIPELINES: PositionPipelineItem[] = [
-  {
-    id: 'REQ-2026-001',
-    title: 'Senior Frontend Engineer (React/Next.js)',
-    department: 'Khối Công Nghệ',
-    targetCount: 2,
-    hiredCount: 2,
-    appliedCount: 85,
-    interviewingCount: 6,
-    offeredCount: 2,
-    deadline: '28/02/2026',
-    status: 'FULL',
-  },
-  {
-    id: 'REQ-2026-003',
-    title: 'Senior Backend Engineer (Golang/FastAPI)',
-    department: 'Khối Công Nghệ',
-    targetCount: 4,
-    hiredCount: 3,
-    appliedCount: 110,
-    interviewingCount: 8,
-    offeredCount: 1,
-    deadline: '15/03/2026',
-    status: 'IN_PROGRESS',
-  },
-  {
-    id: 'REQ-2026-004',
-    title: 'Chuyên viên Thiết Kế Trải Nghiệm (UI/UX Designer)',
-    department: 'Khối Công Nghệ',
-    targetCount: 1,
-    hiredCount: 1,
-    appliedCount: 28,
-    interviewingCount: 2,
-    offeredCount: 1,
-    deadline: '05/03/2026',
-    status: 'FULL',
-  },
-  {
-    id: 'REQ-2026-005',
-    title: 'QA Automation Engineer Lead',
-    department: 'Khối Công Nghệ',
-    targetCount: 1,
-    hiredCount: 0,
-    appliedCount: 17,
-    interviewingCount: 2,
-    offeredCount: 0,
-    deadline: '25/03/2026',
-    status: 'IN_PROGRESS',
-  },
-];
+/** Funnel + per-position progress from real pipeline counts (S8-06/S8-07). */
+async function loadPipeline(): Promise<{ funnel: FunnelStage[]; positions: PositionPipelineItem[] }> {
+  const [dash, reqs] = await Promise.all([managerApi.dashboard(), requisitionService.getRequisitions()]);
+  const byId = new Map(reqs.map((r) => [r.id, r]));
+  const sum = { total: 0, screening: 0, interviewing: 0, offered: 0, hired: 0 };
+  const positions: PositionPipelineItem[] = dash.map((d) => {
+    const c = d.stage_counts || {};
+    const reached = {
+      total: Object.values(c).reduce((n, v) => n + (v || 0), 0),
+      screening: (c.screening || 0) + (c.interviewing || 0) + (c.offered || 0) + (c.hired || 0),
+      interviewing: (c.interviewing || 0) + (c.offered || 0) + (c.hired || 0),
+      offered: (c.offered || 0) + (c.hired || 0),
+      hired: c.hired || 0,
+    };
+    (Object.keys(sum) as Array<keyof typeof sum>).forEach((k) => { sum[k] += reached[k]; });
+    const r = byId.get(d.requisition_id);
+    const target = r?.quantity || 0;
+    return {
+      id: d.code,
+      title: d.title,
+      department: r?.department_name || "",
+      targetCount: target,
+      hiredCount: reached.hired,
+      appliedCount: reached.total,
+      interviewingCount: c.interviewing || 0,
+      offeredCount: c.offered || 0,
+      deadline: r?.target_onboard_date ? new Date(r.target_onboard_date).toLocaleDateString("vi-VN") : "—",
+      status: target > 0 && reached.hired >= target ? ("FULL" as const) : ("IN_PROGRESS" as const),
+    };
+  });
+  const counts = [sum.total, sum.screening, sum.interviewing, sum.offered, sum.hired];
+  const funnel = FUNNEL_TEMPLATE.map((stage, i) => ({
+    ...stage,
+    count: counts[i] ?? 0,
+    conversionRate: i === 0 ? (counts[0] ? "100%" : "—") : counts[i - 1] ? `${((counts[i] / counts[i - 1]) * 100).toFixed(1)}%` : "—",
+  }));
+  return { funnel, positions };
+}
 
 export default function PipelinePage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const { data, error, loading, reload } = useApiData(loadPipeline);
+  const FUNNEL_STAGES = data?.funnel || FUNNEL_TEMPLATE;
+  const POSITION_PIPELINES = useMemo(() => data?.positions || [], [data]);
 
   const totalTarget = POSITION_PIPELINES.reduce((acc, p) => acc + p.targetCount, 0);
   const totalHired = POSITION_PIPELINES.reduce((acc, p) => acc + p.hiredCount, 0);
-  const overallPercentage = Math.round((totalHired / totalTarget) * 100);
+  const overallPercentage = totalTarget ? Math.round((totalHired / totalTarget) * 100) : 0;
 
   // Pagination State (20 items per page)
   const ITEMS_PER_PAGE = 20;
@@ -160,14 +155,18 @@ export default function PipelinePage() {
   const paginatedPositions = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return POSITION_PIPELINES.slice(start, start + ITEMS_PER_PAGE);
-  }, [currentPage]);
+  }, [currentPage, POSITION_PIPELINES]);
 
   const handleCopyReport = () => {
-    const reportText = `[BÁO CÁO TIẾN ĐỘ TUYỂN DỤNG KHỐI CÔNG NGHỆ]\n• Tổng chỉ tiêu: ${totalTarget} nhân sự\n• Đã tuyển đạt: ${totalHired}/${totalTarget} (${overallPercentage}%)\n• Phễu ứng viên: 240 CV Nộp -> 45 Sàng lọc -> 18 Phỏng vấn -> 6 Offer -> 4 Onboard.\n• Chi tiết xem tại hệ thống Enterprise ATS.`;
-    navigator.clipboard.writeText(reportText);
-    setToastMessage('Đã sao chép tóm tắt báo cáo tuyển dụng vào bộ nhớ tạm để gửi sếp!');
+    const reportText = `[BÁO CÁO TIẾN ĐỘ TUYỂN DỤNG CỦA BỘ PHẬN]\n• Tổng chỉ tiêu: ${totalTarget} nhân sự\n• Đã tuyển đạt: ${totalHired}/${totalTarget} (${overallPercentage}%)\n• Phễu ứng viên: ${FUNNEL_STAGES.map((st) => st.count).join(' -> ')} (nộp → sàng lọc → phỏng vấn → offer → nhận việc).\n• Chi tiết xem tại hệ thống Enterprise ATS.`;
+    navigator.clipboard.writeText(reportText)
+      .then(() => setToastMessage('Đã sao chép tóm tắt báo cáo tuyển dụng.'))
+      .catch(() => setToastMessage('Trình duyệt không cho phép sao chép vào bộ nhớ tạm.'));
     setTimeout(() => setToastMessage(null), 4000);
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">

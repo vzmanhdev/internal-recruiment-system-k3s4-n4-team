@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Kanban,
   Search,
@@ -42,6 +44,13 @@ import {
   Download,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { candidatesApi, type ApiApplication } from '@/features/candidates/api';
+import { jobService } from '@/services/job.service';
+import { masterDataService } from '@/services/master-data.service';
+import { uploadFile as uploadCvFile, openProtectedFile } from '@/services/file.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 
 // ==========================================
 // 1. DATA TYPES & ENUMS
@@ -81,6 +90,7 @@ export interface Candidate {
   };
   notes: QuickNote[];
   cvFileName?: string;
+  cvUrl?: string | null;
 }
 
 // 5 CỘT CỐ ĐỊNH THEO ĐÚNG YÊU CẦU:
@@ -150,300 +160,72 @@ const PRESET_TAGS = [
 ];
 
 // ==========================================
-// 2. MOCK DATA INITIAL CANDIDATES
+// 2. REAL APPLICATIONS -> KANBAN CARDS
 // ==========================================
 
-const INITIAL_CANDIDATES: Candidate[] = [
-  // CỘT 1: CV MỚI
-  {
-    id: 'CAN-101',
-    name: 'Vũ Đức Thịnh',
-    email: 'thinh.vuduc@gmail.com',
-    phone: '0988123456',
-    linkedInUrl: 'https://linkedin.com/in/thinh-vuduc-backend',
-    position: 'Senior Backend Engineer (Go/Python)',
-    university: 'ĐH Bách Khoa Hà Nội',
-    experience: '4 năm kinh nghiệm',
-    matchScore: 88, // Xanh
-    appliedDate: 'Hôm nay, 10:15',
-    source: 'LinkedIn Sourcing',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
-    columnId: 'new',
-    daysInStage: 1, // Bình thường
-    tags: ['Senior Golang', 'Tiếng Anh lưu loát'],
-    evaluation: null,
+// Backend application status <-> Kanban column (rejected / withdrawn are not on the board)
+const STATUS_TO_COLUMN: Record<string, ColumnId> = {
+  submitted: 'new', screening: 'screening', interviewing: 'interview', offered: 'offer', hired: 'hired', onboarded: 'hired',
+};
+const COLUMN_TO_STATUS: Record<ColumnId, string> = {
+  new: 'submitted', screening: 'screening', interview: 'interviewing', offer: 'offered', hired: 'hired',
+};
+// Quick screening verdict is stored as the application rating (1–5)
+const EVAL_TO_RATING = { pass: 5, review: 3, fail: 1 } as const;
+const ratingToEval = (r?: number | null): Candidate['evaluation'] =>
+  r == null ? null : r >= 4 ? 'pass' : r === 3 ? 'review' : 'fail';
+const DAY_MS = 86_400_000;
+
+function toCard(a: ApiApplication & { stage_entered_at?: string | null }): Candidate | null {
+  const columnId = STATUS_TO_COLUMN[a.status];
+  if (!columnId) return null;
+  const since = a.stage_entered_at || a.created_at;
+  return {
+    id: String(a.id),
+    name: a.full_name,
+    email: a.email,
+    phone: a.phone || '',
+    linkedInUrl: '',
+    position: a.job_title || '',
+    university: a.parsed_cv?.education || '',
+    experience: a.years_of_experience != null ? `${a.years_of_experience} năm kinh nghiệm` : '',
+    matchScore: Math.round(a.match_score ?? 0),
+    appliedDate: a.created_at ? new Date(a.created_at).toLocaleDateString('vi-VN') : '',
+    source: a.source || 'Không rõ',
+    avatar: '',
+    columnId,
+    daysInStage: since ? Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / DAY_MS)) : 0,
+    tags: a.tags || [],
+    evaluation: ratingToEval(a.rating),
     cvSummary: {
-      education: 'Cử nhân CNTT - Đại học Bách Khoa Hà Nội (GPA 3.6/4.0)',
-      recentCompany: 'Fintech Unicorn Vietnam - Senior Backend Engineer (2 năm)',
-      skills: ['Golang', 'Python', 'PostgreSQL', 'Kafka', 'Kubernetes', 'Redis'],
-      summary:
-        'Kỹ sư Backend giàu kinh nghiệm thiết kế kiến trúc phân tán microservices xử lý 50k req/s. Khả năng giao tiếp song ngữ tốt, tư duy hệ thống bài bản.',
-    },
-    notes: [
-      {
-        id: 'n-1',
-        author: 'Trần Thị Recruiter',
-        createdAt: 'Hôm nay 10:30',
-        content: 'Profile LinkedIn rất ấn tượng, từng giải nhì Olympic Tin học sinh viên.',
-      },
-    ],
-    cvFileName: 'CV_VuDucThinh_Backend_Senior.pdf',
-  },
-  {
-    id: 'CAN-102',
-    name: 'Nguyễn Tuấn Kiệt',
-    email: 'kiet.nguyen@outlook.com',
-    phone: '0912345678',
-    linkedInUrl: 'https://linkedin.com/in/kiet-nguyen-dev',
-    position: 'Senior Backend Engineer (Go/Python)',
-    university: 'ĐH Công Nghệ - ĐHQGHN',
-    experience: '2 năm kinh nghiệm',
-    matchScore: 40, // Đỏ (User story yêu cầu 40% - Đỏ)
-    appliedDate: '07/10/2026',
-    source: 'TopCV',
-    avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?q=80&w=120&auto=format&fit=crop',
-    columnId: 'new',
-    daysInStage: 4, // > 3 ngày => QUÁ HẠN SLA! Viền đỏ & Icon nhấp nháy!
-    tags: ['Chưa đủ kinh nghiệm'],
-    evaluation: 'review',
-    cvSummary: {
-      education: 'Cử nhân Khoa học Máy tính - ĐH Công Nghệ ĐHQG',
-      recentCompany: 'Software Outsourcing - Junior Developer',
-      skills: ['PHP', 'Laravel', 'MySQL', 'C bản'],
-      summary:
-        'Ứng viên có kỹ năng nền tảng cơ bản nhưng thiếu kinh nghiệm Golang/Microservices theo tiêu chí tuyển dụng Senior. Cần phỏng vấn sàng lọc thêm.',
-    },
-    notes: [
-      {
-        id: 'n-2',
-        author: 'Trần Thị Recruiter',
-        createdAt: '08/10/2026',
-        content: 'Chưa đạt tiêu chí 4 năm kinh nghiệm. Đang chờ Hiring Manager duyệt ngoại lệ.',
-      },
-    ],
-    cvFileName: 'CV_NguyenTuanKiet_2026.pdf',
-  },
-  {
-    id: 'CAN-103',
-    name: 'Phạm Thu Trang',
-    email: 'thutrang.uiux@gmail.com',
-    phone: '0977889900',
-    linkedInUrl: 'https://linkedin.com/in/thutrang-design',
-    position: 'UI/UX Designer',
-    university: 'ĐH Mỹ Thuật Công Nghiệp',
-    experience: '3 năm kinh nghiệm',
-    matchScore: 72, // Vàng
-    appliedDate: 'Hôm qua, 14:00',
-    source: 'Referral Nội Bộ',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=120&auto=format&fit=crop',
-    columnId: 'new',
-    daysInStage: 1,
-    tags: ['Giao tiếp tốt', 'Phù hợp văn hóa'],
-    evaluation: null,
-    cvSummary: {
-      education: 'Thiết kế Đồ họa & Tương tác - ĐH Mỹ Thuật CN',
-      recentCompany: 'Product Studio - UI/UX Designer',
-      skills: ['Figma', 'Design Systems', 'User Research', 'Prototyping'],
-      summary:
-        'Portfolio thiết kế chỉn chu, có kinh nghiệm xây dựng Design System từ đầu. Giao tiếp tự tin và ham học hỏi.',
+      education: a.parsed_cv?.education || '',
+      recentCompany: [a.current_position, a.current_company].filter(Boolean).join(' - '),
+      skills: a.parsed_cv?.skills || [],
+      summary: '',
     },
     notes: [],
-    cvFileName: 'Portfolio_ThuTrang_UIUX.pdf',
-  },
-
-  // CỘT 2: SÀNG LỌC
-  {
-    id: 'CAN-091',
-    name: 'Lê Thảo My',
-    email: 'thaomy.fe@gmail.com',
-    phone: '0933221100',
-    linkedInUrl: 'https://linkedin.com/in/thaomy-frontend',
-    position: 'Frontend React Lead',
-    university: 'ĐH FPT Hà Nội',
-    experience: '5 năm kinh nghiệm',
-    matchScore: 92, // Xanh
-    appliedDate: '06/10/2026',
-    source: 'LinkedIn Sourcing',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=120&auto=format&fit=crop',
-    columnId: 'screening',
-    daysInStage: 5, // > 3 ngày => QUÁ HẠN SLA! Viền đỏ & Icon nhấp nháy!
-    tags: ['Giao tiếp tốt', 'Tiếng Anh lưu loát', 'Ưu tiên cao'],
-    evaluation: 'pass',
-    cvSummary: {
-      education: 'Kỹ sư phần mềm - Đại học FPT (Tốt nghiệp loại Giỏi)',
-      recentCompany: 'SaaS Platform SEA - Frontend Lead (3 năm)',
-      skills: ['React', 'Next.js', 'TypeScript', 'Tailwind CSS', 'Redux', 'CI/CD'],
-      summary:
-        'Có kinh nghiệm lead team 6 Frontend Engineers. Tối ưu Core Web Vitals đạt 95+ điểm. Thuyết trình tiếng Anh lưu loát.',
-    },
-    notes: [
-      {
-        id: 'n-3',
-        author: 'Trần Thị Recruiter',
-        createdAt: '07/10/2026',
-        content: 'Đã phỏng vấn sơ bộ qua điện thoại 20 phút. Thái độ rất nhiệt huyết, sẵn sàng nhận việc trong 1 tháng.',
-      },
-    ],
-    cvFileName: 'CV_LeThaoMy_FrontendLead.pdf',
-  },
-  {
-    id: 'CAN-092',
-    name: 'Trần Minh Quân',
-    email: 'quan.tran@techcorp.vn',
-    phone: '0944556677',
-    linkedInUrl: 'https://linkedin.com/in/minhquan-fullstack',
-    position: 'Frontend React Lead',
-    university: 'ĐH Khoa Học Tự Nhiên',
-    experience: '4 năm kinh nghiệm',
-    matchScore: 85, // Xanh
-    appliedDate: '08/10/2026',
-    source: 'Referral Nội Bộ',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=120&auto=format&fit=crop',
-    columnId: 'screening',
-    daysInStage: 2,
-    tags: ['Phù hợp văn hóa'],
-    evaluation: 'pass',
-    cvSummary: {
-      education: 'Cử nhân CNTT - ĐH KHTN Hà Nội',
-      recentCompany: 'Enterprise ATS Corp - Senior Frontend',
-      skills: ['React', 'TypeScript', 'State Machine', 'Jest', 'Webpack'],
-      summary: 'Kỹ sư chuyên sâu về React và Testing. Code sạch, tuân thủ nguyên lý SOLID.',
-    },
-    notes: [],
-    cvFileName: 'CV_TranMinhQuan.pdf',
-  },
-
-  // CỘT 3: PHỎNG VẤN
-  {
-    id: 'CAN-085',
-    name: 'Nguyễn Văn An',
-    email: 'an.nguyenvan@gmail.com',
-    phone: '0909123888',
-    linkedInUrl: 'https://linkedin.com/in/an-nguyen-golang',
-    position: 'Senior Backend Engineer (Go/Python)',
-    university: 'ĐH Bách Khoa TP.HCM',
-    experience: '5 năm kinh nghiệm',
-    matchScore: 96, // Xanh
-    appliedDate: '02/10/2026',
-    source: 'LinkedIn Sourcing',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=120&auto=format&fit=crop',
-    columnId: 'interview',
-    daysInStage: 2,
-    tags: ['Senior Golang', 'Deal lương cao', 'Ưu tiên cao'],
-    evaluation: 'pass',
-    cvSummary: {
-      education: 'Kỹ sư Phần mềm - ĐH Bách Khoa TP.HCM',
-      recentCompany: 'Payment Gateway Platform - Tech Lead Backend',
-      skills: ['Golang', 'PostgreSQL', 'Kafka', 'Redis Cluster', 'System Design'],
-      summary: 'Chuyên gia thiết kế hạ tầng thanh toán có tính sẵn sàng cao (High Availability). Đã vượt qua vòng Tech Interview đạt 9.5/10.',
-    },
-    notes: [
-      {
-        id: 'n-4',
-        author: 'Nguyễn Tiến Dũng (Interviewer)',
-        createdAt: '09/10/2026',
-        content: 'Vòng phỏng vấn chuyên môn xuất sắc. Đề xuất làm vòng Offer ngay.',
-      },
-    ],
-    cvFileName: 'CV_NguyenVanAn_BackendLead.pdf',
-  },
-  {
-    id: 'CAN-086',
-    name: 'Hoàng Kim Ngân',
-    email: 'ngan.hoangkim@gmail.com',
-    phone: '0966778899',
-    linkedInUrl: 'https://linkedin.com/in/ngan-hoang-po',
-    position: 'Product Owner / BA Lead',
-    university: 'ĐH Ngoại Thương Hà Nội',
-    experience: '4 năm kinh nghiệm',
-    matchScore: 89, // Xanh
-    appliedDate: '03/10/2026',
-    source: 'VietnamWorks',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=120&auto=format&fit=crop',
-    columnId: 'interview',
-    daysInStage: 4, // > 3 ngày => QUÁ HẠN SLA! Viền đỏ & Icon nhấp nháy!
-    tags: ['Giao tiếp tốt', 'Phù hợp văn hóa'],
-    evaluation: 'pass',
-    cvSummary: {
-      education: 'Kinh tế Đối ngoại - ĐH Ngoại Thương + Chứng chỉ CSPO',
-      recentCompany: 'B2B SaaS Startup - Product Manager',
-      skills: ['Product Roadmap', 'Agile/Scrum', 'Data Analytics', 'Wireframing'],
-      summary: 'Kỹ năng quản trị sản phẩm xuất sắc. Tư duy hướng dữ liệu và đặt khách hàng làm trung tâm.',
-    },
-    notes: [],
-    cvFileName: 'CV_HoangKimNgan_PO.pdf',
-  },
-
-  // CỘT 4: OFFER
-  {
-    id: 'CAN-077',
-    name: 'Lê Hoàng Cường',
-    email: 'cuong.lehoang@gmail.com',
-    phone: '0988776655',
-    linkedInUrl: 'https://linkedin.com/in/cuong-le-architect',
-    position: 'Senior Backend Engineer (Go/Python)',
-    university: 'Học Viện Công Nghệ Bưu Chính Viễn Thông',
-    experience: '6 năm kinh nghiệm',
-    matchScore: 98, // Xanh
-    appliedDate: '25/09/2026',
-    source: 'Headhunter Agency',
-    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?q=80&w=120&auto=format&fit=crop',
-    columnId: 'offer',
-    daysInStage: 2,
-    tags: ['Senior Golang', 'Ưu tiên cao'],
-    evaluation: 'pass',
-    cvSummary: {
-      education: 'Kỹ sư CNTT - PTIT',
-      recentCompany: 'Cloud Infrastructure Corp - Principal Architect',
-      skills: ['Golang', 'Kubernetes', 'gRPC', 'Distributed Tracing', 'AWS'],
-      summary: 'Đã hoàn tất toàn bộ các vòng phỏng vấn. Ban Giám Đốc đã phê duyệt gói Offer lương 52 Triệu + ESOP.',
-    },
-    notes: [
-      {
-        id: 'n-5',
-        author: 'Trần Thị Recruiter',
-        createdAt: '10/10/2026',
-        content: 'Đã gửi thư Offer chính thức. Ứng viên phản hồi rất tích cực, hẹn ký hợp đồng trong tuần tới.',
-      },
-    ],
-    cvFileName: 'CV_LeHoangCuong_Arch.pdf',
-  },
-
-  // CỘT 5: ĐÃ NHẬN VIỆC
-  {
-    id: 'CAN-065',
-    name: 'Đặng Mai Linh',
-    email: 'linh.dang@gmail.com',
-    phone: '0911223344',
-    linkedInUrl: 'https://linkedin.com/in/mailinh-devops',
-    position: 'DevOps / Cloud Engineer',
-    university: 'ĐH Bách Khoa Hà Nội',
-    experience: '4 năm kinh nghiệm',
-    matchScore: 95, // Xanh
-    appliedDate: '15/09/2026',
-    source: 'LinkedIn Sourcing',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=120&auto=format&fit=crop',
-    columnId: 'hired',
-    daysInStage: 1,
-    tags: ['Tiếng Anh lưu loát', 'Đã onboard'],
-    evaluation: 'pass',
-    cvSummary: {
-      education: 'Kỹ sư Mạng & Hạ tầng - ĐH Bách Khoa',
-      recentCompany: 'Logistics Tech - Senior DevOps',
-      skills: ['AWS', 'Kubernetes', 'Terraform', 'ArgoCD', 'Prometheus'],
-      summary: 'Đã ký hợp đồng lao động và nhận máy tính làm việc. Onboarding chính thức ngày 01/10/2026.',
-    },
-    notes: [],
-    cvFileName: 'CV_DangMaiLinh_DevOps.pdf',
-  },
-];
+    cvFileName: a.cv_url ? a.cv_url.split('/').pop() || 'CV' : '',
+    cvUrl: a.cv_url || null,
+  };
+}
 
 // ==========================================
 // 3. MAIN PIPELINE COMPONENT
 // ==========================================
 
 export default function RecruiterPipelinePage() {
-  const [candidates, setCandidates] = useState<Candidate[]>(INITIAL_CANDIDATES);
+  const { data, error, loading, reload, setData } = useApiData(
+    () => apiRequest<ApiApplication[]>('/applications').then((rows) => rows.map(toCard).filter((c): c is Candidate => c !== null)),
+    [],
+  );
+  const candidates = useMemo(() => data || [], [data]);
+  const setCandidates = (fn: (prev: Candidate[]) => Candidate[]) => setData((prev) => fn(prev || []));
+  const { data: openJobs } = useApiData(() => jobService.getJobs(), []);
+  const { data: sourceCategories } = useApiData(() => masterDataService.categories('candidate_source'), []);
+  const [addJobId, setAddJobId] = useState('');
+  const [addCvUrl, setAddCvUrl] = useState<string | null>(null);
+  const [addSaving, setAddSaving] = useState(false);
+  const positions = useMemo(() => Array.from(new Set(candidates.map((c) => c.position).filter(Boolean))).sort(), [candidates]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPosition, setSelectedPosition] = useState('all');
   const [slaFilterOnly, setSlaFilterOnly] = useState(false);
@@ -454,7 +236,7 @@ export default function RecruiterPipelinePage() {
   const [dragOverColumnId, setDragOverColumnId] = useState<ColumnId | null>(null);
 
   // Quick View Slide-over Panel state (User Story 4)
-  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isSlideOverOpen, setIsSlideOverOpen] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [quickNoteInput, setQuickNoteInput] = useState('');
@@ -466,10 +248,10 @@ export default function RecruiterPipelinePage() {
     email: '',
     phone: '',
     linkedInUrl: '',
-    position: 'Senior Backend Engineer (Go/Python)',
+    position: '',
     university: '',
-    experience: '3 năm kinh nghiệm',
-    matchScore: 85,
+    experience: '',
+    matchScore: 0,
     source: 'LinkedIn Sourcing',
     notes: '',
     cvFileName: '',
@@ -480,20 +262,24 @@ export default function RecruiterPipelinePage() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Sync selectedCandidate when candidates state updates
-  useEffect(() => {
-    if (selectedCandidate) {
-      const updated = candidates.find((c) => c.id === selectedCandidate.id);
-      if (updated) setSelectedCandidate(updated);
-    }
-  }, [candidates]);
+  // The open quick-view always reflects the latest board data
+  const selectedCandidate = candidates.find((c) => c.id === selectedId) || null;
 
   // Handle open Quick View Panel
   const handleOpenQuickView = (candidate: Candidate) => {
-    setSelectedCandidate(candidate);
+    setSelectedId(candidate.id);
     setIsSlideOverOpen(true);
     setQuickNoteInput('');
     setNewTagInput('');
+    apiRequest<Array<{ id: number; content: string; author_name?: string | null; created_at?: string | null }>>(`/applications/${candidate.id}/notes`)
+      .then((rows) => {
+        const notes: QuickNote[] = rows.map((n) => ({
+          id: String(n.id), author: n.author_name || '—', content: n.content,
+          createdAt: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : '',
+        }));
+        setCandidates((prev) => prev.map((c) => (c.id === candidate.id ? { ...c, notes } : c)));
+      })
+      .catch(() => undefined);
   };
 
   // ==========================================
@@ -518,27 +304,28 @@ export default function RecruiterPipelinePage() {
     e.preventDefault();
   };
 
+  // Real stage transition (PUT /applications/{id}/status); the board only changes when the server accepts it
+  const moveCandidate = async (candidateId: string, targetColId: ColumnId) => {
+    const cand = candidates.find((c) => c.id === candidateId);
+    if (!cand || cand.columnId === targetColId) return;
+    const colInfo = KANBAN_COLUMNS.find((col) => col.id === targetColId);
+    try {
+      await apiRequest(`/applications/${candidateId}/status`, {
+        method: 'PUT', body: JSON.stringify({ status: COLUMN_TO_STATUS[targetColId] }),
+      });
+      setCandidates((prev) => prev.map((c) => (c.id === candidateId ? { ...c, columnId: targetColId, daysInStage: 0 } : c)));
+      showToast(`Đã chuyển ứng viên ${cand.name} sang cột "${colInfo?.title}"!`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không chuyển được giai đoạn.');
+    }
+  };
+
   const handleDrop = (e: React.DragEvent, targetColId: ColumnId) => {
     e.preventDefault();
     setDragOverColumnId(null);
     const candidateId = e.dataTransfer.getData('text/plain') || draggedCandidateId;
-    if (!candidateId) return;
-
-    setCandidates((prev) =>
-      prev.map((c) => {
-        if (c.id === candidateId && c.columnId !== targetColId) {
-          const colInfo = KANBAN_COLUMNS.find((col) => col.id === targetColId);
-          showToast(`Đã chuyển ứng viên ${c.name} sang cột "${colInfo?.title}"!`);
-          return {
-            ...c,
-            columnId: targetColId,
-            daysInStage: 1, // Reset ngày ở cột mới
-          };
-        }
-        return c;
-      })
-    );
     setDraggedCandidateId(null);
+    if (candidateId) void moveCandidate(candidateId, targetColId);
   };
 
   const handleDragEnd = () => {
@@ -548,16 +335,7 @@ export default function RecruiterPipelinePage() {
 
   // Di chuyển bằng nút bấm mũi tên nhanh
   const handleMoveStage = (candidateId: string, targetColId: ColumnId) => {
-    setCandidates((prev) =>
-      prev.map((c) => {
-        if (c.id === candidateId) {
-          const colInfo = KANBAN_COLUMNS.find((col) => col.id === targetColId);
-          showToast(`Đã chuyển ứng viên ${c.name} sang "${colInfo?.title}"!`);
-          return { ...c, columnId: targetColId, daysInStage: 1 };
-        }
-        return c;
-      })
-    );
+    void moveCandidate(candidateId, targetColId);
   };
 
   // ==========================================
@@ -565,136 +343,116 @@ export default function RecruiterPipelinePage() {
   // ==========================================
 
   // Đánh giá Pass / Fail / Review
-  const handleSetEvaluation = (evalType: 'pass' | 'review' | 'fail') => {
-    if (!selectedCandidate) return;
-    const newEval = selectedCandidate.evaluation === evalType ? null : evalType;
-
-    setCandidates((prev) =>
-      prev.map((c) => (c.id === selectedCandidate.id ? { ...c, evaluation: newEval } : c))
-    );
-
-    const labelMap = { pass: 'Đạt (Pass)', review: 'Cân nhắc', fail: 'Không đạt (Fail)' };
-    showToast(
-      newEval
-        ? `Đã đánh giá "${labelMap[evalType]}" cho ứng viên ${selectedCandidate.name}.`
-        : 'Đã hủy đánh giá.'
-    );
+  const saveTagsAndRating = async (cand: Candidate, tags: string[], evaluation: Candidate['evaluation']) => {
+    await candidatesApi.setTags(Number(cand.id), tags, evaluation ? EVAL_TO_RATING[evaluation] : null);
+    setCandidates((prev) => prev.map((c) => (c.id === cand.id ? { ...c, tags, evaluation } : c)));
   };
 
-  // Thêm Tag
-  const handleAddTag = (tagName: string) => {
+  const handleSetEvaluation = async (evalType: 'pass' | 'review' | 'fail') => {
+    if (!selectedCandidate) return;
+    const labelMap = { pass: 'Đạt (Pass)', review: 'Cân nhắc', fail: 'Không đạt (Fail)' };
+    try {
+      await saveTagsAndRating(selectedCandidate, selectedCandidate.tags, evalType);
+      showToast(`Đã đánh giá "${labelMap[evalType]}" cho ứng viên ${selectedCandidate.name}.`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không lưu được đánh giá.');
+    }
+  };
+
+  const handleAddTag = async (tagName: string) => {
     if (!selectedCandidate || !tagName.trim()) return;
     const cleanTag = tagName.trim();
     if (selectedCandidate.tags.includes(cleanTag)) return;
-
-    setCandidates((prev) =>
-      prev.map((c) =>
-        c.id === selectedCandidate.id ? { ...c, tags: [...c.tags, cleanTag] } : c
-      )
-    );
-    setNewTagInput('');
-    showToast(`Đã thêm nhãn "${cleanTag}".`);
+    try {
+      await saveTagsAndRating(selectedCandidate, [...selectedCandidate.tags, cleanTag], selectedCandidate.evaluation);
+      setNewTagInput('');
+      showToast(`Đã thêm nhãn "${cleanTag}".`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không lưu được nhãn.');
+    }
   };
 
-  // Xóa Tag
-  const handleRemoveTag = (tagToRemove: string) => {
+  const handleRemoveTag = async (tagToRemove: string) => {
     if (!selectedCandidate) return;
-    setCandidates((prev) =>
-      prev.map((c) =>
-        c.id === selectedCandidate.id
-          ? { ...c, tags: c.tags.filter((t) => t !== tagToRemove) }
-          : c
-      )
-    );
+    try {
+      await saveTagsAndRating(selectedCandidate, selectedCandidate.tags.filter((t) => t !== tagToRemove), selectedCandidate.evaluation);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không xóa được nhãn.');
+    }
   };
 
-  // Thêm Ghi chú nhanh (Quick Note)
-  const handleAddQuickNote = (e: React.FormEvent) => {
+  const handleAddQuickNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCandidate || !quickNoteInput.trim()) return;
-
-    const newNote: QuickNote = {
-      id: `note-${Date.now()}`,
-      author: 'Trần Thị Recruiter',
-      createdAt: 'Vừa xong',
-      content: quickNoteInput.trim(),
-    };
-
-    setCandidates((prev) =>
-      prev.map((c) =>
-        c.id === selectedCandidate.id ? { ...c, notes: [newNote, ...c.notes] } : c
-      )
-    );
-    setQuickNoteInput('');
-    showToast('Đã lưu ghi chú nhanh thành công!');
+    try {
+      const n = await candidatesApi.addNote(Number(selectedCandidate.id), quickNoteInput.trim());
+      const newNote: QuickNote = {
+        id: String(n.id), author: n.author_name || '—', content: n.content,
+        createdAt: n.created_at ? new Date(n.created_at).toLocaleString('vi-VN') : '',
+      };
+      setCandidates((prev) => prev.map((c) => (c.id === selectedCandidate.id ? { ...c, notes: [newNote, ...c.notes] } : c)));
+      setQuickNoteInput('');
+      showToast('Đã lưu ghi chú nhanh thành công!');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không lưu được ghi chú.');
+    }
   };
 
   // ==========================================
   // THÊM ỨNG VIÊN THỦ CÔNG (User Story 2)
   // ==========================================
 
-  const handleAddManualCandidate = (e: React.FormEvent) => {
+  const handleAddCvFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const stored = await uploadCvFile('cv', file);
+      setAddCvUrl(stored.url);
+      setAddForm((f) => ({
+        ...f, cvFileName: file.name,
+        name: f.name || stored.parsed?.full_name || '', email: f.email || stored.parsed?.email || '', phone: f.phone || stored.parsed?.phone || '',
+      }));
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không tải được CV lên.');
+    }
+  };
+
+  const handleAddManualCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!addForm.name.trim()) {
-      alert('Vui lòng nhập họ và tên ứng viên');
+    if (!addForm.name.trim() || !addForm.email.trim() || !addForm.phone.trim()) {
+      showToast('Vui lòng nhập đủ họ tên, email và số điện thoại.');
       return;
     }
-
-    const newId = `CAN-${Math.floor(110 + Math.random() * 890)}`;
-    const newCand: Candidate = {
-      id: newId,
-      name: addForm.name.trim(),
-      email: addForm.email.trim() || 'candidate@example.com',
-      phone: addForm.phone.trim() || '0900000000',
-      linkedInUrl: addForm.linkedInUrl.trim() || 'https://linkedin.com',
-      position: addForm.position,
-      university: addForm.university.trim() || 'Đại học chuyên ngành',
-      experience: addForm.experience,
-      matchScore: Number(addForm.matchScore) || 80,
-      appliedDate: 'Hôm nay (Thủ công)',
-      source: addForm.source,
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
-      columnId: 'new', // Đẩy thẳng vào cột CV Mới
-      daysInStage: 1,
-      tags: ['Sourcing ngoài', 'Mới tiếp nhận'],
-      evaluation: null,
-      cvSummary: {
-        education: addForm.university || 'Cử nhân CNTT',
-        recentCompany: 'Công ty hiện tại (Sourced từ LinkedIn)',
-        skills: ['Kỹ năng chuyên môn', 'Kinh nghiệm thực tế'],
-        summary: `Hồ sơ được Recruiter tìm kiếm từ nguồn ${addForm.source}. ${addForm.notes || ''}`,
-      },
-      notes: addForm.notes
-        ? [
-            {
-              id: `note-${Date.now()}`,
-              author: 'Trần Thị Recruiter',
-              createdAt: 'Vừa xong',
-              content: addForm.notes,
-            },
-          ]
-        : [],
-      cvFileName: addForm.cvFileName || 'CV_UngVien_Sourcing.pdf',
-    };
-
-    setCandidates([newCand, ...candidates]);
-    setIsAddModalOpen(false);
-    showToast(`Đã thêm ứng viên "${newCand.name}" (${newCand.id}) vào cột "CV Mới"!`);
-
-    // Reset form
-    setAddForm({
-      name: '',
-      email: '',
-      phone: '',
-      linkedInUrl: '',
-      position: 'Senior Backend Engineer (Go/Python)',
-      university: '',
-      experience: '3 năm kinh nghiệm',
-      matchScore: 85,
-      source: 'LinkedIn Sourcing',
-      notes: '',
-      cvFileName: '',
-    });
+    if (!addJobId) {
+      showToast('Vui lòng chọn tin tuyển dụng cho ứng viên.');
+      return;
+    }
+    setAddSaving(true);
+    try {
+      const created = await candidatesApi.addManual({
+        job_posting_id: Number(addJobId),
+        full_name: addForm.name.trim(),
+        email: addForm.email.trim(),
+        phone: addForm.phone.trim(),
+        cv_url: addCvUrl || undefined,
+        source: addForm.source,
+      });
+      const extra = [addForm.notes.trim(), addForm.linkedInUrl.trim() && `LinkedIn: ${addForm.linkedInUrl.trim()}`].filter(Boolean).join('\n');
+      if (extra) await candidatesApi.addNote(created.id, extra).catch(() => undefined);
+      setIsAddModalOpen(false);
+      reload();
+      showToast(`Đã thêm ứng viên "${created.full_name}" vào cột "CV Mới"!`);
+      setAddJobId('');
+      setAddCvUrl(null);
+      setAddForm({
+        name: '', email: '', phone: '', linkedInUrl: '', position: '', university: '',
+        experience: '', matchScore: 0, source: 'LinkedIn Sourcing', notes: '', cvFileName: '',
+      });
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không thêm được ứng viên.');
+    } finally {
+      setAddSaving(false);
+    }
   };
 
   // ==========================================
@@ -702,17 +460,40 @@ export default function RecruiterPipelinePage() {
   // ==========================================
 
   const filteredCandidates = useMemo(() => {
+    const q = searchQuery.trim();
     return candidates.filter((c) => {
-      const matchSearch =
-        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.position.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase()));
+      let matchSearch = true;
+      if (q) {
+        const scores = [
+          getSearchScore(c.name, q),
+          getSearchScore(c.id, q),
+          getSearchScore(c.position, q),
+          ...c.tags.map((t) => getSearchScore(t, q)),
+        ];
+        matchSearch = Math.max(...scores) > 0;
+      }
 
       const matchPos = selectedPosition === 'all' || c.position === selectedPosition;
       const matchSla = slaFilterOnly ? c.daysInStage > 3 : true;
 
       return matchSearch && matchPos && matchSla;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.name, q),
+          getSearchScore(a.id, q),
+          getSearchScore(a.position, q),
+          ...a.tags.map((t) => getSearchScore(t, q))
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.name, q),
+          getSearchScore(b.id, q),
+          getSearchScore(b.position, q),
+          ...b.tags.map((t) => getSearchScore(t, q))
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [candidates, searchQuery, selectedPosition, slaFilterOnly]);
 
@@ -720,6 +501,9 @@ export default function RecruiterPipelinePage() {
   const overdueCount = useMemo(() => {
     return candidates.filter((c) => c.daysInStage > 3).length;
   }, [candidates]);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col space-y-4 antialiased font-sans">
@@ -766,13 +550,19 @@ export default function RecruiterPipelinePage() {
         {/* Search & Position Filter */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
           <div className="relative flex-1 sm:max-w-xs">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
+            <SearchAutocompleteInput
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(val) => setSearchQuery(val)}
+              onSelectSuggestion={(item) => setSearchQuery(item.title)}
               placeholder="Tìm theo tên, mã hồ sơ, kỹ năng..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              size="sm"
+              localSuggestions={candidates.map((c) => ({
+                id: c.id,
+                title: c.name,
+                subtitle: `${c.position} • Giai đoạn: ${c.columnId}`,
+                category: "candidate",
+                category_label: "Ứng viên",
+              }))}
             />
           </div>
 
@@ -784,13 +574,9 @@ export default function RecruiterPipelinePage() {
               className="w-full sm:w-auto px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
             >
               <option value="all">🎯 Tất cả vị trí tuyển dụng</option>
-              <option value="Senior Backend Engineer (Go/Python)">
-                Senior Backend Engineer (Go/Python)
-              </option>
-              <option value="Frontend React Lead">Frontend React Lead</option>
-              <option value="Product Owner / BA Lead">Product Owner / BA Lead</option>
-              <option value="UI/UX Designer">UI/UX Designer</option>
-              <option value="DevOps / Cloud Engineer">DevOps / Cloud Engineer</option>
+              {positions.map((pos) => (
+                <option key={pos} value={pos}>{pos}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -891,11 +677,17 @@ export default function RecruiterPipelinePage() {
                           {/* Top: Avatar, Name & Match Score Badge (User Story 3) */}
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex items-center gap-2.5">
-                              <img
-                                src={cand.avatar}
-                                alt={cand.name}
-                                className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
-                              />
+                              {cand.avatar ? (
+                                <img
+                                  src={cand.avatar}
+                                  alt={cand.name}
+                                  className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
+                                />
+                              ) : (
+                                <div className="w-9 h-9 rounded-full bg-sky-100 text-[#0284C7] font-extrabold text-xs flex items-center justify-center border border-sky-200 shrink-0 select-none">
+                                  {(cand.name || "U").trim().split(" ").slice(-1)[0][0]?.toUpperCase() || "U"}
+                                </div>
+                              )}
                               <div>
                                 <h4 className="font-extrabold text-xs text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-1">
                                   {cand.name}
@@ -1063,11 +855,17 @@ export default function RecruiterPipelinePage() {
               {/* Header Panel */}
               <div className="p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/70">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={selectedCandidate.avatar}
-                    alt={selectedCandidate.name}
-                    className="w-14 h-14 rounded-2xl object-cover border-2 border-blue-200 shadow-sm shrink-0"
-                  />
+                  {selectedCandidate.avatar ? (
+                    <img
+                      src={selectedCandidate.avatar}
+                      alt={selectedCandidate.name}
+                      className="w-14 h-14 rounded-2xl object-cover border-2 border-blue-200 shadow-sm shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-2xl bg-sky-100 text-[#0284C7] font-extrabold text-xl flex items-center justify-center border-2 border-blue-200 shadow-sm shrink-0 select-none">
+                      {(selectedCandidate.name || "U").trim().split(" ").slice(-1)[0][0]?.toUpperCase() || "U"}
+                    </div>
+                  )}
                   <div>
                     <h3 className="text-lg font-black text-slate-900 leading-tight">
                       {selectedCandidate.name}
@@ -1083,7 +881,7 @@ export default function RecruiterPipelinePage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <a
+                  {selectedCandidate.linkedInUrl && <a
                     href={selectedCandidate.linkedInUrl}
                     target="_blank"
                     rel="noreferrer"
@@ -1091,7 +889,7 @@ export default function RecruiterPipelinePage() {
                     title="Mở hồ sơ LinkedIn"
                   >
                     <Linkedin className="w-4 h-4" />
-                  </a>
+                  </a>}
                   <button
                     type="button"
                     onClick={() => setIsSlideOverOpen(false)}
@@ -1213,8 +1011,10 @@ export default function RecruiterPipelinePage() {
                     </span>
                     <button
                       type="button"
+                      disabled={!selectedCandidate.cvUrl}
                       onClick={() =>
-                        alert(`Đang tải file ${selectedCandidate.cvFileName || 'CV_UngVien.pdf'}...`)
+                        selectedCandidate.cvUrl &&
+                        openProtectedFile(selectedCandidate.cvUrl).catch(() => showToast('Không mở được CV.'))
                       }
                       className="text-[11px] font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
                     >
@@ -1430,7 +1230,7 @@ export default function RecruiterPipelinePage() {
                     Thêm Ứng Viên Thủ Công Vào Pipeline
                   </h3>
                   <p className="text-[11px] text-slate-400 font-medium">
-                    Đẩy ứng viên tìm từ nguồn ngoài (LinkedIn/Sourcing) trực tiếp vào cột "CV Mới".
+                    Đẩy ứng viên tìm từ nguồn ngoài (LinkedIn/Sourcing) trực tiếp vào cột &quot;CV Mới&quot;.
                   </p>
                 </div>
               </div>
@@ -1502,17 +1302,15 @@ export default function RecruiterPipelinePage() {
               <div>
                 <label className="block font-bold text-slate-800 mb-1">Vị trí đẩy vào Pipeline</label>
                 <select
-                  value={addForm.position}
-                  onChange={(e) => setAddForm({ ...addForm, position: e.target.value })}
+                  value={addJobId}
+                  onChange={(e) => setAddJobId(e.target.value)}
+                  required
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
                 >
-                  <option value="Senior Backend Engineer (Go/Python)">
-                    Senior Backend Engineer (Go/Python)
-                  </option>
-                  <option value="Frontend React Lead">Frontend React Lead</option>
-                  <option value="Product Owner / BA Lead">Product Owner / BA Lead</option>
-                  <option value="UI/UX Designer">UI/UX Designer</option>
-                  <option value="DevOps / Cloud Engineer">DevOps / Cloud Engineer</option>
+                  <option value="">-- Chọn tin tuyển dụng --</option>
+                  {(openJobs || []).map((j) => (
+                    <option key={j.id} value={j.id}>{j.title}</option>
+                  ))}
                 </select>
               </div>
 
@@ -1522,13 +1320,14 @@ export default function RecruiterPipelinePage() {
                   <Upload className="w-3.5 h-3.5 text-blue-600" />
                   <span>Upload hồ sơ CV (PDF / DOCX)</span>
                 </label>
-                <div className="p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 hover:bg-slate-100/80 transition-colors text-center cursor-pointer">
+                <label className="block p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 hover:bg-slate-100/80 transition-colors text-center cursor-pointer">
+                  <input type="file" accept=".pdf,.docx" className="hidden" onChange={handleAddCvFile} />
                   <FileText className="w-6 h-6 text-slate-400 mx-auto mb-1" />
-                  <p className="text-xs font-bold text-slate-700">Kéo thả CV hoặc bấm để chọn tệp</p>
+                  <p className="text-xs font-bold text-slate-700">{addForm.cvFileName || 'Kéo thả CV hoặc bấm để chọn tệp'}</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">
                     Hỗ trợ định dạng PDF, DOCX (Dung lượng tối đa 10MB)
                   </p>
-                </div>
+                </label>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1539,23 +1338,27 @@ export default function RecruiterPipelinePage() {
                     onChange={(e) => setAddForm({ ...addForm, source: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
                   >
-                    <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
-                    <option value="Headhunter Agency">Headhunter Agency</option>
-                    <option value="TopCV Chủ động">TopCV Chủ động</option>
-                    <option value="Giới thiệu trực tiếp">Giới thiệu trực tiếp</option>
+                    {(sourceCategories && sourceCategories.length > 0) ? (
+                      sourceCategories.filter((c) => c.is_active).map((c) => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
+                        <option value="Headhunter Agency">Headhunter Agency</option>
+                        <option value="TopCV Chủ động">TopCV Chủ động</option>
+                        <option value="Giới thiệu trực tiếp">Giới thiệu trực tiếp</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div>
                   <label className="block font-bold text-slate-800 mb-1">Điểm Match tự tính</label>
                   <input
-                    type="number"
-                    min="30"
-                    max="100"
-                    value={addForm.matchScore}
-                    onChange={(e) =>
-                      setAddForm({ ...addForm, matchScore: Number(e.target.value) })
-                    }
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white"
+                    type="text"
+                    disabled
+                    value="Hệ thống tự tính"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-500 focus:outline-none"
                   />
                 </div>
               </div>
@@ -1582,9 +1385,10 @@ export default function RecruiterPipelinePage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 cursor-pointer"
+                  disabled={addSaving}
+                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 cursor-pointer disabled:opacity-60"
                 >
-                  Thêm Vào Pipeline
+                  {addSaving ? 'Đang lưu...' : 'Thêm Vào Pipeline'}
                 </button>
               </div>
             </form>

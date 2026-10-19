@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { 
-  X, DollarSign, AlertTriangle, CheckCircle2, Calendar, 
+  X, Banknote, AlertTriangle, CheckCircle2, Calendar, 
   FileText, ShieldCheck, Sparkles 
 } from "lucide-react";
+import { getLocalTodayDateString, isPastDate, addDaysToDate } from "@/utils/dateUtils";
 
 export interface CandidateOfferOption {
   id: string;
@@ -15,56 +16,8 @@ export interface CandidateOfferOption {
   maxBandDisplay: string;
 }
 
-export const PASSED_CANDIDATES: CandidateOfferOption[] = [
-  {
-    id: "cand-1",
-    name: "Đỗ Hoàng Long",
-    position: "Senior Backend Engineer",
-    department: "Công Nghệ Thông Tin",
-    maxBandSalary: 50000000,
-    maxBandDisplay: "50.000.000 VNĐ",
-  },
-  {
-    id: "cand-2",
-    name: "Nguyễn Thu Thủy",
-    position: "Trưởng nhóm Data Analyst",
-    department: "Khối Phân Tích Dữ Liệu",
-    maxBandSalary: 42000000,
-    maxBandDisplay: "42.000.000 VNĐ",
-  },
-  {
-    id: "cand-3",
-    name: "Trần Mai Phương",
-    position: "Senior UI/UX Designer",
-    department: "Khối Phát Triển Sản Phẩm",
-    maxBandSalary: 35000000,
-    maxBandDisplay: "35.000.000 VNĐ",
-  },
-  {
-    id: "cand-4",
-    name: "Đặng Quốc Bảo",
-    position: "Senior Frontend Engineer",
-    department: "Khối Công Nghệ",
-    maxBandSalary: 45000000,
-    maxBandDisplay: "45.000.000 VNĐ",
-  },
-  {
-    id: "cand-5",
-    name: "Phạm Văn Minh",
-    position: "Senior DevOps Engineer",
-    department: "Khối Hạ Tầng",
-    maxBandSalary: 60000000,
-    maxBandDisplay: "60.000.000 VNĐ",
-  },
-  {
-    id: "cand-6",
-    name: "Lê Thị Thảo Trang",
-    position: "AI / LLM Engineer",
-    department: "Khối R&D Trí Tuệ Nhân Tạo",
-    maxBandSalary: 55000000,
-    maxBandDisplay: "55.000.000 VNĐ",
-  },
-];
+// no built-in sample candidates: the page passes the real offer-eligible applications
+export const PASSED_CANDIDATES: CandidateOfferOption[] = [];
 
 export interface CreateOfferFormData {
   candidateId: string;
@@ -84,24 +37,50 @@ interface CreateOfferModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: CreateOfferFormData) => void;
+  /** Applications that may receive an offer, with the approved salary band. */
+  candidates?: CandidateOfferOption[];
 }
 
 export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
+  candidates,
 }) => {
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string>(PASSED_CANDIDATES[0].id);
-  const [proposedSalaryInput, setProposedSalaryInput] = useState<string>("52000000");
-  const [startDate, setStartDate] = useState<string>("2026-10-25");
-  const [deadlineDate, setDeadlineDate] = useState<string>("2026-10-18");
-  const [allowanceNotes, setAllowanceNotes] = useState<string>(
-    "Phụ cấp ăn trưa: 1.000.000 VNĐ/tháng. Phụ cấp gửi xe tòa nhà. Cấp Macbook Pro 16 M3 Max, màn hình 4K."
-  );
+  const options = candidates ?? PASSED_CANDIDATES;
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string>("");
+  const [proposedSalaryInput, setProposedSalaryInput] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [deadlineDate, setDeadlineDate] = useState<string>("");
+  const [allowanceNotes, setAllowanceNotes] = useState<string>("");
+
+  // Auto-sync candidate and pre-fill default start/deadline dates when modal opens or options change
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (options.length > 0) {
+      const exists = options.some((c) => c.id === selectedCandidateId);
+      if (!selectedCandidateId || !exists) {
+        const first = options[0];
+        setSelectedCandidateId(first.id);
+        if (!proposedSalaryInput) {
+          setProposedSalaryInput(first.maxBandSalary > 0 ? first.maxBandSalary.toString() : "25000000");
+        }
+      }
+    }
+
+    if (!startDate || isPastDate(startDate)) {
+      setStartDate(addDaysToDate(14));
+    }
+    if (!deadlineDate || isPastDate(deadlineDate)) {
+      setDeadlineDate(addDaysToDate(7));
+    }
+  }, [isOpen, options, selectedCandidateId, proposedSalaryInput, startDate, deadlineDate]);
 
   if (!isOpen) return null;
 
-  const currentCandidate = PASSED_CANDIDATES.find(c => c.id === selectedCandidateId) || PASSED_CANDIDATES[0];
+  const currentCandidate: CandidateOfferOption = options.find(c => c.id === selectedCandidateId) || options[0]
+    || { id: "", name: "", position: "", department: "", maxBandSalary: 0, maxBandDisplay: "—" };
   
   // Parse proposed salary to VND
   const rawNum = parseFloat(proposedSalaryInput.replace(/[^0-9]/g, '')) || 0;
@@ -116,6 +95,21 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
     e.preventDefault();
     if (!normalizedSalary || normalizedSalary <= 0) {
       alert("Vui lòng nhập mức lương đề xuất hợp lệ.");
+      return;
+    }
+
+    if (isPastDate(startDate)) {
+      alert("Ngày dự kiến đi làm không được ở trong quá khứ.");
+      return;
+    }
+
+    if (isPastDate(deadlineDate)) {
+      alert("Hạn chót phản hồi offer không được ở trong quá khứ.");
+      return;
+    }
+
+    if (deadlineDate && startDate && deadlineDate > startDate) {
+      alert("Hạn chót phản hồi offer phải trước hoặc bằng ngày dự kiến đi làm.");
       return;
     }
 
@@ -152,8 +146,8 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-xs">
-              <DollarSign className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-xs font-bold text-lg select-none">
+              ₫
             </div>
             <div>
               <h3 className="text-xl font-bold text-slate-800">Tạo Thư Mời Nhận Việc (Offer)</h3>
@@ -182,14 +176,15 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                 onChange={(e) => {
                   const newId = e.target.value;
                   setSelectedCandidateId(newId);
-                  const cand = PASSED_CANDIDATES.find(c => c.id === newId);
+                  const cand = options.find(c => c.id === newId);
                   if (cand) {
                     setProposedSalaryInput(cand.maxBandSalary.toString());
                   }
                 }}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
               >
-                {PASSED_CANDIDATES.map((cand) => (
+                {options.length === 0 && <option value="">Không có ứng viên nào đủ điều kiện nhận offer</option>}
+                {options.map((cand) => (
                   <option key={cand.id} value={cand.id}>
                     {cand.name} — {cand.position} ({cand.department})
                   </option>
@@ -223,11 +218,13 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                   step="500000"
                   value={proposedSalaryInput}
                   onChange={(e) => setProposedSalaryInput(e.target.value)}
-                  placeholder="Ví dụ: 50000000"
+                  placeholder="Ví dụ: 35000000 hoặc 35 (triệu)"
                   required
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono font-medium pl-10"
                 />
-                <DollarSign className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-sm select-none">
+                  ₫
+                </span>
               </div>
 
               {/* Quick Preset Buttons */}
@@ -238,21 +235,21 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                   onClick={() => setProposedSalaryInput(currentCandidate.maxBandSalary.toString())}
                   className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium cursor-pointer transition-colors"
                 >
-                  Bằng chuẩn ({currentCandidate.maxBandSalary / 1000000}tr)
+                  Bằng chuẩn ({currentCandidate.maxBandSalary / 1000000} triệu VNĐ)
                 </button>
                 <button
                   type="button"
                   onClick={() => setProposedSalaryInput((currentCandidate.maxBandSalary + 2000000).toString())}
                   className="text-[11px] px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 font-medium cursor-pointer transition-colors border border-amber-200"
                 >
-                  Vượt +2 triệu ({(currentCandidate.maxBandSalary + 2000000) / 1000000}tr)
+                  Vượt +2 triệu ({(currentCandidate.maxBandSalary + 2000000) / 1000000} triệu VNĐ)
                 </button>
                 <button
                   type="button"
                   onClick={() => setProposedSalaryInput((currentCandidate.maxBandSalary + 5000000).toString())}
                   className="text-[11px] px-2 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 font-medium cursor-pointer transition-colors border border-rose-200"
                 >
-                  Vượt +5 triệu ({(currentCandidate.maxBandSalary + 5000000) / 1000000}tr)
+                  Vượt +5 triệu ({(currentCandidate.maxBandSalary + 5000000) / 1000000} triệu VNĐ)
                 </button>
               </div>
             </div>
@@ -285,13 +282,23 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
               <div className="relative">
                 <input
                   type="date"
+                  min={getLocalTodayDateString()}
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setStartDate(val);
+                    if (deadlineDate && val && deadlineDate > val) {
+                      setDeadlineDate(val);
+                    }
+                  }}
                   required
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium pl-10"
                 />
                 <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               </div>
+              {startDate && isPastDate(startDate) && (
+                <p className="text-[11px] text-rose-500 mt-1 font-medium">⚠️ Ngày đi làm không được ở trong quá khứ</p>
+              )}
             </div>
 
             {/* Hạn chót phản hồi Offer */}
@@ -302,6 +309,8 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
               <div className="relative">
                 <input
                   type="date"
+                  min={getLocalTodayDateString()}
+                  max={startDate || undefined}
                   value={deadlineDate}
                   onChange={(e) => setDeadlineDate(e.target.value)}
                   required
@@ -309,6 +318,12 @@ export const CreateOfferModal: React.FC<CreateOfferModalProps> = ({
                 />
                 <Calendar className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               </div>
+              {deadlineDate && isPastDate(deadlineDate) && (
+                <p className="text-[11px] text-rose-500 mt-1 font-medium">⚠️ Hạn phản hồi không được ở trong quá khứ</p>
+              )}
+              {startDate && deadlineDate && deadlineDate > startDate && (
+                <p className="text-[11px] text-rose-500 mt-1 font-medium">⚠️ Hạn phản hồi phải trước hoặc bằng ngày nhận việc</p>
+              )}
             </div>
 
             {/* Trợ cấp & Ghi chú thêm (col-span-2) */}

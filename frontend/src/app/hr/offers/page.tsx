@@ -1,11 +1,88 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { offerService, type OfferItem as ApiOffer } from '@/services/offer.service';
+import { requisitionService } from '@/services/requisition.service';
+import { jobService } from '@/services/job.service';
+import type { ApiApplication } from '@/features/candidates/api';
+import type { CandidateOfferOption } from '@/features/hr/components/CreateOfferModal';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+
+const M = 1_000_000;
+const vnDate = (iso?: string | null) => (iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('vi-VN') : '');
+function toStatus(st: string): OfferItem['status'] {
+  if (st === 'approved') return 'approved';
+  if (st === 'sent') return 'sent_to_candidate';
+  if (st === 'accepted') return 'accepted';
+  if (st === 'declined' || st === 'expired' || st === 'rejected') return 'declined';
+  return 'pending_approval';
+}
+function toOffer(o: ApiOffer): OfferItem {
+  const max = o.band_max || 0;
+  const over = max > 0 && o.offered_salary > max;
+  return {
+    id: String(o.id),
+    code: `OFFER-${o.id}`,
+    candidate_name: o.candidate_name || '',
+    position: o.job_title || '',
+    department: o.department || '',
+    offered_salary: Math.round((o.offered_salary / M) * 10) / 10,
+    max_band_salary: Math.round((max / M) * 10) / 10,
+    is_over_band: over || !!o.requires_escalation,
+    over_percentage: over ? Math.round(((o.offered_salary - max) / max) * 100) : 0,
+    start_date: vnDate(o.start_date),
+    deadline_date: vnDate(o.response_deadline),
+    notes: o.notes || '',
+    status: toStatus(o.status),
+    created_at: vnDate(o.created_at),
+  };
+}
+async function loadOffers() {
+  const [offers, appsRes, reqsRes, jobsRes] = await Promise.all([
+    offerService.getOffers().catch(() => []),
+    apiRequest<ApiApplication[]>('/applications').catch(() => []),
+    requisitionService.getRequisitions().catch(() => []),
+    jobService.getAdminJobs().catch(() => []),
+  ]);
+  const offersList = Array.isArray(offers) ? offers : [];
+  const appList: ApiApplication[] = Array.isArray(appsRes) ? appsRes : ((appsRes as any)?.items || (appsRes as any)?.data || []);
+  const reqs = Array.isArray(reqsRes) ? reqsRes : [];
+  const jobs = Array.isArray(jobsRes) ? jobsRes : [];
+
+  const withOffer = new Set(offersList.map((o) => Number(o.application_id)));
+  const TERMINAL_STATUSES = new Set(['hired', 'rejected', 'withdrawn', 'onboarded']);
+
+  // Eligible candidates: active applications in pipeline not in terminal states and without an existing offer
+  let eligible = appList.filter((a: ApiApplication) => !TERMINAL_STATUSES.has(a.status) && !withOffer.has(Number(a.id)));
+  if (eligible.length === 0) {
+    // Fallback: any application not having an offer
+    eligible = appList.filter((a: ApiApplication) => !withOffer.has(Number(a.id)));
+  }
+
+  const candidates: CandidateOfferOption[] = eligible.map((a: ApiApplication) => {
+    const job = jobs.find((j) => j.id === a.job_posting_id);
+    const req = reqs.find((r) => r.id === job?.requisition_id);
+    const max = req?.max_salary || 30_000_000;
+    const min = req?.min_salary || 15_000_000;
+    return {
+      id: String(a.id),
+      name: a.full_name || `Ứng viên #${a.id}`,
+      position: a.job_title || job?.title || 'Chuyên viên',
+      department: a.department || job?.department || (req as any)?.department_name || 'Nhân sự',
+      maxBandSalary: max,
+      maxBandDisplay: `${Math.round(min / M)} - ${Math.round(max / M)} triệu VNĐ`,
+    };
+  });
+  return { offers: offersList, candidates };
+}
 import { 
   DollarSign, AlertTriangle, CheckCircle2, XCircle, Clock, ShieldAlert, 
   Plus, Search, Filter, FileText, Send, Eye, Check, Calendar, ArrowUpRight
 } from 'lucide-react';
 import { CreateOfferModal, CreateOfferFormData } from '@/features/hr/components/CreateOfferModal';
+import { OfferDetailModal } from '@/features/offers/components/OfferDetailModal';
 
 interface OfferItem {
   id: string;
@@ -26,95 +103,49 @@ interface OfferItem {
 
 export default function HROffersPage() {
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
+  const [selectedOfferId, setSelectedOfferId] = useState<string | number | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  const [offers, setOffers] = useState<OfferItem[]>([
-    {
-      id: "OFF-001",
-      code: "OFFER-2026-088",
-      candidate_name: "Đỗ Hoàng Long",
-      position: "Senior Backend Engineer",
-      department: "Công Nghệ Thông Tin",
-      offered_salary: 52,
-      max_band_salary: 50,
-      is_over_band: true,
-      over_percentage: 4,
-      start_date: "15/10/2026",
-      deadline_date: "10/10/2026",
-      notes: "Ứng viên yêu cầu thêm phụ cấp gửi xe và hỗ trợ chi phí thi chứng chỉ AWS SA Pro.",
-      status: "pending_approval",
-      created_at: "03/10/2026"
-    },
-    {
-      id: "OFF-002",
-      code: "OFFER-2026-085",
-      candidate_name: "Phạm Văn Minh",
-      position: "Senior DevOps Engineer",
-      department: "Công Nghệ Thông Tin",
-      offered_salary: 45,
-      max_band_salary: 60,
-      is_over_band: false,
-      over_percentage: 0,
-      start_date: "20/10/2026",
-      deadline_date: "15/10/2026",
-      notes: "Đã thống nhất nhận việc, bàn giao máy trạm HP ZBook.",
-      status: "accepted",
-      created_at: "28/09/2026"
-    },
-    {
-      id: "OFF-003",
-      code: "OFFER-2026-082",
-      candidate_name: "Nguyễn Thu Thủy",
-      position: "Trưởng nhóm Data Analyst",
-      department: "Khối Phân Tích Dữ Liệu",
-      offered_salary: 42,
-      max_band_salary: 42,
-      is_over_band: false,
-      over_percentage: 0,
-      start_date: "01/11/2026",
-      deadline_date: "25/10/2026",
-      notes: "Mức lương chuẩn theo thang bảng lương Khối Dữ Liệu.",
-      status: "approved",
-      created_at: "05/10/2026"
+  const { data, error, loading, reload } = useApiData(loadOffers, []);
+  const offers: OfferItem[] = useMemo(() => (data?.offers || []).map(toOffer), [data]);
+
+  const handleCreateOffer = async (formData: CreateOfferFormData) => {
+    if (!formData.candidateId || !formData.startDate) {
+      setToastMessage('Vui lòng chọn ứng viên và ngày nhận việc.');
+      return;
     }
-  ]);
-
-  const handleCreateOffer = (formData: CreateOfferFormData) => {
-    const newOfferNumber = offers.length + 89;
-    const dateFormatted = formData.startDate.split('-').reverse().join('/');
-    const deadlineFormatted = formData.deadlineDate.split('-').reverse().join('/');
-    
-    const newOffer: OfferItem = {
-      id: `OFF-00${offers.length + 1}`,
-      code: `OFFER-2026-${String(newOfferNumber).padStart(3, '0')}`,
-      candidate_name: formData.candidateName,
-      position: formData.position,
-      department: formData.department,
-      offered_salary: formData.proposedSalary / 1000000,
-      max_band_salary: formData.maxBandSalary / 1000000,
-      is_over_band: formData.isOverBand,
-      over_percentage: formData.overPercentage,
-      start_date: dateFormatted,
-      deadline_date: deadlineFormatted,
-      notes: formData.allowanceNotes,
-      status: formData.isOverBand ? 'pending_approval' : 'approved',
-      created_at: '12/10/2026',
-    };
-
-    setOffers([newOffer, ...offers]);
-    setIsOfferModalOpen(false);
-    
-    setToastMessage(
-      formData.isOverBand 
-        ? `Đã tạo Offer cho ${formData.candidateName} (Vượt dải +${formData.overPercentage}%) và tự động gửi trình CEO duyệt!`
-        : `Đã tạo và tự động phê duyệt Offer cho ${formData.candidateName} thành công!`
-    );
-
+    try {
+      await offerService.createOffer({
+        application_id: Number(formData.candidateId),
+        offered_salary: formData.proposedSalary,
+        start_date: formData.startDate,
+        response_deadline: formData.deadlineDate || null,
+        notes: formData.allowanceNotes || undefined,
+        salary_justification: formData.isOverBand
+          ? `Đề xuất mức lương ${formData.proposedSalary.toLocaleString('vi-VN')} VNĐ (vượt dải ${formData.overPercentage}%) để tuyển dụng nhân sự chất lượng cao.`
+          : undefined,
+      });
+      setIsOfferModalOpen(false);
+      reload();
+      setToastMessage(
+        formData.isOverBand
+          ? `Đã tạo Offer cho ${formData.candidateName} (vượt dải +${formData.overPercentage}%) — cần phê duyệt cấp cao theo quy trình.`
+          : `Đã tạo Offer cho ${formData.candidateName} và chuyển Trưởng phòng Nhân sự phê duyệt.`
+      );
+    } catch (err) {
+      setToastMessage(err instanceof ApiError ? err.message : 'Không tạo được offer.');
+    }
     setTimeout(() => {
       setToastMessage(null);
     }, 5000);
+  };
+
+  const handleOpenDetail = (id: string | number) => {
+    setSelectedOfferId(id);
+    setIsDetailModalOpen(true);
   };
 
   const filteredOffers = offers.filter((item) => {
@@ -128,6 +159,9 @@ export default function HROffersPage() {
     if (filterStatus === 'in_band') return matchesSearch && !item.is_over_band;
     return matchesSearch && item.status === filterStatus;
   });
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -286,7 +320,7 @@ export default function HROffersPage() {
 
                     <td className="p-4 text-right">
                       <button 
-                        onClick={() => alert(`Xem chi tiết Offer: ${off.code}\nỨng viên: ${off.candidate_name}\nLương: ${off.offered_salary} triệu VNĐ\nGhi chú: ${off.notes || 'Không có'}`)}
+                        onClick={() => handleOpenDetail(off.id)}
                         className="text-xs text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1 hover:underline cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
@@ -306,6 +340,18 @@ export default function HROffersPage() {
         isOpen={isOfferModalOpen}
         onClose={() => setIsOfferModalOpen(false)}
         onSubmit={handleCreateOffer}
+        candidates={data?.candidates || []}
+      />
+
+      {/* Modal Form Xem Chi Tiết Offer Chuẩn Doanh Nghiệp */}
+      <OfferDetailModal
+        isOpen={isDetailModalOpen}
+        offerId={selectedOfferId}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          setSelectedOfferId(null);
+        }}
+        onActionSuccess={reload}
       />
     </div>
   );

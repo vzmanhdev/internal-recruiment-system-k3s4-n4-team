@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import { ScrollText, Search, RefreshCw, Eye, X, ShieldAlert, CheckCircle2, AlertTriangle, Filter } from "lucide-react";
 import { authService } from "@/features/auth/services/auth.service";
+import { API_BASE_URL } from "@/lib/api-client";
 
 interface AuditLog {
   id: number;
@@ -27,7 +28,7 @@ export default function AuditLogsPage() {
     setIsLoading(true);
     try {
       const token = authService.getToken();
-      const res = await fetch("http://localhost:8000/api/v1/admin/audit-logs", {
+      const res = await fetch(`${API_BASE_URL}/admin/audit-logs`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {

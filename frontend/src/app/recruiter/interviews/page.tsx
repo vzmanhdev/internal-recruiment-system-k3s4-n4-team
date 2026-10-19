@@ -2,6 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -38,6 +41,12 @@ import {
   Info,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { interviewService, type InterviewItem } from '@/services/interview.service';
+import { masterDataService } from '@/services/master-data.service';
+import type { ApiApplication } from '@/features/candidates/api';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 
 // ==========================================
 // 1. DATA TYPES & ENUMS
@@ -65,148 +74,93 @@ export interface InterviewSession {
   notes?: string;
   rescheduleReason?: string;
   cancelReason?: string;
+  // real ids behind the card
+  interviewId: number;
+  applicationId: number;
+  interviewerIds: number[];
+  location: string;
+  meetingLink: string | null;
+  durationMinutes: number;
 }
 
 // ==========================================
-// 2. MOCK INTERVIEWS DATA
+// 2. REAL INTERVIEW SCHEDULES -> CALENDAR CARDS
 // ==========================================
 
-const INITIAL_INTERVIEWS: InterviewSession[] = [
-  {
-    id: 'IV-2026-01',
-    candidateName: 'Nguyễn Văn An',
-    candidateEmail: 'an.nguyen@gmail.com',
-    candidatePhone: '0912 345 678',
-    candidateAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=120&auto=format&fit=crop',
-    position: 'Senior Backend Engineer (Go/Python)',
-    date: '2026-10-12', // Thứ 2
-    dayLabel: 'Thứ 2',
-    startTime: '09:30',
-    endTime: '10:30',
-    round: 'Vòng 2: Kỹ thuật chuyên sâu (System Design)',
-    interviewers: ['Nguyễn Tiến Dũng (Engineering Director)', 'Trần Thị Recruiter'],
-    type: 'online',
-    roomOrLink: 'https://meet.google.com/dng-bgfd-rth',
-    status: 'confirmed',
-    notes: 'Phỏng vấn trực tuyến qua Google Meet, kiểm tra kiến thức Kafka & Microservices.',
-  },
-  {
-    id: 'IV-2026-02',
-    candidateName: 'Đỗ Thùy Trang',
-    candidateEmail: 'thuytrang.design@gmail.com',
-    candidatePhone: '0934 567 890',
-    candidateAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=120&auto=format&fit=crop',
-    position: 'UI/UX Designer Senior',
-    date: '2026-10-12', // Thứ 2
-    dayLabel: 'Thứ 2',
-    startTime: '14:00',
-    endTime: '15:00',
-    round: 'Vòng 1: Đánh giá Portfolio & Văn hóa',
-    interviewers: ['Phạm Văn Tuấn (Tech Lead)', 'Trần Thị Recruiter'],
-    type: 'offline',
-    roomOrLink: 'Phòng Họp Sáng Tạo - Tầng 8 (Keangnam)',
-    status: 'confirmed',
-    notes: 'Ứng viên sẽ trình bày trực tiếp case study thiết kế Design System.',
-  },
-  {
-    id: 'IV-2026-03',
-    candidateName: 'Lê Hoàng Yến',
-    candidateEmail: 'hoangyen.po@gmail.com',
-    candidatePhone: '0978 123 456',
-    candidateAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=120&auto=format&fit=crop',
-    position: 'Product Owner / BA Lead',
-    date: '2026-10-13', // Thứ 3
-    dayLabel: 'Thứ 3',
-    startTime: '10:00',
-    endTime: '11:00',
-    round: 'Vòng 2: Phỏng vấn Case Study Sản Phẩm',
-    interviewers: ['Lê Thị Bích Ngọc (CPO)', 'Trần Thị Recruiter'],
-    type: 'online',
-    roomOrLink: 'https://meet.google.com/xyz-uvw-rst',
-    status: 'confirmed',
-  },
-  {
-    id: 'IV-2026-04',
-    candidateName: 'Lê Thảo My',
-    candidateEmail: 'thaomy.fe@gmail.com',
-    candidatePhone: '0933 221 100',
-    candidateAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=120&auto=format&fit=crop',
-    position: 'Frontend React Lead',
-    date: '2026-10-13', // Thứ 3
-    dayLabel: 'Thứ 3',
-    startTime: '14:30',
-    endTime: '15:30',
-    round: 'Vòng 2: Kỹ thuật chuyên sâu React 19',
-    interviewers: ['Phạm Văn Tuấn (Tech Lead)', 'Trần Thị Recruiter'],
-    type: 'online',
-    roomOrLink: 'https://meet.google.com/abc-fe-lead',
-    status: 'confirmed',
-  },
-  {
-    id: 'IV-2026-05',
-    candidateName: 'Vũ Đức Thịnh',
-    candidateEmail: 'thinh.vuduc@gmail.com',
-    candidatePhone: '0988 123 456',
-    candidateAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
-    position: 'Senior Backend Engineer (Go/Python)',
-    date: '2026-10-14', // Thứ 4
-    dayLabel: 'Thứ 4',
-    startTime: '10:00',
-    endTime: '11:00',
-    round: 'Vòng 1: Sơ vấn năng lực chuyên môn',
-    interviewers: ['Nguyễn Tiến Dũng (Engineering Director)'],
-    type: 'online',
-    roomOrLink: 'https://meet.google.com/vud-thinh-meet',
-    status: 'pending',
-  },
-  {
-    id: 'IV-2026-06',
-    candidateName: 'Hoàng Kim Ngân',
-    candidateEmail: 'ngan.hoang@gmail.com',
-    candidatePhone: '0933 888 999',
-    candidateAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=120&auto=format&fit=crop',
-    position: 'Product Owner / BA Lead',
-    date: '2026-10-15', // Thứ 5
-    dayLabel: 'Thứ 5',
-    startTime: '14:00',
-    endTime: '15:00',
-    round: 'Vòng 3: Phỏng vấn Ban Giám Đốc',
-    interviewers: ['Lê Thị Bích Ngọc (CPO)', 'Nguyễn Tiến Dũng (Engineering Director)'],
-    type: 'offline',
-    roomOrLink: 'Phòng Hội Thảo VIP - Tầng 10',
-    status: 'confirmed',
-  },
-  {
-    id: 'IV-2026-07',
-    candidateName: 'Lê Hoàng Cường',
-    candidateEmail: 'cuong.le@gmail.com',
-    candidatePhone: '0908 765 432',
-    candidateAvatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?q=80&w=120&auto=format&fit=crop',
-    position: 'Senior Backend Engineer (Go/Python)',
-    date: '2026-10-16', // Thứ 6
-    dayLabel: 'Thứ 6',
-    startTime: '15:00',
-    endTime: '16:00',
-    round: 'Vòng Trao đổi Offer & Lộ trình phát triển',
-    interviewers: ['Trần Thị Recruiter', 'Nguyễn Tiến Dũng (Engineering Director)'],
-    type: 'online',
-    roomOrLink: 'https://meet.google.com/offer-cuong-le',
-    status: 'confirmed',
-  },
-];
+const DAY_LABELS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+const pad = (n: number) => String(n).padStart(2, '0');
+const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const hm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const minutesBetween = (a: string, b: string) => {
+  const [h1, m1] = a.split(':').map(Number);
+  const [h2, m2] = b.split(':').map(Number);
+  return h2 * 60 + m2 - (h1 * 60 + m1);
+};
+const DEFAULT_ROOM = 'Phòng Họp Sáng Tạo - Tầng 8 (Keangnam)';
+const NON_SCHEDULABLE = new Set(['hired', 'rejected', 'withdrawn', 'onboarded']);
 
-// Danh sách các ngày trong tuần (Thứ 2 đến Thứ 7)
-const WEEK_DAYS = [
-  { key: '2026-10-12', label: 'Thứ 2', dateDisplay: '12/10' },
-  { key: '2026-10-13', label: 'Thứ 3', dateDisplay: '13/10' },
-  { key: '2026-10-14', label: 'Thứ 4', dateDisplay: '14/10' },
-  { key: '2026-10-15', label: 'Thứ 5', dateDisplay: '15/10' },
-  { key: '2026-10-16', label: 'Thứ 6', dateDisplay: '16/10' },
-  { key: '2026-10-17', label: 'Thứ 7', dateDisplay: '17/10' },
-];
+function toSession(i: InterviewItem & { cancel_reason?: string | null }): InterviewSession {
+  const start = new Date(i.scheduled_time);
+  const end = new Date(start.getTime() + (i.duration_minutes || 0) * 60_000);
+  const status: InterviewStatus =
+    i.status === 'cancelled' ? 'cancelled'
+      : i.status === 'completed' ? 'completed'
+        : i.candidate_response === 'confirmed' ? 'confirmed'
+          : i.candidate_response === 'reschedule_requested' ? 'rescheduled' : 'pending';
+  const panel = (i.interviewers || []) as Array<{ interviewer_id: number; interviewer_name?: string | null }>;
+  return {
+    id: `IV-${i.id}`,
+    candidateName: i.candidate_name || '',
+    candidateEmail: i.candidate_email || '',
+    candidatePhone: '',
+    candidateAvatar: '',
+    position: i.job_title || '',
+    date: ymd(start),
+    dayLabel: DAY_LABELS[start.getDay()],
+    startTime: hm(start),
+    endTime: hm(end),
+    round: i.round_name,
+    interviewers: panel.map((x) => x.interviewer_name || `#${x.interviewer_id}`),
+    type: i.meeting_link ? 'online' : 'offline',
+    roomOrLink: i.meeting_link || i.location,
+    status,
+    rescheduleReason: i.candidate_response === 'reschedule_requested' ? 'Ứng viên đề nghị đổi lịch' : undefined,
+    cancelReason: i.cancel_reason || undefined,
+    interviewId: i.id,
+    applicationId: i.application_id,
+    interviewerIds: panel.map((x) => x.interviewer_id),
+    location: i.location,
+    meetingLink: i.meeting_link || null,
+    durationMinutes: i.duration_minutes,
+  };
+}
+
+/** Monday..Saturday of the current week. */
+function currentWeek() {
+  const now = new Date();
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  return Array.from({ length: 6 }, (_, k) => {
+    const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + k);
+    return { key: ymd(d), label: DAY_LABELS[d.getDay()], dateDisplay: `${pad(d.getDate())}/${pad(d.getMonth() + 1)}` };
+  });
+}
+
+function errorText(err: unknown, fallback: string) {
+  return err instanceof ApiError ? err.message : fallback;
+}
 
 export default function RecruiterInterviewsPage() {
-  const [interviews, setInterviews] = useState<InterviewSession[]>(INITIAL_INTERVIEWS);
+  const { data, error, loading, reload, setData } = useApiData(
+    () => interviewService.getInterviews().then((rows) => rows.map(toSession)),
+    [],
+  );
+  const interviews = useMemo(() => data || [], [data]);
+  const setInterviews = (fn: (prev: InterviewSession[]) => InterviewSession[]) => setData((prev) => fn(prev || []));
+  const { data: apps } = useApiData(() => apiRequest<ApiApplication[]>('/applications'), []);
+  const schedulable = useMemo(() => (apps || []).filter((a) => !NON_SCHEDULABLE.has(a.status)), [apps]);
+  const { data: panelPeople } = useApiData(() => masterDataService.people('interviewer'), []);
+  const WEEK_DAYS = useMemo(() => currentWeek(), []);
+  const [saving, setSaving] = useState(false);
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'online' | 'offline'>('all');
@@ -218,43 +172,44 @@ export default function RecruiterInterviewsPage() {
 
   // Form Đặt lịch cá nhân 1-1 State
   const [individualForm, setIndividualForm] = useState({
+    applicationId: '',
     candidateName: '',
     candidateEmail: '',
     candidatePhone: '',
-    position: 'Senior Backend Engineer (Go/Python)',
-    round: 'Vòng 2: Kỹ thuật chuyên sâu',
-    date: '2026-10-12',
-    startTime: '14:00',
-    endTime: '15:00',
-    interviewer: 'Nguyễn Tiến Dũng (Engineering Director)',
+    position: '',
+    round: 'Vòng 1: Phỏng vấn chuyên môn',
+    date: '',
+    startTime: '09:00',
+    endTime: '10:00',
+    interviewer: '', // interviewer user id
     type: 'offline' as InterviewType,
-    room: 'Phòng Họp Sáng Tạo - Tầng 8 (Keangnam)',
-    meetLink: 'https://meet.google.com/new-interview-link',
+    room: DEFAULT_ROOM,
+    meetLink: '',
     notes: '',
   });
 
   // Form Đặt lịch hàng loạt (Bulk) State
   const [bulkForm, setBulkForm] = useState({
-    date: '2026-10-16',
+    date: '',
     sessionTime: 'afternoon', // afternoon: 13:30 - 17:30
     slotDurationMinutes: 30,
-    interviewer: 'Trần Thị Recruiter & Phạm Văn Tuấn (Tech Lead)',
+    interviewer: '', // interviewer user id
     type: 'online' as InterviewType,
-    selectedCandidates: ['Vũ Đức Thịnh', 'Đỗ Thùy Trang', 'Nguyễn Tuấn Kiệt', 'Đặng Quốc Huy'],
+    selectedCandidates: [] as string[], // application ids
   });
 
   // Modal 2: Dời lịch (Reschedule Modal)
   const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
   const [selectedSessionForReschedule, setSelectedSessionForReschedule] = useState<InterviewSession | null>(null);
-  const [rescheduleDate, setRescheduleDate] = useState('2026-10-14');
-  const [rescheduleStartTime, setRescheduleStartTime] = useState('15:30');
-  const [rescheduleEndTime, setRescheduleEndTime] = useState('16:30');
-  const [rescheduleReason, setRescheduleReason] = useState('Người phỏng vấn trùng lịch họp khẩn cấp từ Ban Giám Đốc');
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleStartTime, setRescheduleStartTime] = useState('');
+  const [rescheduleEndTime, setRescheduleEndTime] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
 
   // Modal 3: Hủy lịch (Cancel Modal)
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [selectedSessionForCancel, setSelectedSessionForCancel] = useState<InterviewSession | null>(null);
-  const [cancelReason, setCancelReason] = useState('Ứng viên thông báo rút hồ sơ do đã nhận việc tại đối tác');
+  const [cancelReason, setCancelReason] = useState('');
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -269,32 +224,30 @@ export default function RecruiterInterviewsPage() {
     if (scheduleTab !== 'individual') return null;
 
     const { date, startTime, endTime, interviewer, type, room } = individualForm;
+    if (!date || !startTime || !endTime) return null;
+    const toMin = (t: string) => minutesBetween('00:00', t);
+    const overlaps = (sess: InterviewSession) =>
+      sess.status !== 'cancelled' && sess.status !== 'completed' && sess.date === date &&
+      toMin(sess.startTime) < toMin(endTime) && toMin(sess.endTime) > toMin(startTime);
 
-    // Tìm xem interviewer đã có ca nào trong khung giờ này chưa
-    const interviewerConflict = interviews.find((session) => {
-      if (session.status === 'cancelled') return false;
-      if (session.date !== date) return false;
-      const isInterviewerBusy = session.interviewers.some((i) => i.includes(interviewer.split(' ')[0]));
-      // Đơn giản hóa so sánh khung giờ trùng
-      const isTimeOverlapping = session.startTime === startTime || session.endTime === endTime;
-      return isInterviewerBusy && isTimeOverlapping;
-    });
-
-    // Tìm xem phòng họp offline đã có ai đặt chưa
+    const interviewerConflict = interviewer
+      ? interviews.find((sess) => overlaps(sess) && sess.interviewerIds.includes(Number(interviewer)))
+      : undefined;
     const roomConflict =
-      type === 'offline'
-        ? interviews.find((session) => {
-            if (session.status === 'cancelled') return false;
-            if (session.date !== date) return false;
-            return session.type === 'offline' && session.roomOrLink === room && session.startTime === startTime;
-          })
-        : null;
+      type === 'offline' ? interviews.find((sess) => overlaps(sess) && sess.type === 'offline' && sess.roomOrLink === room) : undefined;
+    const busy = interviewerConflict || roomConflict;
+    // suggestion: the same duration right after the conflicting session
+    const len = Math.max(15, minutesBetween(startTime, endTime));
+    const suggestStart = busy ? busy.endTime : '';
+    const suggestEndMin = busy ? toMin(busy.endTime) + len : 0;
+    const suggestedTime = busy ? `${suggestStart} - ${pad(Math.floor(suggestEndMin / 60) % 24)}:${pad(suggestEndMin % 60)}` : '';
+    const interviewerName = panelPeople?.find((p) => String(p.id) === interviewer)?.full_name || '';
 
     if (interviewerConflict) {
       return {
         type: 'interviewer',
-        message: `⚠️ Cảnh báo trùng lịch: Người phỏng vấn "${interviewer}" đã có lịch phỏng vấn (${interviewerConflict.candidateName} - ${interviewerConflict.position}) lúc ${interviewerConflict.startTime} - ${interviewerConflict.endTime} ngày ${date}!`,
-        suggestedTime: '15:30 - 16:30',
+        message: `⚠️ Cảnh báo trùng lịch: Người phỏng vấn "${interviewerName}" đã có lịch phỏng vấn (${interviewerConflict.candidateName} - ${interviewerConflict.position}) lúc ${interviewerConflict.startTime} - ${interviewerConflict.endTime} ngày ${date}!`,
+        suggestedTime,
       };
     }
 
@@ -302,91 +255,95 @@ export default function RecruiterInterviewsPage() {
       return {
         type: 'room',
         message: `⚠️ Cảnh báo phòng họp bận: "${room}" đã được đặt trước lúc ${roomConflict.startTime} cho ca khác!`,
-        suggestedRoom: 'Phòng Hội Thảo VIP - Tầng 10',
+        suggestedTime,
       };
     }
 
     return null;
-  }, [individualForm, interviews, scheduleTab]);
+  }, [individualForm, interviews, scheduleTab, panelPeople]);
 
   // ==========================================
   // HANDLERS
   // ==========================================
 
   // Submit Đặt lịch cá nhân 1-1
-  const handleSaveIndividualSchedule = (e: React.FormEvent) => {
+  const handleSaveIndividualSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!individualForm.candidateName.trim()) {
-      alert('Vui lòng nhập tên ứng viên');
+    if (!individualForm.applicationId) {
+      showToast('Vui lòng chọn ứng viên cần đặt lịch.');
       return;
     }
-
-    const newSession: InterviewSession = {
-      id: `IV-${Date.now().toString().slice(-4)}`,
-      candidateName: individualForm.candidateName,
-      candidateEmail: individualForm.candidateEmail || 'candidate@gmail.com',
-      candidatePhone: individualForm.candidatePhone || '0900 123 456',
-      candidateAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
-      position: individualForm.position,
-      date: individualForm.date,
-      dayLabel: 'Thứ 2',
-      startTime: individualForm.startTime,
-      endTime: individualForm.endTime,
-      round: individualForm.round,
-      interviewers: [individualForm.interviewer, 'Trần Thị Recruiter'],
-      type: individualForm.type,
-      roomOrLink: individualForm.type === 'offline' ? individualForm.room : individualForm.meetLink,
-      status: 'confirmed',
-      notes: individualForm.notes,
-    };
-
-    setInterviews([newSession, ...interviews]);
-    setIsScheduleModalOpen(false);
-    showToast(
-      `Đã đặt lịch phỏng vấn cho ứng viên "${newSession.candidateName}". Hệ thống đã tự động gửi email thư mời (kèm file .ics) cho các bên!`
-    );
+    if (!individualForm.interviewer) {
+      showToast('Vui lòng chọn người phỏng vấn.');
+      return;
+    }
+    const duration = minutesBetween(individualForm.startTime, individualForm.endTime);
+    if (!individualForm.date || duration <= 0) {
+      showToast('Giờ kết thúc phải sau giờ bắt đầu.');
+      return;
+    }
+    if (isPastDate(individualForm.date)) {
+      showToast('Không thể đặt lịch phỏng vấn trong quá khứ.');
+      return;
+    }
+    if (individualForm.type === 'online' && !individualForm.meetLink.trim()) {
+      showToast('Vui lòng nhập đường link phỏng vấn trực tuyến.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await apiRequest<InterviewItem>('/interviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          application_id: Number(individualForm.applicationId),
+          round_name: individualForm.round,
+          scheduled_time: `${individualForm.date}T${individualForm.startTime}`,
+          duration_minutes: duration,
+          location: individualForm.type === 'offline' ? individualForm.room : 'Trực tuyến',
+          meeting_link: individualForm.type === 'online' ? individualForm.meetLink.trim() : null,
+          interviewer_ids: [Number(individualForm.interviewer)],
+        }),
+      });
+      setInterviews((prev) => [toSession(created), ...prev]);
+      setIsScheduleModalOpen(false);
+      showToast(`Đã đặt lịch phỏng vấn cho ứng viên "${created.candidate_name}". Thư mời đã được đưa vào hàng đợi gửi email.`);
+    } catch (err) {
+      showToast(errorText(err, 'Không đặt được lịch phỏng vấn.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // Submit Đặt lịch hàng loạt (Bulk Scheduling)
-  const handleSaveBulkSchedule = (e: React.FormEvent) => {
+  // Submit Đặt lịch hàng loạt (Bulk Scheduling): consecutive slots, all-or-nothing on the server
+  const handleSaveBulkSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     const count = bulkForm.selectedCandidates.length;
-
-    // Giả lập tạo các ca phỏng vấn liên tiếp
-    const newSessions: InterviewSession[] = bulkForm.selectedCandidates.map((cand, idx) => {
-      const startHour = 13 + Math.floor((30 + idx * 30) / 60);
-      const startMin = (30 + idx * 30) % 60;
-      const endHour = 13 + Math.floor((60 + idx * 30) / 60);
-      const endMin = (60 + idx * 30) % 60;
-
-      const formatTime = (h: number, m: number) =>
-        `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-
-      return {
-        id: `IV-BULK-${idx + 1}`,
-        candidateName: cand,
-        candidateEmail: `${cand.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
-        candidatePhone: '0988 000 111',
-        candidateAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
-        position: 'Senior Backend Engineer (Go/Python)',
-        date: bulkForm.date,
-        dayLabel: 'Thứ 6',
-        startTime: formatTime(startHour, startMin),
-        endTime: formatTime(endHour, endMin),
-        round: 'Vòng 1: Phỏng vấn nhanh (Batch Speed Interview)',
-        interviewers: [bulkForm.interviewer],
-        type: bulkForm.type,
-        roomOrLink: 'https://meet.google.com/batch-interview-room',
-        status: 'confirmed',
-        notes: `Ca số ${idx + 1} trong đợt phỏng vấn hàng loạt chiều ngày ${bulkForm.date}`,
-      };
-    });
-
-    setInterviews([...newSessions, ...interviews]);
-    setIsScheduleModalOpen(false);
-    showToast(
-      `Đã tự động chia ca và đặt lịch thành công cho ${count} ứng viên! Email lịch hẹn đã được gửi tới từng ứng viên.`
-    );
+    if (!count) { showToast('Vui lòng chọn ít nhất một ứng viên.'); return; }
+    if (!bulkForm.interviewer) { showToast('Vui lòng chọn người phỏng vấn.'); return; }
+    if (!bulkForm.date) { showToast('Vui lòng chọn ngày phỏng vấn.'); return; }
+    if (isPastDate(bulkForm.date)) { showToast('Không thể đặt lịch phỏng vấn trong quá khứ.'); return; }
+    setSaving(true);
+    try {
+      const res = await apiRequest<{ created: InterviewItem[] }>('/interviews/bulk', {
+        method: 'POST',
+        body: JSON.stringify({
+          application_ids: bulkForm.selectedCandidates.map(Number),
+          start_time: `${bulkForm.date}T13:30`,
+          slot_minutes: bulkForm.slotDurationMinutes,
+          round_name: 'Vòng 1: Phỏng vấn tập trung',
+          location: bulkForm.type === 'online' ? 'Trực tuyến' : DEFAULT_ROOM,
+          interviewer_ids: [Number(bulkForm.interviewer)],
+          confirm: true,
+        }),
+      });
+      setInterviews((prev) => [...res.created.map(toSession), ...prev]);
+      setIsScheduleModalOpen(false);
+      showToast(`Đã chia ca và đặt lịch cho ${res.created.length} ứng viên. Thư mời đã được đưa vào hàng đợi gửi email.`);
+    } catch (err) {
+      showToast(errorText(err, 'Không xếp được lịch hàng loạt.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Mở popup Dời lịch (Reschedule)
@@ -399,30 +356,34 @@ export default function RecruiterInterviewsPage() {
   };
 
   // Xác nhận Dời lịch
-  const handleConfirmReschedule = (e: React.FormEvent) => {
+  const handleConfirmReschedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSessionForReschedule) return;
-
-    setInterviews((prev) =>
-      prev.map((s) => {
-        if (s.id === selectedSessionForReschedule.id) {
-          return {
-            ...s,
-            date: rescheduleDate,
-            startTime: rescheduleStartTime,
-            endTime: rescheduleEndTime,
-            status: 'rescheduled',
-            rescheduleReason: rescheduleReason,
-          };
-        }
-        return s;
-      })
-    );
-
-    setIsRescheduleModalOpen(false);
-    showToast(
-      `Đã dời lịch phỏng vấn của "${selectedSessionForReschedule.candidateName}". Đã gửi email cập nhật thời gian mới cho Ứng viên và Hội đồng phỏng vấn!`
-    );
+    const sess = selectedSessionForReschedule;
+    if (!sess) return;
+    const duration = minutesBetween(rescheduleStartTime, rescheduleEndTime);
+    if (duration <= 0) { showToast('Giờ kết thúc phải sau giờ bắt đầu.'); return; }
+    if (isPastDate(rescheduleDate)) { showToast('Không thể dời lịch phỏng vấn vào quá khứ.'); return; }
+    setSaving(true);
+    try {
+      const updated = await apiRequest<InterviewItem>(`/interviews/${sess.interviewId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          scheduled_time: `${rescheduleDate}T${rescheduleStartTime}`,
+          duration_minutes: duration,
+          location: sess.location,
+          meeting_link: sess.meetingLink,
+          interviewer_ids: sess.interviewerIds,
+          reason: rescheduleReason.trim() || null,
+        }),
+      });
+      setInterviews((prev) => prev.map((x) => (x.interviewId === sess.interviewId ? { ...toSession(updated), rescheduleReason } : x)));
+      setIsRescheduleModalOpen(false);
+      showToast(`Đã dời lịch phỏng vấn của "${sess.candidateName}". Thông báo thời gian mới đã được gửi cho ứng viên và hội đồng phỏng vấn.`);
+    } catch (err) {
+      showToast(errorText(err, 'Không dời được lịch.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Mở popup Hủy lịch (Cancel)
@@ -432,41 +393,57 @@ export default function RecruiterInterviewsPage() {
   };
 
   // Xác nhận Hủy lịch
-  const handleConfirmCancel = (e: React.FormEvent) => {
+  const handleConfirmCancel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSessionForCancel) return;
-
-    setInterviews((prev) =>
-      prev.map((s) => {
-        if (s.id === selectedSessionForCancel.id) {
-          return {
-            ...s,
-            status: 'cancelled',
-            cancelReason: cancelReason,
-          };
-        }
-        return s;
-      })
-    );
-
-    setIsCancelModalOpen(false);
-    showToast(
-      `Đã hủy ca phỏng vấn của "${selectedSessionForCancel.candidateName}". Đã gửi email thông báo hủy và thư cảm ơn cho các bên!`
-    );
+    const sess = selectedSessionForCancel;
+    if (!sess) return;
+    if (!cancelReason.trim()) { showToast('Vui lòng nhập lý do hủy lịch.'); return; }
+    setSaving(true);
+    try {
+      const updated = await interviewService.cancel(sess.interviewId, cancelReason.trim());
+      setInterviews((prev) => prev.map((x) => (x.interviewId === sess.interviewId ? { ...toSession(updated), cancelReason: cancelReason.trim() } : x)));
+      setIsCancelModalOpen(false);
+      setCancelReason('');
+      showToast(`Đã hủy ca phỏng vấn của "${sess.candidateName}". Thông báo hủy đã được gửi cho các bên.`);
+    } catch (err) {
+      showToast(errorText(err, 'Không hủy được lịch.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ==========================================
   // FILTERING LOGIC
   // ==========================================
   const filteredInterviews = useMemo(() => {
+    const q = searchTerm.trim();
     return interviews.filter((s) => {
-      const matchSearch =
-        s.candidateName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.interviewers.some((i) => i.toLowerCase().includes(searchTerm.toLowerCase()));
+      if (q) {
+        const score = Math.max(
+          getSearchScore(s.candidateName, q),
+          getSearchScore(s.position, q),
+          ...s.interviewers.map((i) => getSearchScore(i, q))
+        );
+        if (score === 0) return false;
+      }
 
       const matchType = typeFilter === 'all' || s.type === typeFilter;
-      return matchSearch && matchType;
+      return matchType;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.candidateName, q),
+          getSearchScore(a.position, q),
+          ...a.interviewers.map((i) => getSearchScore(i, q))
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.candidateName, q),
+          getSearchScore(b.position, q),
+          ...b.interviewers.map((i) => getSearchScore(i, q))
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [interviews, searchTerm, typeFilter]);
 
@@ -479,6 +456,9 @@ export default function RecruiterInterviewsPage() {
     const rescheduled = interviews.filter((s) => s.status === 'rescheduled').length;
     return { total, confirmed, online, offline, rescheduled };
   }, [interviews]);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6 antialiased font-sans">
@@ -567,20 +547,26 @@ export default function RecruiterInterviewsPage() {
         {/* Search & Type filter */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-1">
           <div className="relative flex-1 max-w-xs">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
+            <SearchAutocompleteInput
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(val) => setSearchTerm(val)}
+              onSelectSuggestion={(item) => setSearchTerm(item.title)}
               placeholder="Tìm theo ứng viên, vị trí, interviewer..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              size="sm"
+              localSuggestions={interviews.map((s) => ({
+                id: String(s.interviewId),
+                title: s.candidateName,
+                subtitle: `${s.position} • Interviewer: ${s.interviewers.join(', ')}`,
+                category: "candidate",
+                category_label: "Phỏng vấn",
+              }))}
             />
           </div>
 
           <div className="flex items-center gap-2">
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as any)}
+              onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
               className="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
             >
               <option value="all">Tất cả hình thức</option>
@@ -630,7 +616,7 @@ export default function RecruiterInterviewsPage() {
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 text-xs">
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-slate-900 text-sm">
-                Tuần: 12/10/2026 &mdash; 17/10/2026
+                Tuần: {WEEK_DAYS[0].dateDisplay} &mdash; {WEEK_DAYS[5].dateDisplay}
               </span>
               <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold">
                 Tuần hiện tại
@@ -781,11 +767,17 @@ export default function RecruiterInterviewsPage() {
                     </span>
                   </div>
 
-                  <img
-                    src={session.candidateAvatar}
-                    alt={session.candidateName}
-                    className="w-11 h-11 rounded-2xl object-cover border border-slate-200 shrink-0"
-                  />
+                  {session.candidateAvatar ? (
+                    <img
+                      src={session.candidateAvatar}
+                      alt={session.candidateName}
+                      className="w-11 h-11 rounded-2xl object-cover border border-slate-200 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-2xl bg-sky-100 text-[#0284C7] font-extrabold text-base flex items-center justify-center border border-slate-200 shrink-0 select-none">
+                      {(session.candidateName || "U").trim().split(" ").slice(-1)[0][0]?.toUpperCase() || "U"}
+                    </div>
+                  )}
 
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -970,33 +962,33 @@ export default function RecruiterInterviewsPage() {
                       <label className="block font-bold text-slate-800 mb-1">
                         Họ và tên ứng viên *
                       </label>
-                      <input
-                        type="text"
+                      <select
                         required
-                        placeholder="Ví dụ: Hoàng Đình Trọng"
-                        value={individualForm.candidateName}
-                        onChange={(e) =>
-                          setIndividualForm({ ...individualForm, candidateName: e.target.value })
-                        }
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-blue-500"
-                      />
+                        value={individualForm.applicationId}
+                        onChange={(e) => {
+                          const a = schedulable.find((x) => String(x.id) === e.target.value);
+                          setIndividualForm({
+                            ...individualForm, applicationId: e.target.value, candidateName: a?.full_name || '',
+                            candidateEmail: a?.email || '', position: a?.job_title || '',
+                          });
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+                      >
+                        <option value="">-- Chọn ứng viên --</option>
+                        {schedulable.map((a) => (
+                          <option key={a.id} value={a.id}>{a.full_name} ({a.email})</option>
+                        ))}
+                      </select>
                     </div>
 
                     <div>
                       <label className="block font-bold text-slate-800 mb-1">Vị trí ứng tuyển</label>
                       <select
                         value={individualForm.position}
-                        onChange={(e) =>
-                          setIndividualForm({ ...individualForm, position: e.target.value })
-                        }
+                        disabled
                         className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
                       >
-                        <option value="Senior Backend Engineer (Go/Python)">
-                          Senior Backend Engineer (Go/Python)
-                        </option>
-                        <option value="Frontend React Lead">Frontend React Lead</option>
-                        <option value="Product Owner / BA Lead">Product Owner / BA Lead</option>
-                        <option value="UI/UX Designer Senior">UI/UX Designer Senior</option>
+                        <option value={individualForm.position}>{individualForm.position || '— theo hồ sơ ứng viên —'}</option>
                       </select>
                     </div>
                   </div>
@@ -1007,20 +999,17 @@ export default function RecruiterInterviewsPage() {
                       Hội đồng phỏng vấn (Interviewer) *
                     </label>
                     <select
+                      required
                       value={individualForm.interviewer}
                       onChange={(e) =>
                         setIndividualForm({ ...individualForm, interviewer: e.target.value })
                       }
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
                     >
-                      <option value="Nguyễn Tiến Dũng (Engineering Director)">
-                        Nguyễn Tiến Dũng (Engineering Director)
-                      </option>
-                      <option value="Phạm Văn Tuấn (Tech Lead)">Phạm Văn Tuấn (Tech Lead)</option>
-                      <option value="Lê Thị Bích Ngọc (CPO)">Lê Thị Bích Ngọc (CPO)</option>
-                      <option value="TS. Hoàng Minh Quân (Head of AI)">
-                        TS. Hoàng Minh Quân (Head of AI)
-                      </option>
+                      <option value="">-- Chọn người phỏng vấn --</option>
+                      {(panelPeople || []).map((u) => (
+                        <option key={u.id} value={u.id}>{u.full_name}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -1031,6 +1020,7 @@ export default function RecruiterInterviewsPage() {
                       <input
                         type="date"
                         required
+                        min={getLocalTodayDateString()}
                         value={individualForm.date}
                         onChange={(e) =>
                           setIndividualForm({ ...individualForm, date: e.target.value })
@@ -1120,10 +1110,11 @@ export default function RecruiterInterviewsPage() {
                     ) : (
                       <div>
                         <label className="block font-bold text-slate-700 mb-1">
-                          Đường link Google Meet (Tự động tạo)
+                          Đường link Google Meet
                         </label>
                         <input
-                          type="text"
+                          type="url"
+                          placeholder="https://meet.google.com/..."
                           value={individualForm.meetLink}
                           onChange={(e) =>
                             setIndividualForm({ ...individualForm, meetLink: e.target.value })
@@ -1169,6 +1160,7 @@ export default function RecruiterInterviewsPage() {
                       <label className="block font-bold text-slate-800 mb-1">Ngày phỏng vấn</label>
                       <input
                         type="date"
+                        min={getLocalTodayDateString()}
                         value={bulkForm.date}
                         onChange={(e) => setBulkForm({ ...bulkForm, date: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
@@ -1195,21 +1187,32 @@ export default function RecruiterInterviewsPage() {
                     </div>
                   </div>
 
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">Hội đồng phỏng vấn (Interviewer) *</label>
+                    <select
+                      required
+                      value={bulkForm.interviewer}
+                      onChange={(e) => setBulkForm({ ...bulkForm, interviewer: e.target.value })}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    >
+                      <option value="">-- Chọn người phỏng vấn --</option>
+                      {(panelPeople || []).map((u) => (
+                        <option key={u.id} value={u.id}>{u.full_name}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   {/* Danh sách ứng viên cần xếp lịch */}
                   <div className="space-y-2">
                     <label className="block font-bold text-slate-800">
                       Chọn danh sách ứng viên ({bulkForm.selectedCandidates.length} người được chọn)
                     </label>
                     <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 max-h-40 overflow-y-auto">
-                      {[
-                        'Vũ Đức Thịnh',
-                        'Đỗ Thùy Trang',
-                        'Nguyễn Tuấn Kiệt',
-                        'Đặng Quốc Huy',
-                        'Trần Minh Quân',
-                        'Lê Thảo My',
-                        'Hoàng Kim Ngân',
-                      ].map((name) => {
+                      {schedulable.length === 0 && (
+                        <p className="text-[11px] text-slate-500 p-2">Không có ứng viên nào đang chờ xếp lịch.</p>
+                      )}
+                      {schedulable.map((a) => {
+                        const name = String(a.id);
                         const isChecked = bulkForm.selectedCandidates.includes(name);
                         return (
                           <label
@@ -1236,7 +1239,8 @@ export default function RecruiterInterviewsPage() {
                               }}
                               className="w-4 h-4 text-blue-600 rounded"
                             />
-                            <span className="font-bold text-slate-800 text-xs">{name}</span>
+                            <span className="font-bold text-slate-800 text-xs">{a.full_name}</span>
+                            <span className="text-[10px] text-slate-400">{a.job_title}</span>
                           </label>
                         );
                       })}
@@ -1313,6 +1317,7 @@ export default function RecruiterInterviewsPage() {
                 <input
                   type="date"
                   required
+                  min={getLocalTodayDateString()}
                   value={rescheduleDate}
                   onChange={(e) => setRescheduleDate(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800"

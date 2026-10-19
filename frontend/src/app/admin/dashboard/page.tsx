@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { authService } from "@/features/auth/services/auth.service";
+import { API_BASE_URL } from "@/lib/api-client";
 
 export default function AdminDashboardControlCenter() {
   const [stats, setStats] = useState<any>({
@@ -42,7 +43,7 @@ export default function AdminDashboardControlCenter() {
     setIsLoading(true);
     try {
       const token = authService.getToken();
-      const res = await fetch("http://localhost:8000/api/v1/admin/stats", {
+      const res = await fetch(`${API_BASE_URL}/admin/stats`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {

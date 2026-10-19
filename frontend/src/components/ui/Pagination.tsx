@@ -13,6 +13,9 @@ export interface PaginationProps {
   className?: string;
   showItemCount?: boolean;
   itemLabel?: string;
+  pageSize?: number;
+  onPageSizeChange?: (pageSize: number) => void;
+  pageSizeOptions?: number[];
 }
 
 export function Pagination({
@@ -24,7 +27,11 @@ export function Pagination({
   className = '',
   showItemCount = true,
   itemLabel = 'mục',
+  pageSize,
+  onPageSizeChange,
+  pageSizeOptions = [10, 20, 50, 100],
 }: PaginationProps) {
+  const effectivePageSize = pageSize || itemsPerPage;
   // Đảm bảo số trang hợp lệ
   const safeTotalPages = Math.max(1, totalPages || 1);
   const safePage = Math.max(1, Math.min(currentPage, safeTotalPages));
@@ -49,9 +56,9 @@ export function Pagination({
   }, [safeTotalPages, safePage]);
 
   // Tính toán chỉ số hiển thị bản ghi
-  const startIndex = totalItems !== undefined ? (safePage - 1) * itemsPerPage : 0;
+  const startIndex = totalItems !== undefined ? (safePage - 1) * effectivePageSize : 0;
   const endIndex =
-    totalItems !== undefined ? Math.min(safePage * itemsPerPage, totalItems) : 0;
+    totalItems !== undefined ? Math.min(safePage * effectivePageSize, totalItems) : 0;
 
   return (
     <div
@@ -64,12 +71,32 @@ export function Pagination({
     >
       {/* Thông tin số lượng hiển thị (nếu có truyền totalItems) */}
       {showItemCount && totalItems !== undefined && (
-        <div className="text-xs text-slate-500 font-medium">
-          Hiển thị{' '}
-          <span className="font-bold text-slate-900">
-            {totalItems === 0 ? 0 : startIndex + 1}-{endIndex}
-          </span>{' '}
-          trên tổng số <span className="font-bold text-slate-900">{totalItems}</span> {itemLabel}
+        <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+          <div>
+            Hiển thị{' '}
+            <span className="font-bold text-slate-900">
+              {totalItems === 0 ? 0 : startIndex + 1}-{endIndex}
+            </span>{' '}
+            trên tổng số <span className="font-bold text-slate-900">{totalItems}</span> {itemLabel}
+          </div>
+
+          {onPageSizeChange && (
+            <div className="flex items-center gap-1.5 pl-3 border-l border-slate-200">
+              <span className="text-slate-500">Cỡ trang:</span>
+              <select
+                value={effectivePageSize}
+                onChange={(e) => onPageSizeChange(Number(e.target.value))}
+                className="bg-white border border-slate-200 text-slate-800 text-xs font-semibold rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                aria-label="Số bản ghi mỗi trang"
+              >
+                {pageSizeOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
 

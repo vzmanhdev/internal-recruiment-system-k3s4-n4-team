@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   Search,
+  ChevronRight,
   CheckCircle2,
   Clock,
   Calendar,
@@ -23,18 +24,57 @@ import {
   Check,
   Loader2,
   HeartHandshake,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
+  FileCheck,
+  UserCheck,
+  Gift,
 } from 'lucide-react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/providers/auth-provider';
+import { useApiData } from '@/hooks/useApiData';
+
+// Public lookup returns the general status only (S4-05); map it onto the 4-step timeline
+const STATUS_STEP: Record<string, number> = { 'Đã nhận': 0, 'Đang xem xét': 1, 'Mời phỏng vấn': 2, 'Kết thúc': 3 };
+
+interface MyApplicationItem {
+  id: number;
+  tracking_code?: string | null;
+  job_title?: string | null;
+  department?: string | null;
+  status: string;
+}
 
 function CandidateTrackContent() {
   const searchParams = useSearchParams();
   const queryCode = searchParams?.get('code') || '';
   const queryEmail = searchParams?.get('email') || '';
+  const { user } = useAuth();
+
+  // Load applicant's real applications if logged in
+  const { data: myApps } = useApiData(async () => {
+    if (!user) return [];
+    try {
+      return await apiRequest<MyApplicationItem[]>('/applications?mine=true');
+    } catch {
+      return [];
+    }
+  }, [user]);
 
   // Form Inputs
-  const [email, setEmail] = useState(queryEmail);
+  const [email, setEmail] = useState(queryEmail || user?.email || '');
   const [trackingCode, setTrackingCode] = useState(queryCode);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+
+  // Auto prefill email if user logs in
+  useEffect(() => {
+    if (user?.email && !email) {
+      setEmail(user.email);
+    }
+  }, [user]);
 
   // Result state
   const [searchResult, setSearchResult] = useState<{
@@ -45,41 +85,48 @@ function CandidateTrackContent() {
     department: string;
     appliedDate: string;
     currentStepIndex: number; // 0, 1, 2, 3 tương ứng 4 bước
+    statusLabel: string;
   } | null>(null);
 
-  // Tự động điền và kích hoạt tra cứu nếu có tham số URL
-  useEffect(() => {
-    if (queryCode) {
-      setTrackingCode(queryCode);
-      if (!email) {
-        setEmail(queryEmail || 'an.nguyen@gmail.com');
-      }
-      executeLookup(queryEmail || 'an.nguyen@gmail.com', queryCode);
-    }
-  }, [queryCode, queryEmail]);
-
-  const executeLookup = (userEmail: string, userCode: string) => {
+  const executeLookup = async (userEmail: string, userCode: string) => {
     setErrorMessage('');
     setIsLoading(true);
-
-    setTimeout(() => {
-      setIsLoading(false);
-
-      const trimmedCode = userCode.trim().toUpperCase();
-      const trimmedEmail = userEmail.trim().toLowerCase();
-
-      // Giả lập dữ liệu tra cứu
-      setSearchResult({
-        candidateName: 'Nguyễn Văn An',
-        email: trimmedEmail,
-        trackingCode: trimmedCode,
-        position: 'Senior Backend Engineer (Go/Python)',
-        department: 'Khối Công Nghệ & Phần Mềm',
-        appliedDate: '12/10/2026 - 14:30',
-        currentStepIndex: 1, // Bước 2: Đang xét duyệt CV
+    try {
+      const r = await apiRequest<{
+        tracking_code: string;
+        job_title: string | null;
+        department?: string | null;
+        candidate_name?: string | null;
+        status: string;
+        applied_date: string | null;
+      }>('/public/applications/status', {
+        method: 'POST',
+        body: JSON.stringify({ tracking_code: userCode.trim().toUpperCase(), email: userEmail.trim().toLowerCase() }),
       });
-    }, 600);
+      setSearchResult({
+        candidateName: r.candidate_name || user?.full_name || userEmail.trim().toLowerCase(),
+        email: userEmail.trim().toLowerCase(),
+        trackingCode: r.tracking_code,
+        position: r.job_title || 'Vị trí tuyển dụng',
+        department: r.department || '',
+        appliedDate: r.applied_date ? new Date(`${r.applied_date}T00:00:00`).toLocaleDateString('vi-VN') : '',
+        currentStepIndex: STATUS_STEP[r.status] ?? 1,
+        statusLabel: r.status,
+      });
+    } catch (err) {
+      setSearchResult(null);
+      setErrorMessage(err instanceof ApiError ? err.message : 'Không tìm thấy hồ sơ khớp với mã tra cứu và email.');
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Tự động tra cứu khi đường dẫn có đủ mã tra cứu và email
+  useEffect(() => {
+    if (queryCode && queryEmail) {
+      void executeLookup(queryEmail, queryCode); // eslint-disable-line react-hooks/set-state-in-effect
+    }
+  }, [queryCode, queryEmail]);
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +138,7 @@ function CandidateTrackContent() {
     }
 
     if (!trackingCode.trim()) {
-      setErrorMessage('Vui lòng nhập Mã tra cứu hồ sơ (Ví dụ: APP-2026-998).');
+      setErrorMessage('Vui lòng nhập Mã tra cứu hồ sơ (Ví dụ: APP-00000001).');
       return;
     }
 
@@ -103,31 +150,38 @@ function CandidateTrackContent() {
     setErrorMessage('');
   };
 
+  const handleSelectMyApplication = (appCode: string) => {
+    setTrackingCode(appCode);
+    if (email) {
+      executeLookup(email, appCode);
+    }
+  };
+
   // Danh sách 4 bước cố định theo yêu cầu
   const timelineSteps = [
     {
       step: 1,
       title: 'Đã tiếp nhận hồ sơ',
       subtitle: 'Hệ thống đã nhận đầy đủ thông tin và CV của bạn.',
-      timeText: '12/10/2026 14:30',
+      timeText: searchResult?.appliedDate || '',
     },
     {
       step: 2,
       title: 'Đang xét duyệt CV',
       subtitle: 'Hội đồng tuyển dụng và Trưởng bộ phận đang sàng lọc CV.',
-      timeText: 'Đang tiến hành',
+      timeText: (searchResult?.currentStepIndex ?? 0) > 1 ? 'Đã hoàn tất' : (searchResult?.currentStepIndex ?? 0) === 1 ? 'Đang tiến hành' : 'Chưa diễn ra',
     },
     {
       step: 3,
       title: 'Phỏng vấn',
       subtitle: 'Lên lịch phỏng vấn chuyên môn & văn hóa công ty.',
-      timeText: 'Đang chờ xếp lịch',
+      timeText: (searchResult?.currentStepIndex ?? 0) > 2 ? 'Đã hoàn tất' : (searchResult?.currentStepIndex ?? 0) === 2 ? 'Đang tiến hành' : 'Chưa diễn ra',
     },
     {
       step: 4,
       title: 'Kết quả Offer',
       subtitle: 'Thông báo kết quả phỏng vấn và gửi Thư mời nhận việc.',
-      timeText: 'Chưa diễn ra',
+      timeText: (searchResult?.currentStepIndex ?? 0) === 3 ? 'Quy trình đã kết thúc — kết quả được gửi qua email' : 'Chưa diễn ra',
     },
   ];
 
@@ -190,14 +244,40 @@ function CandidateTrackContent() {
                   required
                   value={trackingCode}
                   onChange={(e) => setTrackingCode(e.target.value)}
-                  placeholder="Ví dụ: APP-2026-998"
+                  placeholder="Ví dụ: APP-00000001"
                   className="w-full pl-12 pr-4 py-3 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-2xl text-base font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all uppercase placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:text-slate-400"
                 />
               </div>
               <p className="text-[11px] text-slate-400">
-                Mã hồ sơ đã được cấp sau khi bạn hoàn thành biểu mẫu nộp CV.
+                Mã hồ sơ đã được cấp sau khi bạn hoàn thành biểu mẫu nộp CV hoặc nhận qua email.
               </p>
             </div>
+
+            {/* Nếu ứng viên có hồ sơ đã nộp trong tài khoản, hiển thị chip tra cứu nhanh thật */}
+            {myApps && myApps.length > 0 && (
+              <div className="bg-blue-50/70 rounded-2xl p-3.5 border border-blue-100 space-y-2">
+                <div className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Hồ sơ đã nộp của bạn (Bấm để tra cứu nhanh):</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {myApps.map((a) => {
+                    const code = a.tracking_code || `APP-${String(a.id).padStart(6, '0')}`;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => handleSelectMyApplication(code)}
+                        className="px-2.5 py-1.5 bg-white hover:bg-blue-600 hover:text-white text-slate-800 rounded-xl text-xs font-bold border border-blue-200 transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95 group"
+                      >
+                        <span className="font-mono text-blue-600 group-hover:text-white">{code}</span>
+                        {a.job_title && <span className="text-[11px] opacity-75 max-w-[140px] truncate group-hover:text-white">• {a.job_title}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Nút Kiểm tra tiến độ (Blue Primary Button) */}
             <div className="pt-2">
@@ -378,6 +458,98 @@ function CandidateTrackContent() {
           </div>
         </div>
       )}
+
+      {/* 4. Quy trình tuyển dụng chuẩn 4 bước */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/90 shadow-sm space-y-5">
+        <div className="space-y-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 font-mono">Quy trình minh bạch</span>
+          <h2 className="text-base sm:text-lg font-black text-slate-900">4 Giai đoạn xử lý hồ sơ tại Doanh nghiệp</h2>
+          <p className="text-xs text-slate-500">Mọi hồ sơ đều trải qua các giai đoạn đánh giá chuyên sâu và phản hồi kết quả minh bạch.</p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+          <div className="p-4 rounded-2xl bg-blue-50/50 border border-blue-100 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-md bg-blue-600 text-white font-mono font-bold text-xs flex items-center justify-center">1</span>
+              <h3 className="font-extrabold text-xs text-slate-900">Tiếp nhận hồ sơ</h3>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Hệ thống cấp mã định danh duy nhất (APP-XXXXXXXX) và gửi email xác nhận ngay tức thì.
+            </p>
+          </div>
+          <div className="p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-md bg-indigo-600 text-white font-mono font-bold text-xs flex items-center justify-center">2</span>
+              <h3 className="font-extrabold text-xs text-slate-900">Xét duyệt CV</h3>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Hội đồng tuyển dụng và Trưởng bộ phận thẩm định năng lực chuyên môn trong 24h - 48h làm việc.
+            </p>
+          </div>
+          <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-md bg-purple-600 text-white font-mono font-bold text-xs flex items-center justify-center">3</span>
+              <h3 className="font-extrabold text-xs text-slate-900">Phỏng vấn</h3>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Lên lịch phỏng vấn (trực tuyến hoặc trực tiếp), gửi thư mời kèm đường dẫn Google Meet tiện lợi.
+            </p>
+          </div>
+          <div className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-md bg-emerald-600 text-white font-mono font-bold text-xs flex items-center justify-center">4</span>
+              <h3 className="font-extrabold text-xs text-slate-900">Kết quả & Thư mời Offer</h3>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Gửi thông báo kết quả và Job Offer Letter chi tiết về mức lương, đãi ngộ và lộ trình thử việc.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 5. Câu hỏi thường gặp (FAQ) */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/90 shadow-sm space-y-4">
+        <div className="flex items-center gap-2">
+          <HelpCircle className="w-5 h-5 text-blue-600" />
+          <h2 className="text-base sm:text-lg font-black text-slate-900">Câu hỏi thường gặp (FAQ)</h2>
+        </div>
+
+        <div className="space-y-2.5">
+          {[
+            {
+              q: 'Lấy mã tra cứu ở đâu?',
+              a: 'Mã tra cứu hồ sơ (định dạng APP-XXXXXXXX) được hệ thống hiển thị ngay sau khi nộp CV thành công và gửi tự động vào email của bạn. Vui lòng kiểm tra cả thư mục Hộp thư đến và Quảng cáo/Spam.',
+            },
+            {
+              q: 'Thời gian xét duyệt hồ sơ thông thường là bao lâu?',
+              a: 'Hồ sơ được thẩm định sơ loại trong vòng 24h - 48h làm việc. Trạng thái của bạn trên trang này sẽ chuyển sang "Đang xem xét" hoặc "Mời phỏng vấn" theo thời gian thực.',
+            },
+            {
+              q: 'Tôi có thể đổi lịch nếu bị trùng lịch phỏng vấn không?',
+              a: 'Hoàn toàn có thể. Khi nhận được lời mời phỏng vấn qua email hoặc trong cổng ứng viên, bạn có thể bấm "Đề nghị đổi lịch" và nhập khung thời gian thuận tiện hơn để HR sắp xếp lại.',
+            },
+          ].map((faq, fIdx) => {
+            const isOpen = openFaqIndex === fIdx;
+            return (
+              <div key={fIdx} className="rounded-2xl border border-slate-200/80 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setOpenFaqIndex(isOpen ? null : fIdx)}
+                  className="w-full p-4 text-left font-bold text-xs sm:text-sm text-slate-800 flex items-center justify-between gap-3 hover:bg-slate-50/80 transition-colors cursor-pointer"
+                >
+                  <span>{faq.q}</span>
+                  {isOpen ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />}
+                </button>
+                {isOpen && (
+                  <div className="p-4 pt-0 text-xs text-slate-500 leading-relaxed border-t border-slate-100 bg-slate-50/40">
+                    {faq.a}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

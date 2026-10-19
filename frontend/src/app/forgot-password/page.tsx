@@ -21,7 +21,7 @@ export default function ForgotPasswordPage() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [fieldError, setFieldError] = useState("");
+  const [isSessionLocked, setIsSessionLocked] = useState(false);
 
   // OTP 6-digit state
   const [otpDigits, setOtpDigits] = useState<string[]>(Array(6).fill(""));
@@ -54,18 +54,15 @@ export default function ForgotPasswordPage() {
   const handleRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
-    setFieldError("");
 
     const cleanEmail = email.trim();
     if (!cleanEmail) {
-      setFieldError("Vui lòng nhập email của bạn.");
-      setErrorMsg("Vui lòng nhập đầy đủ thông tin.");
+      setErrorMsg("Vui lòng nhập email của bạn.");
       return;
     }
 
     if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
-      setFieldError("Email không đúng định dạng (Ví dụ: name@company.com).");
-      setErrorMsg("Email không hợp lệ.");
+      setErrorMsg("Email không đúng định dạng (Ví dụ: name@company.com).");
       return;
     }
 
@@ -75,13 +72,12 @@ export default function ForgotPasswordPage() {
       setResetSessionId(res.reset_session_id);
       setMaskedEmail(res.masked_email || cleanEmail);
       setCooldownSeconds(res.resend_cooldown_seconds || 60);
+      setIsSessionLocked(false);
+      setOtpDigits(Array(6).fill(""));
       setStep(3); // Jump directly to Step 3: OTP Input Form
     } catch (err: any) {
       if (err instanceof ApiError) {
-        setErrorMsg(err.message || "Không thể khởi tạo yêu cầu. Vui lòng thử lại.");
-        if (err.fieldErrors?.email) {
-          setFieldError(err.fieldErrors.email);
-        }
+        setErrorMsg(err.message || "Email không hợp lệ.");
       } else {
         setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng thử lại sau.");
       }
@@ -94,6 +90,7 @@ export default function ForgotPasswordPage() {
   // STEP 3: OTP Digits Handling & Verification
   // ==========================================
   const handleOtpChange = (index: number, value: string) => {
+    if (isSessionLocked) return;
     // Only accept numeric digits
     if (value && !/^\d+$/.test(value)) return;
 
@@ -115,12 +112,14 @@ export default function ForgotPasswordPage() {
   };
 
   const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isSessionLocked) return;
     if (e.key === "Backspace" && !otpDigits[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
   const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    if (isSessionLocked) return;
     e.preventDefault();
     const pastedData = e.clipboardData.getData("text").trim();
     if (/^\d{6}$/.test(pastedData)) {
@@ -132,7 +131,7 @@ export default function ForgotPasswordPage() {
   };
 
   const verifyOtpCode = async (otpCode: string) => {
-    if (!resetSessionId || otpCode.length !== 6) return;
+    if (!resetSessionId || otpCode.length !== 6 || isSessionLocked) return;
     setErrorMsg("");
     setIsLoading(true);
 
@@ -142,13 +141,21 @@ export default function ForgotPasswordPage() {
         setStep(4); // Go to Step 4: Success Screen
       }
     } catch (err: any) {
+      let msg = "Mã OTP không chính xác.";
       if (err instanceof ApiError) {
-        setErrorMsg(err.message || "Mã OTP không chính xác.");
+        msg = err.message || "Mã OTP không chính xác.";
       } else {
-        setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng thử lại sau.");
+        msg = "Không thể kết nối đến máy chủ. Vui lòng thử lại sau.";
+      }
+      setErrorMsg(msg);
+
+      // Check if session has been locked due to > 5 wrong attempts
+      if (msg.includes("khóa") || msg.includes("5 lần")) {
+        setIsSessionLocked(true);
+      } else {
+        inputRefs.current[0]?.focus();
       }
       setOtpDigits(Array(6).fill(""));
-      inputRefs.current[0]?.focus();
     } finally {
       setIsLoading(false);
     }
@@ -156,7 +163,7 @@ export default function ForgotPasswordPage() {
 
   // Resend OTP
   const handleResendOtp = async () => {
-    if (cooldownSeconds > 0 || isResending || !resetSessionId) return;
+    if (cooldownSeconds > 0 || isResending || !resetSessionId || isSessionLocked) return;
     setErrorMsg("");
     setIsResending(true);
 
@@ -179,7 +186,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen flex flex-col justify-center items-center p-4 sm:p-8 bg-[#F8FAFC]">
       <Card className="w-full max-w-[460px] p-6 sm:p-10 bg-white border border-slate-200/80 shadow-[0_20px_50px_rgba(8,112,184,0.07)] space-y-6 rounded-3xl">
-        
+
         {/* ========================================================================= */}
         {/* STEP 1: NHẬP EMAIL */}
         {/* ========================================================================= */}
@@ -212,11 +219,9 @@ export default function ForgotPasswordPage() {
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
-                  setFieldError("");
                   setErrorMsg("");
                 }}
                 leftIcon={<Mail className="w-4 h-4 text-slate-400" />}
-                error={fieldError}
                 required
                 className="h-12 text-sm"
               />
@@ -310,7 +315,7 @@ export default function ForgotPasswordPage() {
             </div>
 
             {errorMsg && (
-              <Alert variant="error" title="Lỗi xác thực">
+              <Alert variant="error" title={isSessionLocked ? "Tài khoản bị tạm khóa" : "Lỗi xác thực"}>
                 {errorMsg}
               </Alert>
             )}
@@ -325,32 +330,45 @@ export default function ForgotPasswordPage() {
                   inputMode="numeric"
                   maxLength={1}
                   value={digit}
+                  disabled={isSessionLocked || isLoading}
                   onChange={(e) => handleOtpChange(idx, e.target.value)}
                   onKeyDown={(e) => handleOtpKeyDown(idx, e)}
                   onPaste={handleOtpPaste}
-                  className="w-11 h-13 sm:w-12 sm:h-14 text-center text-xl font-bold text-slate-800 bg-slate-50/80 border border-slate-200 rounded-xl focus:border-[#0284C7] focus:bg-white focus:ring-4 focus:ring-sky-100 outline-none transition-all"
-                  autoFocus={idx === 0}
+                  className={`w-11 h-13 sm:w-12 sm:h-14 text-center text-xl font-bold rounded-xl border outline-none transition-all ${
+                    isSessionLocked
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50 select-none"
+                      : "text-slate-800 bg-slate-50/80 border-slate-200 focus:border-[#0284C7] focus:bg-white focus:ring-4 focus:ring-sky-100"
+                  }`}
+                  autoFocus={idx === 0 && !isSessionLocked}
                 />
               ))}
             </div>
 
             <div className="text-center space-y-1 text-xs">
-              <p className="text-slate-500">Mã OTP có hiệu lực trong 10 phút.</p>
-              
-              {cooldownSeconds > 0 ? (
-                <p className="text-slate-400 font-medium">
-                  Gửi lại mã sau <span className="text-[#0284C7] font-bold">{formatTimer(cooldownSeconds)}</span>
+              {isSessionLocked ? (
+                <p className="text-rose-600 font-semibold">
+                  Phiên xác thực đã bị khóa do nhập sai quá 5 lần. Vui lòng yêu cầu mã OTP mới.
                 </p>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleResendOtp}
-                  disabled={isResending}
-                  className="inline-flex items-center gap-1 font-semibold text-[#0284C7] hover:underline disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isResending ? "animate-spin" : ""}`} />
-                  Gửi lại mã
-                </button>
+                <>
+                  <p className="text-slate-500">Mã OTP có hiệu lực trong 10 phút.</p>
+
+                  {cooldownSeconds > 0 ? (
+                    <p className="text-slate-400 font-medium">
+                      Gửi lại mã sau <span className="text-[#0284C7] font-bold">{formatTimer(cooldownSeconds)}</span>
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={isResending}
+                      className="inline-flex items-center gap-1 font-semibold text-[#0284C7] hover:underline disabled:opacity-50 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isResending ? "animate-spin" : ""}`} />
+                      Gửi lại mã
+                    </button>
+                  )}
+                </>
               )}
             </div>
 
@@ -359,22 +377,43 @@ export default function ForgotPasswordPage() {
                 variant="primary"
                 size="lg"
                 isLoading={isLoading}
+                disabled={isSessionLocked || isLoading || otpDigits.join("").length < 6}
                 onClick={() => verifyOtpCode(otpDigits.join(""))}
-                className="w-full h-12 text-sm font-bold bg-[#0284C7] hover:bg-[#0369A1] shadow-md shadow-sky-500/20 rounded-xl"
+                className="w-full h-12 text-sm font-bold bg-[#0284C7] hover:bg-[#0369A1] shadow-md shadow-sky-500/20 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
               >
                 Xác nhận
               </Button>
 
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => setStep(2)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+              {isSessionLocked ? (
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => {
+                    setStep(1);
+                    setIsSessionLocked(false);
+                    setErrorMsg("");
+                    setOtpDigits(Array(6).fill(""));
+                  }}
+                  className="w-full h-12 text-sm font-bold border-sky-300 text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-xl cursor-pointer"
                 >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  Quay lại
-                </button>
-              </div>
+                  Yêu cầu mã OTP mới
+                </Button>
+              ) : (
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep(1);
+                      setIsSessionLocked(false);
+                      setErrorMsg("");
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Quay lại nhập email
+                  </button>
+                </div>
+              )}
             </div>
           </>
         )}

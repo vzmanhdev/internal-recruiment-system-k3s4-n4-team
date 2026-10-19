@@ -7,14 +7,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sqlalchemy.orm import Session
 from app.db.session import engine, SessionLocal, Base
 from app.core.security import hash_password
+import app.models  # Register all SQLAlchemy models and relationships
 from app.models.user import User
-from app.models.hr import Department
+from app.models.hr import Department, JobTitle, Competency, SharedCategory
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
 from app.models.job import JobPosting
 from app.models.application import JobApplication, ApplicationLog
 from app.models.interview import InterviewSchedule, InterviewInterviewer
 from app.models.offer_onboarding import JobOffer, OnboardingChecklist
 from app.models.referral_eval import InternalReferral
+from app.models.email_automation import EmailTemplate, EmailLog
+from app.models.audit import AuditLog, Permission, RolePermission
+from app.db.seed_rbac import seed_rbac
 
 def reset_and_seed_database():
     print("=========================================================================")
@@ -68,13 +72,6 @@ def reset_and_seed_database():
                 "role": "hr_manager",
                 "phone": "0912345678",
                 "code": "NV-HRM-02"
-            },
-            {
-                "email": "manager@company.com",
-                "full_name": "Lê Trưởng Nhóm Tech",
-                "role": "hiring_manager",
-                "phone": "0923456789",
-                "code": "NV-HM-03"
             },
             {
                 "email": "truongbophan@company.com",
@@ -277,6 +274,59 @@ def reset_and_seed_database():
         db.add(int1)
         db.commit()
         print(" -> Seeded 1 Interview Schedule")
+
+        # 7. Default RBAC Permissions & Role Permissions
+        print(" -> Seeding RBAC Roles, Permissions & User Mappings...")
+        seed_rbac()
+        print(" -> Seeded Default RBAC Permissions & Role Mappings")
+
+        # 8. Seed Initial Audit Log
+        audit_init = AuditLog(
+            actor_id=user_objs["admin"].id,
+            actor_email="admin@company.com",
+            action="SYSTEM_INIT_SEED",
+            target_entity="Database",
+            target_id="0",
+            ip_address="127.0.0.1",
+            payload_json='{"message": "Database initialized with 7 business roles and demo data"}'
+        )
+        db.add(audit_init)
+        db.commit()
+        print(" -> Seeded Initial System Audit Log")
+
+        # 9. Seed Email Template
+        tpl = EmailTemplate(
+            code="PASSWORD_RESET_OTP",
+            name="Mẫu Email Mã OTP Đặt Lại Mật Khẩu",
+            category="Hệ thống",
+            subject="[Mã OTP] Yêu cầu đặt lại mật khẩu hệ thống",
+            body_html="<p>Xin chào <b>{user_name}</b>,</p><p>Mã OTP của bạn là: <b>{otp_code}</b>. Hạn dùng 5 phút.</p>",
+            is_auto_send=True,
+            is_active=True
+        )
+        db.add(tpl)
+        db.commit()
+        print(" -> Seeded Email Template")
+
+        # 10. Master Data (JobTitles, Competencies, SharedCategories)
+        jt1 = JobTitle(name="Kỹ Sư Backend", department_id=dept_objs["IT"].id, level="Senior", min_salary=25000000, max_salary=35000000, description="Kỹ sư phát triển Backend")
+        jt2 = JobTitle(name="Chuyên Viên Tuyển Dụng", department_id=dept_objs["HR"].id, level="Mid-Level", min_salary=18000000, max_salary=25000000, description="Recruitment Specialist")
+        db.add(jt1)
+        db.add(jt2)
+
+        c1 = Competency(name="Kỹ năng Lập trình Python / FastAPI", category="Technical", description="Thành thạo REST API, ORM", required_level=4, weight=0.4)
+        c2 = Competency(name="Kỹ năng Giao tiếp & Đàm phán", category="Soft Skills", description="Khả năng làm việc nhóm & trao đổi ứng viên", required_level=3, weight=0.3)
+        db.add(c1)
+        db.add(c2)
+
+        sc1 = SharedCategory(category_type="candidate_source", name="Cổng tuyển dụng công ty (Career Site)", sort_order=1)
+        sc2 = SharedCategory(category_type="candidate_source", name="Mạng xã hội LinkedIn", sort_order=2)
+        sc3 = SharedCategory(category_type="candidate_source", name="Giới thiệu nội bộ (Referral)", sort_order=3)
+        db.add(sc1)
+        db.add(sc2)
+        db.add(sc3)
+        db.commit()
+        print(" -> Seeded Job Titles, Competencies & Master Data Categories")
 
         print("\n=========================================================================")
         print("[4/4] SEED COMPLETED SUCCESSFULLY! DEMO ACCOUNTS READY FOR TESTING:")

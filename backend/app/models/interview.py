@@ -20,6 +20,13 @@ class InterviewSchedule(Base):
     feedback_notes = Column(Text, nullable=True)
     score = Column(Integer, nullable=True) # 1-10 rating
     passed = Column(Boolean, nullable=True)
+    # S6-04/S6-05/S6-06
+    confirmation_token_hash = Column(String(128), nullable=True)
+    candidate_response = Column(String(30), nullable=True)  # confirmed, reschedule_requested
+    candidate_response_note = Column(Text, nullable=True)
+    candidate_responded_at = Column(DateTime, nullable=True)
+    cancel_reason = Column(Text, nullable=True)
+    override_reason = Column(Text, nullable=True)
     
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -36,6 +43,7 @@ class InterviewSchedule(Base):
             "candidate_name": self.application.full_name if self.application else None,
             "candidate_email": self.application.email if self.application else None,
             "job_title": self.application.job_posting.title if self.application and self.application.job_posting else None,
+            "department": self.application.job_posting.department_name if self.application and self.application.job_posting else None,
             "round_number": self.round_number,
             "round_name": self.round_name,
             "scheduled_time": self.scheduled_time.isoformat() if self.scheduled_time else None,
@@ -43,6 +51,11 @@ class InterviewSchedule(Base):
             "location": self.location,
             "meeting_link": self.meeting_link,
             "status": self.status,
+            "cancel_reason": self.cancel_reason,
+            "override_reason": self.override_reason,
+            "candidate_response": self.candidate_response,
+            "candidate_response_note": self.candidate_response_note,
+            "candidate_responded_at": self.candidate_responded_at.isoformat() if self.candidate_responded_at else None,
             "feedback_notes": self.feedback_notes,
             "score": self.score,
             "passed": self.passed,

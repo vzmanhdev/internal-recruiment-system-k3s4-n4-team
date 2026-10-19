@@ -1,6 +1,11 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { interviewerApi } from '@/features/interviewer/api';
+import { interviewService } from '@/services/interview.service';
+import { useApiData } from '@/hooks/useApiData';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -42,8 +47,8 @@ import clsx from 'clsx';
 // Interface Câu hỏi phỏng vấn thông minh
 interface SmartQuestion {
   id: string;
-  category: 'Kỹ Thuật Cốt Lõi' | 'Kiến Trúc & Tối Ưu' | 'Xử Lý Tình Huống STAR' | 'Live Coding';
-  level: 'Middle' | 'Senior' | 'Lead';
+  category: string;
+  level: string;
   question: string;
   isAsked: boolean;
   scoringCriteria: string[]; // Các ý gạch đầu dòng ứng viên cần nói được
@@ -54,190 +59,64 @@ interface SmartQuestion {
 export default function LiveInterviewModePage() {
   const params = useParams();
   const router = useRouter();
-  const id = params?.id || '1';
+  const id = String(params?.id || '');
+  const interviewId = Number(id);
 
-  // 1. Dữ liệu ứng viên tương ứng theo ID
+  // Real interview + question suggestions for its job title / scorecard criteria (S7-02).
+  const { data, error, loading, reload } = useApiData(async () => {
+    const [mine, suggestions] = await Promise.all([interviewerApi.mine(), interviewService.questionSuggestions(interviewId)]);
+    return { interview: mine.find((i) => i.id === interviewId) || null, suggestions };
+  }, [interviewId]);
+
   const candidate = useMemo(() => {
-    if (id === '2') {
-      return {
-        id: 2,
-        name: 'Nguyễn Văn A',
-        position: 'Senior Backend Engineer (Python/FastAPI)',
-        department: 'Ban Công Nghệ Thông Tin',
-        round: 'Vòng 1 - Phỏng vấn Kiến trúc & Database',
-        time: '09:00 - 10:00 (Sáng nay)',
-        format: 'Online (Microsoft Teams)',
-        meetingUrl: 'https://teams.microsoft.com/l/meetup-join/...',
-        experience: '5 năm kinh nghiệm',
-        education: 'Kỹ sư Phần mềm - Đại học FPT',
-        skills: ['Python', 'FastAPI', 'PostgreSQL', 'Redis', 'Kafka', 'Docker', 'Kubernetes'],
-        currentCompany: 'E-Commerce Platform Vietnam',
-      };
-    }
+    const i = data?.interview;
+    const start = i ? new Date(i.scheduled_time) : null;
+    const end = start ? new Date(start.getTime() + (i?.duration_minutes || 60) * 60000) : null;
+    const hm = (d: Date) => d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     return {
-      id: 1,
-      name: 'Lê Hoàng Cường',
-      position: 'Senior Frontend Engineer (React/Next.js)',
-      department: 'Ban Công Nghệ Thông Tin',
-      round: 'Vòng 2 - Đánh giá Kỹ thuật & Live Coding',
-      time: '14:00 - 15:00 (Hôm nay)',
-      format: 'Online (Google Meet)',
-      meetingUrl: 'https://meet.google.com/abc-defg-hij',
-      experience: '6 năm kinh nghiệm',
-      education: 'Cử nhân CNTT - Đại học Bách Khoa Hà Nội',
-      skills: ['React', 'Next.js', 'TypeScript', 'Tailwind CSS', 'Redux', 'System Design'],
-      currentCompany: 'Fintech Solutions JSC',
+      id: interviewId,
+      name: i?.candidate_name || '—',
+      position: i?.job_title || '',
+      department: '',
+      round: i?.round_name || '',
+      time: start && end ? `${hm(start)} - ${hm(end)}, ${start.toLocaleDateString('vi-VN')}` : '',
+      format: i?.meeting_link ? 'Trực tuyến' : i?.location ? `Trực tiếp (${i.location})` : 'Trực tiếp',
+      meetingUrl: i?.meeting_link || '',
+      experience: '—',
+      education: '—',
+      skills: [] as string[],
+      currentCompany: '—',
+      cvUrl: i?.cv_url || null,
     };
-  }, [id]);
+  }, [data, interviewId]);
 
-  // 2. Bộ câu hỏi thông minh được map tự động theo chức danh
-  const initialQuestions: SmartQuestion[] = useMemo(() => {
-    if (id === '2') {
-      // Bộ câu hỏi cho Backend Engineer
-      return [
-        {
-          id: 'be_1',
-          category: 'Kỹ Thuật Cốt Lõi',
-          level: 'Senior',
-          question:
-            'Trong FastAPI / Python 3.11+, cơ chế Async/Await hoạt động dưới Event Loop như thế nào? Khi nào việc dùng Async lại gây phản tác dụng và làm nghẽn tiến trình?',
-          isAsked: false,
-          scoringCriteria: [
-            'Nêu đúng bản chất Non-blocking I/O và cơ chế chuyển đổi context giữa các Coroutine qua Event Loop (asyncio).',
-            'Chỉ ra được nhược điểm nghiêm trọng: Nếu chạy tác vụ tính toán CPU-bound nặng hoặc gọi thư viện đồng bộ (như time.sleep, sync db driver) sẽ chặn đứng toàn bộ Event Loop.',
-            'Đưa ra giải pháp: Ủy quyền tác vụ nặng cho ThreadPoolExecutor / ProcessPoolExecutor hoặc Worker nền (Celery/RQ).',
-          ],
-          bonusPoints: 'Nêu được cách sử dụng uvloop để tối ưu thông lượng I/O cho Uvicorn.',
-          pitfallWarning: 'Nếu ứng viên trả lời nhầm lẫn giữa đa luồng OS Threads và đa nhiệm bất đồng bộ Single-threaded Event Loop.',
-        },
-        {
-          id: 'be_2',
-          category: 'Kiến Trúc & Tối Ưu',
-          level: 'Senior',
-          question:
-            'Thiết kế chiến lược Caching với Redis cho một Endpoint đọc dữ liệu thường xuyên. Bạn xử lý các bài toán Cache Penetration, Cache Breakdown và Cache Avalanche như thế nào?',
-          isAsked: false,
-          scoringCriteria: [
-            'Cache Penetration: Dùng Bloom Filter kiểm tra khóa trước khi query, hoặc cache giá trị NULL có TTL ngắn.',
-            'Cache Breakdown (Hot key hết hạn): Sử dụng Mutex Lock (Redis distributed lock) để chỉ cho 1 worker truy vấn DB và nạp cache, các worker khác chờ.',
-            'Cache Avalanche (Hàng loạt key hết hạn cùng lúc): Thêm khoảng thời gian ngẫu nhiên (Random Jitter TTL) thay vì đặt cùng 1 mốc thời gian.',
-          ],
-          bonusPoints: 'Đề xuất giải pháp Dual Caching (Local memory cache + Redis cluster) để giảm tải network latency.',
-        },
-        {
-          id: 'be_3',
-          category: 'Kỹ Thuật Cốt Lõi',
-          level: 'Senior',
-          question:
-            'Trong PostgreSQL, giải thích sự khác biệt giữa các mức cô lập giao dịch (Transaction Isolation Levels). Hiện tượng Phantom Read xảy ra ở cấp độ nào?',
-          isAsked: false,
-          scoringCriteria: [
-            'Giải thích được 4 mức: Read Uncommitted, Read Committed, Repeatable Read, Serializable.',
-            'Phân biệt rõ: Dirty Read, Non-repeatable Read và Phantom Read.',
-            'Chỉ ra được trong PostgreSQL, Repeatable Read sử dụng Snapshot Isolation và đã ngăn chặn được hầu hết Phantom Read thông thường, chỉ cần Serializable khi có Write Skew.',
-          ],
-        },
-        {
-          id: 'be_4',
-          category: 'Xử Lý Tình Huống STAR',
-          level: 'Senior',
-          question:
-            'Hãy kể lại sự cố Database Connection Pool bị cạn kiệt (Database Outage) mà bạn từng trực tiếp điều tra và khắc phục trong quá khứ?',
-          isAsked: false,
-          scoringCriteria: [
-            'Trình bày phương pháp STAR rõ ràng: Hoàn cảnh sự cố, triệu chứng nghẽn kết nối, công cụ profiling (pg_stat_activity).',
-            'Nguyên nhân cốt lõi: Rò rỉ connection do không đóng transaction, hoặc slow query giữ kết nối quá lâu.',
-            'Giải pháp dài hạn: Tinh chỉnh PgBouncer, đặt connection timeout, index bổ sung và thiết lập circuit breaker.',
-          ],
-        },
-      ];
-    }
+  const initialQuestions: SmartQuestion[] = useMemo(
+    () =>
+      (data?.suggestions || []).map((q) => ({
+        id: q.id,
+        category: q.criteria_name || 'Chung',
+        level: q.difficulty || '',
+        question: q.content,
+        isAsked: q.already_asked,
+        scoringCriteria: (q.suggested_answer || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean),
+      })),
+    [data],
+  );
 
-    // Bộ câu hỏi cho Frontend Engineer
-    return [
-      {
-        id: 'fe_1',
-        category: 'Kỹ Thuật Cốt Lõi',
-        level: 'Senior',
-        question:
-          'Trong React 18/19 và Next.js App Router, sự khác biệt bản chất giữa React Server Components (RSC) và Client Components là gì? Khi nào bắt buộc phải dùng "use client"?',
-        isAsked: false,
-        scoringCriteria: [
-          'Giải thích đúng: RSC chạy và render hoàn toàn ở server, không gửi JS bundle về client giúp giảm kích thước gói tải.',
-          'RSC có thể truy vấn trực tiếp cơ sở dữ liệu, file system hoặc secret keys an toàn.',
-          'Bắt buộc dùng "use client" khi cần: Browser Event listeners (onClick, onChange), React Hooks (useState, useEffect, useRef), hoặc Browser APIs (localStorage, window).',
-          'Nắm được quy tắc composition: RSC có thể bọc Client Component làm children.',
-        ],
-        bonusPoints: 'Giải thích được cấu trúc serialize dạng RSC Payload streaming qua HTTP.',
-        pitfallWarning: 'Ứng viên nhầm lẫn "use client" là chạy hoàn toàn ở client mà không hề SSR ở lần tải trang đầu tiên.',
-      },
-      {
-        id: 'fe_2',
-        category: 'Kiến Trúc & Tối Ưu',
-        level: 'Senior',
-        question:
-          'Một trang web thương mại điện tử có chỉ số LCP (Largest Contentful Paint) bị đỏ (> 4.5s) và INP (Interaction to Next Paint) kém. Bạn sẽ thực hiện quy trình chẩn đoán và khắc phục như thế nào?',
-        isAsked: false,
-        scoringCriteria: [
-          'Chẩn đoán: Sử dụng Chrome DevTools Performance panel, Lighthouse, Web Vitals profiling để xác định đúng phần tử LCP.',
-          'Tối ưu LCP: Dùng thẻ Priority Hints (fetchpriority="high"), chuyển đổi định dạng ảnh AVIF/WebP, preload hero image, loại bỏ render-blocking CSS/JS.',
-          'Tối ưu INP: Chia nhỏ tác vụ chạy lâu (Long Tasks > 50ms) bằng requestIdleCallback / scheduler.yield(), tránh re-render layout không cần thiết.',
-        ],
-        bonusPoints: 'Đề cập đến Server-Timing header và tối ưu TTFB từ phía máy chủ / CDN edge caching.',
-      },
-      {
-        id: 'fe_3',
-        category: 'Kỹ Thuật Cốt Lõi',
-        level: 'Senior',
-        question:
-          'Bạn hiểu thế nào về React Fiber Architecture và cơ chế Reconciliation? Khái niệm Virtual DOM Diffing vận hành với độ phức tạp thuật toán O(n) dựa trên những giả định gì?',
-        isAsked: false,
-        scoringCriteria: [
-          'Fiber là cấu trúc dữ liệu mô phỏng Call Stack dưới dạng Linked List 2 chiều (child, sibling, return) cho phép ngắt quãng và xếp độ ưu tiên cho render.',
-          'Hai giả định cốt lõi của Diffing O(n): Hai phần tử khác type sẽ sinh ra cây khác nhau hoàn toàn; và phần tử con có thể duy trì danh tính ổn định qua thuộc tính `key`.',
-        ],
-      },
-      {
-        id: 'fe_4',
-        category: 'Xử Lý Tình Huống STAR',
-        level: 'Senior',
-        question:
-          'Kể về một lần bạn phát hiện và xử lý sự cố rò rỉ bộ nhớ (Memory Leak) hoặc giật lag giao diện (Jank/Frame Drop) trong một Single Page Application phức tạp?',
-        isAsked: false,
-        scoringCriteria: [
-          'Mô tả cách dùng Heap Snapshot và Allocation Timeline trong Chrome DevTools để bắt đối tượng không được giải phóng.',
-          'Chỉ ra lỗi thường gặp: Quên xóa addEventListener, setInterval, subscription WebSocket hoặc closure giữ tham chiếu DOM cũ.',
-          'Kết quả đo lường: Khôi phục tốc độ 60fps mượt mà và giảm tiêu hao RAM.',
-        ],
-      },
-      {
-        id: 'fe_5',
-        category: 'Live Coding',
-        level: 'Lead',
-        question:
-          'Thử thách nhanh: Hãy mô tả hoặc viết một Custom Hook `useDebounce` hoặc `useVirtualList` tự chế có khả năng hủy bỏ (cancel) và quản lý dependency sạch sẽ.',
-        isAsked: false,
-        scoringCriteria: [
-          'Sử dụng setTimeout kết hợp cleanup function trong useEffect để clear timer khi input thay đổi.',
-          'Hỗ trợ callback debounce hoặc giá trị value debounce mượt mà.',
-        ],
-      },
-    ];
-  }, [id]);
-
-  const [questions, setQuestions] = useState<SmartQuestion[]>(initialQuestions);
+  const [questions, setQuestions] = useState<SmartQuestion[]>([]);
+  useEffect(() => { queueMicrotask(() => setQuestions(initialQuestions)); }, [initialQuestions]);
   const [openAccordions, setOpenAccordions] = useState<Record<string, boolean>>({});
   const [filterCategory, setFilterCategory] = useState<string>('all');
 
   // Ghi chú & Đánh giá nhanh
-  const [quickScore, setQuickScore] = useState<number>(4);
+  const [quickScore, setQuickScore] = useState<number>(0);
   const [quickNotes, setQuickNotes] = useState<string>('');
   const [prosNotes, setProsNotes] = useState<string>('');
   const [consNotes, setConsNotes] = useState<string>('');
-  const [autoSavedTime, setAutoSavedTime] = useState<string>('Vừa xong');
+  const [autoSavedTime, setAutoSavedTime] = useState<string>('chưa lưu');
 
   // Đồng hồ bấm giờ phỏng vấn
-  const [seconds, setSeconds] = useState<number>(1420); // Mặc định 23 phút 40 giây
+  const [seconds, setSeconds] = useState<number>(0);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(true);
 
   // CV Tab: Document View vs Summary
@@ -261,11 +140,42 @@ export default function LiveInterviewModePage() {
   };
 
   // Toggle Checkbox Đã hỏi
-  const toggleQuestionAsked = (questionId: string) => {
-    setQuestions((prev) =>
-      prev.map((q) => (q.id === questionId ? { ...q, isAsked: !q.isAsked } : q))
-    );
+  // "Đã hỏi" is recorded on the server so later rounds do not repeat it (S7-02 AC2); it cannot be undone.
+  const [markError, setMarkError] = useState<string | null>(null);
+  const toggleQuestionAsked = async (questionId: string) => {
+    const q = questions.find((x) => x.id === questionId);
+    if (!q || q.isAsked) return;
+    setQuestions((prev) => prev.map((x) => (x.id === questionId ? { ...x, isAsked: true } : x)));
+    try {
+      await interviewService.markAsked(interviewId, questionId);
+      setMarkError(null);
+    } catch (err) {
+      setQuestions((prev) => prev.map((x) => (x.id === questionId ? { ...x, isAsked: false } : x)));
+      setMarkError(err instanceof ApiError ? err.message : 'Không lưu được trạng thái câu hỏi.');
+    }
   };
+
+  // Quick notes are a per-browser draft only (the scorecard is the official record).
+  const draftKey = `interview-notes:${interviewId}`;
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(draftKey);
+      if (raw) {
+        const d = JSON.parse(raw);
+        queueMicrotask(() => {
+          setQuickScore(d.quickScore || 0); setQuickNotes(d.quickNotes || ''); setProsNotes(d.prosNotes || ''); setConsNotes(d.consNotes || '');
+          setAutoSavedTime(d.savedAt || 'chưa lưu');
+        });
+      }
+    } catch { /* storage unavailable */ }
+  }, [draftKey]);
+  useEffect(() => {
+    if (!quickScore && !quickNotes && !prosNotes && !consNotes) return;
+    try {
+      const savedAt = new Date().toLocaleTimeString('vi-VN');
+      sessionStorage.setItem(draftKey, JSON.stringify({ quickScore, quickNotes, prosNotes, consNotes, savedAt }));
+    } catch { /* storage unavailable */ }
+  }, [draftKey, quickScore, quickNotes, prosNotes, consNotes]);
 
   // Toggle Accordion Tiêu chí câu trả lời tốt
   const toggleAccordion = (questionId: string) => {
@@ -290,8 +200,13 @@ export default function LiveInterviewModePage() {
     });
   }, [questions, filterCategory]);
 
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (!data?.interview) return <EmptyState title="Không tìm thấy buổi phỏng vấn" hint="Bạn chỉ mở được buổi phỏng vấn mình được mời." />;
+
   return (
     <div className="space-y-4 animate-in fade-in duration-300 pb-16">
+      {markError && <div className="text-sm rounded-xl px-4 py-3 border bg-red-50 border-red-200 text-red-700">{markError}</div>}
       {/* 1. TOP CONTROL BAR (Thanh Điều Khiển Song Song Cố Định) */}
       <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-16 z-30 backdrop-blur-md bg-white/95">
         <div className="flex items-center gap-3">
@@ -554,7 +469,7 @@ export default function LiveInterviewModePage() {
                   Ghi Chú Nhanh Trong Buổi Phỏng Vấn (Live Scratchpad)
                 </h3>
               </div>
-              <span className="text-[10px] text-slate-400 font-medium">Tự động lưu nháp: {autoSavedTime}</span>
+              <span className="text-[10px] text-slate-400 font-medium">Nháp trên trình duyệt này: {autoSavedTime}</span>
             </div>
 
             {/* Điểm chấm nhanh sơ bộ */}

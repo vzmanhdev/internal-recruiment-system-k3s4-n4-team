@@ -1,6 +1,13 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { interviewerApi } from '@/features/interviewer/api';
+import { interviewService } from '@/services/interview.service';
+import { referralService } from '@/services/referral.service';
+import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/providers/auth-provider';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -38,109 +45,79 @@ interface RubricCriterion {
   weight: number; // Tỷ trọng (%)
 }
 
+const GENERIC_RUBRIC: Array<Omit<RubricCriterion, 'score' | 'comment'>> = [
+  { id: 'tech_core', name: '1. Kiến thức kỹ thuật & chuyên môn', category: 'Chuyên môn', description: 'Mức độ nắm vững kiến thức và công cụ cốt lõi của vị trí.', weight: 0 },
+  { id: 'problem_solving', name: '2. Tư duy giải quyết vấn đề', category: 'Thực chiến', description: 'Khả năng phân tích, suy luận và đưa ra giải pháp trong buổi phỏng vấn.', weight: 0 },
+  { id: 'communication', name: '3. Giao tiếp & phối hợp', category: 'Giao tiếp', description: 'Trình bày mạch lạc, lắng nghe và phản hồi.', weight: 0 },
+  { id: 'culture_fit', name: '4. Phù hợp văn hóa & trách nhiệm', category: 'Văn hóa', description: 'Tinh thần chủ động và cam kết.', weight: 0 },
+];
+
 export default function InterviewerEvaluationPage() {
   const params = useParams();
   const router = useRouter();
-  const evaluationId = params?.id || '1';
+  const interviewId = Number(params?.id);
+  const { user } = useAuth();
 
   // Trạng thái đã nộp / khóa phiếu (Read-only State)
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Thông tin ứng viên mock theo ID
-  const candidateInfo = useMemo(() => {
-    if (evaluationId === '2') {
-      return {
-        id: 2,
-        name: 'Nguyễn Văn A',
-        position: 'Senior Backend Engineer (Python/FastAPI)',
-        department: 'Ban Công Nghệ Thông Tin',
-        round: 'Vòng 1 - Phỏng vấn Kiến trúc & Database',
-        interviewDate: '12/10/2026',
-        interviewTime: '09:00 - 10:00 (Sáng nay)',
-        interviewer: 'Nguyễn Minh Trí (Lead Interviewer)',
-        experience: '5 năm kinh nghiệm',
-        education: 'Kỹ sư Phần mềm - Đại học FPT',
-      };
-    }
-    return {
-      id: 1,
-      name: 'Lê Hoàng Cường',
-      position: 'Senior Frontend Engineer (React/Next.js)',
-      department: 'Ban Công Nghệ Thông Tin',
-      round: 'Vòng 2 - Đánh giá Kỹ thuật & Live Coding',
-      interviewDate: '12/10/2026',
-      interviewTime: '14:00 - 15:00 (Hôm nay)',
-      interviewer: 'Nguyễn Minh Trí (Lead Tech Interviewer)',
-      experience: '6 năm kinh nghiệm',
-      education: 'Cử nhân CNTT - Đại học Bách Khoa Hà Nội',
-    };
-  }, [evaluationId]);
+  // Real interview + scorecard template generated from the job title's competency framework (S6-07).
+  const { data, error, loading, reload } = useApiData(async () => {
+    const [mine, template] = await Promise.all([
+      interviewerApi.mine(),
+      interviewService.scorecardTemplate(interviewId),
+    ]);
+    const interview = mine.find((i) => i.id === interviewId) || null;
+    return { interview, template };
+  }, [interviewId]);
+  const interview = data?.interview || null;
+  const usesFramework = !!data?.template.framework && (data?.template.criteria.length || 0) > 0;
 
-  // Danh sách các tiêu chí Rubric chấm điểm theo chuẩn
-  const [rubricCriteria, setRubricCriteria] = useState<RubricCriterion[]>([
-    {
-      id: 'tech_core',
-      name: '1. Kiến thức Kỹ thuật & Chuyên môn Cốt lõi',
-      category: 'Chuyên Môn',
-      description:
-        'Nắm vững cấu trúc dữ liệu, giải thuật, framework trọng tâm (React/Next.js/Python), tư duy clean code và tối ưu hóa hiệu năng render/truy vấn.',
-      score: 4,
-      comment: 'Ứng viên nắm rất chắc vòng đời React, Server Components và tối ưu hóa re-render. Giải quyết bài toán thuật toán nhanh gọn.',
-      weight: 30,
-    },
-    {
-      id: 'architecture',
-      name: '2. Tư duy Kiến trúc & Thiết kế Hệ thống',
-      category: 'Kiến Trúc',
-      description:
-        'Khả năng thiết kế hệ thống mở rộng, hiểu biết về Micro-Frontend/Microservices, state management, cache và giải quyết bài toán chịu tải cao.',
-      score: 4,
-      comment: 'Đã từng thiết kế hệ thống phục vụ hơn 50,000 CCU, nắm rõ caching layer (Redis) và chiến lược tách module linh hoạt.',
-      weight: 25,
-    },
-    {
-      id: 'problem_solving',
-      name: '3. Tư duy Giải quyết Vấn đề & Live Coding',
-      category: 'Thực Chiến',
-      description:
-        'Khả năng debug, suy luận logic khi gặp tình huống phát sinh và tốc độ chuyển hóa giải pháp thành mã nguồn chạy được trong buổi phỏng vấn.',
-      score: 4,
-      comment: 'Thao tác live coding tự tin, viết unit test đầy đủ, bình tĩnh khi được người phỏng vấn đặt câu hỏi bẻ khóa tình huống.',
-      weight: 20,
-    },
-    {
-      id: 'communication',
-      name: '4. Kỹ năng Giao tiếp & Phối hợp Nhóm',
-      category: 'Giao Tiếp',
-      description:
-        'Trình bày ý tưởng mạch lạc, lắng nghe phản hồi tích cực, phong thái tự tin và minh bạch trong tranh luận kỹ thuật chuyên sâu.',
-      score: 5,
-      comment: 'Giao tiếp rất lưu loát, mạch lạc. Tiếng Anh chuyên ngành tốt, có tố chất chia sẻ kiến thức và mentor cho đồng đội.',
-      weight: 15,
-    },
-    {
-      id: 'culture_fit',
-      name: '5. Độ phù hợp Văn hóa & Tinh thần Trách nhiệm',
-      category: 'Văn Hóa',
-      description:
-        'Tinh thần chủ động (can-do attitude), cam kết chất lượng sản phẩm, sự cầu thị học hỏi và gắn kết với các giá trị cốt lõi của công ty.',
-      score: 4,
-      comment: 'Có tinh thần ownership cao, sẵn sàng nhận bài toán khó và tôn trọng văn hóa hợp tác đa chức năng.',
-      weight: 10,
-    },
-  ]);
+  const candidateInfo = useMemo(() => {
+    const start = interview ? new Date(interview.scheduled_time) : null;
+    const end = start ? new Date(start.getTime() + (interview?.duration_minutes || 60) * 60000) : null;
+    const hm = (d: Date) => d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    return {
+      id: interviewId,
+      name: interview?.candidate_name || '—',
+      position: interview?.job_title || '',
+      department: '',
+      round: interview?.round_name || '',
+      interviewDate: start ? start.toLocaleDateString('vi-VN') : '',
+      interviewTime: start && end ? `${hm(start)} - ${hm(end)}` : '',
+      interviewer: user?.full_name || '',
+      experience: '—',
+      education: '—',
+    };
+  }, [interview, interviewId, user?.full_name]);
+
+  // Criteria come from the framework; without a framework a generic rubric is used (overall score only).
+  const [rubricCriteria, setRubricCriteria] = useState<RubricCriterion[]>([]);
+  useEffect(() => {
+    if (!data) return;
+    const fromFramework = data.template.criteria.map((c) => ({
+      id: c.id, name: c.name, category: c.code, description: c.description || '', score: 0, comment: '', weight: c.weight,
+    }));
+    const generic = GENERIC_RUBRIC.map((c) => ({ ...c, score: 0, comment: '' }));
+    queueMicrotask(() => {
+      setRubricCriteria(fromFramework.length ? fromFramework : generic);
+      setIsSubmitted(!!data.interview?.my_evaluation_submitted);
+    });
+  }, [data]);
 
   // Kết luận bắt buộc (Hire / Consider / Strong No)
-  const [recommendation, setRecommendation] = useState<'hire' | 'consider' | 'strong_no' | null>('hire');
-  const [generalNotes, setGeneralNotes] = useState<string>(
-    'Khuyến nghị tuyển dụng ứng viên cho vị trí Senior. Đề xuất cân nhắc mức lương thuộc dải trên của khung chuẩn (P75-P90) do năng lực thực chiến xuất sắc.'
-  );
+  const [recommendation, setRecommendation] = useState<'hire' | 'consider' | 'strong_no' | null>(null);
+  const [generalNotes, setGeneralNotes] = useState<string>('');
 
   // Điểm trung bình tổng thể tính theo thang 5 sao
   const averageScore = useMemo(() => {
     if (rubricCriteria.length === 0) return 0;
+    const totalWeight = rubricCriteria.reduce((sum, item) => sum + (item.weight || 0), 0);
+    if (totalWeight > 0) {
+      return Number((rubricCriteria.reduce((sum, item) => sum + item.score * item.weight, 0) / totalWeight).toFixed(1));
+    }
     const total = rubricCriteria.reduce((sum, item) => sum + item.score, 0);
     return Number((total / rubricCriteria.length).toFixed(1));
   }, [rubricCriteria]);
@@ -166,22 +143,46 @@ export default function InterviewerEvaluationPage() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Xử lý Submit form
-  const handleSubmit = (e: React.FormEvent) => {
+  // Xử lý Submit form → real evaluation (locked once submitted, S6-08)
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitted) return;
-
+    if (isSubmitted || !interview) return;
     if (!recommendation) {
-      alert('Vui lòng chọn Kết luận bắt buộc (Nên tuyển / Cân nhắc / Không nên tuyển) trước khi nộp phiếu!');
+      showToast('Vui lòng chọn kết luận bắt buộc (Nên tuyển / Cân nhắc / Không nên tuyển) trước khi nộp phiếu.');
       return;
     }
-
+    if (rubricCriteria.some((c) => c.score < 1)) {
+      showToast('Vui lòng chấm điểm (1–5) cho tất cả tiêu chí.');
+      return;
+    }
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const apiRecommendation = recommendation === 'hire' ? 'hire' : recommendation === 'consider' ? 'hold' : 'reject';
+      const criteriaNotes = rubricCriteria.filter((c) => c.comment.trim()).map((c) => `${c.name}: ${c.comment.trim()}`).join('\n');
+      await referralService.submitEvaluation(
+        usesFramework
+          ? {
+              application_id: interview.application_id,
+              interview_id: interview.id,
+              ratings: rubricCriteria.map((c) => ({ criterion_id: c.id, score: c.score, comment: c.comment || undefined })),
+              recommendation: apiRecommendation,
+              comments: generalNotes.trim() || undefined,
+            }
+          : {
+              application_id: interview.application_id,
+              interview_id: interview.id,
+              overall_score: Math.max(1, Math.round(averageScore * 2)),
+              recommendation: apiRecommendation,
+              comments: [generalNotes.trim(), criteriaNotes].filter(Boolean).join('\n\n') || undefined,
+            },
+      );
       setIsSubmitted(true);
-      showToast('Đã nộp phiếu đánh giá thành công! Phiếu đã được khóa an toàn.');
-    }, 700);
+      showToast('Đã nộp phiếu đánh giá. Phiếu đã được khóa.');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không nộp được phiếu đánh giá.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const scoreLabels: Record<number, string> = {
@@ -191,6 +192,10 @@ export default function InterviewerEvaluationPage() {
     4: '4 - Tốt (Vượt kỳ vọng)',
     5: '5 - Xuất sắc (Chuyên gia)',
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (!interview) return <EmptyState title="Không tìm thấy buổi phỏng vấn" hint="Bạn chỉ mở được phiếu của buổi phỏng vấn mình được mời." />;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-20">

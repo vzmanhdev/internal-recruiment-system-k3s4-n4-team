@@ -18,6 +18,8 @@ interface CreateJobTitleModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: JobTitleFormData) => void;
+  /** Real department names from master data (falls back to the built-in list). */
+  departmentOptions?: string[];
 }
 
 const DEPARTMENT_OPTIONS = [
@@ -43,7 +45,9 @@ export const CreateJobTitleModal: React.FC<CreateJobTitleModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
+  departmentOptions,
 }) => {
+  const deptOptions = departmentOptions && departmentOptions.length ? ["Tất cả phòng ban", ...departmentOptions] : DEPARTMENT_OPTIONS;
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
   const [department, setDepartment] = useState("Công Nghệ Thông Tin");
@@ -184,7 +188,7 @@ export const CreateJobTitleModal: React.FC<CreateJobTitleModalProps> = ({
                 onChange={(e) => setDepartment(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
               >
-                {DEPARTMENT_OPTIONS.map((dept, idx) => (
+                {deptOptions.map((dept, idx) => (
                   <option key={idx} value={dept}>
                     {dept}
                   </option>

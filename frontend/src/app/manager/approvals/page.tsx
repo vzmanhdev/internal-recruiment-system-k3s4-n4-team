@@ -3,6 +3,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Pagination } from '@/components/ui/Pagination';
+import { approvalSteps } from '@/features/manager/api';
+import { requisitionService, type RequisitionItem } from '@/services/requisition.service';
+import { useAuth } from '@/providers/auth-provider';
+import { useApiData } from '@/hooks/useApiData';
+import { EmptyState, ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 import {
   GitMerge,
   CheckCircle2,
@@ -38,6 +44,7 @@ interface ApprovalStep {
 
 interface ApprovalItem {
   id: string;
+  dbId: number;
   code: string;
   type: 'REQUISITION' | 'OFFER';
   title: string;
@@ -55,187 +62,58 @@ interface ApprovalItem {
   steps: ApprovalStep[];
 }
 
-const MOCK_APPROVALS: ApprovalItem[] = [
-  {
-    id: 'APV-001',
-    code: 'REQ-2026-003',
-    type: 'REQUISITION',
-    title: 'Senior Backend Engineer (Golang/FastAPI)',
-    targetCount: 4,
-    salary: '35 - 50 triệu VNĐ',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    creatorName: 'Lê Trưởng Nhóm',
-    createdAt: '18/01/2026',
-    overallStatus: 'PENDING',
-    currentApprover: 'Nguyễn Thị Thu Hà',
-    currentApproverRole: 'Trưởng phòng Nhân sự (HR)',
-    slaStatus: 'OVERDUE',
-    steps: [
-      {
-        stepNumber: 1,
-        title: 'Cấp 1: Trưởng Bộ Phận Khởi Tạo',
-        approverName: 'Lê Trưởng Nhóm',
-        approverRole: 'Hiring Manager',
-        department: 'Khối Công Nghệ',
-        status: 'COMPLETED',
-        timestamp: '18/01/2026 09:30',
-        note: 'Cần bổ sung gấp 4 Senior Backend cho dự án Microservices Q1/2026.',
-      },
-      {
-        stepNumber: 2,
-        title: 'Cấp 2: Giám Đốc Khối Kỹ Thuật Duyệt',
-        approverName: 'Trần Văn Đức',
-        approverRole: 'Giám Đốc Khối Công Nghệ (CTO)',
-        department: 'Ban Giám Đốc Khối',
-        status: 'COMPLETED',
-        timestamp: '19/01/2026 14:15',
-        note: 'Đồng ý mở tuyển. Đảm bảo năng lực kỹ thuật và quy chuẩn dự án.',
-      },
-      {
-        stepNumber: 3,
-        title: 'Cấp 3: Trưởng Phòng HR Thẩm Định Định Biên & Ngân Sách',
-        approverName: 'Nguyễn Thị Thu Hà',
-        approverRole: 'Trưởng phòng Nhân sự',
-        department: 'Phòng Quản Trị Nhân Sự',
-        status: 'IN_PROGRESS',
-        waitingTime: 'Đang ngâm hồ sơ: 3 ngày 6 giờ (Quá SLA 24h)',
-        isOverdue: true,
-        note: 'Đang đối soát khung quỹ lương và định biên quý.',
-      },
-      {
-        stepNumber: 4,
-        title: 'Cấp 4: Tổng Giám Đốc Phê Duyệt Ký Ban Hành',
-        approverName: 'Phạm Hoàng Nam',
-        approverRole: 'Tổng Giám Đốc (CEO)',
-        department: 'Ban Điều Hành',
-        status: 'PENDING',
-        note: 'Chờ hoàn thành Cấp 3 để trình duyệt.',
-      },
-    ],
-  },
-  {
-    id: 'APV-002',
-    code: 'OFFER-2026-088',
-    type: 'OFFER',
-    title: 'Đề Xuất Offer: Kỹ sư Frontend Lead',
-    candidateName: 'Trần Minh Quang',
-    salary: '42.000.000 VNĐ / tháng',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    creatorName: 'Lê Trưởng Nhóm',
-    createdAt: '22/01/2026',
-    overallStatus: 'PENDING',
-    currentApprover: 'Vũ Thị Thanh Mai',
-    currentApproverRole: 'Giám Đốc Tài Chính (CFO)',
-    slaStatus: 'WARNING',
-    slaHoursLeft: 4,
-    steps: [
-      {
-        stepNumber: 1,
-        title: 'Cấp 1: Hiring Manager Đề Xuất Khung Lương',
-        approverName: 'Lê Trưởng Nhóm',
-        approverRole: 'Hiring Manager',
-        department: 'Khối Công Nghệ',
-        status: 'COMPLETED',
-        timestamp: '22/01/2026 10:00',
-        note: 'Ứng viên đạt 4.8/5 sao vòng kỹ thuật, đề xuất mức lương 42M.',
-      },
-      {
-        stepNumber: 2,
-        title: 'Cấp 2: Trưởng Phòng Tuyển Dụng Xác Nhận',
-        approverName: 'Lê Thị Thu Cúc',
-        approverRole: 'Talent Acquisition Lead',
-        department: 'Phòng Nhân Sự',
-        status: 'COMPLETED',
-        timestamp: '22/01/2026 15:40',
-        note: 'Phù hợp bảng lương vị trí Lead, đã check tham chiếu đạt yêu cầu.',
-      },
-      {
-        stepNumber: 3,
-        title: 'Cấp 3: Giám Đốc Tài Chính Duyệt Ngân Sách Quỹ Lương',
-        approverName: 'Vũ Thị Thanh Mai',
-        approverRole: 'Giám Đốc Tài Chính (CFO)',
-        department: 'Khối Tài Chính - Kế Toán',
-        status: 'IN_PROGRESS',
-        waitingTime: 'Đang xử lý: 8 giờ (Còn 4 giờ theo SLA)',
-        isOverdue: false,
-        note: 'Đang thẩm tra ngân sách quỹ lương phát sinh tháng 02/2026.',
-      },
-      {
-        stepNumber: 4,
-        title: 'Cấp 4: Tổng Giám Đốc Ký Quyết Định Tuyển Dụng',
-        approverName: 'Phạm Hoàng Nam',
-        approverRole: 'Tổng Giám Đốc (CEO)',
-        department: 'Ban Điều Hành',
-        status: 'PENDING',
-      },
-    ],
-  },
-  {
-    id: 'APV-003',
-    code: 'REQ-2026-001',
-    type: 'REQUISITION',
-    title: 'Senior Frontend Engineer (React/Next.js)',
-    targetCount: 5,
-    salary: '28 - 38 triệu VNĐ',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    creatorName: 'Lê Trưởng Nhóm',
-    createdAt: '10/01/2026',
-    overallStatus: 'APPROVED',
-    currentApprover: 'Đã hoàn tất toàn bộ 4 cấp',
-    currentApproverRole: 'Hoàn thành ký ban hành',
-    slaStatus: 'ON_TIME',
-    steps: [
-      {
-        stepNumber: 1,
-        title: 'Cấp 1: Trưởng Bộ Phận Khởi Tạo',
-        approverName: 'Lê Trưởng Nhóm',
-        approverRole: 'Hiring Manager',
-        department: 'Khối Công Nghệ',
-        status: 'COMPLETED',
-        timestamp: '10/01/2026 09:15',
-        note: 'Đề xuất tuyển 5 nhân sự.',
-      },
-      {
-        stepNumber: 2,
-        title: 'Cấp 2: Giám Đốc Khối Kỹ Thuật Duyệt',
-        approverName: 'Trần Văn Đức',
-        approverRole: 'CTO',
-        department: 'Ban Giám Đốc Khối',
-        status: 'COMPLETED',
-        timestamp: '10/01/2026 14:00',
-        note: 'Đã duyệt.',
-      },
-      {
-        stepNumber: 3,
-        title: 'Cấp 3: Trưởng Phòng HR Thẩm Định',
-        approverName: 'Nguyễn Thị Thu Hà',
-        approverRole: 'Trưởng phòng HR',
-        department: 'Phòng Nhân Sự',
-        status: 'COMPLETED',
-        timestamp: '11/01/2026 11:30',
-        note: 'Đã cấp mã định biên.',
-      },
-      {
-        stepNumber: 4,
-        title: 'Cấp 4: Tổng Giám Đốc Phê Duyệt',
-        approverName: 'Phạm Hoàng Nam',
-        approverRole: 'CEO',
-        department: 'Ban Điều Hành',
-        status: 'COMPLETED',
-        timestamp: '12/01/2026 16:05',
-        note: 'Chấp thuận ban hành đăng tuyển rộng rãi.',
-      },
-    ],
-  },
-];
+/** Approval progress of requisitions I created (admin: all), from real chains and approval logs. */
+function toApprovalItems(reqs: RequisitionItem[]): ApprovalItem[] {
+  return reqs
+    .filter((r) => r.status !== "draft")
+    .map((r) => {
+      const steps = approvalSteps(r);
+      const current = steps.find((st) => st.status === "IN_PROGRESS");
+      const rejected = r.status === "rejected" || r.status === "changes_requested";
+      const done = !r.status.startsWith("pending_") && !rejected;
+      return {
+        id: String(r.id),
+        dbId: r.id,
+        code: r.code,
+        type: "REQUISITION" as const,
+        title: r.title,
+        targetCount: r.quantity,
+        department: r.department_name || "",
+        creatorName: r.creator_name || "—",
+        createdAt: r.created_at ? new Date(r.created_at).toLocaleDateString("vi-VN") : "—",
+        overallStatus: rejected ? ("REJECTED" as const) : done ? ("APPROVED" as const) : ("PENDING" as const),
+        currentApprover: current?.approverName || "—",
+        currentApproverRole: current?.approverRole || "",
+        slaStatus: current?.isOverdue ? ("OVERDUE" as const) : ("ON_TIME" as const),
+        steps: steps.map((st) => ({
+          stepNumber: st.stepNumber,
+          title: st.stepName,
+          approverName: st.approverName,
+          approverRole: st.approverRole,
+          department: st.department,
+          status: st.status === "APPROVED" ? ("COMPLETED" as const) : st.status,
+          timestamp: st.timestamp,
+          note: st.comment,
+          waitingTime: st.waitingTime,
+          isOverdue: st.isOverdue,
+        })),
+      };
+    });
+}
 
 export default function ApprovalsPage() {
   const [selectedType, setSelectedType] = useState<'ALL' | 'REQUISITION' | 'OFFER'>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<'ALL' | 'PENDING' | 'APPROVED'>('ALL');
-  const [activeItemId, setActiveItemId] = useState<string>('APV-001');
+  const { user, isAdmin } = useAuth();
+  const { data, error, loading, reload } = useApiData(
+    async () => toApprovalItems((await requisitionService.getRequisitions()).filter((r) => isAdmin || r.created_by_id === user?.id)),
+    [user?.id, isAdmin],
+  );
+  const approvalItems: ApprovalItem[] = data || [];
+  const [activeItemId, setActiveItemId] = useState<string>('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const filteredItems = MOCK_APPROVALS.filter((item) => {
+  const filteredItems = approvalItems.filter((item) => {
     if (selectedType !== 'ALL' && item.type !== selectedType) return false;
     if (selectedStatus !== 'ALL' && item.overallStatus !== selectedStatus) return false;
     return true;
@@ -257,12 +135,24 @@ export default function ApprovalsPage() {
     return filteredItems.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredItems, currentPage]);
 
-  const activeItem = MOCK_APPROVALS.find((i) => i.id === activeItemId) || MOCK_APPROVALS[0];
+  const activeItem = approvalItems.find((i) => i.id === activeItemId) || approvalItems[0] || null;
+  const pendingCount = approvalItems.filter((i) => i.overallStatus === 'PENDING').length;
+  const overdueCount = approvalItems.filter((i) => i.slaStatus === 'OVERDUE').length;
 
-  const handleSendReminder = (approverName: string) => {
-    setToastMessage(`Đã gửi thông báo đốc thúc ưu tiên tới ${approverName} thành công!`);
+  const handleSendReminder = async (approverName: string) => {
+    if (!activeItem) return;
+    try {
+      const r = await requisitionService.remind(activeItem.dbId);
+      setToastMessage(r.sent ? `Đã gửi nhắc nhở tới ${r.sent} người phụ trách (${approverName}).` : 'Không có người nhận phù hợp cho bước duyệt hiện tại.');
+    } catch (err) {
+      setToastMessage(err instanceof ApiError ? err.message : 'Không gửi được nhắc nhở.');
+    }
     setTimeout(() => setToastMessage(null), 4000);
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (!activeItem) return <EmptyState hint="Bạn chưa có tờ trình nào đã gửi duyệt." />;
 
   return (
     <div className="space-y-6">
@@ -294,11 +184,11 @@ export default function ApprovalsPage() {
         <div className="flex items-center gap-3">
           <div className="px-3.5 py-2 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs">
             <span className="text-[10px] uppercase font-bold text-amber-700 block">Đang chờ duyệt</span>
-            <span className="text-lg font-black text-amber-800">2 hồ sơ</span>
+            <span className="text-lg font-black text-amber-800">{pendingCount} hồ sơ</span>
           </div>
           <div className="px-3.5 py-2 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-900 text-xs">
             <span className="text-[10px] uppercase font-bold text-rose-700 block">Quá hạn SLA</span>
-            <span className="text-lg font-black text-rose-700">1 hồ sơ</span>
+            <span className="text-lg font-black text-rose-700">{overdueCount} hồ sơ</span>
           </div>
         </div>
       </div>
@@ -472,7 +362,7 @@ export default function ApprovalsPage() {
 
             {activeItem.type === 'REQUISITION' && (
               <Link
-                href={`/manager/requisitions/${activeItem.code}`}
+                href={`/manager/requisitions/${activeItem.dbId}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all"
               >
                 <span>Xem tờ trình gốc</span>

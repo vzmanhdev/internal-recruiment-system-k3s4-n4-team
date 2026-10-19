@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import {
   Search,
@@ -10,32 +11,46 @@ import {
   Lock,
   Unlock,
   Pencil,
-  ChevronLeft,
-  ChevronRight,
   CheckCircle2,
   AlertTriangle,
   X,
   Users,
   Building,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { UserItem, getRoleMeta, ROLE_DEFINITIONS } from "./components/types";
-import { MOCK_USERS_150 } from "./components/mockData";
 import { RoleManagementModal } from "./components/RoleManagementModal";
 import { LockUnlockModal } from "./components/LockUnlockModal";
 import { ExcelImportModal } from "./components/ExcelImportModal";
 import { UserFormModal } from "./components/UserFormModal";
-
-const PAGE_SIZE = 20;
+import { userService } from "@/services/user.service";
+import { Pagination } from "@/components/ui/Pagination";
+import { SearchAutocompleteInput } from "@/components/ui/SearchAutocompleteInput";
 
 export default function AdminUsersManagementPage() {
-  // Main data state
-  const [users, setUsers] = useState<UserItem[]>(MOCK_USERS_150);
+  // Server-side data state
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Search & Filter states
+  // Search & Filters state
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+
+  // Sorting state (server-side)
+  const [sortBy, setSortBy] = useState<string>("created_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // Modals state
   const [roleModalUser, setRoleModalUser] = useState<UserItem | null>(null);
@@ -62,142 +77,127 @@ export default function AdminUsersManagementPage() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Filtered dataset
-  const filteredUsers = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return users.filter((u) => {
-      // Search matching: name, email, employee_code
-      const matchSearch =
-        !q ||
-        u.full_name.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        u.employee_code.toLowerCase().includes(q);
+  // Debounce search query to prevent high API request rate
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
-      // Role filter matching
-      const matchRole =
-        roleFilter === "all" ||
-        u.roles.includes(roleFilter) ||
-        u.role === roleFilter;
-
-      // Status filter matching
-      const matchStatus =
-        statusFilter === "all" ||
-        (statusFilter === "active" && u.is_active && u.account_status === "active") ||
-        (statusFilter === "locked" && (!u.is_active || u.account_status === "locked"));
-
-      return matchSearch && matchRole && matchStatus;
-    });
-  }, [users, searchQuery, roleFilter, statusFilter]);
-
-  // Pagination calculation
-  const totalRecords = filteredUsers.length;
-  const totalPages = Math.max(1, Math.ceil(totalRecords / PAGE_SIZE));
-
-  // Ensure current page does not exceed bounds
-  const validatedPage = Math.min(currentPage, totalPages);
-  const startIndex = (validatedPage - 1) * PAGE_SIZE;
-  const endIndex = Math.min(startIndex + PAGE_SIZE, totalRecords);
-  const paginatedUsers = filteredUsers.slice(startIndex, endIndex);
-
-  // Handlers for User Stories
-  // 1. Role assignment handler (Multi-role)
-  const handleSaveRoles = (userId: number, updatedRoles: string[]) => {
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === userId
-          ? {
-              ...u,
-              roles: updatedRoles,
-              role: updatedRoles[0] || "employee",
-            }
-          : u
-      )
-    );
-    const target = users.find((u) => u.id === userId);
-    showToast(`Đã cập nhật phân quyền vai trò cho ${target?.full_name || "người dùng"}!`, "success");
-  };
-
-  // 2. Lock / Unlock handler
-  const handleLockUnlockConfirm = (userId: number, reason?: string) => {
-    const isLocking = lockModalMode === "lock";
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === userId
-          ? {
-              ...u,
-              is_active: !isLocking,
-              account_status: isLocking ? "locked" : "active",
-              lock_reason: isLocking ? reason || "Bị khóa bởi Quản trị viên" : undefined,
-            }
-          : u
-      )
-    );
-    const target = users.find((u) => u.id === userId);
-    if (isLocking) {
-      showToast(`Đã khóa tài khoản ${target?.full_name || ""}. Phiên đăng nhập đã bị hủy.`, "error");
-    } else {
-      showToast(`Đã mở khóa tài khoản ${target?.full_name || ""} thành công!`, "success");
+  // Fetch users with full server-side pagination, filters, and sorting
+  const fetchUsers = useCallback(async () => {
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const res = await userService.getUsers({
+        page: currentPage,
+        pageSize,
+        search: debouncedSearch,
+        role: roleFilter,
+        status: statusFilter,
+        department: departmentFilter,
+        sortBy,
+        sortOrder,
+      });
+      setUsers(res.items || []);
+      setTotalRecords(res.total || 0);
+      setTotalPages(res.pages || 1);
+    } catch (err: any) {
+      console.error("Lỗi khi tải danh sách người dùng:", err);
+      setFetchError(err.message || "Không thể tải danh sách tài khoản từ hệ thống.");
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [currentPage, pageSize, debouncedSearch, roleFilter, statusFilter, departmentFilter, sortBy, sortOrder]);
 
-  // 3. Excel Import success handler
-  const handleImportSuccess = (importedCount: number, newUsers: UserItem[]) => {
-    setUsers((prev) => [...newUsers, ...prev]);
-    showToast(`Đã nhập thành công ${importedCount} tài khoản nhân sự từ file Excel!`, "success");
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  // Sort toggle handler
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(column);
+      setSortOrder("asc");
+    }
     setCurrentPage(1);
   };
 
-  // 4. Create / Edit user form handler
-  const handleSaveUserForm = (formData: Partial<UserItem>) => {
-    if (userFormMode === "create") {
-      const newId = Math.max(...users.map((u) => u.id), 0) + 1;
-      const newUser: UserItem = {
-        id: newId,
-        employee_code: formData.employee_code || `NV-${newId}`,
-        full_name: formData.full_name || "Nhân sự mới",
-        email: formData.email || "",
-        phone: formData.phone || "",
-        department: formData.department || "Khối Công nghệ & Kỹ thuật",
-        role: formData.role || "employee",
-        roles: formData.roles || ["employee"],
-        is_active: true,
-        account_status: "active",
-        created_at: new Date().toISOString().slice(0, 10),
-        avatar_color: "bg-blue-600 text-white",
-      };
-      setUsers([newUser, ...users]);
-      showToast(`Tạo mới tài khoản ${newUser.full_name} thành công!`, "success");
-    } else if (userFormTarget) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === userFormTarget.id
-            ? {
-                ...u,
-                ...formData,
-              }
-            : u
-        )
-      );
-      showToast(`Cập nhật thông tin tài khoản ${formData.full_name} thành công!`, "success");
+  // Render sorting icon
+  const renderSortIcon = (column: string) => {
+    if (sortBy !== column) {
+      return <ArrowUpDown className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500" />;
+    }
+    return sortOrder === "asc" ? (
+      <ArrowUp className="w-3.5 h-3.5 text-blue-600" />
+    ) : (
+      <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+    );
+  };
+
+  // Multi-role assignment handler (S1-08)
+  const handleSaveRoles = async (userId: number, updatedRoles: string[]) => {
+    try {
+      await userService.updateRoles(userId, updatedRoles);
+      showToast("Cập nhật phân quyền vai trò cho người dùng thành công!", "success");
+      fetchUsers();
+    } catch (err: any) {
+      showToast(err.message || "Không thể cập nhật phân quyền người dùng", "error");
     }
   };
 
-  // Generate pagination buttons array
-  const paginationRange = useMemo(() => {
-    const pages: (number | string)[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      if (validatedPage <= 4) {
-        pages.push(1, 2, 3, 4, 5, "...", totalPages);
-      } else if (validatedPage >= totalPages - 3) {
-        pages.push(1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+  // Lock / Unlock handler (S1-08)
+  const handleLockUnlockConfirm = async (userId: number, reason?: string) => {
+    const isLocking = lockModalMode === "lock";
+    try {
+      if (isLocking) {
+        await userService.lockUser(userId, reason || "Bị khóa bởi Quản trị viên");
+        showToast("Đã khóa tài khoản người dùng thành công.", "error");
       } else {
-        pages.push(1, "...", validatedPage - 1, validatedPage, validatedPage + 1, "...", totalPages);
+        await userService.unlockUser(userId);
+        showToast("Đã mở khóa tài khoản người dùng thành công!", "success");
       }
+      fetchUsers();
+    } catch (err: any) {
+      showToast(err.message || "Lỗi thao tác trạng thái tài khoản", "error");
     }
-    return pages;
-  }, [totalPages, validatedPage]);
+  };
+
+  // Excel Import success callback
+  const handleImportSuccess = (importedCount: number) => {
+    showToast(`Đã nhập thành công ${importedCount} tài khoản nhân sự từ file Excel!`, "success");
+    setCurrentPage(1);
+    fetchUsers();
+  };
+
+  // Create / Edit user form handler
+  const handleSaveUserForm = async (formData: Partial<UserItem>) => {
+    try {
+      if (userFormMode === "create") {
+        await userService.createUser({
+          full_name: formData.full_name || "Nhân sự mới",
+          email: formData.email || "",
+          password: "Password123!",
+          phone: formData.phone,
+          roles: formData.roles || [formData.role || "candidate"],
+          department: formData.department,
+        });
+        showToast(`Tạo mới tài khoản ${formData.full_name} thành công!`, "success");
+      } else if (userFormTarget) {
+        if (formData.roles) {
+          await userService.updateRoles(userFormTarget.id, formData.roles);
+        }
+        showToast(`Cập nhật thông tin tài khoản ${formData.full_name} thành công!`, "success");
+      }
+      fetchUsers();
+    } catch (err: any) {
+      showToast(err.message || "Lỗi khi lưu thông tin tài khoản", "error");
+    }
+  };
 
   return (
     <AdminAppShell activeTab="users">
@@ -227,7 +227,7 @@ export default function AdminUsersManagementPage() {
         </div>
       )}
 
-      {/* Main Content Card (bg-white rounded-2xl shadow-sm border border-slate-100) */}
+      {/* Main Content Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
         {/* Page Title & Breadcrumb Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
@@ -243,39 +243,35 @@ export default function AdminUsersManagementPage() {
             <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/80">
               Tổng số: <strong className="text-slate-900">{totalRecords}</strong> nhân sự
             </span>
+            <button
+              onClick={() => fetchUsers()}
+              disabled={isLoading}
+              title="Làm mới dữ liệu"
+              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 border border-slate-200/80 transition-all cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin text-blue-600" : ""}`} />
+            </button>
           </div>
         </div>
 
         {/* 1. THANH CÔNG CỤ TRÊN CÙNG (TOP ACTION BAR) */}
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
-          {/* Ô Search input lớn tìm kiếm theo Tên, Email hoặc Mã nhân viên */}
+        <div className="flex flex-col xl:flex-row items-center justify-between gap-4">
+          {/* Ô Search input lớn tìm kiếm theo Tên, Email hoặc Mã nhân viên với Autocomplete Suggestions */}
           <div className="relative flex-1 w-full">
-            <Search className="w-5 h-5 text-slate-400 absolute left-4 top-3.5 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Tìm kiếm theo Tên, Email hoặc Mã nhân viên (VD: Nguyễn Văn A, NV-001, an.nguyen@...)"
+            <SearchAutocompleteInput
               value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
+              onChange={(val) => setSearchQuery(val)}
+              onSelectSuggestion={(item) => {
+                setSearchQuery(item.title);
               }}
-              className="w-full h-12 pl-12 pr-10 bg-slate-50 border border-slate-200/90 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+              placeholder="Tìm kiếm theo Tên, Email hoặc Mã nhân viên (có dấu hoặc không dấu)..."
+              scope="users"
+              size="md"
             />
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setCurrentPage(1);
-                }}
-                className="absolute right-3.5 top-3.5 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
           </div>
 
           {/* Bộ lọc kết hợp & Nút hành động */}
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 w-full lg:w-auto shrink-0 justify-end">
+          <div className="flex flex-wrap xl:flex-nowrap items-center gap-3 w-full xl:w-auto shrink-0 justify-end">
             {/* Lọc Vai trò */}
             <select
               value={roleFilter}
@@ -307,14 +303,14 @@ export default function AdminUsersManagementPage() {
               <option value="locked">Đã khóa</option>
             </select>
 
-            {/* Nút Outline "Import Excel" kèm icon Upload */}
-            <button
-              onClick={() => setIsImportModalOpen(true)}
+            {/* Nút "Import Excel" chuyển hướng sang /admin/users/import */}
+            <Link
+              href="/admin/users/import"
               className="h-12 px-4.5 rounded-xl border border-emerald-600 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100/70 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
             >
               <Upload className="w-4 h-4 text-emerald-600" />
               <span>Import Excel</span>
-            </button>
+            </Link>
 
             {/* Nút Primary "Thêm tài khoản" */}
             <button
@@ -331,9 +327,30 @@ export default function AdminUsersManagementPage() {
           </div>
         </div>
 
+        {/* Lỗi tải dữ liệu nếu có */}
+        {fetchError && (
+          <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{fetchError}</span>
+            </div>
+            <button
+              onClick={() => fetchUsers()}
+              className="font-bold underline hover:text-rose-900"
+            >
+              Thử lại
+            </button>
+          </div>
+        )}
+
         {/* 2. BẢNG DỮ LIỆU NGƯỜI DÙNG (DATA TABLE) */}
         <div className="border border-slate-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs">
-          {paginatedUsers.length === 0 ? (
+          {isLoading ? (
+            <div className="p-20 text-center text-slate-500 space-y-3">
+              <Loader2 className="w-8 h-8 mx-auto text-blue-600 animate-spin" />
+              <p className="text-xs font-bold text-slate-600">Đang tải danh sách tài khoản từ máy chủ...</p>
+            </div>
+          ) : users.length === 0 ? (
             <div className="p-16 text-center text-slate-400 space-y-3">
               <Users className="w-10 h-10 mx-auto text-slate-300" />
               <p className="text-sm font-bold text-slate-700">
@@ -347,18 +364,44 @@ export default function AdminUsersManagementPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] text-slate-500 font-bold uppercase tracking-wider">
-                    <th className="py-4 px-5">Họ Tên & Avatar</th>
-                    <th className="py-4 px-5">Email & Phòng ban</th>
+                  <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] text-slate-500 font-bold uppercase tracking-wider select-none">
+                    <th
+                      className="py-4 px-5 cursor-pointer hover:bg-slate-100/70 transition-colors group"
+                      onClick={() => handleSort("full_name")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Họ Tên & Avatar</span>
+                        {renderSortIcon("full_name")}
+                      </div>
+                    </th>
+                    <th
+                      className="py-4 px-5 cursor-pointer hover:bg-slate-100/70 transition-colors group"
+                      onClick={() => handleSort("email")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Email & Phòng ban</span>
+                        {renderSortIcon("email")}
+                      </div>
+                    </th>
                     <th className="py-4 px-5">Vai trò (Multi-Role)</th>
                     <th className="py-4 px-5">Trạng thái</th>
+                    <th
+                      className="py-4 px-5 cursor-pointer hover:bg-slate-100/70 transition-colors group"
+                      onClick={() => handleSort("created_at")}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Ngày tạo</span>
+                        {renderSortIcon("created_at")}
+                      </div>
+                    </th>
                     <th className="py-4 px-5 text-right">Hành động</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs">
-                  {paginatedUsers.map((user) => {
+                  {users.map((user) => {
                     const isLocked = !user.is_active || user.account_status === "locked";
-                    const userRoleList = user.roles && user.roles.length > 0 ? user.roles : [user.role || "employee"];
+                    const userRoleList =
+                      user.roles && user.roles.length > 0 ? user.roles : [user.role || "candidate"];
 
                     return (
                       <tr
@@ -369,18 +412,16 @@ export default function AdminUsersManagementPage() {
                         <td className="py-4 px-5">
                           <div className="flex items-center gap-3">
                             <div
-                              className={`w-10 h-10 rounded-full font-extrabold flex items-center justify-center text-xs shrink-0 shadow-xs ${
-                                user.avatar_color || "bg-blue-600 text-white"
-                              }`}
+                              className="w-10 h-10 rounded-full font-extrabold flex items-center justify-center text-xs shrink-0 shadow-xs bg-blue-600 text-white"
                             >
-                              {user.full_name.charAt(0)}
+                              {(user.full_name || "U").charAt(0).toUpperCase()}
                             </div>
                             <div>
                               <div className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors leading-tight">
                                 {user.full_name}
                               </div>
                               <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                                {user.employee_code}
+                                {user.employee_code || `ID-${user.id}`}
                               </div>
                             </div>
                           </div>
@@ -397,7 +438,7 @@ export default function AdminUsersManagementPage() {
                           </div>
                         </td>
 
-                        {/* Vai trò (Hiển thị dạng nhiều Badges bo tròn cho từng vai trò) */}
+                        {/* Vai trò */}
                         <td className="py-4 px-5">
                           <div className="flex flex-wrap gap-1.5 max-w-xs">
                             {userRoleList.map((roleCode, idx) => {
@@ -414,7 +455,7 @@ export default function AdminUsersManagementPage() {
                           </div>
                         </td>
 
-                        {/* Trạng thái (Đang hoạt động - Xanh lá, Đã khóa - Đỏ/Xám) */}
+                        {/* Trạng thái */}
                         <td className="py-4 px-5">
                           {!isLocked ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
@@ -432,10 +473,15 @@ export default function AdminUsersManagementPage() {
                           )}
                         </td>
 
+                        {/* Ngày tạo */}
+                        <td className="py-4 px-5 text-slate-500 text-[11px]">
+                          {user.created_at ? user.created_at.slice(0, 10) : "---"}
+                        </td>
+
                         {/* Cột Hành động (Actions) */}
                         <td className="py-4 px-5 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* 3. Nút Quản lý vai trò (Icon Shield) */}
+                            {/* Nút Quản lý vai trò (Icon Shield) */}
                             <button
                               onClick={() => {
                                 setRoleModalUser(user);
@@ -450,7 +496,7 @@ export default function AdminUsersManagementPage() {
                               </span>
                             </button>
 
-                            {/* 4. Nút Khóa / Mở khóa tài khoản */}
+                            {/* Nút Khóa / Mở khóa tài khoản */}
                             {!isLocked ? (
                               <button
                                 onClick={() => {
@@ -505,78 +551,26 @@ export default function AdminUsersManagementPage() {
             </div>
           )}
 
-          {/* PHÂN TRANG (PAGINATION - CHUẨN PREVIOUS, 1, 2, 3, NEXT) */}
-          <div className="px-6 py-4 bg-slate-50/90 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
-            {/* Hiển thị 1-20 trên tổng số 150 nhân sự */}
-            <div className="text-xs text-slate-500 font-medium">
-              Hiển thị{" "}
-              <span className="font-bold text-slate-900">
-                {totalRecords === 0 ? 0 : startIndex + 1}-{endIndex}
-              </span>{" "}
-              trên tổng số{" "}
-              <span className="font-bold text-slate-900">{totalRecords}</span> nhân sự
-            </div>
-
-            {/* Các nút phân trang */}
-            <div className="flex items-center gap-1.5">
-              {/* Nút Previous */}
-              <button
-                disabled={validatedPage <= 1}
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-xs font-bold text-slate-700 flex items-center gap-1 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-2xs"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                <span>Trước</span>
-              </button>
-
-              {/* Các số trang: 1, 2, 3... */}
-              <div className="flex items-center gap-1">
-                {paginationRange.map((p, idx) => {
-                  if (p === "...") {
-                    return (
-                      <span
-                        key={`ellipsis-${idx}`}
-                        className="px-2 py-1 text-slate-400 text-xs font-bold"
-                      >
-                        ...
-                      </span>
-                    );
-                  }
-
-                  const pageNum = Number(p);
-                  const isActive = pageNum === validatedPage;
-
-                  return (
-                    <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
-                      className={`min-w-[32px] h-8 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        isActive
-                          ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20"
-                          : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 shadow-2xs"
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Nút Next */}
-              <button
-                disabled={validatedPage >= totalPages}
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-xs font-bold text-slate-700 flex items-center gap-1 transition-colors cursor-pointer disabled:cursor-not-allowed shadow-2xs"
-              >
-                <span>Sau</span>
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+          {/* PHÂN TRANG (PAGINATION) */}
+          <div className="px-6 py-4 bg-slate-50/90 border-t border-slate-200/80">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalItems={totalRecords}
+              pageSize={pageSize}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+              pageSizeOptions={[10, 20, 50, 100]}
+              itemLabel="nhân sự"
+            />
           </div>
         </div>
       </div>
 
-      {/* 3. MODAL: QUẢN LÝ VAI TRÒ (MULTI-ROLE) */}
+      {/* MODAL: QUẢN LÝ VAI TRÒ */}
       <RoleManagementModal
         isOpen={isRoleModalOpen}
         user={roleModalUser}
@@ -587,7 +581,7 @@ export default function AdminUsersManagementPage() {
         onSave={handleSaveRoles}
       />
 
-      {/* 4. MODAL: KHÓA / MỞ KHÓA TÀI KHOẢN */}
+      {/* MODAL: KHÓA / MỞ KHÓA TÀI KHOẢN */}
       <LockUnlockModal
         isOpen={isLockModalOpen}
         user={lockModalUser}
@@ -599,14 +593,14 @@ export default function AdminUsersManagementPage() {
         onConfirm={handleLockUnlockConfirm}
       />
 
-      {/* 5. MODAL: IMPORT EXCEL */}
+      {/* MODAL: IMPORT EXCEL */}
       <ExcelImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onImportSuccess={handleImportSuccess}
       />
 
-      {/* 1. MODAL: TẠO / SỬA TÀI KHOẢN */}
+      {/* MODAL: TẠO / SỬA TÀI KHOẢN */}
       <UserFormModal
         isOpen={isUserFormOpen}
         mode={userFormMode}

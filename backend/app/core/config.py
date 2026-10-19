@@ -13,10 +13,39 @@ class Settings(BaseSettings):
     
     SECRET_KEY: str = os.getenv("SECRET_KEY", "super-secret-key-change-in-production-1234567890")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15 # 15 minutes Access JWT TTL
+    SESSION_IDLE_TIMEOUT_MINUTES: int = 60 # 60 minutes Idle Timeout
+    SESSION_ABSOLUTE_TIMEOUT_HOURS: int = 12 # 12 hours Absolute Session Expiration
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7 # 7 days Refresh Token Max Lifespan
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
-    APP_ENV: str = "development"
+    APP_ENV: str = "development"  # development | test | production
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # Comma separated list or JSON list of allowed browser origins (never "*" with credentials)
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # SQLite fallback is a development convenience only; production must fail fast.
+    ALLOW_SQLITE_FALLBACK: bool = True
+    # Create missing tables/columns on startup (development only). Production uses "alembic upgrade head".
+    AUTO_CREATE_SCHEMA: bool = True
+    # Uploaded files (CVs, avatars) are stored outside the web root and served only through /api/v1/files.
+    FILE_STORAGE_DIR: str = "./storage"
+    # Background worker: delivers queued emails (outbox) and runs the daily jobs (SLA reminders, expired postings).
+    BACKGROUND_WORKER_ENABLED: bool = True
+
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV.strip().lower() in {"production", "prod"}
+
+    @property
+    def cors_origins(self) -> list:
+        import json
+        raw = (self.BACKEND_CORS_ORIGINS or "").strip()
+        try:
+            values = json.loads(raw) if raw.startswith("[") else raw.split(",")
+        except ValueError:
+            values = raw.split(",")
+        return [v.strip().rstrip("/") for v in values if v and v.strip() and v.strip() != "*"]
+
 
     # SMTP Gmail & Email Configuration
     SMTP_HOST: str = "smtp.gmail.com"
@@ -37,6 +66,20 @@ class Settings(BaseSettings):
     PASSWORD_RESET_IP_LIMIT: int = 15 # 15 requests per 15 mins per IP
     PASSWORD_RESET_IP_WINDOW_SECONDS: int = 900
     PASSWORD_RESET_PASSWORD_LENGTH: int = 16
+
+    # Public candidate self-registration (e-mail OTP, purpose "candidate_registration")
+    REGISTRATION_OTP_TTL_SECONDS: int = 600  # 10 minutes
+    REGISTRATION_OTP_MAX_ATTEMPTS: int = 5  # wrong codes per challenge, then the challenge is blocked
+    REGISTRATION_RESEND_COOLDOWN_SECONDS: int = 60  # minimum gap between two codes for the same e-mail
+    REGISTRATION_EMAIL_WINDOW_SECONDS: int = 3600
+    REGISTRATION_EMAIL_WINDOW_LIMIT: int = 5  # codes per e-mail per window (start + resends)
+    REGISTRATION_EMAIL_DAILY_LIMIT: int = 10  # codes per e-mail per 24 h
+    REGISTRATION_EMAIL_DAILY_FAILED_LIMIT: int = 15  # wrong codes per e-mail per 24 h across all challenges
+    REGISTRATION_IP_WINDOW_SECONDS: int = 3600
+    REGISTRATION_IP_WINDOW_LIMIT: int = 20  # codes per client IP per window
+    REGISTRATION_PASSWORD_MIN_LENGTH: int = 8
+    # Comma separated list such as "gmail.com"; empty = any syntactically valid e-mail domain.
+    REGISTRATION_ALLOWED_EMAIL_DOMAINS: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

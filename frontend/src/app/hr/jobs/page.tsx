@@ -1,6 +1,38 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { jobService } from "@/services/job.service";
+import { requisitionService } from "@/services/requisition.service";
+import { useApiData } from "@/hooks/useApiData";
+import { ErrorState, LoadingState } from "@/components/ui/DataStates";
+import { ApiError } from "@/lib/api-client";
+
+const lines = (text?: string | null) =>
+  (text || "").replace(/<\/(p|li|div)>|<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[-•*]\s*/, "").trim()).filter(Boolean);
+
+async function loadReviewQueue(): Promise<JobPostingReview[]> {
+  const [jobs, reqs] = await Promise.all([jobService.getAdminJobs(), requisitionService.getRequisitions().catch(() => [])]);
+  return jobs
+    .filter((j) => j.status === "pending_review" || j.status === "published" || (j.status === "draft" && j.review_note))
+    .map((j) => ({
+      id: String(j.id),
+      title: j.title,
+      department: j.department_name || j.department || "",
+      code: `JOB-${j.id}`,
+      location: j.location,
+      salaryDisplay: j.salary_range,
+      employmentType: j.type,
+      experienceLevel: j.experience_level || j.level,
+      hiringManager: reqs.find((r) => r.id === j.requisition_id)?.creator_name || "—",
+      submittedAt: j.created_at ? new Date(j.created_at).toLocaleDateString("vi-VN") : "",
+      status: j.status === "draft" ? "needs_revision" : (j.status as "pending_review" | "published"),
+      revisionReason: j.review_note || undefined,
+      description: lines(j.description).join(" "),
+      requirements: lines(j.requirements),
+      benefits: lines(j.benefits),
+    }));
+}
 import {
   Briefcase,
   CheckCircle2,
@@ -41,84 +73,10 @@ export interface JobPostingReview {
   benefits: string[];
 }
 
-const INITIAL_JOBS_FOR_REVIEW: JobPostingReview[] = [
-  {
-    id: "job-1",
-    title: "Senior Backend Developer (Python / Go)",
-    department: "Khối Công Nghệ (Tech Hub)",
-    code: "JOB-2026-001",
-    location: "Hà Nội (Hybrid 3 ngày/tuần)",
-    salaryDisplay: "35.000.000 - 55.000.000 VNĐ",
-    employmentType: "Toàn thời gian",
-    experienceLevel: "Senior (4+ năm)",
-    hiringManager: "Vũ Hải Đăng (CTO)",
-    submittedAt: "10/10/2026",
-    status: "pending_review",
-    description: "Chúng tôi tìm kiếm Senior Backend Engineer xuất sắc cùng xây dựng nền tảng Enterprise Microservices chịu tải hàng triệu giao dịch mỗi ngày. Bạn sẽ trực tiếp tham gia thiết kế kiến trúc phân tán, giải quyết bài toán concurrency và tối ưu hóa hạ tầng Cloud.",
-    requirements: [
-      "Tối thiểu 4 năm kinh nghiệm với Python (FastAPI/Django) hoặc Go.",
-      "Thành thạo cơ sở dữ liệu quan hệ PostgreSQL và NoSQL Redis/MongoDB.",
-      "Kinh nghiệm thực chiến với Message Broker (Apache Kafka, RabbitMQ).",
-      "Hiểu sâu về Docker, Kubernetes và hệ thống CI/CD tự động hóa.",
-      "Tư duy Clean Code, TDD và thiết kế RESTful/gRPC chuẩn hóa.",
-    ],
-    benefits: [
-      "Thưởng hiệu quả dự án hàng quý và tháng lương 13++ hấp dẫn.",
-      "Gói bảo hiểm sức khỏe cao cấp Bảo Việt / PVI cho nhân viên và người thân.",
-      "Trang bị Macbook Pro M3 Max và màn hình kép 27 inch 4K tại văn phòng.",
-      "Ngân sách đào tạo chứng chỉ quốc tế (AWS, GCP, CKA) 20 triệu/năm.",
-      "Môi trường văn hóa cởi mở, không khoảng cách, tôn trọng sáng tạo.",
-    ],
-  },
-  {
-    id: "job-2",
-    title: "Lead QA Automation Engineer",
-    department: "Phòng Quản Lý Chất Lượng QA",
-    code: "JOB-2026-002",
-    location: "Hà Nội / TP.HCM",
-    salaryDisplay: "35.000.000 - 50.000.000 VNĐ",
-    employmentType: "Toàn thời gian",
-    experienceLevel: "Lead (5+ năm)",
-    hiringManager: "Trần Thị Mai (QA Manager)",
-    submittedAt: "09/10/2026",
-    status: "pending_review",
-    description: "Dẫn dắt đội ngũ kiểm thử tự động hóa, xây dựng Framework Automation Test từ đầu cho hệ thống Core ATS và Mobile App.",
-    requirements: [
-      "5+ năm kinh nghiệm kiểm thử phần mềm, trong đó ít nhất 3 năm về Automation.",
-      "Thành thạo Selenium, Playwright, Cypress hoặc Appium.",
-      "Có kinh nghiệm tích hợp test script vào Jenkins/GitLab CI.",
-    ],
-    benefits: [
-      "Lương cạnh tranh + thưởng KPI theo chất lượng release.",
-      "Du lịch nghỉ dưỡng 5 sao hàng năm toàn công ty.",
-    ],
-  },
-  {
-    id: "job-3",
-    title: "Product Manager (Enterprise Solutions)",
-    department: "Khối Kinh Doanh & Tăng Trưởng",
-    code: "JOB-2026-003",
-    location: "Hà Nội",
-    salaryDisplay: "45.000.000 - 65.000.000 VNĐ",
-    employmentType: "Toàn thời gian",
-    experienceLevel: "Manager (3+ năm PM)",
-    hiringManager: "Bùi Quốc Đạt (CCO)",
-    submittedAt: "05/10/2026",
-    status: "published",
-    description: "Định hình Roadmap sản phẩm, phối hợp cùng Tech và Sales để ra mắt các tính năng nhân sự đột phá.",
-    requirements: [
-      "3+ năm làm PM mảng B2B SaaS hoặc Enterprise Software.",
-      "Kỹ năng phân tích số liệu Product Analytics và lắng nghe khách hàng xuất sắc.",
-    ],
-    benefits: [
-      "Cơ chế ESOP cổ phần dành cho nhân sự chủ chốt.",
-      "Phụ cấp ăn trưa, gửi xe và teambuilding định kỳ.",
-    ],
-  },
-];
 
 export default function HRJobsPage() {
-  const [jobs, setJobs] = useState<JobPostingReview[]>(INITIAL_JOBS_FOR_REVIEW);
+  const { data, error, loading, reload } = useApiData(loadReviewQueue, []);
+  const jobs = useMemo(() => data || [], [data]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -136,31 +94,34 @@ export default function HRJobsPage() {
   };
 
   // Publish to portal
-  const handlePublishJob = (job: JobPostingReview) => {
-    setJobs((prev) =>
-      prev.map((j) => (j.id === job.id ? { ...j, status: "published" } : j))
-    );
-    showToast(`Đã xuất bản tin tuyển dụng "${job.title}" lên Career Portal thành công!`, "success");
-    if (previewJob?.id === job.id) setPreviewJob(null);
+  const handlePublishJob = async (job: JobPostingReview) => {
+    try {
+      await jobService.publishJob(Number(job.id));
+      showToast(`Đã xuất bản tin tuyển dụng "${job.title}" lên Career Portal thành công!`, "success");
+      if (previewJob?.id === job.id) setPreviewJob(null);
+      reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không xuất bản được tin.", "error");
+    }
   };
 
   // Submit Revision
-  const handleSubmitRevision = (e: React.FormEvent) => {
+  const handleSubmitRevision = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!revisionJob || !revisionReason.trim()) {
       showToast("Vui lòng nhập lý do yêu cầu sửa lại!", "error");
       return;
     }
 
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === revisionJob.id
-          ? { ...j, status: "needs_revision", revisionReason: revisionReason.trim() }
-          : j
-      )
-    );
+    try {
+      await jobService.requestChanges(Number(revisionJob.id), revisionReason.trim());
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Không trả lại được tin.", "error");
+      return;
+    }
+    reload();
 
-    showToast(`Đã trả lại tin "${revisionJob.title}" kèm yêu cầu chỉnh sửa cho Quản lý!`, "success");
+    showToast(`Đã trả lại tin "${revisionJob.title}" kèm yêu cầu chỉnh sửa cho người tạo tin!`, "success");
     setRevisionJob(null);
     setRevisionReason("");
     if (previewJob?.id === revisionJob.id) setPreviewJob(null);
@@ -178,6 +139,9 @@ export default function HRJobsPage() {
       return matchSearch && matchStatus;
     });
   }, [jobs, searchQuery, statusFilter]);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="w-full space-y-6">

@@ -39,10 +39,14 @@ class EmailLog(Base):
     recipient_email = Column(String(150), index=True, nullable=False)
     subject = Column(String(255), nullable=False)
     body_html = Column(Text, nullable=False)
-    status = Column(String(30), default="sent", nullable=False) # sent, failed, pending
+    status = Column(String(30), default="queued", nullable=False)  # queued, processing, sent, failed, skipped
     error_message = Column(Text, nullable=True)
+    # Timestamp of creation (queued) and, once delivered, of the successful send.
     sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     retried_at = Column(DateTime, nullable=True)
+    attempts = Column(Integer, default=1, nullable=False)
+    related_entity = Column(String(50), nullable=True)
+    related_id = Column(String(50), nullable=True, index=True)
 
     def to_dict(self):
         return {
@@ -55,5 +59,6 @@ class EmailLog(Base):
             "status": self.status,
             "error_message": self.error_message,
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
-            "retried_at": self.retried_at.isoformat() if self.retried_at else None
+            "retried_at": self.retried_at.isoformat() if self.retried_at else None,
+            "attempts": self.attempts,
         }

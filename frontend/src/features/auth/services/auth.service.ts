@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api-client";
+import { apiRequest, API_BASE_URL } from "@/lib/api-client";
 import type { LoginRequest, RegisterRequest } from "../types/auth.types";
 
 export interface UserItem {
@@ -8,8 +8,12 @@ export interface UserItem {
   phone?: string;
   employee_code?: string;
   avatar_url?: string;
+  job_title?: string | null;
   role: string;
-  roles?: string[];
+  /** /auth/me returns role objects; legacy payloads may contain plain codes. Display only — never an authority. */
+  roles?: Array<string | { code: string; name: string }>;
+  /** Effective permissions computed by the backend (UNION of all roles; admin = all). */
+  permissions?: string[];
   redirect_url?: string;
   is_active: boolean;
   account_status?: string;
@@ -44,24 +48,73 @@ export interface PasswordResetResendResponse {
   resend_cooldown_seconds: number;
 }
 
+/** Server-side state of a candidate-registration OTP challenge (never contains the code). */
+export interface RegistrationChallenge {
+  message?: string;
+  challenge_id: string;
+  challenge_status: "pending" | "blocked" | "expired" | "consumed" | "superseded" | "cancelled";
+  masked_email: string;
+  max_attempts: number;
+  remaining_attempts: number;
+  expires_in_seconds: number;
+  resend_available_in_seconds: number;
+  can_resend: boolean;
+}
+
+export interface RegistrationCompleted {
+  message: string;
+  challenge_status: "consumed";
+  redirect_url: string;
+  user: { id: number; email: string; full_name: string; roles: string[]; account_status: string; email_verified: boolean };
+}
+
 export const authService = {
+  /** Public candidate registration, step 1: the backend e-mails a code. The role is always decided by the backend. */
+  async registerStart(payload: {
+    full_name: string;
+    email: string;
+    password: string;
+    confirm_password: string;
+    phone?: string;
+  }): Promise<RegistrationChallenge> {
+    return await apiRequest<RegistrationChallenge>("/auth/register/start", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /** Step 2: on success the candidate account exists and is active; the user then signs in normally. */
+  async registerVerify(challengeId: string, otp: string): Promise<RegistrationCompleted> {
+    return await apiRequest<RegistrationCompleted>("/auth/register/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge_id: challengeId, otp }),
+    });
+  },
+
+  /** Issues a brand-new challenge (new id, new code); the previous one is invalidated. */
+  async registerResendOtp(challengeId: string): Promise<RegistrationChallenge> {
+    return await apiRequest<RegistrationChallenge>("/auth/register/resend-otp", {
+      method: "POST",
+      body: JSON.stringify({ challenge_id: challengeId }),
+    });
+  },
+
+  async registerChallengeStatus(challengeId: string): Promise<RegistrationChallenge> {
+    return await apiRequest<RegistrationChallenge>(
+      `/auth/register/challenge-status?challenge_id=${encodeURIComponent(challengeId)}`,
+      { method: "GET" },
+    );
+  },
+
+  /** @deprecated kept for older callers: starts the same OTP registration (no account is created here). */
   async register(payload: {
     full_name: string;
     email: string;
     password: string;
+    confirm_password: string;
     phone?: string;
-    role?: string;
-  }): Promise<AuthResponse> {
-    const res = await apiRequest<AuthResponse>("/auth/register", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-
-    if (res.access_token) {
-      localStorage.setItem("access_token", res.access_token);
-      localStorage.setItem("user_info", JSON.stringify(res.user));
-    }
-    return res;
+  }): Promise<RegistrationChallenge> {
+    return this.registerStart(payload);
   },
 
   async login(payload: {
@@ -121,7 +174,7 @@ export const authService = {
     });
   },
 
-  async updateProfile(payload: { full_name?: string; phone?: string; avatar_url?: string }): Promise<UserItem> {
+  async updateProfile(payload: { full_name?: string; phone?: string; avatar_url?: string; job_title?: string; date_of_birth?: string; gender?: string; bio?: string }): Promise<UserItem> {
     const res = await apiRequest<UserItem>("/auth/me", {
       method: "PUT",
       body: JSON.stringify(payload),
@@ -188,10 +241,22 @@ export const authService = {
     return null;
   },
 
-  logout() {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_info");
+  /** Revokes the server-side session (and the HttpOnly cookies), then clears local state. */
+  async logout(): Promise<void> {
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem("access_token");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user_info");
+    if (!token) return;
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        keepalive: true,
+      });
+    } catch {
+      // network failure: the local session is gone anyway; the server session expires on its own
     }
   }
 };

@@ -15,6 +15,11 @@ branch_labels = None
 depends_on = None
 
 def upgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    # Idempotent: existing dev databases already have this table (created by the old startup create_all),
+    # and on an empty database "users" does not exist yet — the baseline revision b7e4c1d9a0f2 creates it.
+    if inspector.has_table('password_reset_sessions') or not inspector.has_table('users'):
+        return
     op.create_table(
         'password_reset_sessions',
         sa.Column('id', sa.String(length=36), nullable=False),

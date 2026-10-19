@@ -30,6 +30,11 @@ import {
   Share2,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { interviewService, type InterviewItem } from '@/services/interview.service';
+import { openProtectedFile } from '@/services/file.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { useAuth } from '@/providers/auth-provider';
 
 export interface EmployeeInterview {
   id: string;
@@ -57,6 +62,47 @@ export interface EmployeeInterview {
   note: string;
   cvFileName?: string;
   referralBonus?: string;
+  cvUrl?: string | null;
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** My interview sessions: as a panel member, and as an internal applicant (own application, limited view). */
+function toEmployeeInterview(i: InterviewItem, myId: number | undefined, selfName: string, now: number): EmployeeInterview {
+  const start = new Date(i.scheduled_time);
+  const end = new Date(start.getTime() + i.duration_minutes * 60_000);
+  const own = !!i.is_own_application;
+  const done = i.status === 'completed' || i.status === 'cancelled' || end.getTime() < now;
+  const isToday = start.toDateString() === new Date(now).toDateString();
+  const status: EmployeeInterview['status'] = done ? 'completed' : isToday ? 'today' : 'upcoming';
+  const panel = ((i.interviewers || []) as Array<{ interviewer_id: number; interviewer_name?: string | null; role_in_interview?: string }>)
+    .map((x) => ({ name: x.interviewer_id === myId ? `${x.interviewer_name || 'Bạn'} (Bạn)` : x.interviewer_name || '—', title: x.role_in_interview || '', isSelf: x.interviewer_id === myId }));
+  return {
+    id: `IV-${i.id}`,
+    roleType: own ? 'internal_applicant' : 'interviewer',
+    roleLabel: own ? 'Bạn là ứng viên nội bộ' : 'Hội đồng phỏng vấn',
+    position: i.job_title || '',
+    department: '',
+    round: i.round_name,
+    candidateName: own ? selfName : i.candidate_name || '',
+    candidateEmail: own ? '' : i.candidate_email || '',
+    candidatePhone: '',
+    dateStr: start.toISOString().slice(0, 10),
+    displayDate: start.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }),
+    timeRange: `${pad(start.getHours())}:${pad(start.getMinutes())} - ${pad(end.getHours())}:${pad(end.getMinutes())}`,
+    duration: `${i.duration_minutes} phút`,
+    status,
+    statusLabel: i.status === 'cancelled' ? 'Đã hủy' : status === 'completed' ? 'Đã hoàn thành' : status === 'today' ? 'Hôm nay' : 'Sắp diễn ra',
+    format: i.meeting_link ? 'online' : 'offline',
+    meetUrl: i.meeting_link || undefined,
+    platform: i.meeting_link ? 'trực tuyến' : undefined,
+    offlineRoom: i.meeting_link ? undefined : i.location,
+    offlineAddress: i.meeting_link ? undefined : '',
+    panelMembers: panel,
+    note: own ? 'Lịch phỏng vấn cho hồ sơ ứng tuyển nội bộ của bạn.' : i.my_evaluation_submitted ? 'Bạn đã nộp phiếu đánh giá cho buổi này.' : 'Bạn tham gia với vai trò người phỏng vấn — nhớ nộp phiếu đánh giá sau buổi phỏng vấn.',
+    cvFileName: !own && i.cv_url ? i.cv_url.split('/').pop() : undefined,
+    cvUrl: own ? null : i.cv_url || null,
+  };
 }
 
 export default function EmployeeInterviewsPage() {
@@ -72,140 +118,20 @@ export default function EmployeeInterviewsPage() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const [interviews] = useState<EmployeeInterview[]>([
-    {
-      id: 'IV-EMP-01',
-      roleType: 'interviewer',
-      roleLabel: 'Hội đồng phỏng vấn',
-      position: 'Senior Backend Engineer (Go/Python)',
-      department: 'Khối Công Nghệ & Phần Mềm',
-      round: 'Vòng 2: Đánh giá Kỹ thuật chuyên sâu & System Design',
-      candidateName: 'Lê Hoàng Minh',
-      candidateEmail: 'minh.lehoang@gmail.com',
-      candidatePhone: '0912 345 678',
-      dateStr: '2026-10-15',
-      displayDate: 'Thứ Năm, 15/10/2026',
-      timeRange: '14:00 - 15:30',
-      duration: '90 phút',
-      status: 'upcoming',
-      statusLabel: 'Sắp diễn ra',
-      format: 'online',
-      platform: 'Google Meet',
-      meetUrl: 'https://meet.google.com/xyz-rec-eng',
-      panelMembers: [
-        { name: 'Nguyễn Tiến Dũng', title: 'Tech Director' },
-        { name: 'Bạn (Interviewer)', title: 'Senior Tech Member', isSelf: true },
-        { name: 'Trần Thu Hương', title: 'HR Recruiter' },
-      ],
-      note: 'Bạn tham gia với vai trò đánh giá chuyên môn lập trình Backend và kiến trúc Distributed Cache.',
-      cvFileName: 'LeHoangMinh_SeniorBackend.pdf',
-    },
-    {
-      id: 'IV-EMP-02',
-      roleType: 'referral',
-      roleLabel: 'Ứng viên bạn giới thiệu',
-      position: 'UX/UI Designer Senior',
-      department: 'Phòng Phát Triển Sản Phẩm',
-      round: 'Vòng 1: Phỏng vấn Văn hóa & Portfolio Đồ Án',
-      candidateName: 'Nguyễn Thị Mai',
-      candidateEmail: 'mai.nguyen.design@outlook.com',
-      candidatePhone: '0988 765 432',
-      dateStr: '2026-10-16',
-      displayDate: 'Thứ Sáu, 16/10/2026',
-      timeRange: '09:30 - 10:30',
-      duration: '60 phút',
-      status: 'upcoming',
-      statusLabel: 'Sắp diễn ra',
-      format: 'online',
-      platform: 'Google Meet',
-      meetUrl: 'https://meet.google.com/abc-design-hr',
-      panelMembers: [
-        { name: 'Lê Hoàng Long', title: 'Head of Product' },
-        { name: 'Vũ Thùy Linh', title: 'HR Talent Acquisition' },
-      ],
-      note: 'Ứng viên đã xác nhận tham gia. Thưởng giới thiệu dự kiến: 5.000.000 VNĐ khi đạt thử việc.',
-      cvFileName: 'CV_NguyenThiMai_UXUI.pdf',
-      referralBonus: '5.000.000 VNĐ',
-    },
-    {
-      id: 'IV-EMP-03',
-      roleType: 'interviewer',
-      roleLabel: 'Hội đồng phỏng vấn',
-      position: 'Middle DevOps / Cloud Engineer',
-      department: 'Khối Vận Hành & Hạ Tầng',
-      round: 'Vòng 2: Kiểm tra Kỹ năng Kubernetes & Terraform',
-      candidateName: 'Trần Văn Bách',
-      candidateEmail: 'bach.tran@cloudsec.vn',
-      candidatePhone: '0903 112 233',
-      dateStr: '2026-10-18',
-      displayDate: 'Chủ Nhật, 18/10/2026',
-      timeRange: '10:00 - 11:15',
-      duration: '75 phút',
-      status: 'upcoming',
-      statusLabel: 'Sắp diễn ra',
-      format: 'offline',
-      offlineRoom: 'Phòng Họp SkyMeeting 401 (Tầng 4)',
-      offlineAddress: 'Tòa nhà Tech Innovation Tower, 19 Duy Tân, Cầu Giấy, Hà Nội',
-      panelMembers: [
-        { name: 'Đặng Quốc Huy', title: 'Infrastructure Lead' },
-        { name: 'Bạn (Interviewer)', title: 'DevOps Specialist', isSelf: true },
-      ],
-      note: 'Phỏng vấn trực tiếp tại văn phòng. Vui lòng có mặt trước 10 phút tại phòng 401.',
-      cvFileName: 'TranVanBach_DevOps.pdf',
-    },
-    {
-      id: 'IV-EMP-04',
-      roleType: 'internal_applicant',
-      roleLabel: 'Ứng tuyển luân chuyển nội bộ',
-      position: 'Lead Architecture Specialist',
-      department: 'Khối R&D & Kiến Trúc Nền Tảng',
-      round: 'Vòng 3: Trao đổi Định hướng cùng Ban Giám Đốc',
-      candidateName: 'Bạn (Ứng viên nội bộ)',
-      candidateEmail: 'you.employee@company.com',
-      candidatePhone: '0901 234 567',
-      dateStr: '2026-10-20',
-      displayDate: 'Thứ Ba, 20/10/2026',
-      timeRange: '15:00 - 16:00',
-      duration: '60 phút',
-      status: 'upcoming',
-      statusLabel: 'Sắp diễn ra',
-      format: 'offline',
-      offlineRoom: 'Phòng Hội đồng Executive 902 (Tầng 9)',
-      offlineAddress: 'Trụ sở chính Tech Tower, 19 Duy Tân, Cầu Giấy, Hà Nội',
-      panelMembers: [
-        { name: 'Trần Tuấn Anh', title: 'Chief Technology Officer (CTO)' },
-        { name: 'Nguyễn Thị Hải Yến', title: 'VP of Human Resources' },
-      ],
-      note: 'Vòng phỏng vấn định hướng lộ trình thăng tiến nội bộ. Chuẩn bị tài liệu định hướng công nghệ 2027.',
-    },
-    {
-      id: 'IV-EMP-05',
-      roleType: 'referral',
-      roleLabel: 'Ứng viên bạn giới thiệu',
-      position: 'Frontend React Lead',
-      department: 'Khối Công Nghệ & Phần Mềm',
-      round: 'Vòng 2: Phỏng vấn Kỹ thuật & Quản lý nhóm',
-      candidateName: 'Phạm Thu Hà',
-      candidateEmail: 'ha.pham.fe@gmail.com',
-      candidatePhone: '0977 889 900',
-      dateStr: '2026-09-25',
-      displayDate: 'Thứ Sáu, 25/09/2026',
-      timeRange: '14:00 - 15:30',
-      duration: '90 phút',
-      status: 'completed',
-      statusLabel: 'Đã hoàn thành',
-      format: 'online',
-      platform: 'Google Meet',
-      meetUrl: 'https://meet.google.com/fe-lead-interview',
-      panelMembers: [
-        { name: 'Nguyễn Tiến Dũng', title: 'Tech Director' },
-        { name: 'Vũ Thùy Linh', title: 'HR Manager' },
-      ],
-      note: 'Ứng viên xuất sắc vượt qua các vòng, đã nhận Offer và Onboard chính thức.',
-      cvFileName: 'PhamThuHa_Frontend_Lead.pdf',
-      referralBonus: '10.000.000 VNĐ (Đã giải ngân)',
-    },
-  ]);
+  const { user } = useAuth();
+  const { data, error, loading, reload } = useApiData(async () => {
+    const [mine, all] = await Promise.all([
+      interviewService.getMine(),
+      interviewService.getInterviews(),
+    ]);
+    const rows = [...mine, ...all.filter((i) => i.is_own_application && !mine.some((m) => m.id === i.id))];
+    return { rows, now: Date.now() };
+  }, []);
+  const interviews = useMemo(
+    () => (data?.rows || []).map((i) => toEmployeeInterview(i, user?.id, user?.full_name || 'Bạn', data?.now || 0))
+      .sort((x, y) => x.dateStr.localeCompare(y.dateStr)),
+    [data, user?.id, user?.full_name],
+  );
 
   const stats = useMemo(() => {
     return {
@@ -246,6 +172,9 @@ export default function EmployeeInterviewsPage() {
     showToast('Đã sao chép liên kết vào clipboard!');
     setTimeout(() => setCopiedId(null), 2500);
   };
+
+  if (loading) return <EmployeeAppShell activeTab="interviews"><LoadingState /></EmployeeAppShell>;
+  if (error) return <EmployeeAppShell activeTab="interviews"><ErrorState error={error} onRetry={reload} /></EmployeeAppShell>;
 
   return (
     <EmployeeAppShell activeTab="interviews">
@@ -738,9 +667,13 @@ export default function EmployeeInterviewsPage() {
                       <FileText className="w-3.5 h-3.5 text-blue-600" />
                       <span>Hồ sơ CV đính kèm:</span>
                     </span>
-                    <span className="font-bold text-blue-600 underline cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => selectedInterview.cvUrl && openProtectedFile(selectedInterview.cvUrl).catch(() => showToast('Không mở được CV.'))}
+                      className="font-bold text-blue-600 underline cursor-pointer"
+                    >
                       {selectedInterview.cvFileName}
-                    </span>
+                    </button>
                   </div>
                 )}
               </div>

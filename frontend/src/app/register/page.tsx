@@ -1,10 +1,34 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { authService } from "@/features/auth/services/auth.service";
+import { authService, type RegistrationChallenge } from "@/features/auth/services/auth.service";
 import { ApiError } from "@/lib/api-client";
+
+// Only the challenge id (an opaque server handle) is kept in the tab, so a reload can ask the server for the
+// real state — lockout is decided by the backend, never restored from browser state. No code, no password.
+const CHALLENGE_KEY = "candidate_registration_challenge";
+
+function readStoredChallenge(): string | null {
+  try {
+    return sessionStorage.getItem(CHALLENGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeChallenge(id: string | null): void {
+  try {
+    if (id) sessionStorage.setItem(CHALLENGE_KEY, id);
+    else sessionStorage.removeItem(CHALLENGE_KEY);
+  } catch {
+    // storage unavailable: the flow still works, only reload-resume is lost
+  }
+}
+
+const formatTimer = (seconds: number) =>
+  `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -21,6 +45,42 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+
+  // OTP step (state always taken from the backend's challenge response)
+  const [challenge, setChallenge] = useState<RegistrationChallenge | null>(null);
+  const [otpDigits, setOtpDigits] = useState<string[]>(Array(6).fill(""));
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [isResending, setIsResending] = useState(false);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const isBlocked = !!challenge && challenge.challenge_status !== "pending";
+
+  const applyChallenge = useCallback((next: RegistrationChallenge) => {
+    setChallenge(next);
+    setCooldownSeconds(next.resend_available_in_seconds || 0);
+    storeChallenge(next.challenge_status === "consumed" ? null : next.challenge_id);
+  }, []);
+
+  /** Re-read the challenge from the server (after a reload or a rejected code). */
+  const revalidate = useCallback(async (id: string) => {
+    try {
+      applyChallenge(await authService.registerChallengeStatus(id));
+    } catch {
+      storeChallenge(null);
+      setChallenge(null);
+    }
+  }, [applyChallenge]);
+
+  useEffect(() => {
+    const stored = readStoredChallenge();
+    if (!stored) return;
+    authService.registerChallengeStatus(stored).then(applyChallenge).catch(() => storeChallenge(null));
+  }, [applyChallenge]);
+
+  useEffect(() => {
+    if (!challenge || cooldownSeconds <= 0) return;
+    const timer = setInterval(() => setCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0)), 1000);
+    return () => clearInterval(timer);
+  }, [challenge, cooldownSeconds]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -67,17 +127,15 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      await authService.register({
+      const started = await authService.registerStart({
         full_name: formData.fullName.trim(),
         email: formData.companyEmail.trim(),
         password: formData.password,
-        role: "employee",
+        confirm_password: formData.confirmPassword,
       });
-
-      setSuccessMsg("Tạo tài khoản thành công! Đang chuyển hướng đến trang đăng nhập...");
-      setTimeout(() => {
-        router.push("/login");
-      }, 1500);
+      setOtpDigits(Array(6).fill(""));
+      applyChallenge(started);
+      setSuccessMsg(started.message || "");
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message || "Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.");
@@ -89,6 +147,85 @@ export default function RegisterPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const verifyOtpCode = async (otpCode: string) => {
+    if (!challenge || isBlocked || isLoading || otpCode.length !== 6) return;
+    setErrorMsg("");
+    setSuccessMsg("");
+    setIsLoading(true);
+    try {
+      const done = await authService.registerVerify(challenge.challenge_id, otpCode);
+      storeChallenge(null);
+      setChallenge(null);
+      setSuccessMsg(done.message);
+      setTimeout(() => {
+        router.push(done.redirect_url || "/login");
+      }, 1500);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof ApiError ? err.message : "Không thể kết nối đến máy chủ. Vui lòng thử lại sau.");
+      setOtpDigits(Array(6).fill(""));
+      // The server is the authority on attempts / lockout: always re-read its state.
+      await revalidate(challenge.challenge_id);
+      inputRefs.current[0]?.focus();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOtpChange = (index: number, value: string) => {
+    if (isBlocked) return;
+    if (value && !/^\d+$/.test(value)) return;
+    const newDigits = [...otpDigits];
+    newDigits[index] = value.slice(-1);
+    setOtpDigits(newDigits);
+    setErrorMsg("");
+    if (value && index < 5) inputRefs.current[index + 1]?.focus();
+    const completeOtp = newDigits.join("");
+    if (completeOtp.length === 6) void verifyOtpCode(completeOtp);
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (isBlocked) return;
+    if (e.key === "Backspace" && !otpDigits[index] && index > 0) inputRefs.current[index - 1]?.focus();
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    if (isBlocked) return;
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").trim();
+    if (/^\d{6}$/.test(pasted)) {
+      setOtpDigits(pasted.split(""));
+      inputRefs.current[5]?.focus();
+      void verifyOtpCode(pasted);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (!challenge || cooldownSeconds > 0 || isResending) return;
+    setErrorMsg("");
+    setSuccessMsg("");
+    setIsResending(true);
+    try {
+      const next = await authService.registerResendOtp(challenge.challenge_id);
+      setOtpDigits(Array(6).fill(""));
+      applyChallenge(next); // inputs are enabled only because the server confirmed a new pending challenge
+      setSuccessMsg(next.message || "");
+      inputRefs.current[0]?.focus();
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof ApiError ? err.message : "Không thể gửi lại mã. Vui lòng thử lại sau.");
+      await revalidate(challenge.challenge_id);
+    } finally {
+      setIsResending(false);
+    }
+  };
+
+  const restartRegistration = () => {
+    storeChallenge(null);
+    setChallenge(null);
+    setErrorMsg("");
+    setSuccessMsg("");
+    setOtpDigits(Array(6).fill(""));
   };
 
   return (
@@ -163,6 +300,7 @@ export default function RegisterPage() {
           )}
 
           {/* Form Đăng ký */}
+          {!challenge && (
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* 1. Họ và tên */}
             <div>
@@ -325,6 +463,105 @@ export default function RegisterPage() {
               </button>
             </div>
           </form>
+          )}
+
+          {/* Bước xác thực email: mã OTP 6 số */}
+          {challenge && (
+            <div className="space-y-5">
+              <p className="text-sm text-gray-600 text-center leading-relaxed">
+                Vui lòng nhập mã OTP 6 số đã được gửi đến{" "}
+                <span className="font-semibold text-gray-900">{challenge.masked_email}</span>
+              </p>
+
+              <div className="flex justify-center items-center gap-2 sm:gap-2.5 py-1">
+                {otpDigits.map((digit, idx) => (
+                  <input
+                    key={idx}
+                    ref={(el) => { inputRefs.current[idx] = el; }}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    aria-label={`Chữ số OTP thứ ${idx + 1}`}
+                    value={digit}
+                    disabled={isBlocked || isLoading}
+                    onChange={(e) => handleOtpChange(idx, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                    onPaste={handleOtpPaste}
+                    className={`w-11 h-13 sm:w-12 sm:h-14 text-center text-xl font-bold rounded-xl border outline-none transition-all ${
+                      isBlocked
+                        ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50 select-none"
+                        : "text-slate-800 bg-slate-50/80 border-slate-200 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                    }`}
+                    autoFocus={idx === 0 && !isBlocked}
+                  />
+                ))}
+              </div>
+
+              <div className="text-center space-y-1 text-xs">
+                {challenge.challenge_status === "blocked" ? (
+                  <p className="text-red-600 font-semibold">
+                    Bạn đã nhập sai mã xác thực {challenge.max_attempts} lần. Mã OTP hiện tại đã bị vô hiệu hóa. Vui lòng yêu cầu mã mới.
+                  </p>
+                ) : challenge.challenge_status === "expired" ? (
+                  <p className="text-red-600 font-semibold">Mã xác thực đã hết hạn. Vui lòng yêu cầu mã mới.</p>
+                ) : challenge.challenge_status !== "pending" ? (
+                  <p className="text-red-600 font-semibold">Mã xác thực này không còn hiệu lực. Vui lòng yêu cầu mã mới.</p>
+                ) : (
+                  <>
+                    <p className="text-gray-500">
+                      Mã OTP có hiệu lực trong 10 phút. Bạn còn <span className="font-semibold text-gray-700">{challenge.remaining_attempts}</span> lần thử.
+                    </p>
+                    {cooldownSeconds > 0 ? (
+                      <p className="text-gray-400 font-medium">
+                        Gửi lại mã sau <span className="text-blue-600 font-bold">{formatTimer(cooldownSeconds)}</span>
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleResendOtp}
+                        disabled={isResending}
+                        className="font-semibold text-blue-600 hover:underline disabled:opacity-50 cursor-pointer"
+                      >
+                        Gửi lại mã
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="space-y-3 pt-1">
+                <button
+                  type="button"
+                  disabled={isBlocked || isLoading || otpDigits.join("").length < 6}
+                  onClick={() => void verifyOtpCode(otpDigits.join(""))}
+                  className="w-full py-3 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-base shadow-sm hover:shadow transition-all duration-200 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center justify-center gap-2"
+                >
+                  {isLoading ? "Đang xác thực..." : "Xác nhận"}
+                </button>
+
+                {isBlocked && challenge.can_resend && (
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={isResending || cooldownSeconds > 0}
+                    className="w-full py-3 px-4 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold text-sm transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {cooldownSeconds > 0 ? `Yêu cầu mã OTP mới sau ${formatTimer(cooldownSeconds)}` : "Yêu cầu mã OTP mới"}
+                  </button>
+                )}
+
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={restartRegistration}
+                    className="text-xs font-semibold text-gray-500 hover:text-gray-800 transition-colors cursor-pointer"
+                  >
+                    Quay lại sửa thông tin đăng ký
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 3. Liên kết điều hướng: Đã có tài khoản? Đăng nhập */}
           <div className="text-center mt-6 pt-5 border-t border-gray-100">

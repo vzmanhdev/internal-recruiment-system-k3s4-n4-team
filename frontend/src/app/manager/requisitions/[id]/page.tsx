@@ -3,7 +3,11 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { ManagerAppShell } from '@/components/layout/ManagerAppShell';
+import { managerRequisitionDetail } from '@/features/manager/api';
+import { requisitionService } from '@/services/requisition.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 import {
   ChevronLeft,
   Copy,
@@ -29,152 +33,39 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-// =============================================================================
-// MOCK DATA: REQUISITION DETAILS & PIPELINE
-// =============================================================================
-const MOCK_REQUISITION_DATA: Record<
-  string,
-  {
-    id: string;
-    title: string;
-    department: string;
-    level: string;
-    workType: string;
-    targetCount: number;
-    hiredCount: number;
-    salaryRange: string;
-    createdAt: string;
-    targetDate: string;
-    reason: string;
-    status: 'Pending' | 'Active' | 'Closed';
-    description: string;
-    requirements: string;
-    pipeline: {
-      submitted: number;
-      screening: number;
-      interview: number;
-      offered: number;
-      hired: number;
-    };
-    approvalSteps: Array<{
-      stepNumber: number;
-      stepName: string;
-      approverName: string;
-      approverRole: string;
-      department: string;
-      status: 'APPROVED' | 'IN_PROGRESS' | 'PENDING';
-      timestamp?: string;
-      waitingTime?: string;
-      isOverdue?: boolean;
-      comment?: string;
-      avatarColor: string;
-      initials: string;
-    }>;
-  }
-> = {
-  'REQ-2026-003': {
-    id: 'REQ-2026-003',
-    title: 'Senior Backend Engineer (Golang/Python)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Senior',
-    workType: 'Toàn thời gian (Full-time)',
-    targetCount: 2,
-    hiredCount: 1,
-    salaryRange: '35.000.000 - 50.000.000 VNĐ',
-    createdAt: '15/01/2026',
-    targetDate: '28/02/2026',
-    reason: 'Bổ sung định biên sprint Q1 mở rộng Core Services',
-    status: 'Pending',
-    description:
-      'Chịu trách nhiệm thiết kế và triển khai kiến trúc vi dịch vụ (Microservices) chịu tải cao với Golang và Python FastAPI. Tối ưu hóa truy vấn cơ sở dữ liệu phân tán, tích hợp Kafka message queue và đảm bảo SLA 99.99% cho nền tảng tuyển dụng nội bộ.',
-    requirements:
-      '- Tối thiểu 4 năm kinh nghiệm phát triển phần mềm với Golang hoặc Python.\n- Hiểu sâu về Database (PostgreSQL, Redis), caching strategies, distributed transaction.\n- Thành thạo Docker, Kubernetes, CI/CD pipeline và monitoring (Prometheus, Grafana).\n- Tư duy giải quyết vấn đề hệ thống tốt, tinh thần trách nhiệm cao và khả năng mentoring đồng nghiệp.',
-    pipeline: {
-      submitted: 120,
-      screening: 15,
-      interview: 5,
-      offered: 2,
-      hired: 1,
-    },
-    approvalSteps: [
-      {
-        stepNumber: 1,
-        stepName: 'Trưởng bộ phận tạo đề xuất',
-        approverName: 'Lê Trưởng Nhóm',
-        approverRole: 'Hiring Manager (Người đề xuất)',
-        department: 'Khối Công Nghệ',
-        status: 'APPROVED',
-        timestamp: '15/01/2026 - 09:30',
-        comment: 'Đã hoàn tất JD chuẩn và cân đối định mức dự án Core Services.',
-        avatarColor: 'bg-blue-600',
-        initials: 'LT',
-      },
-      {
-        stepNumber: 2,
-        stepName: 'Giám đốc khối phê duyệt định biên',
-        approverName: 'Trần Văn Giám Đốc',
-        approverRole: 'Giám Đốc Khối Công Nghệ (Head of Tech)',
-        department: 'Khối Công Nghệ',
-        status: 'APPROVED',
-        timestamp: '16/01/2026 - 14:15',
-        comment: 'Đồng ý bổ sung 2 headcount cho team Backend theo kế hoạch Q1.',
-        avatarColor: 'bg-indigo-600',
-        initials: 'TG',
-      },
-      {
-        stepNumber: 3,
-        stepName: 'Trưởng phòng HR thẩm định & cấp dải lương',
-        approverName: 'Nguyễn Thị Thu Hà',
-        approverRole: 'Trưởng phòng Nhân sự (HR Manager)',
-        department: 'Phòng Quản Trị Nhân Sự (HR)',
-        status: 'IN_PROGRESS',
-        waitingTime: 'Đang chờ xử lý: 3 ngày 6 giờ (Quá SLA 1 ngày)',
-        isOverdue: true,
-        comment: 'Đang thẩm định dải lương 35-50 triệu so với khung quy chế công ty.',
-        avatarColor: 'bg-amber-600',
-        initials: 'TH',
-      },
-      {
-        stepNumber: 4,
-        stepName: 'Tổng Giám đốc ký duyệt ban hành (BOD)',
-        approverName: 'Phạm Hoàng Nam',
-        approverRole: 'Tổng Giám Đốc (CEO)',
-        department: 'Ban Giám Đốc',
-        status: 'PENDING',
-        comment: 'Chờ kết quả thẩm định từ Trưởng phòng HR trước khi phê duyệt cuối.',
-        avatarColor: 'bg-slate-400',
-        initials: 'PN',
-      },
-    ],
-  },
-};
-
 export default function RequisitionDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const reqId = (params?.id as string) || 'REQ-2026-003';
-
-  // Get data or fallback to default
-  const requisition = MOCK_REQUISITION_DATA[reqId] || MOCK_REQUISITION_DATA['REQ-2026-003'];
+  const reqId = Number(params?.id);
+  const { data: requisition, error, loading, reload } = useApiData(() => managerRequisitionDetail(reqId), [reqId]);
 
   // State: Reminder Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isReminderSent, setIsReminderSent] = useState(false);
 
-  const handleSendReminder = () => {
-    setIsReminderSent(true);
-    setToastMessage('Đã gửi thông báo nhắc nhở đôn đốc duyệt đến Trưởng phòng HR (Thu Hà)!');
+  const handleSendReminder = async () => {
+    if (!requisition) return;
+    try {
+      const r = await requisitionService.remind(requisition.dbId);
+      setIsReminderSent(true);
+      setToastMessage(r.sent ? `Đã gửi nhắc nhở tới ${r.sent} người phụ trách bước duyệt hiện tại.` : 'Không có người nhận phù hợp cho bước duyệt hiện tại.');
+    } catch (err) {
+      setToastMessage(err instanceof ApiError ? err.message : 'Không gửi được nhắc nhở.');
+    }
     setTimeout(() => setToastMessage(null), 4000);
   };
 
   const handleDuplicate = () => {
     // Navigate to Requisitions list with clone modal trigger
-    router.push(`/manager/requisitions?cloneId=${requisition.id}`);
+    if (requisition) router.push(`/manager/requisitions?cloneId=${requisition.id}`);
   };
+
+  if (loading) return <LoadingState />;
+  if (error || !requisition) return <ErrorState error={error} onRetry={reload} />;
 
   // Pipeline Metrics
   const pipeline = requisition.pipeline;
-  const progressPercent = Math.round((requisition.hiredCount / requisition.targetCount) * 100);
+  const progressPercent = requisition.targetCount ? Math.round((requisition.hiredCount / requisition.targetCount) * 100) : 0;
 
   return (
     <>

@@ -12,6 +12,7 @@ import { Alert } from "@/components/ui/Alert";
 import { BrandLogo } from "@/components/layout/BrandLogo";
 import { authService } from "../services/auth.service";
 import { saveAuthSession } from "../lib/auth-session";
+import { notifyPermissionsChanged } from "@/providers/auth-provider";
 import { ApiError } from "@/lib/api-client";
 
 export function LoginForm() {
@@ -34,13 +35,13 @@ export function LoginForm() {
     const errors: Record<string, string> = {};
 
     if (!cleanEmail) {
-      errors["email"] = "Vui lòng nhập email công việc.";
+      errors["email"] = "";
     } else if (!cleanEmail.includes("@")) {
       errors["email"] = "Email không đúng định dạng (Ví dụ: name@company.com).";
     }
 
     if (!password) {
-      errors["password"] = "Vui lòng nhập mật khẩu.";
+      errors["password"] = "";
     }
 
     if (Object.keys(errors).length > 0) {
@@ -59,22 +60,13 @@ export function LoginForm() {
 
       // Lưu thông tin phiên đăng nhập
       saveAuthSession({ displayName: res.user?.full_name || "User" });
+      notifyPermissionsChanged(); // the persistent AuthProvider loads the new user + permissions
 
-      // Đường dẫn chuyển hướng dựa trên Database Role & cấu hình người dùng
-      let targetUrl = res.redirect_url || res.user?.redirect_url || "/jobs";
-      if (
-        cleanEmail.toLowerCase() === "employee@company.com" ||
-        res.user?.role === "employee" ||
-        (Array.isArray(res.user?.roles) && res.user.roles.includes("employee"))
-      ) {
-        targetUrl = "/employee";
-      } else if (
-        cleanEmail.toLowerCase() === "candidate@company.com" ||
-        res.user?.role === "candidate" ||
-        (Array.isArray(res.user?.roles) && res.user.roles.includes("candidate"))
-      ) {
-        targetUrl = "/candidate";
-      }
+      // Destination: the page the proxy sent us from (?next=, same-origin paths only), otherwise the
+      // landing page computed by the backend from database roles. No role/email checks here.
+      const nextParam = new URLSearchParams(window.location.search).get("next");
+      const safeNext = nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.startsWith("/login") ? nextParam : null;
+      const targetUrl = safeNext || res.redirect_url || res.user?.redirect_url || "/workspace";
 
       setSuccessMsg(
         `Đăng nhập thành công! Đang chuyển hướng dựa theo cấu hình vai trò từ hệ thống...`
@@ -83,7 +75,7 @@ export function LoginForm() {
       setTimeout(() => {
         router.push(targetUrl);
       }, 800);
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
         setErrorMsg(err.message);
         if (err.fieldErrors) {

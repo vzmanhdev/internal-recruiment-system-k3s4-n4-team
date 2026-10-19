@@ -1,5 +1,4 @@
 import React from 'react';
-import { RecruiterAppShell } from '@/components/layout/RecruiterAppShell';
 
 export const metadata = {
   title: 'Recruiter Workspace | Enterprise ATS',
@@ -15,5 +14,6 @@ export default function RecruiterLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <RecruiterAppShell>{children}</RecruiterAppShell>;
+  // The unified, permission-driven AppShell is mounted once in the root layout.
+  return <>{children}</>;
 }

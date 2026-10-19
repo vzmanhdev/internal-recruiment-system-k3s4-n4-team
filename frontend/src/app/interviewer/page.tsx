@@ -1,6 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
+import { interviewerApi, type UpcomingInterviewCard } from '@/features/interviewer/api';
+import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/providers/auth-provider';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import Link from 'next/link';
 import {
   Calendar,
@@ -25,76 +29,20 @@ import clsx from 'clsx';
 
 export default function InterviewerOverviewPage() {
   // Modal xem nhanh CV
-  const [cvPreviewCandidate, setCvPreviewCandidate] = useState<any>(null);
+  const [cvPreviewCandidate, setCvPreviewCandidate] = useState<UpcomingInterviewCard | null>(null);
 
-  // Danh sách lịch phỏng vấn sắp tới
-  const upcomingInterviews = [
-    {
-      id: 1,
-      candidateName: 'Lê Hoàng Cường',
-      position: 'Senior Frontend Engineer (React/Next.js)',
-      department: 'Ban Công Nghệ Thông Tin',
-      time: '14:00 - 15:00, Hôm nay',
-      format: 'Online (Google Meet)',
-      meetingLink: 'https://meet.google.com/abc-defg-hij',
-      status: 'Sắp diễn ra',
-      statusColor: 'bg-amber-50 text-amber-700 border-amber-200/80',
-      experience: '6 năm kinh nghiệm',
-      education: 'Đại học Bách Khoa Hà Nội',
-      skills: ['React', 'Next.js', 'TypeScript', 'Tailwind CSS'],
-    },
-    {
-      id: 2,
-      candidateName: 'Đỗ Hoàng Long',
-      position: 'Senior Data Analyst (BI & Modeling)',
-      department: 'Khối Phân Tích Dữ Liệu',
-      time: '09:30 - 10:30, Ngày mai',
-      format: 'Trực tiếp (Phòng Họp A3 - Tầng 8)',
-      status: 'Đã xác nhận',
-      statusColor: 'bg-blue-50 text-blue-700 border-blue-200/80',
-      experience: '4 năm kinh nghiệm',
-      education: 'Đại học Kinh Tế Quốc Dân',
-      skills: ['SQL', 'Python', 'PowerBI', 'Tableau', 'Data Warehousing'],
-    },
-    {
-      id: 3,
-      candidateName: 'Phạm Thuỳ Linh',
-      position: 'Product Owner (Digital Banking)',
-      department: 'Khối Ngân Hàng Số',
-      time: '15:30 - 16:30, 14/10/2026',
-      format: 'Online (Microsoft Teams)',
-      meetingLink: 'https://teams.microsoft.com/l/meetup-join/...',
-      status: 'Chờ phỏng vấn',
-      statusColor: 'bg-slate-100 text-slate-700 border-slate-200',
-      experience: '5 năm kinh nghiệm',
-      education: 'Đại học Ngoại Thương',
-      skills: ['Agile/Scrum', 'Fintech', 'Product Roadmapping', 'User Story'],
-    },
-  ];
+  const { user } = useAuth();
+  const { data, error, loading, reload } = useApiData(() => interviewerApi.home());
+  const upcomingInterviews: UpcomingInterviewCard[] = data?.upcoming || [];
+  const todoEvaluations = data?.pending || [];
+  const today = new Date().toDateString();
+  const todayCount = upcomingInterviews.filter((i) => (data?.all || []).some((x) => x.id === i.id && new Date(x.scheduled_time).toDateString() === today)).length;
+  const overdueCount = todoEvaluations.filter((t) => t.isOverdue).length;
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const evaluatedThisMonth = (data?.all || []).filter((x) => x.my_evaluation_submitted && x.scheduled_time.slice(0, 7) === monthKey).length;
 
-  // Danh sách việc cần xử lý (To-do / Phiếu đánh giá chờ nộp)
-  const todoEvaluations = [
-    {
-      id: 2,
-      candidateName: 'Ngô Quốc Bảo',
-      position: 'DevOps / SRE Engineer',
-      department: 'Ban Hạ Tầng & Bảo Mật',
-      interviewedAt: 'Đã hoàn tất lúc 11:00 hôm qua',
-      dueWarning: 'Quá hạn 2 giờ',
-      isOverdue: true,
-      dueClass: 'text-rose-600 bg-rose-50 border-rose-200/80',
-    },
-    {
-      id: 3,
-      candidateName: 'Trần Thị Mai',
-      position: 'UI/UX Designer Senior',
-      department: 'Khối Trải Nghiệm Khách Hàng',
-      interviewedAt: 'Đã hoàn tất lúc 11:30 hôm nay',
-      dueWarning: 'Cần nộp trước 18:00 hôm nay',
-      isOverdue: false,
-      dueClass: 'text-amber-700 bg-amber-50 border-amber-200/80',
-    },
-  ];
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6 pb-12">
@@ -112,8 +60,8 @@ export default function InterviewerOverviewPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Chào mừng <strong className="text-slate-800">Nguyễn Minh Trí</strong> (Senior Tech Lead). Bạn có{' '}
-            <strong className="text-rose-600 font-bold">2 phiếu đánh giá</strong> cần hoàn tất để HR chốt kết quả hội đồng.
+            Chào mừng <strong className="text-slate-800">{user?.full_name || '—'}</strong>. Bạn có{' '}
+            <strong className="text-rose-600 font-bold">{todoEvaluations.length} phiếu đánh giá</strong> cần hoàn tất để HR chốt kết quả hội đồng.
           </p>
         </div>
 
@@ -130,7 +78,7 @@ export default function InterviewerOverviewPage() {
             className="px-4 py-2 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
           >
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-            <span>Phiếu Chờ Nộp (2)</span>
+            <span>Phiếu Chờ Nộp ({todoEvaluations.length})</span>
           </Link>
         </div>
       </div>
@@ -150,11 +98,11 @@ export default function InterviewerOverviewPage() {
             </div>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-black text-slate-900 tracking-tight">3</span>
+            <span className="text-3xl font-black text-slate-900 tracking-tight">{upcomingInterviews.length}</span>
             <span className="text-xs font-bold text-slate-500">buổi phỏng vấn</span>
           </div>
           <p className="text-[11px] text-blue-600 font-semibold mt-2 flex items-center gap-1">
-            <span>• 1 buổi diễn ra trong chiều nay</span>
+            <span>• {todayCount} buổi diễn ra trong hôm nay</span>
           </p>
         </div>
 
@@ -175,11 +123,11 @@ export default function InterviewerOverviewPage() {
             </div>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-black text-rose-600 tracking-tight">2</span>
+            <span className="text-3xl font-black text-rose-600 tracking-tight">{todoEvaluations.length}</span>
             <span className="text-xs font-bold text-slate-500">phiếu chưa gửi</span>
           </div>
           <p className="text-[11px] text-rose-600 font-semibold mt-2 flex items-center gap-1">
-            <span>⚠️ 1 phiếu đã quá hạn 2 giờ</span>
+            <span>{overdueCount ? `⚠️ ${overdueCount} phiếu đã quá hạn nộp` : 'Không có phiếu quá hạn'}</span>
           </p>
         </div>
 
@@ -194,11 +142,11 @@ export default function InterviewerOverviewPage() {
             </div>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-black text-slate-900 tracking-tight">12</span>
+            <span className="text-3xl font-black text-slate-900 tracking-tight">{evaluatedThisMonth}</span>
             <span className="text-xs font-bold text-slate-500">hồ sơ hoàn tất</span>
           </div>
           <p className="text-[11px] text-emerald-600 font-semibold mt-2 flex items-center gap-1">
-            <span>✓ Tỷ lệ hoàn thành đúng hạn 100%</span>
+            <span>Phiếu đã nộp cho các buổi phỏng vấn trong tháng</span>
           </p>
         </div>
       </div>

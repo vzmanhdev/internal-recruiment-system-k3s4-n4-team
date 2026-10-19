@@ -17,86 +17,120 @@ import {
   AlertCircle,
   FileText,
 } from 'lucide-react';
+import { apiRequest } from '@/lib/api-client';
+import { interviewService } from '@/services/interview.service';
+import { offerService } from '@/services/offer.service';
+import { careerApi } from '@/features/candidate/api';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { useAuth } from '@/providers/auth-provider';
+
+interface MyApplication {
+  id: number;
+  tracking_code?: string | null;
+  job_title?: string | null;
+  department?: string | null;
+  status: string;
+  public_status?: string | null;
+  applied_date?: string | null;
+}
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** The signed-in applicant's own applications, interviews and offers (candidate views only) + open jobs. */
+async function loadCandidateHome() {
+  const [apps, interviews, offers, jobs] = await Promise.all([
+    apiRequest<MyApplication[]>('/applications?mine=true'),
+    interviewService.getInterviews().catch(() => []),
+    offerService.getOffers().catch(() => []),
+    careerApi.list().catch(() => []),
+  ]);
+  const now = Date.now();
+  const mine = interviews.filter((i) => i.is_own_application && i.status === 'scheduled' && new Date(i.scheduled_time).getTime() > now)
+    .sort((x, y) => x.scheduled_time.localeCompare(y.scheduled_time));
+  const pendingOffers = offers.filter((o) => o.status === 'sent');
+  const nextDeadline = pendingOffers.map((o) => o.response_deadline).filter(Boolean).sort()[0] || null;
+  return { apps, mine, offers, pendingOffers, nextDeadline, jobs: jobs.slice(0, 2), now };
+}
 
 export default function CandidateDashboardPage() {
+  const { user } = useAuth();
+  const { data: home, error, loading, reload } = useApiData(loadCandidateHome, []);
+  if (loading) return <LoadingState />;
+  if (error || !home) return <ErrorState error={error} onRetry={reload} />;
+
+  const open = home.apps.filter((a) => a.public_status !== 'Kết thúc');
+  const profileFields = [user?.full_name, user?.phone, user?.avatar_url, user?.job_title];
+  const completeness = Math.round((profileFields.filter(Boolean).length / profileFields.length) * 100);
+  const next = home.mine[0];
+  const daysToDeadline = home.nextDeadline
+    ? Math.max(0, Math.ceil((new Date(`${home.nextDeadline.slice(0, 10)}T23:59:59`).getTime() - home.now) / 86_400_000))
+    : null;
   const quickStats = [
     {
       title: 'Hồ sơ đã nộp',
-      value: '2',
+      value: String(home.apps.length),
       unit: 'vị trí',
-      desc: 'Đang trong quy trình xét duyệt',
+      desc: `${open.length} hồ sơ đang trong quy trình xét duyệt`,
       icon: FileText,
       color: 'bg-blue-50 text-blue-600 border-blue-100',
     },
     {
       title: 'Lịch phỏng vấn',
-      value: '1',
+      value: String(home.mine.length),
       unit: 'buổi sắp tới',
-      desc: 'Vòng 2: Kỹ thuật chuyên sâu',
+      desc: next ? next.round_name : 'Chưa có lịch phỏng vấn',
       icon: Calendar,
       color: 'bg-amber-50 text-amber-600 border-amber-100',
     },
     {
       title: 'Thư mời nhận việc (Offer)',
-      value: '1',
+      value: String(home.pendingOffers.length),
       unit: 'đang chờ phản hồi',
-      desc: 'Hạn phản hồi: 5 ngày tới',
+      desc: daysToDeadline === null ? 'Không có thư mời chờ phản hồi' : `Hạn phản hồi: ${daysToDeadline} ngày tới`,
       icon: FileCheck2,
       color: 'bg-emerald-50 text-emerald-600 border-emerald-100',
     },
     {
       title: 'Độ hoàn thiện hồ sơ',
-      value: '95%',
-      unit: 'chuẩn ATS',
-      desc: 'Đã cập nhật kỹ năng & CV',
+      value: `${completeness}%`,
+      unit: 'thông tin cá nhân',
+      desc: completeness < 100 ? 'Cập nhật hồ sơ cá nhân để hoàn thiện' : 'Hồ sơ cá nhân đã đầy đủ',
       icon: Sparkles,
       color: 'bg-purple-50 text-purple-600 border-purple-100',
     },
   ];
 
-  const ongoingApplications = [
-    {
-      id: 'APP-2026-101',
-      jobTitle: 'Senior Backend Engineer (Go/Python)',
-      department: 'Khối Công Nghệ & Phần Mềm',
-      location: 'Hà Nội (Keangnam Landmark 72)',
-      appliedDate: '01/10/2026',
-      stage: 'Vòng 2: Phỏng vấn kỹ thuật',
-      status: 'Đang xử lý',
-      statusColor: 'bg-blue-50 text-blue-700 border-blue-200',
-      nextAction: 'Lịch PV: 14:00 ngày 15/10/2026',
-    },
-    {
-      id: 'APP-2026-102',
-      jobTitle: 'Frontend React Lead (Next.js & Design System)',
-      department: 'Khối Công Nghệ & Phần Mềm',
-      location: 'Hà Nội (Hybrid)',
-      appliedDate: '04/10/2026',
-      stage: 'Vòng 3: Đề xuất Offer',
-      status: 'Đã nhận Offer',
-      statusColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      nextAction: 'Xem chi tiết thư mời nhận việc',
-    },
-  ];
+  const ongoingApplications = open.map((a, idx) => {
+    const iv = home.mine.find((i) => i.application_id === a.id);
+    const offer = home.offers.find((o) => o.application_id === a.id && o.status === 'sent');
+    const at = iv ? new Date(iv.scheduled_time) : null;
+    const trackingCode = a.tracking_code || `APP-${String(a.id || idx + 1).padStart(6, '0')}`;
+    return {
+      key: `app-${a.id ?? idx}`,
+      id: a.id,
+      trackingCode,
+      jobTitle: a.job_title || 'Vị trí ứng tuyển',
+      department: a.department || '',
+      location: '',
+      appliedDate: a.applied_date ? new Date(`${a.applied_date}T00:00:00`).toLocaleDateString('vi-VN') : '',
+      stage: a.public_status || a.status || 'Đang xem xét',
+      status: offer ? 'Đã nhận Offer' : 'Đang xử lý',
+      statusColor: offer ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200',
+      nextAction: offer
+        ? 'Xem chi tiết thư mời nhận việc'
+        : at ? `Lịch PV: ${pad(at.getHours())}:${pad(at.getMinutes())} ngày ${at.toLocaleDateString('vi-VN')}` : 'Chờ bộ phận tuyển dụng phản hồi',
+    };
+  });
 
-  const featuredJobs = [
-    {
-      id: 'JOB-2026-01',
-      title: 'AI/ML Research Engineer (LLM & CV Matching)',
-      department: 'Ban Công Nghệ AI & Dữ Liệu',
-      location: 'Hà Nội (Lotte Center)',
-      salary: '45 - 70 Triệu VNĐ',
-      type: 'Toàn thời gian',
-    },
-    {
-      id: 'JOB-2026-02',
-      title: 'DevOps / Site Reliability Engineer (SRE)',
-      department: 'Khối Vận Hành & Hạ Tầng',
-      location: 'Hà Nội (Hybrid)',
-      salary: '30 - 48 Triệu VNĐ',
-      type: 'Toàn thời gian',
-    },
-  ];
+  const featuredJobs = home.jobs.map((j, idx) => ({
+    key: `job-${j.slug || j.id || idx}`,
+    id: j.slug || j.id,
+    title: j.title,
+    department: j.department,
+    location: j.location,
+    salary: j.salary,
+    type: j.employmentType,
+  }));
 
   return (
     <div className="space-y-8">
@@ -123,7 +157,7 @@ export default function CandidateDashboardPage() {
               <span>Xem vị trí đang tuyển</span>
             </Link>
             <Link
-              href="/candidate/tracking"
+              href="/candidate/track"
               className="px-4 py-2.5 rounded-xl bg-blue-500/30 hover:bg-blue-500/40 text-white font-extrabold text-xs flex items-center gap-2 transition-all border border-white/20 active:scale-95"
             >
               <Clock className="w-4 h-4" />
@@ -183,33 +217,54 @@ export default function CandidateDashboardPage() {
           </div>
 
           <div className="space-y-3">
-            {ongoingApplications.map((app) => (
-              <div
-                key={app.id}
-                className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs hover:border-blue-200 transition-all space-y-3"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                  <div>
-                    <span className="font-mono text-[10px] font-bold text-slate-400 block">{app.id}</span>
-                    <h3 className="font-extrabold text-sm text-slate-900">{app.jobTitle}</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">{app.department} &bull; {app.location}</p>
-                  </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border self-start sm:self-auto ${app.statusColor}`}>
-                    {app.status}
-                  </span>
+            {ongoingApplications.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/80 shadow-2xs space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                  <FileText className="w-6 h-6" />
                 </div>
-
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs pt-1">
-                  <div className="flex items-center gap-2 text-slate-600 font-medium">
-                    <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                    <span>Giai đoạn: <strong className="text-slate-800">{app.stage}</strong></span>
-                  </div>
-                  <div className="text-xs font-bold text-blue-600 bg-blue-50/80 px-3 py-1 rounded-lg">
-                    {app.nextAction}
-                  </div>
+                <div className="space-y-1">
+                  <h3 className="font-extrabold text-sm text-slate-800">Bạn chưa nộp hồ sơ ứng tuyển nào</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    Khám phá hàng chục vị trí hấp dẫn với mức đãi ngộ và lộ trình phát triển rõ ràng ngay hôm nay.
+                  </p>
                 </div>
+                <Link
+                  href="/candidate/jobs"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs transition-colors shadow-sm cursor-pointer"
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>Khám phá vị trí đang tuyển</span>
+                </Link>
               </div>
-            ))}
+            ) : (
+              ongoingApplications.map((app) => (
+                <div
+                  key={app.key}
+                  className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs hover:border-blue-200 transition-all space-y-3"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <span className="font-mono text-[10px] font-bold text-slate-400 block">{app.trackingCode}</span>
+                      <h3 className="font-extrabold text-sm text-slate-900">{app.jobTitle}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">{[app.department, app.location].filter(Boolean).join(' • ')}</p>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold border self-start sm:self-auto ${app.statusColor}`}>
+                      {app.status}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs pt-1">
+                    <div className="flex items-center gap-2 text-slate-600 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                      <span>Giai đoạn: <strong className="text-slate-800">{app.stage}</strong></span>
+                    </div>
+                    <div className="text-xs font-bold text-blue-600 bg-blue-50/80 px-3 py-1 rounded-lg">
+                      {app.nextAction}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -232,7 +287,7 @@ export default function CandidateDashboardPage() {
           <div className="space-y-3">
             {featuredJobs.map((job) => (
               <div
-                key={job.id}
+                key={job.key}
                 className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow space-y-2.5"
               >
                 <div>
@@ -254,7 +309,7 @@ export default function CandidateDashboardPage() {
                     {job.type}
                   </span>
                   <Link
-                    href={`/candidate/jobs`}
+                    href={`/candidate/jobs/${job.id}`}
                     className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-0.5"
                   >
                     <span>Ứng tuyển</span>

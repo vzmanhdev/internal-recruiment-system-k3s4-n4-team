@@ -4,6 +4,9 @@ import React, { useState, useEffect } from "react";
 import { AdminAppShell } from "@/components/layout/AdminAppShell";
 import { Sliders, Building, Briefcase, Plus, RefreshCw, CheckCircle2, X, Users, Network, FileText, Check, AlertCircle } from "lucide-react";
 import { authService } from "@/features/auth/services/auth.service";
+import { API_BASE_URL } from "@/lib/api-client";
+import { masterDataService } from "@/services/master-data.service";
+import { useApiData } from "@/hooks/useApiData";
 
 interface Department {
   id: number;
@@ -21,16 +24,7 @@ interface JobTitle {
   description?: string;
 }
 
-// Danh sách người dùng/trưởng phòng gợi ý
-const MANAGERS_LIST = [
-  { id: 1, name: "Nguyễn Văn An", title: "Giám đốc Khối Công nghệ", email: "an.nguyen@company.com" },
-  { id: 2, name: "Trần Thị Bích", title: "Trưởng phòng Tuyển dụng & Đào tạo", email: "bich.tran@company.com" },
-  { id: 3, name: "Lê Hoàng Nam", title: "Trưởng phòng Vận hành & Hạ tầng", email: "nam.le@company.com" },
-  { id: 4, name: "Phạm Minh Đức", title: "Trưởng phòng Phát triển Phần mềm", email: "duc.pham@company.com" },
-  { id: 5, name: "Vũ Thu Hà", title: "Trưởng ban Tài chính & Kế toán", email: "ha.vu@company.com" },
-  { id: 6, name: "Hoàng Mai Linh", title: "Trưởng phòng Marketing & Truyền thông", email: "linh.hoang@company.com" },
-  { id: 7, name: "Đỗ Quốc Bảo", title: "Trưởng phòng Pháp chế & Tuân thủ", email: "bao.do@company.com" },
-];
+
 
 export default function MasterDataPage() {
   const [activeTab, setActiveTab] = useState<"departments" | "titles">("departments");
@@ -43,6 +37,11 @@ export default function MasterDataPage() {
   const [deptName, setDeptName] = useState("");
   const [deptCode, setDeptCode] = useState("");
   const [deptManager, setDeptManager] = useState("");
+  // department heads are real accounts (hiring managers and HR managers)
+  const { data: managers } = useApiData(async () => {
+    const [hm, hr] = await Promise.all([masterDataService.people("hiring_manager"), masterDataService.people("hr_manager")]);
+    return [...hm, ...hr.filter((u) => !hm.some((x) => x.id === u.id))];
+  }, []);
   const [deptParentId, setDeptParentId] = useState<string>("");
   const [deptDescription, setDeptDescription] = useState("");
   const [deptIsActive, setDeptIsActive] = useState<boolean>(true);
@@ -62,8 +61,8 @@ export default function MasterDataPage() {
       const headers = { Authorization: `Bearer ${token}` };
 
       const [deptRes, jobRes] = await Promise.all([
-        fetch("http://localhost:8000/api/v1/hr/departments", { headers }),
-        fetch("http://localhost:8000/api/v1/hr/job-titles", { headers }),
+        fetch(`${API_BASE_URL}/hr/departments`, { headers }),
+        fetch(`${API_BASE_URL}/hr/job-titles`, { headers }),
       ]);
 
       if (deptRes.ok) {
@@ -104,13 +103,14 @@ export default function MasterDataPage() {
           return;
         }
 
-        const res = await fetch("http://localhost:8000/api/v1/hr/departments", {
+        const res = await fetch(`${API_BASE_URL}/hr/departments`, {
           method: "POST",
           headers,
           body: JSON.stringify({
             name: deptName,
             code: deptCode.toUpperCase(),
             parent_id: deptParentId ? parseInt(deptParentId) : null,
+            head_user_id: deptManager ? parseInt(deptManager) : null,
             is_active: deptIsActive,
             sort_order: 0,
           }),
@@ -127,7 +127,7 @@ export default function MasterDataPage() {
           return;
         }
 
-        const res = await fetch("http://localhost:8000/api/v1/hr/job-titles", {
+        const res = await fetch(`${API_BASE_URL}/hr/job-titles`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -404,9 +404,9 @@ export default function MasterDataPage() {
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-gray-200 rounded-xl font-medium text-slate-900 focus:bg-white focus:outline-none focus:border-[#4285F4] transition-colors"
                     >
                       <option value="">-- Chưa phân công trưởng phòng --</option>
-                      {MANAGERS_LIST.map((m) => (
-                        <option key={m.id} value={m.name}>
-                          {m.name} ({m.title})
+                      {(managers || []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.full_name} ({m.email})
                         </option>
                       ))}
                     </select>

@@ -5,6 +5,78 @@ import {
   ShieldCheck, CheckCircle2, XCircle, Clock, AlertCircle, Eye, 
   MessageSquare, UserCheck, ArrowRight, Building2, DollarSign, Calendar
 } from 'lucide-react';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { requisitionService, type RequisitionItem, type RequisitionApprovalLog } from '@/services/requisition.service';
+import { offerService, type OfferItem } from '@/services/offer.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+
+const STEP_NAME: Record<string, string> = {
+  manager: 'Trưởng phòng chuyên môn', hr: 'Trưởng phòng Nhân sự (HR Manager)', executive: 'Ban Giám Đốc',
+};
+const M = 1_000_000;
+const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('vi-VN') : undefined);
+
+/** Requisition waiting in the approval chain -> step timeline (from the real approval history). */
+function requisitionItem(r: RequisitionItem & { approval_chain?: string[]; approval_step_index?: number; approval_logs?: RequisitionApprovalLog[] }): ApprovalItem {
+  const chain = r.approval_chain?.length ? r.approval_chain : ['manager', 'hr'];
+  const current = Math.min(chain.length, (r.approval_step_index ?? 0) + 1);
+  const decisions = (r.approval_logs || []).filter((l) => l.action === 'approved' || l.action === 'rejected');
+  return {
+    id: `req-${r.id}`,
+    code: r.code,
+    type: 'requisition',
+    title: `Tờ trình tuyển dụng ${r.title}`,
+    department: r.department_name || '',
+    requester: r.creator_name || '',
+    amount_or_headcount: `${r.quantity} chỉ tiêu (${r.min_salary ? Math.round(r.min_salary / M) : '?'} - ${r.max_salary ? Math.round(r.max_salary / M) : '?'} TR VNĐ)`,
+    current_step: current,
+    total_steps: chain.length,
+    steps: chain.map((code, i) => {
+      const log = i < current - 1 ? decisions[i] : undefined;
+      return {
+        step_num: i + 1, role_name: STEP_NAME[code] || code, approver_name: log?.approver_name || undefined,
+        status: i < current - 1 ? 'approved' : 'pending', updated_at: when(log?.created_at), comment: log?.comment || undefined,
+      };
+    }),
+    created_at: r.created_at ? new Date(r.created_at).toLocaleDateString('vi-VN') : '',
+  };
+}
+
+/** Offer waiting for approval: HR Manager level, plus the executive level when out of band. */
+function offerItem(o: OfferItem): ApprovalItem {
+  const levels = o.requires_escalation ? ['hr', 'executive'] : ['hr'];
+  const current = o.approval_level === 'executive' ? 2 : 1;
+  const hrLog = (o.approval_logs || []).find((l) => l.action === 'approved' && (l.level || 'hr_manager') !== 'executive');
+  const over = o.band_max && o.offered_salary > o.band_max ? Math.round(((o.offered_salary - o.band_max) / o.band_max) * 100) : 0;
+  return {
+    id: `offer-${o.id}`,
+    code: `OFFER-${o.id}`,
+    type: 'offer',
+    title: `Thư mời nhận việc (Offer) — Ứng viên ${o.candidate_name || ''}`,
+    department: o.department || '',
+    requester: o.created_by_name || '',
+    amount_or_headcount: `Lương ${Math.round(o.offered_salary / M)} TR VNĐ${over ? ` (Vượt dải ${over}%)` : ''}`,
+    current_step: current,
+    total_steps: levels.length,
+    steps: levels.map((code, i) => ({
+      step_num: i + 1, role_name: STEP_NAME[code], status: i < current - 1 ? 'approved' : 'pending',
+      approver_name: i < current - 1 ? hrLog?.actor_name || undefined : undefined,
+      updated_at: i < current - 1 ? when(hrLog?.created_at) : undefined, comment: i < current - 1 ? hrLog?.comment || undefined : undefined,
+    })),
+    created_at: o.created_at ? new Date(o.created_at).toLocaleDateString('vi-VN') : '',
+  };
+}
+
+async function loadApprovals(): Promise<ApprovalItem[]> {
+  const [reqs, offers] = await Promise.all([
+    requisitionService.getRequisitions(),
+    offerService.getOffers('pending_approval').catch(() => []),
+  ]);
+  const pending = reqs.filter((r) => r.status.startsWith('pending_'));
+  const detailed = await Promise.all(pending.map((r) => apiRequest<RequisitionItem & { approval_logs?: RequisitionApprovalLog[] }>(`/requisitions/${r.id}`)));
+  return [...detailed.map(requisitionItem), ...offers.map(offerItem)];
+}
 
 interface ApprovalItem {
   id: string;
@@ -28,77 +100,35 @@ interface ApprovalItem {
 }
 
 export default function HRApprovalsPage() {
-  const [approvals, setApprovals] = useState<ApprovalItem[]>([
-    {
-      id: "APP-001",
-      code: "REQ-2026-001",
-      type: "requisition",
-      title: "Tờ trình tuyển dụng Senior Backend Engineer",
-      department: "Công Nghệ Thông Tin",
-      requester: "Lê Văn Mạnh (Trưởng phòng CNTT)",
-      amount_or_headcount: "3 chỉ tiêu (35 - 50 TR VNĐ)",
-      current_step: 2,
-      total_steps: 3,
-      steps: [
-        { step_num: 1, role_name: "Trưởng phòng chuyên môn", approver_name: "Lê Văn Mạnh", status: "approved", updated_at: "01/10/2026 09:00", comment: "Đã xác nhận nhu cầu dự án" },
-        { step_num: 2, role_name: "Trưởng phòng Nhân sự (HR Manager)", approver_name: "Trần Thị Thu Hà", status: "pending" },
-        { step_num: 3, role_name: "Ban Giám Đốc (CEO)", status: "pending" }
-      ],
-      created_at: "01/10/2026"
-    },
-    {
-      id: "APP-002",
-      code: "OFFER-2026-088",
-      type: "offer",
-      title: "Thư mời nhận việc (Offer) — Ứng viên Đỗ Hoàng Long",
-      department: "Khối Dữ Liệu",
-      requester: "Nguyễn Văn Hùng (Recruiter)",
-      amount_or_headcount: "Lương 52 TR VNĐ (Vượt dải 12%)",
-      current_step: 2,
-      total_steps: 3,
-      steps: [
-        { step_num: 1, role_name: "Trưởng bộ phận", approver_name: "Phạm Quốc Tuấn", status: "approved", updated_at: "03/10/2026 14:30", comment: "Đánh giá xuất sắc, đồng ý vượt band" },
-        { step_num: 2, role_name: "Trưởng phòng Nhân sự (HR Manager)", approver_name: "Trần Thị Thu Hà", status: "pending" },
-        { step_num: 3, role_name: "Ban Giám Đốc (CEO)", status: "pending" }
-      ],
-      created_at: "03/10/2026"
-    }
-  ]);
+  const { data, error, loading, reload } = useApiData(loadApprovals, []);
+  const approvals = data || [];
+  const [actionError, setActionError] = useState('');
 
   const [selectedApp, setSelectedApp] = useState<ApprovalItem | null>(null);
   const [actionComment, setActionComment] = useState('');
 
-  const handleDecision = (decision: 'approved' | 'rejected') => {
+  // Decisions go through the approval engine; the server checks that it is really this user's step
+  const handleDecision = async (decision: 'approved' | 'rejected') => {
     if (!selectedApp) return;
-
-    setApprovals(prev => prev.map(item => {
-      if (item.id === selectedApp.id) {
-        const updatedSteps = item.steps.map(step => {
-          if (step.step_num === item.current_step) {
-            return {
-              ...step,
-              status: decision,
-              comment: actionComment || (decision === 'approved' ? "HR Manager đã phê duyệt" : "HR Manager từ chối"),
-              updated_at: new Date().toLocaleString()
-            };
-          }
-          return step;
-        });
-
-        const nextStep = decision === 'approved' ? item.current_step + 1 : item.current_step;
-        return {
-          ...item,
-          current_step: nextStep,
-          steps: updatedSteps
-        };
-      }
-      return item;
-    }));
-
-    alert(`Đã thực hiện ${decision === 'approved' ? 'Phê duyệt' : 'Từ chối'} cho ${selectedApp.code}`);
-    setSelectedApp(null);
-    setActionComment('');
+    if (decision === 'rejected' && !actionComment.trim()) {
+      setActionError('Từ chối cần nhập lý do.');
+      return;
+    }
+    const [kind, rawId] = selectedApp.id.split('-');
+    try {
+      if (kind === 'req') await requisitionService.approveRequisition(Number(rawId), decision, actionComment.trim() || undefined);
+      else await offerService.decide(Number(rawId), decision, actionComment.trim() || undefined);
+      setActionError('');
+      setSelectedApp(null);
+      setActionComment('');
+      reload();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Không ghi nhận được quyết định.');
+    }
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -174,7 +204,7 @@ export default function HRApprovalsPage() {
                       <div className="text-[11px]">Người duyệt: <strong>{step.approver_name}</strong></div>
                     )}
                     {step.comment && (
-                      <p className="text-[11px] italic text-slate-600">"{step.comment}"</p>
+                      <p className="text-[11px] italic text-slate-600">&ldquo;{step.comment}&rdquo;</p>
                     )}
                   </div>
                 ))}
@@ -210,6 +240,7 @@ export default function HRApprovalsPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
+              {actionError && <p className="text-xs font-semibold text-rose-600">{actionError}</p>}
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">

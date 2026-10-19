@@ -6,6 +6,14 @@ import {
   Briefcase, Eye, CheckCircle2, Globe, MapPin, DollarSign, Calendar, 
   Building2, ArrowUpRight, Search, Filter, ShieldCheck
 } from 'lucide-react';
+import { jobService } from '@/services/job.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
+
+const lines = (text?: string | null) =>
+  (text || '').replace(/<\/(p|li|div)>|<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[-•*]\s*/, '').trim()).filter(Boolean);
 
 interface JobPostingItem {
   id: string;
@@ -23,59 +31,40 @@ interface JobPostingItem {
 }
 
 export default function HRJobPostingsPage() {
-  const [jobs, setJobs] = useState<JobPostingItem[]>([
-    {
-      id: "JOB-001",
-      code: "JOB-2026-001",
-      title: "Senior Backend Engineer (Python / FastAPI / PostgreSQL)",
-      department: "Công Nghệ Thông Tin",
-      location: "Hà Nội (Hybrid)",
-      type: "Full-time",
-      salary_range: "35 - 50 Triệu VNĐ",
-      status: "pending_review",
-      description: "Chúng tôi tìm kiếm Senior Backend Engineer có kinh nghiệm thiết kế hệ thống Microservices, tối ưu CSDL PostgreSQL và làm việc với Docker/K8s.",
-      requirements: [
-        "Tối thiểu 4+ năm kinh nghiệm Python/FastAPI hoặc Django",
-        "Thành thạo PostgreSQL, Redis, RabbitMQ/Kafka",
-        "Có tư duy thiết kế Clean Architecture và SOLID"
-      ],
-      benefits: [
-        "Lương thưởng tháng 13 + thưởng hiệu quả dự án",
-        "Bảo hiểm sức khỏe cao cấp Healthcare PVI",
-        "Trang bị Macbook Pro M-series mới nhất"
-      ],
-      created_at: "02/10/2026"
-    },
-    {
-      id: "JOB-002",
-      code: "JOB-2026-002",
-      title: "Trưởng nhóm Data Analyst & BI Specialist",
-      department: "Khối Dữ Liệu",
-      location: "Hồ Chí Minh",
-      type: "Full-time",
-      salary_range: "45 - 55 Triệu VNĐ",
-      status: "published",
-      description: "Xây dựng dashboard báo cáo BI toàn công ty, phân tích xu hướng tuyển dụng và tối ưu phễu chuyển đổi dữ liệu.",
-      requirements: [
-        "5+ năm kinh nghiệm trong lĩnh vực Data Analysis / Power BI / Tableau",
-        "Thành thạo SQL nâng cao, Python data stack (Pandas, Numpy)",
-        "Kỹ năng thuyết trình và làm việc với Executive Management"
-      ],
-      benefits: [
-        "Chế độ đãi ngộ cạnh tranh top đầu thị trường",
-        "Du lịch nghỉ dưỡng 5 sao hàng năm"
-      ],
-      created_at: "28/09/2026"
-    }
-  ]);
+  // every posting (draft / waiting for review / published / closed) as stored
+  const { data, error, loading, reload } = useApiData(() => jobService.getAdminJobs(), []);
+  const jobs: JobPostingItem[] = (data || []).map((j) => ({
+    id: String(j.id),
+    code: `JOB-${j.id}`,
+    title: j.title,
+    department: j.department_name || j.department || '',
+    location: j.location,
+    type: j.type,
+    salary_range: j.salary_range,
+    status: (['draft', 'pending_review', 'published', 'closed'].includes(j.status) ? j.status : 'draft') as JobPostingItem['status'],
+    description: lines(j.description).join(' '),
+    requirements: lines(j.requirements),
+    benefits: lines(j.benefits),
+    created_at: j.created_at ? new Date(j.created_at).toLocaleDateString('vi-VN') : '',
+  }));
+  const [publishError, setPublishError] = useState('');
 
   const [previewJob, setPreviewJob] = useState<JobPostingItem | null>(null);
 
-  const handlePublish = (jobId: string) => {
-    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'published' } : j));
-    alert("Đã duyệt & xuất bản tin tuyển dụng lên Cổng Sự Nghiệp Công Khai!");
-    setPreviewJob(null);
+  // S3-10: only the HR Manager publishes; publisher and time are recorded by the server
+  const handlePublish = async (jobId: string) => {
+    try {
+      await jobService.publishJob(Number(jobId));
+      setPublishError('');
+      setPreviewJob(null);
+      reload();
+    } catch (err) {
+      setPublishError(err instanceof ApiError ? err.message : 'Không xuất bản được tin.');
+    }
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -91,6 +80,8 @@ export default function HRJobPostingsPage() {
           <p className="text-xs text-slate-500 mt-1">Duyệt tin tuyển dụng do Recruiter tạo và xem trước (Preview) giao diện Public Career trước khi bấm Xuất bản</p>
         </div>
       </div>
+
+      {publishError && <p className="text-xs font-semibold text-rose-600">{publishError}</p>}
 
       {/* Main List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

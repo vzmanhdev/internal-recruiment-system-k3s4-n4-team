@@ -3,6 +3,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { Pagination } from '@/components/ui/Pagination';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
 import {
   Users,
   Search,
@@ -37,14 +39,24 @@ import {
   Linkedin,
 } from 'lucide-react';
 import clsx from 'clsx';
-import * as XLSX from 'xlsx';
-import {
-  MOCK_UNIFIED_CANDIDATES,
-  UnifiedCandidate,
-} from '@/features/candidates/mockCandidates';
+import type { UnifiedCandidate } from '@/features/candidates/types';
+import { candidatesApi } from '@/features/candidates/api';
+import { jobService } from '@/services/job.service';
+import { masterDataService } from '@/services/master-data.service';
+import { uploadFile as uploadCvFile } from '@/services/file.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 
 export default function RecruiterCandidatesPage() {
-  const [candidates, setCandidates] = useState<UnifiedCandidate[]>(MOCK_UNIFIED_CANDIDATES);
+  const { data, error, loading, reload } = useApiData(() => candidatesApi.list());
+  const candidates: UnifiedCandidate[] = useMemo(() => data || [], [data]);
+  // Published postings a sourced candidate can be added to (S5-08).
+  const { data: openJobs } = useApiData(() => jobService.getJobs());
+  const { data: sourceCategories } = useApiData(() => masterDataService.categories('candidate_source'));
+  const [targetJobId, setTargetJobId] = useState<string>('');
+  const [uploadedCvUrl, setUploadedCvUrl] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -88,143 +100,78 @@ export default function RecruiterCandidatesPage() {
   // ==========================================
   // XUẤT EXCEL (Export to Excel)
   // ==========================================
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     try {
-      const exportData = filteredCandidates.map((c, index) => ({
-        STT: index + 1,
-        'Mã Ứng Viên': c.id,
-        'Họ và Tên': c.name,
-        Email: c.email,
-        'Số Điện Thoại': c.phone,
-        'Vị Trí Gần Nhất': c.latestPosition,
-        'Trạng Thái': c.latestStatus,
-        'Nguồn Ứng Viên': c.source,
-        'Mức Lương Mong Muốn': c.expectedSalary,
-        'Kinh Nghiệm': c.experienceYears,
-        'Trường Đại Học': c.university,
-        'Số Lần Ứng Tuyển': c.applications.length,
-        'Kỹ Năng': c.skills.join(', '),
-        'Nhãn (Tags)': c.tags.join(', '),
-        'Ngày Cập Nhật': c.updatedAt,
-      }));
-
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'HoSoUngVien');
-
-      // Tạo và tải file
-      XLSX.writeFile(workbook, `Danh_Sach_Ho_So_Hop_Nhat_${new Date().toISOString().split('T')[0]}.xlsx`);
-      showToast(`Đã xuất thành công ${filteredCandidates.length} hồ sơ ra file Excel!`);
+      // Server-side export: only candidates in scope, no internal notes, formula-safe (S6-01).
+      const name = await candidatesApi.downloadExport();
+      showToast(`Đã xuất danh sách ứng viên (${name}).`);
     } catch (err) {
-      showToast('Có lỗi xảy ra khi xuất file Excel. Vui lòng thử lại.');
+      showToast(err instanceof ApiError ? err.message : 'Có lỗi xảy ra khi xuất file Excel. Vui lòng thử lại.');
     }
   };
 
   // ==========================================
-  // TỰ ĐỘNG BÓC TÁCH CV (AI Resume Parser Simulation)
+  // BÓC TÁCH CV THẬT (server: PDF/DOCX ≤ 10MB, S4-03/S4-04)
   // ==========================================
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setUploadFile(file);
-      simulateParsing(file.name);
-    }
-  };
-
-  const simulateParsing = (fileName: string) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadFile(file);
+    setParsedData(null);
     setIsParsing(true);
-    setParseProgress(15);
-    setParseStageText('Đang đọc định dạng tệp và trích xuất văn bản thô...');
-    setParsedData(null);
-
-    setTimeout(() => {
-      setParseProgress(45);
-      setParseStageText('Mô hình AI đang bóc tách thực thể Tên, SĐT, Email, Học vấn...');
-    }, 700);
-
-    setTimeout(() => {
-      setParseProgress(80);
-      setParseStageText('Đang chuẩn hóa kỹ năng và phân tích số năm kinh nghiệm...');
-    }, 1400);
-
-    setTimeout(() => {
+    setParseProgress(30);
+    setParseStageText('Đang tải CV lên và trích xuất thông tin...');
+    try {
+      const stored = await uploadCvFile('cv', file);
+      setUploadedCvUrl(stored.url);
       setParseProgress(100);
-      setParseStageText('Hoàn tất bóc tách dữ liệu!');
-      setIsParsing(false);
-
-      // Điền sẵn dữ liệu bóc tách được từ CV
+      setParseStageText(stored.parsed ? 'Đã trích xuất thông tin liên hệ — vui lòng kiểm tra lại.' : 'Không trích xuất được thông tin — vui lòng nhập tay.');
       setParsedData({
-        name: 'Đoàn Nhật Minh',
-        email: 'nhatminh.doan@gmail.com',
-        phone: '0978 654 321',
-        position: 'Senior Backend Engineer (Go/Python)',
-        university: 'Đại Học Bách Khoa Hà Nội (Khoa CNTT)',
-        skills: ['Golang', 'PostgreSQL', 'Docker', 'Redis', 'Microservices', 'Kafka'],
-        experience: '4.5 năm kinh nghiệm',
+        name: stored.parsed?.full_name || '',
+        email: stored.parsed?.email || '',
+        phone: stored.parsed?.phone || '',
+        position: '',
+        university: '',
+        skills: [],
+        experience: '',
       });
-    }, 2100);
+    } catch (err) {
+      setUploadFile(null);
+      setParseProgress(0);
+      showToast(err instanceof ApiError ? err.message : 'Không tải được CV lên.');
+    } finally {
+      setIsParsing(false);
+    }
   };
 
-  const handleSaveParsedCandidate = () => {
+  const handleSaveParsedCandidate = async () => {
     if (!parsedData) return;
-
-    const newCandidate: UnifiedCandidate = {
-      id: `CAN-${Math.floor(120 + Math.random() * 880)}`,
-      name: parsedData.name,
-      email: parsedData.email,
-      phone: parsedData.phone,
-      linkedInUrl: 'https://linkedin.com/in/nhatminh-doan',
-      address: 'Hà Nội',
-      dob: '10/10/1997',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=160&auto=format&fit=crop',
-      latestPosition: parsedData.position,
-      latestStatus: 'Đang phỏng vấn',
-      source: 'LinkedIn Sourcing',
-      expectedSalary: '40 - 50 Triệu VNĐ',
-      salaryRange: '35_50',
-      skills: parsedData.skills,
-      tags: ['AI Bóc tách', 'Senior Golang', 'Ưu tiên cao'],
-      university: parsedData.university,
-      experienceYears: parsedData.experience,
-      updatedAt: new Date().toLocaleDateString('vi-VN'),
-      cvFileName: uploadFile ? uploadFile.name : 'CV_DoanNhatMinh_Parsed.pdf',
-      applications: [
-        {
-          id: `APP-${Date.now()}`,
-          jobTitle: parsedData.position,
-          jobCode: 'JOB-2026-01',
-          department: 'Khối Công Nghệ & Phần Mềm',
-          appliedDate: new Date().toLocaleDateString('vi-VN'),
-          stage: 'CV Mới tiếp nhận (Bóc tách tự động)',
-          status: 'active',
-          matchScore: 92,
-          recruiter: 'Trần Thị Recruiter',
-          interviewerFeedback: 'Hồ sơ được bóc tách tự động từ AI Parser, kỹ năng và học vấn rất khớp tiêu chí.',
-        },
-      ],
-      evaluation: {
-        technicalSkill: 4,
-        softSkill: 4,
-        cultureFit: 4,
-        recommendationLevel: 'Hire',
-        summary: 'Hồ sơ bóc tách tự động có độ tương đồng cao với JD.',
-      },
-      notes: [
-        {
-          id: `n-${Date.now()}`,
-          author: 'Trần Thị Recruiter',
-          role: 'Recruiter',
-          createdAt: 'Vừa xong',
-          content: 'CV bóc tách tự động thành công. Đã gửi tin nhắn mời phỏng vấn sơ bộ.',
-        },
-      ],
-    };
-
-    setCandidates([newCandidate, ...candidates]);
-    setIsUploadModalOpen(false);
-    setUploadFile(null);
-    setParsedData(null);
-    showToast(`Đã thêm ứng viên "${newCandidate.name}" (${newCandidate.id}) vào cơ sở dữ liệu hồ sơ hợp nhất!`);
+    if (!targetJobId) { showToast('Vui lòng chọn tin tuyển dụng cho ứng viên.'); return; }
+    if (!parsedData.name.trim() || !parsedData.email.trim() || !parsedData.phone.trim()) {
+      showToast('Vui lòng nhập đủ họ tên, email và số điện thoại.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await candidatesApi.addManual({
+        job_posting_id: Number(targetJobId),
+        full_name: parsedData.name.trim(),
+        email: parsedData.email.trim(),
+        phone: parsedData.phone.trim(),
+        cv_url: uploadedCvUrl || undefined,
+      });
+      setIsUploadModalOpen(false);
+      setUploadFile(null);
+      setUploadedCvUrl(null);
+      setParsedData(null);
+      setTargetJobId('');
+      reload();
+      showToast(`Đã thêm ứng viên "${created.full_name}" vào vị trí ${created.job_title || ''}.`);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không thêm được ứng viên.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ==========================================
@@ -232,16 +179,18 @@ export default function RecruiterCandidatesPage() {
   // ==========================================
   const filteredCandidates = useMemo(() => {
     return candidates.filter((c) => {
-      // 1. Search keyword
-      const matchesSearch =
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone.includes(searchTerm) ||
-        c.latestPosition.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.university.toLowerCase().includes(searchTerm.toLowerCase());
-
-      if (!matchesSearch) return false;
+      // 1. Search keyword (case-insensitive & accent-insensitive)
+      if (searchTerm.trim()) {
+        const s = Math.max(
+          getSearchScore(c.name, searchTerm),
+          getSearchScore(c.id, searchTerm),
+          getSearchScore(c.email, searchTerm),
+          getSearchScore(c.phone, searchTerm),
+          getSearchScore(c.latestPosition, searchTerm),
+          getSearchScore(c.university, searchTerm)
+        );
+        if (s === 0) return false;
+      }
 
       // 2. Tag filter
       if (selectedTag !== 'all' && !c.tags.includes(selectedTag)) {
@@ -269,6 +218,27 @@ export default function RecruiterCandidatesPage() {
       }
 
       return true;
+    }).sort((a, b) => {
+      if (searchTerm.trim()) {
+        const scoreA = Math.max(
+          getSearchScore(a.name, searchTerm),
+          getSearchScore(a.id, searchTerm),
+          getSearchScore(a.email, searchTerm),
+          getSearchScore(a.phone, searchTerm),
+          getSearchScore(a.latestPosition, searchTerm),
+          getSearchScore(a.university, searchTerm)
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.name, searchTerm),
+          getSearchScore(b.id, searchTerm),
+          getSearchScore(b.email, searchTerm),
+          getSearchScore(b.phone, searchTerm),
+          getSearchScore(b.latestPosition, searchTerm),
+          getSearchScore(b.university, searchTerm)
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [candidates, searchTerm, selectedTag, selectedStatus, selectedSource, selectedSalaryRange, selectedSkill]);
 
@@ -308,6 +278,9 @@ export default function RecruiterCandidatesPage() {
     setCurrentPage(page);
     tableTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6 antialiased font-sans">
@@ -403,13 +376,20 @@ export default function RecruiterCandidatesPage() {
         {/* Row 1: Search box & Export Excel Button (User Story 3) */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-lg">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-            <input
-              type="text"
+            <SearchAutocompleteInput
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm theo tên, email, số điện thoại, vị trí hoặc trường đại học..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+              onChange={(val) => setSearchTerm(val)}
+              onSelectSuggestion={(item) => setSearchTerm(item.title)}
+              placeholder="Tìm theo tên, email, SĐT, vị trí, trường (có dấu hoặc không dấu)..."
+              scope="candidates"
+              size="sm"
+              localSuggestions={candidates.map((c) => ({
+                id: c.id,
+                title: c.name,
+                subtitle: `${c.email} • ${c.phone} • ${c.latestPosition}`,
+                category: "candidate",
+                category_label: "Ứng viên",
+              }))}
             />
           </div>
 
@@ -491,12 +471,20 @@ export default function RecruiterCandidatesPage() {
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
             >
               <option value="all">Tất cả nguồn</option>
-              <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
-              <option value="TopCV">TopCV</option>
-              <option value="VietnamWorks">VietnamWorks</option>
-              <option value="Referral Nội Bộ">Referral Nội Bộ</option>
-              <option value="Headhunter Agency">Headhunter Agency</option>
-              <option value="Website Công Ty">Website Công Ty</option>
+              {(sourceCategories && sourceCategories.length > 0) ? (
+                sourceCategories.filter((c) => c.is_active).map((c) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))
+              ) : (
+                <>
+                  <option value="LinkedIn Sourcing">LinkedIn Sourcing</option>
+                  <option value="TopCV">TopCV</option>
+                  <option value="VietnamWorks">VietnamWorks</option>
+                  <option value="Referral Nội Bộ">Referral Nội Bộ</option>
+                  <option value="Headhunter Agency">Headhunter Agency</option>
+                  <option value="Website Công Ty">Website Công Ty</option>
+                </>
+              )}
             </select>
           </div>
 
@@ -574,11 +562,17 @@ export default function RecruiterCandidatesPage() {
                     {/* Cột 1: Thông tin ứng viên */}
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <img
-                          src={cand.avatar}
-                          alt={cand.name}
-                          className="w-10 h-10 rounded-2xl object-cover border border-slate-200 shrink-0"
-                        />
+                        {cand.avatar ? (
+                          <img
+                            src={cand.avatar}
+                            alt={cand.name}
+                            className="w-10 h-10 rounded-2xl object-cover border border-slate-200 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-2xl bg-sky-100 text-[#0284C7] font-extrabold text-sm flex items-center justify-center border border-sky-200 shrink-0 select-none shadow-2xs">
+                            {(cand.name || "U").trim().split(" ").slice(-1)[0][0]?.toUpperCase() || "U"}
+                          </div>
+                        )}
                         <div className="space-y-0.5">
                           <Link
                             href={`/recruiter/candidates/${cand.id}`}
@@ -768,21 +762,10 @@ export default function RecruiterCandidatesPage() {
                     Kéo thả file CV vào đây hoặc bấm để chọn tệp
                   </h4>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Hỗ trợ tệp định dạng .PDF, .DOCX (Dung lượng tối đa 15MB)
+                    Hỗ trợ tệp định dạng .PDF, .DOCX (Dung lượng tối đa 10MB)
                   </p>
                 </label>
 
-                {/* Hoặc bấm nút thử file mẫu */}
-                <div className="text-center">
-                  <button
-                    type="button"
-                    onClick={() => simulateParsing('CV_DoanNhatMinh_Backend_Senior.pdf')}
-                    className="text-blue-600 hover:text-blue-800 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer underline"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Thử nghiệm nhanh với file CV mẫu (Demo 1-Click)</span>
-                  </button>
-                </div>
               </div>
             )}
 
@@ -883,6 +866,20 @@ export default function RecruiterCandidatesPage() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-[10px] text-slate-400 font-bold mb-1">Ứng tuyển vào tin tuyển dụng *</label>
+                  <select
+                    value={targetJobId}
+                    onChange={(e) => setTargetJobId(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 text-xs"
+                  >
+                    <option value="">— Chọn tin đang đăng —</option>
+                    {(openJobs || []).map((j) => (
+                      <option key={j.id} value={j.id}>{j.title}{j.department_name ? ` — ${j.department_name}` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
                   <button
                     type="button"
@@ -894,9 +891,10 @@ export default function RecruiterCandidatesPage() {
                   <button
                     type="button"
                     onClick={handleSaveParsedCandidate}
-                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 cursor-pointer"
+                    disabled={saving}
+                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 cursor-pointer disabled:opacity-50"
                   >
-                    Xác Nhận & Lưu Vào Talent Pool
+                    Xác Nhận & Thêm Ứng Viên
                   </button>
                 </div>
               </div>

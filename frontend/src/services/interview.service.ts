@@ -6,6 +6,7 @@ export interface InterviewItem {
   candidate_name?: string;
   candidate_email?: string;
   job_title?: string;
+  department?: string;
   round_number: number;
   round_name: string;
   scheduled_time: string;
@@ -17,6 +18,11 @@ export interface InterviewItem {
   score?: number;
   passed?: boolean;
   interviewers?: any[];
+  cv_url?: string | null;
+  candidate_response?: string | null;
+  my_evaluation_submitted?: boolean;
+  is_my_interview?: boolean;
+  is_own_application?: boolean;
 }
 
 export const interviewService = {
@@ -52,5 +58,87 @@ export const interviewService = {
       method: "PUT",
       body: JSON.stringify(data),
     });
-  }
+  },
+
+  async getMine(): Promise<InterviewItem[]> {
+    return apiRequest<InterviewItem[]>("/interviews?mine=true");
+  },
+
+  async scorecardTemplate(id: number): Promise<{ framework: { id: string; name: string } | null; criteria: Array<{ id: string; code: string; name: string; description?: string; weight: number }> }> {
+    return apiRequest(`/interviews/${id}/scorecard-template`);
+  },
+
+  async questionSuggestions(id: number): Promise<Array<{ id: string; code: string; content: string; criteria_name?: string; difficulty?: string; suggested_answer?: string; already_asked: boolean }>> {
+    return apiRequest(`/interviews/${id}/question-suggestions`);
+  },
+
+  async markAsked(id: number, question_id: string): Promise<{ success: boolean }> {
+    return apiRequest(`/interviews/${id}/asked-questions`, { method: "POST", body: JSON.stringify({ question_id }) });
+  },
+
+  async cancel(id: number, reason: string): Promise<InterviewItem> {
+    return apiRequest(`/interviews/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
+  },
+
+  async reschedule(
+    id: number,
+    data: {
+      scheduled_time: string;
+      duration_minutes: number;
+      location: string;
+      meeting_link?: string | null;
+      interviewer_ids: number[];
+      override_conflict_reason?: string;
+      reason?: string;
+    }
+  ): Promise<InterviewItem> {
+    return apiRequest<InterviewItem>(`/interviews/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteInterview(id: number): Promise<void> {
+    await apiRequest(`/interviews/${id}`, { method: "DELETE" });
+  },
+
+  async checkConflicts(data: {
+    scheduled_time: string;
+    duration_minutes: number;
+    location: string;
+    meeting_link?: string | null;
+    interviewer_ids: number[];
+  }): Promise<{ conflicts: Array<{ interview_id: number; type: string; who?: string[]; room?: string; at: string; candidate?: string }> }> {
+    return apiRequest("/interviews/conflicts", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getEvaluationSummary(applicationId: number): Promise<{
+    application_id: number;
+    candidate: string;
+    evaluation_count: number;
+    criteria_averages: Record<string, number>;
+    average_weighted_score: number | null;
+    recommendations: Record<string, number>;
+    evaluations: any[];
+  }> {
+    return apiRequest(`/referrals/evaluations/summary?application_id=${applicationId}`);
+  },
+
+  async compareCandidates(jobId: number): Promise<Array<{
+    application_id: number;
+    candidate: string;
+    status: string;
+    criteria: Record<string, number>;
+    total_score: number | null;
+    evaluations: number;
+  }>> {
+    return apiRequest(`/referrals/evaluations/compare?job_id=${jobId}`);
+  },
+
+  async reopenEvaluation(id: number): Promise<any> {
+    return apiRequest(`/referrals/evaluations/${id}/reopen`, { method: "POST" });
+  },
 };

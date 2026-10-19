@@ -2,6 +2,10 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { getSearchScore } from '@/utils/vietnameseSearch';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
+import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
+import { OfferDetailModal } from '@/features/offers/components/OfferDetailModal';
 import {
   Mail,
   Plus,
@@ -34,6 +38,11 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { apiRequest, ApiError } from '@/lib/api-client';
+import { offerService, type OfferItem } from '@/services/offer.service';
+import { candidatesApi, STAGE_LABEL, type ApiApplication } from '@/features/candidates/api';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 
 // ==========================================
 // 1. DATA TYPES & INTERFACES
@@ -67,6 +76,7 @@ export interface OfferProposal {
   approvalChain: string;
   sentDate: string;
   negotiationRound?: number;
+  raw: OfferItem;
 }
 
 export interface BulkCandidate {
@@ -81,220 +91,82 @@ export interface BulkCandidate {
 }
 
 // ==========================================
-// 2. MOCK DATA
+// 2. REAL OFFERS / APPLICATIONS -> PAGE MODELS
 // ==========================================
 
-const INITIAL_OFFERS: OfferProposal[] = [
-  {
-    id: 'OFF-2026-01',
-    candidateName: 'Lê Hoàng Cường',
-    candidateEmail: 'cuong.lehoang@gmail.com',
-    candidatePhone: '0908 765 432',
-    candidateAvatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?q=80&w=120&auto=format&fit=crop',
-    position: 'Senior Backend Engineer (Go/Python)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    baseSalary: 52000000,
-    allowanceAndBonus: 'Sign-on bonus 20M + MacBook Pro M3 + Gói ESOP 1.000 CP',
-    startDate: '2026-11-01',
-    deadlineDate: '2026-10-15',
-    status: 'pending',
-    approvalChain: 'Đã hoàn tất duyệt 3 cấp (HM & HR Lead & Giám đốc Khối)',
-    sentDate: '11/10/2026',
-    negotiationRound: 1,
-  },
-  {
-    id: 'OFF-2026-02',
-    candidateName: 'Lê Hoàng Yến',
-    candidateEmail: 'hoangyen.po@gmail.com',
-    candidatePhone: '0978 123 456',
-    candidateAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=120&auto=format&fit=crop',
-    position: 'Product Owner / BA Lead',
-    department: 'Khối Phát Triển Sản Phẩm',
-    baseSalary: 36000000,
-    allowanceAndBonus: 'Phụ cấp ăn trưa 1.5M + Bảo hiểm sức khỏe PVI Premium',
-    startDate: '2026-10-25',
-    deadlineDate: '2026-10-14',
-    status: 'accepted',
-    approvalChain: 'Đã hoàn tất duyệt 3 cấp & Ứng viên đã ký số',
-    sentDate: '08/10/2026',
-    negotiationRound: 1,
-  },
-  {
-    id: 'OFF-2026-03',
-    candidateName: 'Nguyễn Văn An',
-    candidateEmail: 'an.nguyen@gmail.com',
-    candidatePhone: '0912 345 678',
-    candidateAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=120&auto=format&fit=crop',
-    position: 'Senior Backend Engineer (Go/Python)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    baseSalary: 45000000,
-    allowanceAndBonus: 'Phụ cấp dự án 3M + Thưởng tháng 13',
-    startDate: '2026-11-01',
-    deadlineDate: '2026-10-10',
-    status: 'renegotiating',
-    rejectionReasonCategory: 'salary_low',
-    rejectionReasonNote: 'Ứng viên kỳ vọng mức lương net tối thiểu 48M - 50M do đang có offer đối tác đề xuất 50M.',
-    approvalChain: 'Đang xin ý kiến Giám Đốc Khối điều chỉnh dải lương',
-    sentDate: '05/10/2026',
-    negotiationRound: 2,
-  },
-  {
-    id: 'OFF-2026-04',
-    candidateName: 'Trần Minh Quân',
-    candidateEmail: 'quan.tran@techcorp.vn',
-    candidatePhone: '0987 111 222',
-    candidateAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=120&auto=format&fit=crop',
-    position: 'Frontend React Lead',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    baseSalary: 42000000,
-    allowanceAndBonus: 'Phụ cấp công nghệ 2M + Laptop Dell XPS 15',
-    startDate: '2026-11-05',
-    deadlineDate: '2026-10-18',
-    status: 'pending',
-    approvalChain: 'HM & HR Lead đã duyệt, Chờ Giám đốc phê duyệt',
-    sentDate: '10/10/2026',
-    negotiationRound: 1,
-  },
-  {
-    id: 'OFF-2026-05',
-    candidateName: 'Đặng Mai Linh',
-    candidateEmail: 'linh.dang@gmail.com',
-    candidatePhone: '0911 223 344',
-    candidateAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=120&auto=format&fit=crop',
-    position: 'DevOps / Cloud Engineer',
-    department: 'Khối Vận Hành & Hạ Tầng',
-    baseSalary: 40000000,
-    allowanceAndBonus: 'Gói chứng chỉ AWS Pro được công ty tài trợ 100%',
-    startDate: '2026-10-01',
-    deadlineDate: '2026-09-25',
-    status: 'accepted',
-    approvalChain: 'Đã hoàn tất nhận việc thành công (Onboarded)',
-    sentDate: '20/09/2026',
-    negotiationRound: 1,
-  },
-  {
-    id: 'OFF-2026-06',
-    candidateName: 'Nguyễn Quốc Cường',
-    candidateEmail: 'cuong.nguyen@gmail.com',
-    candidatePhone: '0932 444 555',
-    candidateAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=120&auto=format&fit=crop',
-    position: 'Product Owner / BA Lead',
-    department: 'Khối Phát Triển Sản Phẩm',
-    baseSalary: 32000000,
-    allowanceAndBonus: 'Phụ cấp 1.5M',
-    startDate: '2026-10-15',
-    deadlineDate: '2026-10-05',
-    status: 'rejected',
-    rejectionReasonCategory: 'too_far',
-    rejectionReasonNote: 'Ứng viên chuyển chỗ ở sang khu vực Long Biên, văn phòng Keangnam quá xa và không có chính sách làm remote.',
-    approvalChain: 'Đã đóng quy trình offer',
-    sentDate: '01/10/2026',
-    negotiationRound: 1,
-  },
-  {
-    id: 'OFF-2026-07',
-    candidateName: 'Phạm Hồng Nhung',
-    candidateEmail: 'nhung.pham@gmail.com',
-    candidatePhone: '0943 222 111',
-    candidateAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=120&auto=format&fit=crop',
-    position: 'UI/UX Designer Senior',
-    department: 'Khối Phát Triển Sản Phẩm',
-    baseSalary: 28000000,
-    allowanceAndBonus: 'Phụ cấp đồ họa 2M',
-    startDate: '2026-10-20',
-    deadlineDate: '2026-10-08',
-    status: 'rejected',
-    rejectionReasonCategory: 'competitor_offer',
-    rejectionReasonNote: 'Nhận offer từ công ty FinTech với mức 35M + chế độ bảo hiểm gia đình.',
-    approvalChain: 'Đã đóng quy trình offer',
-    sentDate: '02/10/2026',
-    negotiationRound: 1,
-  },
-];
+// UI reason category <-> backend decline reason (salary, location, other_offer, personal, other)
+const REASON_TO_API: Record<RejectionReasonCategory, string> = {
+  salary_low: 'salary', too_far: 'location', competitor_offer: 'other_offer',
+  benefits_low: 'other', start_date_mismatch: 'other', other: 'other',
+};
 
-// Danh sách ứng viên phục vụ tính năng Gửi Thư Hàng Loạt (Tab 2)
-const MOCK_BULK_CANDIDATES: BulkCandidate[] = [
-  {
-    id: 'CAN-085',
-    name: 'Nguyễn Văn An',
-    email: 'an.nguyen@gmail.com',
-    position: 'Senior Backend Engineer (Go/Python)',
-    department: 'Khối Công Nghệ',
-    resultStatus: 'pass',
-    stageName: 'Pass Vòng 2 Kỹ Thuật (System Design)',
-    matchScore: 96,
-  },
-  {
-    id: 'CAN-077',
-    name: 'Lê Hoàng Cường',
-    email: 'cuong.lehoang@gmail.com',
-    position: 'Senior Backend Engineer (Go/Python)',
-    department: 'Khối Công Nghệ',
-    resultStatus: 'pass',
-    stageName: 'Đã duyệt Offer chính thức',
-    matchScore: 98,
-  },
-  {
-    id: 'CAN-092',
-    name: 'Trần Minh Quân',
-    email: 'quan.tran@techcorp.vn',
-    position: 'Frontend React Lead',
-    department: 'Khối Công Nghệ',
-    resultStatus: 'pass',
-    stageName: 'Pass Vòng 1 Chuyên môn',
-    matchScore: 89,
-  },
-  {
-    id: 'CAN-088',
-    name: 'Hoàng Kim Ngân',
-    email: 'ngan.hoangkim@gmail.com',
-    position: 'Product Owner / BA Lead',
-    department: 'Khối Sản Phẩm',
-    resultStatus: 'pass',
-    stageName: 'Pass Vòng 1 Case Study',
-    matchScore: 92,
-  },
-  {
-    id: 'CAN-101',
-    name: 'Vũ Đức Thịnh',
-    email: 'thinh.vuduc@gmail.com',
-    position: 'Senior Backend Engineer (Go/Python)',
-    department: 'Khối Công Nghệ',
-    resultStatus: 'pending',
-    stageName: 'Chờ kết quả hội đồng',
-    matchScore: 88,
-  },
-  {
-    id: 'CAN-061',
-    name: 'Phạm Đức Dũng',
-    email: 'dung.pham@gmail.com',
-    position: 'DevOps / Cloud Engineer',
-    department: 'Khối Hạ Tầng',
-    resultStatus: 'fail',
-    stageName: 'Không đạt Tech Test (Chưa đạt K8s)',
-    matchScore: 68,
-  },
-  {
-    id: 'CAN-109',
-    name: 'Đỗ Thùy Trang',
-    email: 'thuytrang.design@gmail.com',
-    position: 'UI/UX Designer Senior',
-    department: 'Khối Sản Phẩm',
-    resultStatus: 'pass',
-    stageName: 'Pass Vòng Portfolio',
-    matchScore: 94,
-  },
-  {
-    id: 'CAN-114',
-    name: 'Hoàng Văn Bách',
-    email: 'bach.hoang@gmail.com',
-    position: 'Frontend React Lead',
-    department: 'Khối Công Nghệ',
-    resultStatus: 'fail',
-    stageName: 'Không đạt Vòng Phỏng Vấn Kiến Trúc',
-    matchScore: 65,
-  },
-];
+function parseDecline(reason?: string | null): { category?: RejectionReasonCategory; note?: string } {
+  if (!reason) return {};
+  const [code, ...rest] = reason.split(':');
+  let note = rest.join(':').trim();
+  const tagged = /^\[(benefits_low|start_date_mismatch)\]\s*/.exec(note);
+  if (tagged) note = note.slice(tagged[0].length);
+  const category: RejectionReasonCategory = tagged
+    ? (tagged[1] as RejectionReasonCategory)
+    : code === 'salary' ? 'salary_low' : code === 'location' ? 'too_far' : code === 'other_offer' ? 'competitor_offer' : 'other';
+  return { category, note };
+}
+
+const STATUS_TEXT: Record<string, string> = {
+  draft: 'Bản nháp — chưa gửi duyệt', pending_approval: 'Đang chờ Trưởng phòng Nhân sự duyệt', approved: 'Đã duyệt — chờ gửi ứng viên',
+  sent: 'Đã gửi ứng viên — chờ phản hồi', accepted: 'Ứng viên đã đồng ý', declined: 'Ứng viên từ chối', rejected: 'Bị từ chối duyệt',
+  expired: 'Quá hạn phản hồi', changes_requested: 'Cần chỉnh sửa',
+};
+
+function toOffer(o: OfferItem & { sent_at?: string | null }): OfferProposal {
+  const declined = o.status === 'declined' || o.status === 'expired' || o.status === 'rejected';
+  const { category, note } = parseDecline(o.decline_reason);
+  return {
+    id: `OFF-${o.id}`,
+    candidateName: o.candidate_name || '',
+    candidateEmail: o.candidate_email || '',
+    candidatePhone: '',
+    candidateAvatar: '',
+    position: o.job_title || '',
+    department: o.department || '',
+    baseSalary: o.offered_salary,
+    allowanceAndBonus: [o.allowance ? `Phụ cấp ${o.allowance.toLocaleString('vi-VN')} đ` : '', o.notes || ''].filter(Boolean).join(' · '),
+    startDate: o.start_date,
+    deadlineDate: o.response_deadline || '',
+    status: o.status === 'accepted' ? 'accepted' : declined ? 'rejected' : 'pending',
+    rejectionReasonCategory: o.status === 'declined' ? category : undefined,
+    rejectionReasonNote: o.status === 'declined' ? note : undefined,
+    approvalChain: STATUS_TEXT[o.status] || o.status,
+    sentDate: o.sent_at ? new Date(o.sent_at).toLocaleDateString('vi-VN') : '',
+    negotiationRound: (o.revision || 0) + 1,
+    raw: o,
+  };
+}
+
+function toBulkCandidate(a: ApiApplication): BulkCandidate {
+  const resultStatus: BulkCandidate['resultStatus'] =
+    a.status === 'rejected' || (a.rating != null && a.rating <= 2) ? 'fail'
+      : a.status === 'offered' || a.status === 'hired' || a.status === 'onboarded' || (a.rating != null && a.rating >= 4) ? 'pass' : 'pending';
+  return {
+    id: String(a.id), name: a.full_name, email: a.email, position: a.job_title || '', department: a.department || '',
+    resultStatus, stageName: STAGE_LABEL[a.status] || a.status, matchScore: Math.round(a.match_score ?? 0),
+  };
+}
+
+// Direct-message texts for the templates that have no dedicated workflow e-mail
+const DIRECT_TEMPLATES: Record<'interview' | 'reminder', (name: string, job: string) => { subject: string; body: string }> = {
+  interview: (name, job) => ({
+    subject: `[Thư mời phỏng vấn] Lịch phỏng vấn Vòng chuyên môn - Vị trí ${job}`,
+    body: `Kính gửi bạn ${name},\n\nBộ phận Tuyển dụng trân trọng kính mời bạn tham gia buổi phỏng vấn cho vị trí ${job}. Lịch hẹn chi tiết sẽ được gửi kèm thư xác nhận.\n\nTrân trọng,\nPhòng Nhân sự & Tuyển dụng`,
+  }),
+  reminder: (name, job) => ({
+    subject: `[Nhắc nhở hạn phản hồi] Thư mời nhận việc vị trí ${job}`,
+    body: `Chào bạn ${name},\n\nBộ phận Tuyển dụng xin phép nhắc lại về thời hạn phản hồi Thư mời nhận việc vị trí ${job}. Vui lòng phản hồi qua liên kết trong thư mời.\n\nTrân trọng,\nPhòng Nhân sự & Tuyển dụng`,
+  }),
+};
+
+const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
+const escapeAttr = (html: string) => html.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
 const REJECTION_LABELS: Record<RejectionReasonCategory, { label: string; color: string }> = {
   salary_low: {
@@ -325,7 +197,21 @@ const REJECTION_LABELS: Record<RejectionReasonCategory, { label: string; color: 
 
 export default function RecruiterOffersPage() {
   const [activeTab, setActiveTab] = useState<'offers' | 'letters'>('offers');
-  const [offers, setOffers] = useState<OfferProposal[]>(INITIAL_OFFERS);
+  const [selectedDetailOfferId, setSelectedDetailOfferId] = useState<string | number | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const { data: offerRows, error, loading, reload, setData: setOfferRows } = useApiData(() => offerService.getOffers(), []);
+  const offers = useMemo(() => (offerRows || []).map(toOffer), [offerRows]);
+  const putOfferRow = (row: OfferItem) =>
+    setOfferRows((prev) => (prev || []).some((x) => x.id === row.id) ? (prev || []).map((x) => (x.id === row.id ? row : x)) : [row, ...(prev || [])]);
+  const { data: appRows } = useApiData(() => apiRequest<ApiApplication[]>('/applications'), []);
+  const offeredAppIds = useMemo(() => new Set((offerRows || []).map((o) => o.application_id)), [offerRows]);
+  // candidates that may receive a new offer: past screening, still open, no offer yet
+  const offerable = useMemo(
+    () => (appRows || []).filter((a) => (a.status === 'interviewing' || a.status === 'offered') && !offeredAppIds.has(a.id)),
+    [appRows, offeredAppIds],
+  );
+  const BULK_CANDIDATES = useMemo(() => (appRows || []).map(toBulkCandidate), [appRows]);
+  const [saving, setSaving] = useState(false);
   const [offerSearch, setOfferSearch] = useState('');
   const [offerStatusFilter, setOfferStatusFilter] = useState<'all' | OfferStatus>('all');
   const [toast, setToast] = useState<string | null>(null);
@@ -333,15 +219,16 @@ export default function RecruiterOffersPage() {
   // Modal 1: Soạn Offer mới
   const [isDraftModalOpen, setIsDraftModalOpen] = useState(false);
   const [newOfferForm, setNewOfferForm] = useState({
+    applicationId: '',
     candidateName: '',
     candidateEmail: '',
     candidatePhone: '',
-    position: 'Senior Backend Engineer (Go/Python)',
-    department: 'Khối Công Nghệ & Phần Mềm',
-    baseSalary: 48000000,
-    allowanceAndBonus: 'Phụ cấp ăn trưa 1.5M + Laptop MacBook Pro M3',
-    startDate: '2026-11-01',
-    deadlineDate: '2026-10-18',
+    position: '',
+    department: '',
+    baseSalary: 0,
+    allowanceAndBonus: '',
+    startDate: '',
+    deadlineDate: '',
   });
 
   // Modal 2: Ghi nhận Lý do Từ chối / Thương lượng lại (Salary Adjustment Data)
@@ -351,12 +238,12 @@ export default function RecruiterOffersPage() {
     status: 'renegotiating' as 'rejected' | 'renegotiating',
     category: 'salary_low' as RejectionReasonCategory,
     note: '',
-    counterSalaryExpected: 50000000,
+    counterSalaryExpected: 0,
   });
 
   // Tab 2: Quản lý Thư & Gửi thư hàng loạt (Bulk Emailing)
   const [bulkFilter, setBulkFilter] = useState<'all' | 'pass' | 'fail' | 'pending'>('all');
-  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>(['CAN-085', 'CAN-077']);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<'offer' | 'rejection' | 'interview' | 'reminder'>('offer');
   const [isSendingBulk, setIsSendingBulk] = useState(false);
 
@@ -370,34 +257,45 @@ export default function RecruiterOffersPage() {
   // ==========================================
 
   // Submit Soạn Offer mới
-  const handleCreateOffer = (e: React.FormEvent) => {
+  const handleCreateOffer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newOfferForm.candidateName.trim()) {
-      alert('Vui lòng nhập tên ứng viên');
+    if (!newOfferForm.applicationId) {
+      showToast('Vui lòng chọn ứng viên.');
       return;
     }
-
-    const newOffer: OfferProposal = {
-      id: `OFF-2026-${(offers.length + 1).toString().padStart(2, '0')}`,
-      candidateName: newOfferForm.candidateName,
-      candidateEmail: newOfferForm.candidateEmail || 'candidate@gmail.com',
-      candidatePhone: newOfferForm.candidatePhone || '0900 123 456',
-      candidateAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
-      position: newOfferForm.position,
-      department: newOfferForm.department,
-      baseSalary: Number(newOfferForm.baseSalary),
-      allowanceAndBonus: newOfferForm.allowanceAndBonus,
-      startDate: newOfferForm.startDate,
-      deadlineDate: newOfferForm.deadlineDate,
-      status: 'pending',
-      approvalChain: 'HM & HR Lead đã duyệt, Đang gửi ứng viên',
-      sentDate: 'Hôm nay',
-      negotiationRound: 1,
-    };
-
-    setOffers([newOffer, ...offers]);
-    setIsDraftModalOpen(false);
-    showToast(`Đã tạo và gửi dự thảo Offer tới "${newOffer.candidateName}" thành công!`);
+    if (!newOfferForm.baseSalary || !newOfferForm.startDate) {
+      showToast('Vui lòng nhập mức lương và ngày nhận việc.');
+      return;
+    }
+    if (isPastDate(newOfferForm.startDate)) {
+      showToast('Ngày nhận việc dự kiến không được ở trong quá khứ.');
+      return;
+    }
+    if (newOfferForm.deadlineDate && isPastDate(newOfferForm.deadlineDate)) {
+      showToast('Hạn chót phản hồi offer không được ở trong quá khứ.');
+      return;
+    }
+    if (newOfferForm.deadlineDate && newOfferForm.startDate && newOfferForm.deadlineDate > newOfferForm.startDate) {
+      showToast('Hạn chót phản hồi offer phải trước hoặc bằng ngày nhận việc.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await offerService.createOffer({
+        application_id: Number(newOfferForm.applicationId),
+        offered_salary: Number(newOfferForm.baseSalary),
+        start_date: newOfferForm.startDate,
+        response_deadline: newOfferForm.deadlineDate || null,
+        notes: newOfferForm.allowanceAndBonus || undefined,
+      });
+      putOfferRow(created);
+      setIsDraftModalOpen(false);
+      showToast(`Đã tạo offer cho "${created.candidate_name}" và gửi Trưởng phòng Nhân sự phê duyệt.`);
+    } catch (err) {
+      showToast(errorText(err, 'Không tạo được offer.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Mở popup ghi nhận lý do từ chối
@@ -413,45 +311,65 @@ export default function RecruiterOffersPage() {
   };
 
   // Lưu lý do từ chối vào database
-  const handleSaveRejectionReason = (e: React.FormEvent) => {
+  const handleSaveRejectionReason = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedOfferForRejection) return;
-
-    setOffers((prev) =>
-      prev.map((o) => {
-        if (o.id === selectedOfferForRejection.id) {
-          return {
-            ...o,
-            status: rejectionForm.status,
-            rejectionReasonCategory: rejectionForm.category,
-            rejectionReasonNote: rejectionForm.note,
-            negotiationRound: (o.negotiationRound || 1) + 1,
-          };
-        }
-        return o;
-      })
-    );
-
-    setIsRejectionModalOpen(false);
-    showToast(
-      `Đã ghi nhận lý do từ chối của "${selectedOfferForRejection.candidateName}" vào hệ thống phân tích dữ liệu lương!`
-    );
+    const target = selectedOfferForRejection;
+    if (!target) return;
+    const label = REJECTION_LABELS[rejectionForm.category].label;
+    setSaving(true);
+    try {
+      if (rejectionForm.status === 'rejected') {
+        // the candidate declined: recorded on the offer (reason feeds the decline analytics)
+        const tag = rejectionForm.category === 'benefits_low' || rejectionForm.category === 'start_date_mismatch' ? `[${rejectionForm.category}] ` : '';
+        const updated = await offerService.respond(target.raw.id, 'declined', REASON_TO_API[rejectionForm.category], `${tag}${rejectionForm.note}`.trim() || undefined);
+        putOfferRow(updated);
+        showToast(`Đã ghi nhận lý do từ chối của "${target.candidateName}".`);
+      } else {
+        // renegotiation request: kept in the candidate's internal notes; revise the offer terms afterwards
+        const expected = rejectionForm.counterSalaryExpected ? ` — kỳ vọng ${rejectionForm.counterSalaryExpected.toLocaleString('vi-VN')} đ/tháng` : '';
+        await candidatesApi.addNote(target.raw.application_id, `Ứng viên đề nghị thương lượng lại offer: ${label}${expected}. ${rejectionForm.note}`.trim());
+        showToast(`Đã lưu đề nghị thương lượng của "${target.candidateName}" vào ghi chú hồ sơ.`);
+      }
+      setIsRejectionModalOpen(false);
+    } catch (err) {
+      showToast(errorText(err, 'Không lưu được phản hồi.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Chuyển nhanh trạng thái Offer
-  const handleQuickStatusChange = (offerId: string, newStatus: OfferStatus) => {
+  // Next real step of the offer workflow: draft -> submit, approved -> send, sent -> accepted
+  const handleQuickStatusChange = async (offerId: string, newStatus: OfferStatus) => {
     const target = offers.find((o) => o.id === offerId);
     if (!target) return;
-
     if (newStatus === 'rejected' || newStatus === 'renegotiating') {
       handleOpenRejectionPopup(target);
       return;
     }
+    const st = target.raw.status;
+    try {
+      if (st === 'draft') {
+        putOfferRow(await offerService.submitOffer(target.raw.id));
+        showToast(`Đã gửi offer "${target.candidateName}" cho Trưởng phòng Nhân sự duyệt.`);
+      } else if (st === 'approved') {
+        putOfferRow(await offerService.sendOffer(target.raw.id));
+        showToast(`Đã gửi thư mời nhận việc tới "${target.candidateName}".`);
+      } else if (st === 'sent') {
+        putOfferRow(await offerService.respond(target.raw.id, 'accepted'));
+        showToast(`Đã ghi nhận "${target.candidateName}" đồng ý offer; checklist onboarding đã được tạo.`);
+      } else {
+        showToast(`Offer đang ở trạng thái: ${STATUS_TEXT[st] || st}.`);
+      }
+    } catch (err) {
+      showToast(errorText(err, 'Không cập nhật được offer.'));
+    }
+  };
 
-    setOffers((prev) =>
-      prev.map((o) => (o.id === offerId ? { ...o, status: newStatus } : o))
-    );
-    showToast(`Đã cập nhật trạng thái Offer "${target.candidateName}" thành "${newStatus === 'accepted' ? 'Đã đồng ý' : 'Đang chờ'}"`);
+  // Open Enterprise Offer Detail Modal
+  const handleOpenLetter = (offer: OfferProposal) => {
+    setSelectedDetailOfferId(offer.raw.id);
+    setIsDetailModalOpen(true);
   };
 
   // ==========================================
@@ -459,11 +377,11 @@ export default function RecruiterOffersPage() {
   // ==========================================
 
   const filteredBulkCandidates = useMemo(() => {
-    return MOCK_BULK_CANDIDATES.filter((c) => {
+    return BULK_CANDIDATES.filter((c) => {
       if (bulkFilter === 'all') return true;
       return c.resultStatus === bulkFilter;
     });
-  }, [bulkFilter]);
+  }, [bulkFilter, BULK_CANDIDATES]);
 
   const handleToggleSelectAll = () => {
     const visibleIds = filteredBulkCandidates.map((c) => c.id);
@@ -485,19 +403,47 @@ export default function RecruiterOffersPage() {
   };
 
   // Gửi thư hàng loạt
-  const handleSendBulkEmails = () => {
+  const handleSendBulkEmails = async () => {
     if (selectedCandidateIds.length === 0) {
-      alert('Vui lòng chọn ít nhất một ứng viên để gửi thư.');
+      showToast('Vui lòng chọn ít nhất một ứng viên để gửi thư.');
       return;
     }
-
+    const chosen = (appRows || []).filter((a) => selectedCandidateIds.includes(String(a.id)));
     setIsSendingBulk(true);
-    setTimeout(() => {
+    let queued = 0, skipped = 0;
+    try {
+      if (selectedTemplate === 'rejection') {
+        // the server only batches candidates in the same stage -> one request per stage
+        const byStatus = new Map<string, number[]>();
+        chosen.forEach((a) => byStatus.set(a.status, [...(byStatus.get(a.status) || []), a.id]));
+        for (const ids of byStatus.values()) {
+          const r = await apiRequest<{ queued: number; skipped_duplicates: number }>('/applications/bulk-email', {
+            method: 'POST', body: JSON.stringify({ application_ids: ids, template_code: 'REJECT_CANDIDATE' }),
+          });
+          queued += r.queued;
+          skipped += r.skipped_duplicates;
+        }
+      } else if (selectedTemplate === 'offer') {
+        // official offer letters only go out for offers already approved
+        for (const a of chosen) {
+          const offer = (offerRows || []).find((o) => o.application_id === a.id && o.status === 'approved');
+          if (!offer) { skipped += 1; continue; }
+          putOfferRow(await offerService.sendOffer(offer.id));
+          queued += 1;
+        }
+      } else {
+        for (const a of chosen) {
+          const msg = DIRECT_TEMPLATES[selectedTemplate](a.full_name, a.job_title || '');
+          await candidatesApi.sendEmail(a.id, msg.subject, msg.body);
+          queued += 1;
+        }
+      }
+      showToast(`Đã đưa ${queued} thư vào hàng đợi gửi${skipped ? `, bỏ qua ${skipped} ứng viên (trùng thư hoặc chưa có offer đã duyệt)` : ''}.`);
+    } catch (err) {
+      showToast(errorText(err, 'Gửi thư hàng loạt bị lỗi.') + (queued ? ` (đã gửi ${queued} thư trước khi lỗi)` : ''));
+    } finally {
       setIsSendingBulk(false);
-      showToast(
-        `Đã gửi thư hàng loạt thành công tới ${selectedCandidateIds.length} ứng viên qua máy chủ SMTP công ty!`
-      );
-    }, 1200);
+    }
   };
 
   // ==========================================
@@ -532,15 +478,38 @@ export default function RecruiterOffersPage() {
   }, [offers]);
 
   const filteredOffers = useMemo(() => {
+    const q = offerSearch.trim();
     return offers.filter((o) => {
-      const matchSearch =
-        o.candidateName.toLowerCase().includes(offerSearch.toLowerCase()) ||
-        o.position.toLowerCase().includes(offerSearch.toLowerCase()) ||
-        o.id.toLowerCase().includes(offerSearch.toLowerCase());
+      if (q) {
+        const score = Math.max(
+          getSearchScore(o.candidateName, q),
+          getSearchScore(o.position, q),
+          getSearchScore(o.id, q)
+        );
+        if (score === 0) return false;
+      }
       const matchStatus = offerStatusFilter === 'all' || o.status === offerStatusFilter;
-      return matchSearch && matchStatus;
+      return matchStatus;
+    }).sort((a, b) => {
+      if (q) {
+        const scoreA = Math.max(
+          getSearchScore(a.candidateName, q),
+          getSearchScore(a.position, q),
+          getSearchScore(a.id, q)
+        );
+        const scoreB = Math.max(
+          getSearchScore(b.candidateName, q),
+          getSearchScore(b.position, q),
+          getSearchScore(b.id, q)
+        );
+        if (scoreA !== scoreB) return scoreB - scoreA;
+      }
+      return 0;
     });
   }, [offers, offerSearch, offerStatusFilter]);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6 antialiased font-sans">
@@ -629,7 +598,7 @@ export default function RecruiterOffersPage() {
           <Users className="w-4 h-4" />
           <span>Gửi Thư Hàng Loạt & Template (Tab 2)</span>
           <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">
-            {MOCK_BULK_CANDIDATES.length} ứng viên sẵn sàng
+            {BULK_CANDIDATES.length} ứng viên sẵn sàng
           </span>
         </button>
       </div>
@@ -755,20 +724,26 @@ export default function RecruiterOffersPage() {
           {/* TOOLBAR: SEARCH & STATUS FILTER */}
           <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-100 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             <div className="relative flex-1 max-w-sm">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
+              <SearchAutocompleteInput
                 value={offerSearch}
-                onChange={(e) => setOfferSearch(e.target.value)}
+                onChange={(val) => setOfferSearch(val)}
+                onSelectSuggestion={(item) => setOfferSearch(item.title)}
                 placeholder="Tìm theo ứng viên, vị trí, mã offer..."
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all"
+                size="sm"
+                localSuggestions={offers.map((o) => ({
+                  id: o.id,
+                  title: o.candidateName,
+                  subtitle: `${o.position} • Lương: ${o.baseSalary ? o.baseSalary.toLocaleString('vi-VN') + ' đ' : 'Thoả thuận'} • ${o.status}`,
+                  category: "candidate",
+                  category_label: "Offer",
+                }))}
               />
             </div>
 
             <div className="flex items-center gap-2">
               <select
                 value={offerStatusFilter}
-                onChange={(e) => setOfferStatusFilter(e.target.value as any)}
+                onChange={(e) => setOfferStatusFilter(e.target.value as typeof offerStatusFilter)}
                 className="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
               >
                 <option value="all">Tất cả trạng thái</option>
@@ -815,11 +790,17 @@ export default function RecruiterOffersPage() {
                           {/* Ứng viên */}
                           <td className="py-4 px-4">
                             <div className="flex items-center gap-3">
-                              <img
-                                src={off.candidateAvatar}
-                                alt={off.candidateName}
-                                className="w-10 h-10 rounded-2xl object-cover border border-slate-200 shrink-0"
-                              />
+                              {off.candidateAvatar ? (
+                                <img
+                                  src={off.candidateAvatar}
+                                  alt={off.candidateName}
+                                  className="w-10 h-10 rounded-2xl object-cover border border-slate-200 shrink-0"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-2xl bg-sky-100 text-[#0284C7] font-extrabold text-sm flex items-center justify-center border border-slate-200 shrink-0 select-none">
+                                  {(off.candidateName || "U").trim().split(" ").slice(-1)[0][0]?.toUpperCase() || "U"}
+                                </div>
+                              )}
                               <div>
                                 <span className="font-extrabold text-sm text-slate-900 block group-hover:text-blue-600 transition-colors">
                                   {off.candidateName}
@@ -931,30 +912,28 @@ export default function RecruiterOffersPage() {
                           {/* Thao tác */}
                           <td className="py-4 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              {off.status === 'pending' && (
+                              {off.status === 'pending' && off.raw.status !== 'pending_approval' && (
                                 <>
                                   <button
                                     type="button"
                                     onClick={() => handleQuickStatusChange(off.id, 'accepted')}
                                     className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-bold transition-colors cursor-pointer"
                                   >
-                                    Đã đồng ý
+                                    {off.raw.status === 'draft' ? 'Gửi duyệt' : off.raw.status === 'approved' ? 'Gửi offer' : 'Đã đồng ý'}
                                   </button>
-                                  <button
+                                  {off.raw.status === 'sent' && <button
                                     type="button"
                                     onClick={() => handleOpenRejectionPopup(off)}
                                     className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold transition-colors cursor-pointer"
                                   >
                                     Từ chối
-                                  </button>
+                                  </button>}
                                 </>
                               )}
 
                               <button
                                 type="button"
-                                onClick={() => {
-                                  alert(`Đang mở xem chi tiết Thư mời nhận việc PDF của mã ${off.id}...`);
-                                }}
+                                onClick={() => handleOpenLetter(off)}
                                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
                                 title="Xem file Offer PDF"
                               >
@@ -1147,7 +1126,7 @@ export default function RecruiterOffersPage() {
                   <button
                     key={tpl.id}
                     type="button"
-                    onClick={() => setSelectedTemplate(tpl.id as any)}
+                    onClick={() => setSelectedTemplate(tpl.id as typeof selectedTemplate)}
                     className={clsx(
                       'p-2.5 rounded-xl border text-left font-extrabold text-xs transition-all cursor-pointer',
                       selectedTemplate === tpl.id
@@ -1287,24 +1266,31 @@ export default function RecruiterOffersPage() {
                   <label className="block font-bold text-slate-700 mb-1">
                     Tên ứng viên *
                   </label>
-                  <input
-                    type="text"
+                  <select
                     required
-                    placeholder="Ví dụ: Hoàng Đình Trọng"
-                    value={newOfferForm.candidateName}
-                    onChange={(e) =>
-                      setNewOfferForm({ ...newOfferForm, candidateName: e.target.value })
-                    }
+                    value={newOfferForm.applicationId}
+                    onChange={(e) => {
+                      const a = offerable.find((x) => String(x.id) === e.target.value);
+                      setNewOfferForm({
+                        ...newOfferForm, applicationId: e.target.value, candidateName: a?.full_name || '',
+                        candidateEmail: a?.email || '', position: a?.job_title || '', department: a?.department || '',
+                      });
+                    }}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800"
-                  />
+                  >
+                    <option value="">-- Chọn ứng viên --</option>
+                    {offerable.map((a) => (
+                      <option key={a.id} value={a.id}>{a.full_name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Email ứng viên *</label>
                   <input
                     type="email"
-                    required
-                    placeholder="trong.hoang@gmail.com"
+                    readOnly
+                    placeholder="— theo hồ sơ ứng viên —"
                     value={newOfferForm.candidateEmail}
                     onChange={(e) =>
                       setNewOfferForm({ ...newOfferForm, candidateEmail: e.target.value })
@@ -1319,34 +1305,40 @@ export default function RecruiterOffersPage() {
                   <label className="block font-bold text-slate-700 mb-1">Vị trí ứng tuyển</label>
                   <select
                     value={newOfferForm.position}
-                    onChange={(e) =>
-                      setNewOfferForm({ ...newOfferForm, position: e.target.value })
-                    }
+                    disabled
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
                   >
-                    <option value="Senior Backend Engineer (Go/Python)">
-                      Senior Backend Engineer (Go/Python)
-                    </option>
-                    <option value="Frontend React Lead">Frontend React Lead</option>
-                    <option value="Product Owner / BA Lead">Product Owner / BA Lead</option>
-                    <option value="DevOps / Cloud Engineer">DevOps / Cloud Engineer</option>
+                    <option value={newOfferForm.position}>{newOfferForm.position || '— theo hồ sơ ứng viên —'}</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Mức lương cơ bản (VNĐ / tháng) *
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    step={1000000}
-                    value={newOfferForm.baseSalary}
-                    onChange={(e) =>
-                      setNewOfferForm({ ...newOfferForm, baseSalary: Number(e.target.value) })
-                    }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-blue-600"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-bold text-slate-700">
+                      Mức lương cơ bản (VNĐ / tháng) *
+                    </label>
+                    {newOfferForm.baseSalary > 0 && (
+                      <span className="text-[11px] font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                        {newOfferForm.baseSalary.toLocaleString('vi-VN')} VNĐ
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      required
+                      step={500000}
+                      placeholder="Ví dụ: 30000000"
+                      value={newOfferForm.baseSalary || ''}
+                      onChange={(e) =>
+                        setNewOfferForm({ ...newOfferForm, baseSalary: Number(e.target.value) })
+                      }
+                      className="w-full px-3 py-2 pl-8 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-blue-600 focus:outline-none focus:border-blue-500 font-mono"
+                    />
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold select-none text-xs">
+                      ₫
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1373,12 +1365,23 @@ export default function RecruiterOffersPage() {
                   <input
                     type="date"
                     required
+                    min={getLocalTodayDateString()}
                     value={newOfferForm.startDate}
-                    onChange={(e) =>
-                      setNewOfferForm({ ...newOfferForm, startDate: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewOfferForm({
+                        ...newOfferForm,
+                        startDate: val,
+                        ...(newOfferForm.deadlineDate && val && newOfferForm.deadlineDate > val
+                          ? { deadlineDate: val }
+                          : {}),
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                   />
+                  {newOfferForm.startDate && isPastDate(newOfferForm.startDate) && (
+                    <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày nhận việc không được ở quá khứ</p>
+                  )}
                 </div>
 
                 <div>
@@ -1388,17 +1391,25 @@ export default function RecruiterOffersPage() {
                   <input
                     type="date"
                     required
+                    min={getLocalTodayDateString()}
+                    max={newOfferForm.startDate || undefined}
                     value={newOfferForm.deadlineDate}
                     onChange={(e) =>
                       setNewOfferForm({ ...newOfferForm, deadlineDate: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
                   />
+                  {newOfferForm.deadlineDate && isPastDate(newOfferForm.deadlineDate) && (
+                    <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Hạn phản hồi không được ở quá khứ</p>
+                  )}
+                  {newOfferForm.startDate && newOfferForm.deadlineDate && newOfferForm.deadlineDate > newOfferForm.startDate && (
+                    <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Hạn phản hồi phải trước ngày nhận việc</p>
+                  )}
                 </div>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-100 text-blue-900 text-[11px] leading-relaxed">
-                ℹ️ Sau khi nhấn &ldquo;Lưu & Gửi Phê Duyệt&rdquo;, hệ thống sẽ tự động gửi thông báo duyệt cấp 1 tới Hiring Manager và cấp 2 tới Giám đốc Khối trước khi phát hành thư chính thức.
+                ℹ️ Sau khi nhấn &ldquo;Lưu & Gửi Phê Duyệt&rdquo;, offer được chuyển tới Trưởng phòng Nhân sự phê duyệt (và cấp cao hơn nếu mức lương vượt khung) trước khi phát hành thư chính thức.
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
@@ -1411,7 +1422,8 @@ export default function RecruiterOffersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 cursor-pointer"
+                  disabled={saving}
+                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 cursor-pointer disabled:opacity-60"
                 >
                   Lưu & Gửi Phê Duyệt
                 </button>
@@ -1553,6 +1565,17 @@ export default function RecruiterOffersPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Form Xem Chi Tiết Offer Chuẩn Doanh Nghiệp */}
+      <OfferDetailModal
+        isOpen={isDetailModalOpen}
+        offerId={selectedDetailOfferId}
+        onClose={() => {
+          setIsDetailModalOpen(false);
+          setSelectedDetailOfferId(null);
+        }}
+        onActionSuccess={reload}
+      />
     </div>
   );
 }

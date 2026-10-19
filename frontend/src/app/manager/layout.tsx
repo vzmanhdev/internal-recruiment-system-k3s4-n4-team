@@ -1,5 +1,4 @@
 import React from 'react';
-import { ManagerAppShell } from '@/components/layout/ManagerAppShell';
 
 export const metadata = {
   title: 'Hiring Manager Workspace | Enterprise ATS',
@@ -15,5 +14,6 @@ export default function ManagerLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <ManagerAppShell>{children}</ManagerAppShell>;
+  // The unified, permission-driven AppShell is mounted once in the root layout.
+  return <>{children}</>;
 }

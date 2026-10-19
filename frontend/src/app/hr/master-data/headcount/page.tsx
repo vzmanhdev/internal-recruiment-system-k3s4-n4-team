@@ -5,6 +5,10 @@ import {
   Target, AlertTriangle, ShieldCheck, Plus, CheckCircle2, Clock, 
   Building2, ArrowRight, ShieldAlert, FileText, Search
 } from 'lucide-react';
+import { masterDataService } from '@/services/master-data.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 
 interface HeadcountItem {
   id: string;
@@ -15,70 +19,60 @@ interface HeadcountItem {
   remaining_headcount: number;
   approved_budget: string;
   status: 'normal' | 'near_limit' | 'exceeded';
+  departmentId: number;
+  year: number;
 }
 
 export default function HRHeadcountPage() {
-  const [headcounts, setHeadcounts] = useState<HeadcountItem[]>([
-    {
-      id: "HC-001",
-      department: "Công Nghệ Thông Tin",
-      position_title: "Kỹ sư Senior Backend (Python/FastAPI)",
-      target_headcount: 10,
-      current_headcount: 8,
-      remaining_headcount: 2,
-      approved_budget: "45.0 Triệu VNĐ / người",
-      status: "normal"
-    },
-    {
-      id: "HC-002",
-      department: "Công Nghệ Thông Tin",
-      position_title: "Chuyên viên Senior DevOps",
-      target_headcount: 3,
-      current_headcount: 3,
-      remaining_headcount: 0,
-      approved_budget: "50.0 Triệu VNĐ / người",
-      status: "near_limit"
-    },
-    {
-      id: "HC-003",
-      department: "Khối Dữ Liệu",
-      position_title: "Trưởng nhóm Data Analyst & BI",
-      target_headcount: 2,
-      current_headcount: 3,
-      remaining_headcount: -1,
-      approved_budget: "55.0 Triệu VNĐ / người",
-      status: "exceeded"
-    }
-  ]);
+  // Department / year budgets with the quantity already committed by approved requisitions (S3-04)
+  const { data, error, loading, reload } = useApiData(async () => {
+    const [rows, depts] = await Promise.all([masterDataService.headcounts(), masterDataService.departments(true)]);
+    return rows.map((h): HeadcountItem => {
+      const remaining = h.remaining_quantity ?? h.budget_quantity - h.committed_quantity;
+      return {
+        id: `HC-${h.id}`,
+        departmentId: h.department_id,
+        year: h.year,
+        department: depts.find((d) => d.id === h.department_id)?.name || `#${h.department_id}`,
+        position_title: `Định biên năm ${h.year}`,
+        target_headcount: h.budget_quantity,
+        current_headcount: h.committed_quantity,
+        remaining_headcount: remaining,
+        approved_budget: '—',
+        status: remaining < 0 ? 'exceeded' : remaining <= 1 ? 'near_limit' : 'normal',
+      };
+    });
+  }, []);
+  const headcounts = data || [];
+  const [actionError, setActionError] = useState('');
 
   const [overrideModal, setOverrideModal] = useState<HeadcountItem | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
   const [additionalHeadcount, setAdditionalHeadcount] = useState(1);
 
-  const handleOverrideSubmit = () => {
+  const handleOverrideSubmit = async () => {
     if (!overrideModal || !overrideReason.trim()) {
-      alert("Vui lòng nhập lý do giải trình ghi đè Headcount!");
+      setActionError("Vui lòng nhập lý do giải trình ghi đè Headcount!");
       return;
     }
-
-    setHeadcounts(prev => prev.map(item => {
-      if (item.id === overrideModal.id) {
-        const newTarget = item.target_headcount + additionalHeadcount;
-        const newRemaining = newTarget - item.current_headcount;
-        return {
-          ...item,
-          target_headcount: newTarget,
-          remaining_headcount: newRemaining,
-          status: newRemaining >= 0 ? 'normal' : 'exceeded'
-        };
-      }
-      return item;
-    }));
-
-    alert(`Đã ghi đè chỉ tiêu Headcount cho "${overrideModal.position_title}" thêm +${additionalHeadcount} người. Lý do giải trình: ${overrideReason}`);
-    setOverrideModal(null);
-    setOverrideReason('');
+    try {
+      await masterDataService.saveHeadcount({
+        department_id: overrideModal.departmentId,
+        year: overrideModal.year,
+        budget_quantity: overrideModal.target_headcount + additionalHeadcount,
+        reason: overrideReason.trim(),
+      });
+      setActionError('');
+      setOverrideModal(null);
+      setOverrideReason('');
+      reload();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Không cập nhật được định biên.');
+    }
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -214,6 +208,7 @@ export default function HRHeadcountPage() {
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
                 />
               </div>
+              {actionError && <p className="text-xs font-semibold text-rose-600">{actionError}</p>}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

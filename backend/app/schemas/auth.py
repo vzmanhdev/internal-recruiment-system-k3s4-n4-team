@@ -1,13 +1,69 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 import re
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 
-class UserRegister(BaseModel):
-    full_name: str = Field(..., min_length=2, max_length=100, description="Họ và tên người dùng")
-    email: EmailStr = Field(..., description="Email làm việc hợp lệ")
-    password: str = Field(..., min_length=6, description="Mật khẩu phải từ 6 ký tự trở lên")
+class RegistrationStartRequest(BaseModel):
+    """Public candidate self-registration. There is deliberately NO role field: the backend always assigns
+    the candidate role, and unknown fields such as "role" sent by a client are ignored."""
+    full_name: str = Field(..., min_length=2, max_length=100, description="Họ và tên")
+    email: EmailStr = Field(..., description="Email nhận mã xác thực")
+    password: str = Field(..., max_length=128, description="Mật khẩu")
+    confirm_password: str = Field(..., max_length=128, description="Nhập lại mật khẩu")
     phone: Optional[str] = Field(None, max_length=20, description="Số điện thoại liên hệ")
-    role: Optional[str] = Field("employee", description="Vai trò: employee, hr_manager, admin")
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 2:
+            raise ValueError("Họ và tên phải có ít nhất 2 ký tự")
+        return cleaned
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_policy(cls, value: str) -> str:
+        from app.core.config import settings
+        if len(value) < settings.REGISTRATION_PASSWORD_MIN_LENGTH:
+            raise ValueError(f"Mật khẩu phải có ít nhất {settings.REGISTRATION_PASSWORD_MIN_LENGTH} ký tự")
+        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
+            raise ValueError("Mật khẩu phải gồm ít nhất một chữ cái và một chữ số")
+        return value
+
+    @field_validator("confirm_password")
+    @classmethod
+    def validate_confirm_password(cls, value: str, info) -> str:
+        if "password" in info.data and value != info.data["password"]:
+            raise ValueError("Mật khẩu xác nhận không trùng khớp")
+        return value
+
+
+class RegistrationVerifyRequest(BaseModel):
+    challenge_id: str = Field(..., min_length=20, max_length=64)
+    otp: str = Field(..., min_length=6, max_length=6, description="Mã OTP 6 chữ số")
+
+    @field_validator("otp")
+    @classmethod
+    def validate_otp_format(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned.isdigit() or len(cleaned) != 6:
+            raise ValueError("Mã OTP phải bao gồm chính xác 6 chữ số")
+        return cleaned
+
+
+class RegistrationResendRequest(BaseModel):
+    challenge_id: str = Field(..., min_length=20, max_length=64)
+
+
+class RegistrationChallengeResponse(BaseModel):
+    message: Optional[str] = None
+    challenge_id: str
+    challenge_status: str
+    masked_email: str
+    max_attempts: int
+    remaining_attempts: int
+    expires_in_seconds: int
+    resend_available_in_seconds: int
+    can_resend: bool
 
 class UserLogin(BaseModel):
     email: EmailStr = Field(..., description="Email làm việc")
@@ -83,6 +139,12 @@ class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
     avatar_url: Optional[str] = Field(None, max_length=4_000_000)
+    date_of_birth: Optional[str] = Field(None, max_length=50)
+    dob: Optional[str] = Field(None, max_length=50)
+    gender: Optional[str] = Field(None, max_length=20)
+    job_title: Optional[str] = Field(None, max_length=255)
+    department: Optional[str] = Field(None, max_length=255)
+    bio: Optional[str] = Field(None, max_length=1000)
 
     @field_validator("phone")
     @classmethod
@@ -97,8 +159,16 @@ class UserResponse(BaseModel):
     full_name: str
     phone: Optional[str] = None
     employee_code: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    dob: Optional[str] = None
+    gender: Optional[str] = None
+    job_title: Optional[str] = None
+    department: Optional[str] = None
+    bio: Optional[str] = None
     role: str
-    roles: List[str] = Field(default_factory=list)
+    roles: Optional[Any] = None
+    permissions: List[str] = Field(default_factory=list)
+    effective_permissions: List[str] = Field(default_factory=list)
     redirect_url: Optional[str] = None
     is_active: bool
     account_status: str = "active"
@@ -106,17 +176,50 @@ class UserResponse(BaseModel):
     avatar_url: Optional[str] = None
     created_at: Optional[str] = None
 
+
+class RefreshRequest(BaseModel):
+    refresh_token: Optional[str] = Field(None, description="Refresh Token (nếu không dùng HttpOnly Cookie)")
+
+class SessionResponse(BaseModel):
+    id: str
+    user_id: int
+    device_name: str
+    browser: str
+    os: str
+    ip_address: str
+    created_at: Optional[str] = None
+    last_active_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    is_revoked: bool = False
+    revoke_reason: Optional[str] = None
+    current: bool = False
+
 class Token(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     redirect_url: str = "/"
     user: UserResponse
 
-class RegistrationResponse(BaseModel):
+class RegistrationCompletedResponse(BaseModel):
     message: str
-    user: UserResponse
+    challenge_status: str
+    redirect_url: str
+    user: Dict[str, Any]
 
 class ErrorResponse(BaseModel):
     detail: str
     error_code: Optional[str] = None
     field_errors: Optional[Dict[str, str]] = None
+
+class ApiErrorDetail(BaseModel):
+    code: str
+    message: str
+    details: Optional[Dict] = None
+    field_errors: Optional[Dict[str, str]] = None
+
+class StandardErrorResponse(BaseModel):
+    success: bool = False
+    error: ApiErrorDetail
+    request_id: Optional[str] = None
+

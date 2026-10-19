@@ -1,6 +1,13 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { interviewerApi } from '@/features/interviewer/api';
+import { type InterviewItem as ApiInterview } from '@/services/interview.service';
+import { referralService } from '@/services/referral.service';
+import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/providers/auth-provider';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 import Link from 'next/link';
 import {
   Calendar,
@@ -34,6 +41,8 @@ import clsx from 'clsx';
 // Interface kiểu dữ liệu buổi phỏng vấn
 export interface InterviewScheduleItem {
   id: number;
+  interviewId: number;
+  applicationId: number;
   candidateName: string;
   candidateEmail: string;
   candidatePhone: string;
@@ -45,7 +54,7 @@ export interface InterviewScheduleItem {
   timeRange: string; // VD: 14:00 - 15:00
   relativeTimeTag: 'Hôm nay' | 'Ngày mai' | 'Sắp tới' | 'Đã kết thúc';
   format: 'online' | 'offline';
-  meetingPlatform?: 'Google Meet' | 'Microsoft Teams';
+  meetingPlatform?: string;
   meetingUrl?: string;
   offlineRoom?: string;
   offlineAddress?: string;
@@ -62,165 +71,52 @@ export interface InterviewScheduleItem {
   };
 }
 
-// Mock Data chuẩn nghiệp vụ xếp theo thứ tự thời gian gần nhất
-const MOCK_INTERVIEWS: InterviewScheduleItem[] = [
-  {
-    id: 1,
-    candidateName: 'Lê Hoàng Cường',
-    candidateEmail: 'cuong.le@example.com',
-    candidatePhone: '0901 234 567',
-    position: 'Senior Frontend Engineer (React/Next.js)',
-    department: 'Ban Công Nghệ Thông Tin',
-    round: 'Vòng 2 - Đánh giá Kỹ thuật & Live Coding',
-    dateStr: '2026-10-12',
-    displayDate: '12/10/2026',
-    timeRange: '14:00 - 15:00',
-    relativeTimeTag: 'Hôm nay',
-    format: 'online',
-    meetingPlatform: 'Google Meet',
-    meetingUrl: 'https://meet.google.com/abc-defg-hij',
-    councilMembers: [
-      { name: 'Nguyễn Minh Trí', role: 'Lead Tech Interviewer', isCurrentUser: true },
-      { name: 'Trần Hoàng Nam', role: 'Tech Director' },
-      { name: 'Lê Thị Tuyết Mai', role: 'HR Recruiter' },
-    ],
-    status: 'in_progress',
-    scorecardSubmitted: false,
-    cvSummary: {
-      experienceYears: '6 năm kinh nghiệm',
-      currentCompany: 'Fintech Solutions JSC',
-      education: 'Cử nhân CNTT - Đại học Bách Khoa Hà Nội',
-      skills: ['React', 'Next.js', 'TypeScript', 'Tailwind CSS', 'Redux Toolkit', 'System Design'],
-      summaryBio:
-        'Kỹ sư Frontend chuyên sâu với kinh nghiệm dẫn dắt kỹ thuật đội ngũ 8 kỹ sư. Am hiểu sâu sắc về Server-Side Rendering (SSR), tối ưu hóa Core Web Vitals (LCP, CLS, INP) và kiến trúc Micro-Frontend trong các ứng dụng tài chính ngân hàng.',
-    },
-  },
-  {
-    id: 2,
-    candidateName: 'Nguyễn Văn A',
-    candidateEmail: 'vana.nguyen@example.com',
-    candidatePhone: '0912 345 678',
-    position: 'Senior Backend Engineer (Python/FastAPI)',
-    department: 'Ban Công Nghệ Thông Tin',
-    round: 'Vòng 1 - Phỏng vấn Kiến trúc & Database',
-    dateStr: '2026-10-12',
-    displayDate: '12/10/2026',
-    timeRange: '09:00 - 10:00',
-    relativeTimeTag: 'Đã kết thúc',
-    format: 'online',
-    meetingPlatform: 'Microsoft Teams',
-    meetingUrl: 'https://teams.microsoft.com/l/meetup-join/...',
-    councilMembers: [
-      { name: 'Nguyễn Minh Trí', role: 'Technical Interviewer', isCurrentUser: true },
-      { name: 'Phạm Hải Đăng', role: 'Backend Lead' },
-    ],
-    status: 'completed_pending_scorecard',
-    scorecardSubmitted: false,
-    cvSummary: {
-      experienceYears: '5 năm kinh nghiệm',
-      currentCompany: 'E-Commerce Platform Vietnam',
-      education: 'Kỹ sư Phần mềm - Đại học FPT',
-      skills: ['Python', 'FastAPI', 'PostgreSQL', 'Redis', 'Kafka', 'Docker', 'Kubernetes'],
-      summaryBio:
-        'Chuyên gia phát triển Backend microservices chịu tải cao với thông lượng 15,000 RPS. Có kinh nghiệm sâu sắc về thiết kế Schema cơ sở dữ liệu quan hệ, tối ưu câu truy vấn phức tạp và triển khai CI/CD trên hạ tầng Kubernetes.',
-    },
-  },
-  {
-    id: 3,
-    candidateName: 'Đỗ Hoàng Long',
-    candidateEmail: 'long.do@example.com',
-    candidatePhone: '0933 888 999',
-    position: 'Data Analyst Senior',
-    department: 'Khối Phân Tích Dữ Liệu & BI',
-    round: 'Vòng 1 - Khảo sát Tư duy Dữ liệu & SQL',
-    dateStr: '2026-10-13',
-    displayDate: '13/10/2026',
-    timeRange: '09:30 - 10:30',
-    relativeTimeTag: 'Ngày mai',
-    format: 'offline',
-    offlineRoom: 'Phòng Phỏng Vấn A3 (Tầng 8)',
-    offlineAddress: 'Trụ sở chính Tech Hub - 54 Liễu Giai, Ba Đình, Hà Nội',
-    councilMembers: [
-      { name: 'Nguyễn Minh Trí', role: 'Hội đồng chuyên môn', isCurrentUser: true },
-      { name: 'Phạm Thúy Nga', role: 'Head of Data' },
-    ],
-    status: 'upcoming',
-    scorecardSubmitted: false,
-    cvSummary: {
-      experienceYears: '4 năm kinh nghiệm',
-      currentCompany: 'Retail Analytics Corp',
-      education: 'Cử nhân Khoa học Dữ liệu - ĐH Kinh Tế Quốc Dân',
-      skills: ['SQL Nâng cao', 'Python (Pandas, Polars)', 'Power BI', 'Tableau', 'Data Modeling', 'A/B Testing'],
-      summaryBio:
-        'Chuyên viên phân tích dữ liệu chuyên xây dựng mô hình định lượng người dùng, phễu chuyển đổi thương mại điện tử và trực quan hóa Dashboard phục vụ ban điều hành ra quyết định tăng trưởng doanh thu.',
-    },
-  },
-  {
-    id: 4,
-    candidateName: 'Phạm Thuỳ Linh',
-    candidateEmail: 'linh.pham@example.com',
-    candidatePhone: '0988 777 666',
-    position: 'Product Owner (Digital Banking)',
-    department: 'Khối Ngân Hàng Số',
-    round: 'Vòng 2 - Product Strategy & Culture Fit',
-    dateStr: '2026-10-14',
-    displayDate: '14/10/2026',
-    timeRange: '14:30 - 15:30',
-    relativeTimeTag: 'Sắp tới',
-    format: 'online',
-    meetingPlatform: 'Google Meet',
-    meetingUrl: 'https://meet.google.com/xyz-bank-po',
-    councilMembers: [
-      { name: 'Nguyễn Minh Trí', role: 'Hội đồng chuyên môn', isCurrentUser: true },
-      { name: 'Vũ Minh Tuấn', role: 'Head of Product' },
-      { name: 'Hoàng Kim Oanh', role: 'HR Business Partner' },
-    ],
-    status: 'upcoming',
-    scorecardSubmitted: false,
-    cvSummary: {
-      experienceYears: '5 năm kinh nghiệm',
-      currentCompany: 'Digital Bank Neo',
-      education: 'Thạc sĩ Quản trị Kinh doanh & Cử nhân CNTT',
-      skills: ['Agile / Scrum', 'Roadmap Planning', 'User Research', 'Fintech Products', 'Data-driven Product'],
-      summaryBio:
-        'Product Owner giàu kinh nghiệm phát triển các sản phẩm E-Wallet, Open Banking API và tính năng thanh toán QR xuyên biên giới. Khả năng kết nối chặt chẽ giữa đội ngũ Kỹ thuật và mục tiêu Kinh doanh.',
-    },
-  },
-  {
-    id: 5,
-    candidateName: 'Vũ Đình Trọng',
-    candidateEmail: 'trong.vu@example.com',
-    candidatePhone: '0977 111 222',
-    position: 'DevOps Specialist (Cloud & CI/CD)',
-    department: 'Khối Hạ Tầng & An Ninh Mạng',
-    round: 'Vòng 1 - Đánh giá Năng lực Hạ tầng & AWS',
-    dateStr: '2026-10-10',
-    displayDate: '10/10/2026',
-    timeRange: '15:00 - 16:00',
-    relativeTimeTag: 'Đã kết thúc',
-    format: 'online',
-    meetingPlatform: 'Google Meet',
-    meetingUrl: 'https://meet.google.com/devops-infra-meet',
-    councilMembers: [
-      { name: 'Nguyễn Minh Trí', role: 'Tech Lead', isCurrentUser: true },
-      { name: 'Đặng Tuấn Anh', role: 'Cloud Architect' },
-    ],
-    status: 'completed_evaluated',
-    scorecardSubmitted: true,
-    scorecardScore: 4.6,
-    cvSummary: {
-      experienceYears: '5 năm kinh nghiệm',
-      currentCompany: 'Cloud Migration Services',
-      education: 'Kỹ sư Viễn thông - ĐH Bách Khoa',
-      skills: ['AWS', 'Kubernetes', 'Terraform', 'GitLab CI', 'Prometheus', 'Grafana'],
-      summaryBio:
-        'Kỹ sư DevOps đạt chứng chỉ AWS Solutions Architect Professional. Chuyên gia thiết lập hệ thống quan sát (Observability), triển khai hạ tầng dưới dạng mã (IaC) và bảo mật DevSecOps chuẩn ISO 27001.',
-    },
-  },
-];
+/** Map my real interviews (GET /interviews?mine=true) onto the schedule cards. */
+function toScheduleItem(i: ApiInterview, me: number | undefined): InterviewScheduleItem {
+  const start = new Date(i.scheduled_time);
+  const end = new Date(start.getTime() + (i.duration_minutes || 60) * 60000);
+  const now = Date.now();
+  const hm = (d: Date) => d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  const today = new Date().toDateString();
+  const tomorrow = new Date(Date.now() + 86_400_000).toDateString();
+  const finished = end.getTime() < now || i.status === "completed";
+  const running = !finished && start.getTime() <= now;
+  const relative: InterviewScheduleItem["relativeTimeTag"] = finished ? "Đã kết thúc"
+    : start.toDateString() === today ? "Hôm nay" : start.toDateString() === tomorrow ? "Ngày mai" : "Sắp tới";
+  return {
+    id: i.id,
+    interviewId: i.id,
+    applicationId: i.application_id,
+    candidateName: i.candidate_name || "—",
+    candidateEmail: i.candidate_email || "",
+    candidatePhone: "",
+    position: i.job_title || "",
+    department: "",
+    round: i.round_name || `Vòng ${i.round_number}`,
+    dateStr: i.scheduled_time.slice(0, 10),
+    displayDate: start.toLocaleDateString("vi-VN"),
+    timeRange: `${hm(start)} - ${hm(end)}`,
+    relativeTimeTag: relative,
+    format: i.meeting_link ? "online" : "offline",
+    meetingPlatform: i.meeting_link ? "Trực tuyến" : undefined,
+    meetingUrl: i.meeting_link || undefined,
+    offlineRoom: i.meeting_link ? undefined : i.location || undefined,
+    offlineAddress: undefined,
+    councilMembers: (i.interviewers || []).map((x: { interviewer_id?: number; interviewer_name?: string; role_in_interview?: string }) => ({
+      name: x.interviewer_name || "—", role: x.role_in_interview || "", isCurrentUser: x.interviewer_id === me,
+    })),
+    status: running ? "in_progress" : !finished ? "upcoming" : i.my_evaluation_submitted ? "completed_evaluated" : "completed_pending_scorecard",
+    scorecardSubmitted: !!i.my_evaluation_submitted,
+    cvSummary: { experienceYears: "—", currentCompany: "—", education: "—", skills: [], summaryBio: "" },
+  } as InterviewScheduleItem;
+}
 
 export default function InterviewerSchedulePage() {
-  const [interviews, setInterviews] = useState<InterviewScheduleItem[]>(MOCK_INTERVIEWS);
+  const { user } = useAuth();
+  const { data, error, loading, reload, setData } = useApiData(
+    async () => (await interviewerApi.mine()).map((i) => toScheduleItem(i, user?.id)), [user?.id]);
+  const interviews = useMemo(() => data || [], [data]);
+  const setInterviews = (fn: (prev: InterviewScheduleItem[]) => InterviewScheduleItem[]) => setData((prev) => fn(prev || []));
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'today' | 'upcoming' | 'pending_scorecard' | 'completed'>('all');
 
@@ -229,11 +125,11 @@ export default function InterviewerSchedulePage() {
   const [selectedScorecardInterview, setSelectedScorecardInterview] = useState<InterviewScheduleItem | null>(null);
 
   // Form chấm điểm
-  const [scoreTechnical, setScoreTechnical] = useState(4);
-  const [scoreCommunication, setScoreCommunication] = useState(4);
-  const [scoreCulture, setScoreCulture] = useState(5);
-  const [scoreProblemSolving, setScoreProblemSolving] = useState(4);
-  const [scorecardRecommendation, setScorecardRecommendation] = useState<'pass' | 'consider' | 'fail'>('pass');
+  const [scoreTechnical, setScoreTechnical] = useState(3);
+  const [scoreCommunication, setScoreCommunication] = useState(3);
+  const [scoreCulture, setScoreCulture] = useState(3);
+  const [scoreProblemSolving, setScoreProblemSolving] = useState(3);
+  const [scorecardRecommendation, setScorecardRecommendation] = useState<'pass' | 'consider' | 'fail'>('consider');
   const [scorecardComment, setScorecardComment] = useState('');
   const [isSubmittingScorecard, setIsSubmittingScorecard] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -270,36 +166,47 @@ export default function InterviewerSchedulePage() {
   }, [interviews, searchQuery, activeFilter]);
 
   // Xử lý nộp phiếu đánh giá
-  const handleScorecardSubmit = (e: React.FormEvent) => {
+  const handleScorecardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedScorecardInterview) return;
-
     setIsSubmittingScorecard(true);
-    setTimeout(() => {
-      setIsSubmittingScorecard(false);
-      // Cập nhật trạng thái buổi phỏng vấn sang đã nộp
+    const avg = (scoreTechnical + scoreCommunication + scoreCulture + scoreProblemSolving) / 4;
+    try {
+      // UI 1–5 → API 1–10; the conclusion is mandatory and the scorecard is locked once submitted (S6-08).
+      await referralService.submitEvaluation({
+        application_id: selectedScorecardInterview.applicationId,
+        interview_id: selectedScorecardInterview.interviewId,
+        technical_score: scoreTechnical * 2,
+        communication_score: scoreCommunication * 2,
+        culture_fit_score: scoreCulture * 2,
+        overall_score: Math.max(1, Math.round(avg * 2)),
+        recommendation: scorecardRecommendation === 'pass' ? 'hire' : scorecardRecommendation === 'consider' ? 'hold' : 'reject',
+        comments: scorecardComment.trim() || undefined,
+      });
       setInterviews((prev) =>
         prev.map((item) =>
           item.id === selectedScorecardInterview.id
-            ? {
-                ...item,
-                status: 'completed_evaluated',
-                scorecardSubmitted: true,
-                scorecardScore: Number(((scoreTechnical + scoreCommunication + scoreCulture + scoreProblemSolving) / 4).toFixed(1)),
-              }
+            ? { ...item, status: 'completed_evaluated', scorecardSubmitted: true, scorecardScore: Number(avg.toFixed(1)) }
             : item
         )
       );
-      showToast(`Đã nộp phiếu đánh giá thành công cho ứng viên ${selectedScorecardInterview.candidateName}!`);
+      showToast(`Đã nộp phiếu đánh giá cho ứng viên ${selectedScorecardInterview.candidateName}.`);
       setSelectedScorecardInterview(null);
       setScorecardComment('');
-    }, 800);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không nộp được phiếu đánh giá.');
+    } finally {
+      setIsSubmittingScorecard(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(text).catch(() => undefined);
     showToast('Đã sao chép link phòng họp vào clipboard!');
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-16">

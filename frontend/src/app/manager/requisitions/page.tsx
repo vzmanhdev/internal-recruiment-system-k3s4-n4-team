@@ -5,6 +5,12 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ManagerAppShell } from '@/components/layout/ManagerAppShell';
 import { Pagination } from '@/components/ui/Pagination';
+import { managerApi, type ManagerRequisitionItem } from '@/features/manager/api';
+import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
+import { masterDataService } from '@/services/master-data.service';
 import {
   FileCheck,
   Search,
@@ -30,396 +36,14 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-export interface ManagerRequisitionItem {
-  id: string;
-  title: string;
-  department: string;
-  level: string;
-  targetCount: number;
-  hiredCount: number;
-  salaryRange: string;
-  createdAt: string;
-  targetDate: string;
-  status: 'Pending' | 'Active' | 'Closed' | 'Draft';
-  description: string;
-  requirements: string;
-  reason: string;
-}
+export type { ManagerRequisitionItem } from '@/features/manager/api';
 
-const INITIAL_REQUISITIONS: ManagerRequisitionItem[] = [
-  {
-    id: 'REQ-2026-003',
-    title: 'Senior Backend Engineer (Golang/Python)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Senior',
-    targetCount: 2,
-    hiredCount: 1,
-    salaryRange: '35.000.000 - 50.000.000 VNĐ',
-    createdAt: '15/01/2026',
-    targetDate: '28/02/2026',
-    status: 'Pending',
-    description:
-      'Chịu trách nhiệm thiết kế và triển khai kiến trúc vi dịch vụ (Microservices) chịu tải cao với Golang và Python FastAPI. Tối ưu hóa truy vấn cơ sở dữ liệu phân tán, tích hợp Kafka message queue.',
-    requirements:
-      'Tối thiểu 4 năm kinh nghiệm với Golang hoặc Python. Hiểu sâu SQL, Redis, Docker, Kubernetes.',
-    reason: 'Bổ sung định biên sprint Q1 mở rộng Core Services',
-  },
-  {
-    id: 'REQ-2026-001',
-    title: 'Lập trình viên Frontend (React/Next.js)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Middle',
-    targetCount: 3,
-    hiredCount: 2,
-    salaryRange: '25.000.000 - 35.000.000 VNĐ',
-    createdAt: '10/01/2026',
-    targetDate: '20/02/2026',
-    status: 'Active',
-    description:
-      'Xây dựng các module giao diện người dùng cho hệ thống tuyển dụng nội bộ, tối ưu hóa Core Web Vitals và thiết lập Design System đồng bộ.',
-    requirements:
-      'Thành thạo React 19, Next.js App Router, Tailwind CSS, TypeScript và tối ưu hiệu năng web.',
-    reason: 'Mở rộng đội ngũ phát triển sản phẩm B2B',
-  },
-  {
-    id: 'REQ-2026-004',
-    title: 'Chuyên viên Thiết Kế Trải Nghiệm (UI/UX Designer)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Middle',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '20.000.000 - 28.000.000 VNĐ',
-    createdAt: '28/01/2026',
-    targetDate: '05/03/2026',
-    status: 'Pending',
-    description:
-      'Nghiên cứu hành vi người dùng, thiết kế wireframe, prototype và hoàn thiện UI components Figma theo Design System.',
-    requirements:
-      'Có Portfolio dự án thực tế, am hiểu Design Thinking, Micro-interactions và Design System.',
-    reason: 'Chuẩn hóa thiết kế cho toàn bộ hệ thống Enterprise ATS',
-  },
-  {
-    id: 'REQ-2026-005',
-    title: 'QA Automation Engineer Lead',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Lead',
-    targetCount: 1,
-    hiredCount: 1,
-    salaryRange: '32.000.000 - 42.000.000 VNĐ',
-    createdAt: '02/01/2026',
-    targetDate: '25/01/2026',
-    status: 'Closed',
-    description:
-      'Xây dựng kiến trúc kiểm thử tự động toàn diện tích hợp GitLab CI/CD, đào tạo đội ngũ QC.',
-    requirements:
-      'Có trên 5 năm kinh nghiệm QA/QC, thành thạo Playwright, Cypress, Selenium, CI/CD pipeline.',
-    reason: 'Thay thế nhân sự nghỉ việc',
-  },
-  {
-    id: 'REQ-2026-006',
-    title: 'DevOps / Platform Engineer (Kubernetes & AWS)',
-    department: 'Phòng Hạ Tầng & An Ninh Mạng',
-    level: 'Senior',
-    targetCount: 2,
-    hiredCount: 1,
-    salaryRange: '35.000.000 - 48.000.000 VNĐ',
-    createdAt: '03/01/2026',
-    targetDate: '15/02/2026',
-    status: 'Active',
-    description: 'Vận hành cụm EKS, tối ưu hóa chi phí đám mây và thiết lập quy trình tự động hóa Terraform.',
-    requirements: 'Kinh nghiệm 4+ năm với Kubernetes, Terraform, Docker, AWS services.',
-    reason: 'Dự án mở rộng hạ tầng Cloud Native',
-  },
-  {
-    id: 'REQ-2026-007',
-    title: 'Data Engineer (Apache Spark & BigQuery)',
-    department: 'Phòng Phân Tích Dữ Liệu & BI',
-    level: 'Middle',
-    targetCount: 2,
-    hiredCount: 0,
-    salaryRange: '26.000.000 - 36.000.000 VNĐ',
-    createdAt: '05/01/2026',
-    targetDate: '28/02/2026',
-    status: 'Active',
-    description: 'Xây dựng pipeline ETL/ELT xử lý hàng triệu bản ghi phân tích hành vi tuyển dụng và nguồn ứng viên.',
-    requirements: 'Thành thạo Python, SQL, Spark, BigQuery, Airflow.',
-    reason: 'Dự án BI Dashboard tuyển dụng Q1/2026',
-  },
-  {
-    id: 'REQ-2026-008',
-    title: 'Mobile Engineer (Flutter / Dart)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Middle',
-    targetCount: 2,
-    hiredCount: 1,
-    salaryRange: '24.000.000 - 34.000.000 VNĐ',
-    createdAt: '08/01/2026',
-    targetDate: '10/03/2026',
-    status: 'Active',
-    description: 'Phát triển ứng dụng Employee Referral & Job Portal cho nhân viên nội bộ trên iOS và Android.',
-    requirements: 'Kinh nghiệm 2+ năm Flutter, State Management (Bloc/Riverpod), REST API.',
-    reason: 'Mở rộng kênh mobile app cho nhân viên',
-  },
-  {
-    id: 'REQ-2026-009',
-    title: 'Product Owner / Technical PO',
-    department: 'Khối Quản Trị Sản Phẩm',
-    level: 'Lead',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '38.000.000 - 55.000.000 VNĐ',
-    createdAt: '12/01/2026',
-    targetDate: '15/03/2026',
-    status: 'Pending',
-    description: 'Định hình lộ trình phát triển sản phẩm HRM/ATS, thu thập yêu cầu từ các phòng ban và ưu tiên Backlog.',
-    requirements: 'Hiểu biết sâu sắc quy trình tuyển dụng nhân sự B2B, có chứng chỉ Scrum PO.',
-    reason: 'Thay thế PO chuyển công tác nội bộ',
-  },
-  {
-    id: 'REQ-2026-010',
-    title: 'AI / Machine Learning Engineer (CV Parsing)',
-    department: 'Phòng Nghiên Cứu & Đổi Mới Sáng Tạo',
-    level: 'Senior',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '40.000.000 - 60.000.000 VNĐ',
-    createdAt: '14/01/2026',
-    targetDate: '20/03/2026',
-    status: 'Active',
-    description: 'Huấn luyện và tích hợp mô hình LLM trích xuất kỹ năng ứng viên và gợi ý việc làm tự động.',
-    requirements: 'Thành thạo PyTorch, HuggingFace, FastAPI, kinh nghiệm NLP & Vector Database.',
-    reason: 'Tính năng Matching CV thông minh',
-  },
-  {
-    id: 'REQ-2026-011',
-    title: 'Security Specialist / DevSecOps',
-    department: 'Phòng Hạ Tầng & An Ninh Mạng',
-    level: 'Senior',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '35.000.000 - 48.000.000 VNĐ',
-    createdAt: '16/01/2026',
-    targetDate: '25/03/2026',
-    status: 'Pending',
-    description: 'Kiểm thử bảo mật định kỳ, rà quét lỗ hổng OWASP và chuẩn hóa chính sách bảo mật dữ liệu nhân sự.',
-    requirements: 'Có chứng chỉ CEH, CISSP hoặc tương đương. Kinh nghiệm bảo mật cloud và SAST/DAST.',
-    reason: 'Đạt chuẩn kiểm toán an ninh thông tin ISO 27001',
-  },
-  {
-    id: 'REQ-2026-012',
-    title: 'Solution Architect (Enterprise Systems)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Principal',
-    targetCount: 1,
-    hiredCount: 1,
-    salaryRange: '55.000.000 - 75.000.000 VNĐ',
-    createdAt: '18/01/2026',
-    targetDate: '10/02/2026',
-    status: 'Closed',
-    description: 'Thiết kế kiến trúc tích hợp hệ thống Core ERP với cổng tuyển dụng nội bộ.',
-    requirements: 'Trên 8 năm kinh nghiệm kiến trúc phần mềm doanh nghiệp, TOGAF certified.',
-    reason: 'Hoàn thiện kiến trúc tổng thể toàn công ty',
-  },
-  {
-    id: 'REQ-2026-013',
-    title: 'Scrum Master / Agile Coach',
-    department: 'Khối Quản Trị Dự Án (PMO)',
-    level: 'Senior',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '30.000.000 - 42.000.000 VNĐ',
-    createdAt: '20/01/2026',
-    targetDate: '15/03/2026',
-    status: 'Active',
-    description: 'Điều phối các nghi thức Scrum, giải quyết trở ngại cho các squad phát triển phần mềm.',
-    requirements: 'Có chứng chỉ PSM II/CSM, trên 3 năm kinh nghiệm Scrum Master trong môi trường Tech.',
-    reason: 'Mở thêm 2 squad sản phẩm mới',
-  },
-  {
-    id: 'REQ-2026-014',
-    title: 'Fullstack Engineer (Node.js & React)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Middle',
-    targetCount: 3,
-    hiredCount: 2,
-    salaryRange: '25.000.000 - 35.000.000 VNĐ',
-    createdAt: '22/01/2026',
-    targetDate: '25/02/2026',
-    status: 'Active',
-    description: 'Phát triển các microservice xử lý thông báo real-time và hệ thống phỏng vấn trực tuyến.',
-    requirements: 'Thành thạo TypeScript, Node.js NestJS, React, WebSocket và PostgreSQL.',
-    reason: 'Tăng tốc tiến độ dự án Live Interview',
-  },
-  {
-    id: 'REQ-2026-015',
-    title: 'Business Analyst (HR Tech & ATS)',
-    department: 'Khối Quản Trị Sản Phẩm',
-    level: 'Middle',
-    targetCount: 2,
-    hiredCount: 1,
-    salaryRange: '22.000.000 - 30.000.000 VNĐ',
-    createdAt: '24/01/2026',
-    targetDate: '10/03/2026',
-    status: 'Active',
-    description: 'Phân tích quy trình tuyển dụng và đánh giá phỏng vấn, lập tài liệu BRD và User Stories.',
-    requirements: 'Kinh nghiệm BA 2+ năm, vẽ UML/BPMN tốt, am hiểu nghiệp vụ tuyển dụng.',
-    reason: 'Bổ sung BA cho phân hệ Đánh giá & Offer',
-  },
-  {
-    id: 'REQ-2026-016',
-    title: 'Database Administrator (PostgreSQL DBA)',
-    department: 'Phòng Hạ Tầng & An Ninh Mạng',
-    level: 'Senior',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '32.000.000 - 45.000.000 VNĐ',
-    createdAt: '25/01/2026',
-    targetDate: '28/03/2026',
-    status: 'Pending',
-    description: 'Tối ưu hóa Index, Replication, High Availability và Backup Disaster Recovery cho CSDL PostgreSQL.',
-    requirements: 'Thành thạo PostgreSQL tuning, pg_stat_statements, Patroni/PgBouncer.',
-    reason: 'Tăng tải hệ thống gấp 3 lần vào mùa tuyển sinh',
-  },
-  {
-    id: 'REQ-2026-017',
-    title: 'Technical Writer / Documentation Specialist',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Junior',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '14.000.000 - 18.000.000 VNĐ',
-    createdAt: '26/01/2026',
-    targetDate: '30/03/2026',
-    status: 'Active',
-    description: 'Soạn thảo tài liệu API Swagger, hướng dẫn sử dụng hệ thống cho Hiring Manager và Recruiter.',
-    requirements: 'Kỹ năng viết văn bản rõ ràng, đọc hiểu code cơ bản, tiếng Anh tốt.',
-    reason: 'Chuẩn hóa kho tài liệu nội bộ',
-  },
-  {
-    id: 'REQ-2026-018',
-    title: 'Senior Manual QC / Test Lead',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Senior',
-    targetCount: 2,
-    hiredCount: 1,
-    salaryRange: '24.000.000 - 32.000.000 VNĐ',
-    createdAt: '27/01/2026',
-    targetDate: '15/03/2026',
-    status: 'Active',
-    description: 'Lập Test Plan, Test Cases kiểm thử chức năng phân quyền bảo mật nhiều cấp và tính lương offer.',
-    requirements: 'Kinh nghiệm 4+ năm kiểm thử web application, tư duy logic phản biện sắc sảo.',
-    reason: 'Đảm bảo chất lượng trước kỳ Go-live',
-  },
-  {
-    id: 'REQ-2026-019',
-    title: 'Cloud Architect (GCP / AWS Multi-Cloud)',
-    department: 'Phòng Hạ Tầng & An Ninh Mạng',
-    level: 'Lead',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '45.000.000 - 65.000.000 VNĐ',
-    createdAt: '28/01/2026',
-    targetDate: '31/03/2026',
-    status: 'Pending',
-    description: 'Quy hoạch kiến trúc đám mây Multi-cloud, tối ưu hóa độ trễ kết nối giữa các chi nhánh.',
-    requirements: 'Chứng chỉ GCP Professional Cloud Architect hoặc AWS Certified Solutions Architect Pro.',
-    reason: 'Mở rộng hạ tầng chi nhánh Đà Nẵng và Cần Thơ',
-  },
-  {
-    id: 'REQ-2026-020',
-    title: 'Frontend Intern / Fresher Web Developer',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Fresher',
-    targetCount: 4,
-    hiredCount: 2,
-    salaryRange: '8.000.000 - 12.000.000 VNĐ',
-    createdAt: '29/01/2026',
-    targetDate: '20/02/2026',
-    status: 'Active',
-    description: 'Hỗ trợ cắt HTML/Tailwind CSS cho các trang landing page tuyển dụng chiến dịch mùa xuân.',
-    requirements: 'Nắm vững JavaScript ES6, HTML5/CSS3, có tinh thần cầu tiến học hỏi.',
-    reason: 'Chương trình đào tạo tài năng trẻ',
-  },
-  {
-    id: 'REQ-2026-021',
-    title: 'Backend Fresher (Golang & RESTful API)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Fresher',
-    targetCount: 3,
-    hiredCount: 1,
-    salaryRange: '10.000.000 - 14.000.000 VNĐ',
-    createdAt: '30/01/2026',
-    targetDate: '28/02/2026',
-    status: 'Active',
-    description: 'Tham gia phát triển các API phụ trợ, viết unit test và kiểm tra hiệu năng truy vấn.',
-    requirements: 'Tốt nghiệp CNTT, nắm vững cấu trúc dữ liệu giải thuật, biết Go hoặc C++.',
-    reason: 'Dự bị nhân lực cho dự án dài hạn',
-  },
-  {
-    id: 'REQ-2026-022',
-    title: 'System Administrator (Linux & Networking)',
-    department: 'Phòng Hạ Tầng & An Ninh Mạng',
-    level: 'Middle',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '20.000.000 - 28.000.000 VNĐ',
-    createdAt: '31/01/2026',
-    targetDate: '20/03/2026',
-    status: 'Active',
-    description: 'Quản trị hệ thống máy chủ Linux nội bộ, cấu hình VPN, Firewall và giám sát Zabbix/Prometheus.',
-    requirements: 'Kinh nghiệm 2+ năm Linux CentOS/Ubuntu, LPIC-1/2, CCNA.',
-    reason: 'Bổ sung ca trực vận hành hạ tầng văn phòng',
-  },
-  {
-    id: 'REQ-2026-023',
-    title: 'Tech Lead / Chuyên Gia Kỹ Thuật Microservices',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Lead',
-    targetCount: 1,
-    hiredCount: 1,
-    salaryRange: '45.000.000 - 60.000.000 VNĐ',
-    createdAt: '01/01/2026',
-    targetDate: '15/01/2026',
-    status: 'Closed',
-    description: 'Dẫn dắt kỹ thuật cho squad 8 thành viên, review code, thiết kế giải pháp caching phân tán.',
-    requirements: 'Tối thiểu 6 năm kinh nghiệm phát triển phần mềm, am hiểu Domain-Driven Design (DDD).',
-    reason: 'Thăng chức nội bộ tạo khoảng trống',
-  },
-  {
-    id: 'REQ-2026-024',
-    title: 'Senior Data Analyst (HR Metrics & Retention)',
-    department: 'Phòng Phân Tích Dữ Liệu & BI',
-    level: 'Senior',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '30.000.000 - 40.000.000 VNĐ',
-    createdAt: '01/02/2026',
-    targetDate: '25/03/2026',
-    status: 'Pending',
-    description: 'Phân tích các chỉ số giữ chân nhân tài, thời gian tuyển dụng (Time-to-Hire) và chi phí theo kênh.',
-    requirements: 'Thành thạo SQL, Tableau/PowerBI, Python (Pandas), thống kê toán ứng dụng.',
-    reason: 'Phục vụ báo cáo chiến lược ban điều hành',
-  },
-  {
-    id: 'REQ-2026-025',
-    title: 'QA Performance Tester (JMeter & k6)',
-    department: 'Phòng Phát Triển Công Nghệ & Phần Mềm',
-    level: 'Middle',
-    targetCount: 1,
-    hiredCount: 0,
-    salaryRange: '22.000.000 - 30.000.000 VNĐ',
-    createdAt: '02/02/2026',
-    targetDate: '30/03/2026',
-    status: 'Active',
-    description: 'Thiết kế kịch bản tải mô phỏng 100.000 ứng viên truy cập đồng thời kiểm tra sức chịu tải.',
-    requirements: 'Kinh nghiệm 2+ năm Performance Testing với JMeter, k6, Grafana, đọc hiểu log APM.',
-    reason: 'Chuẩn bị cho ngày hội tuyển dụng lớn',
-  },
-];
 
 function RequisitionsContent() {
   const searchParams = useSearchParams();
-  const [requisitions, setRequisitions] = useState<ManagerRequisitionItem[]>(INITIAL_REQUISITIONS);
+  const { data, error, loading, reload, setData } = useApiData(() => managerApi.requisitions());
+  const requisitions = data || [];
+  const [submitting, setSubmitting] = useState(false);
 
   // Filters & Search
   const [search, setSearch] = useState('');
@@ -436,34 +60,69 @@ function RequisitionsContent() {
     level: '',
     salaryRange: '',
     targetCount: 1,
-    targetDate: '2026-03-31',
+    targetDate: '',
     description: '',
     requirements: '',
     reason: 'Bổ sung định biên sprint mới',
   });
 
-  // Feedback Toast
+  // Feedback Toast & Modal Error State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
   };
 
+  // Helper: Default future date (today + 30 days) to prevent past date HTML5 validation block
+  const getDefaultFutureDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split('T')[0];
+  };
+
+  // Job titles (with their department) for a requisition created from scratch
+  const { data: titleData } = useApiData(async () => {
+    const [titles, depts] = await Promise.all([masterDataService.jobTitles(), masterDataService.departments(false)]);
+    return { titles: titles.filter((t) => t.is_active), depts };
+  }, []);
+  const [newTitleId, setNewTitleId] = useState('');
+  const chosenTitle = titleData?.titles.find((t) => String(t.id) === newTitleId);
+  const isCreateMode = isDuplicateModalOpen && !selectedReqForDuplicate;
+
+  // "+ Tạo Yêu Cầu Mới": the same form, empty, without a source requisition
+  const handleOpenCreateModal = () => {
+    setSelectedReqForDuplicate(null);
+    setNewTitleId('');
+    setDuplicateForm({
+      title: '', department: '', level: '', salaryRange: '', targetCount: 1, targetDate: getDefaultFutureDate(),
+      description: '', requirements: '', reason: '',
+    });
+    setFormError(null);
+    setIsDuplicateModalOpen(true);
+  };
+
   // Open modal with pre-filled requisition data
   const handleOpenDuplicateModal = (req: ManagerRequisitionItem) => {
     setSelectedReqForDuplicate(req);
+    // If targetDate from original requisition is empty or in the past, prefill with a valid future date
+    const validTargetDate = (!req.targetDate || isPastDate(req.targetDate))
+      ? getDefaultFutureDate()
+      : req.targetDate;
+
     setDuplicateForm({
       title: `${req.title} (Bản sao)`,
       department: req.department,
       level: req.level,
       salaryRange: req.salaryRange,
       targetCount: 1,
-      targetDate: '2026-03-31',
+      targetDate: validTargetDate,
       description: req.description,
       requirements: req.requirements,
       reason: 'Bổ sung định biên sprint mới (Sao chép từ ' + req.id + ')',
     });
+    setFormError(null);
     setIsDuplicateModalOpen(true);
   };
 
@@ -476,32 +135,92 @@ function RequisitionsContent() {
         handleOpenDuplicateModal(target);
       }
     }
-  }, [searchParams]);
+  }, [searchParams, requisitions.length]); // re-run once the real list has loaded
 
-  // Submit Duplicate Requisition (Trình duyệt)
-  const handleSubmitDuplicate = (e: React.FormEvent) => {
+  // Submit Duplicate Requisition (Lưu bản nháp hoặc Trình duyệt)
+  const handleSubmitDuplicate = async (e: React.FormEvent, submitForApproval = true) => {
     e.preventDefault();
+    setFormError(null);
 
-    const newReqId = `REQ-2026-00${requisitions.length + 1}`;
-    const newReq: ManagerRequisitionItem = {
-      id: newReqId,
-      title: duplicateForm.title,
-      department: duplicateForm.department,
-      level: duplicateForm.level,
-      targetCount: Number(duplicateForm.targetCount) || 1,
-      hiredCount: 0,
-      salaryRange: duplicateForm.salaryRange,
-      createdAt: new Date().toLocaleDateString('vi-VN'),
-      targetDate: duplicateForm.targetDate,
-      status: 'Pending',
-      description: duplicateForm.description,
-      requirements: duplicateForm.requirements,
-      reason: duplicateForm.reason,
-    };
+    if (duplicateForm.targetDate && isPastDate(duplicateForm.targetDate)) {
+      setFormError('Ngày cần người không được ở trong quá khứ. Vui lòng chọn ngày tương lai.');
+      return;
+    }
+    if (!duplicateForm.title.trim()) {
+      setFormError('Vui lòng nhập chức danh / tiêu đề yêu cầu tuyển dụng.');
+      return;
+    }
 
-    setRequisitions([newReq, ...requisitions]);
-    setIsDuplicateModalOpen(false);
-    showToast(`Đã trình duyệt thành công yêu cầu mới (${newReqId}): ${newReq.title}`);
+    if (!selectedReqForDuplicate) {
+      // create from scratch
+      const deptId = chosenTitle?.department_id ?? titleData?.depts[0]?.id;
+      if (!chosenTitle || !deptId) {
+        setFormError('Vui lòng chọn chức danh (thuộc một phòng ban) cho yêu cầu tuyển dụng.');
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const created = await managerApi.createAndSubmit({
+          title: duplicateForm.title.trim() || chosenTitle.name,
+          department_id: deptId,
+          job_title_id: chosenTitle.id,
+          quantity: Number(duplicateForm.targetCount) || 1,
+          target_onboard_date: duplicateForm.targetDate || undefined,
+          job_description: duplicateForm.description,
+          requirements: duplicateForm.requirements,
+          reason_detail: duplicateForm.reason,
+        });
+        setData((prev) => [created, ...(prev || [])]);
+        setIsDuplicateModalOpen(false);
+        showToast(`Đã tạo và trình duyệt yêu cầu ${created.id}: ${created.title}`);
+        await reload();
+      } catch (err) {
+        setFormError(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu tuyển dụng.');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (submitForApproval) {
+        // Save and submit for approval
+        const result = await managerApi.copyAndSubmit(selectedReqForDuplicate.dbId, {
+          title: duplicateForm.title,
+          quantity: Number(duplicateForm.targetCount) || 1,
+          target_onboard_date: duplicateForm.targetDate || undefined,
+          job_description: duplicateForm.description,
+          requirements: duplicateForm.requirements,
+          reason_detail: duplicateForm.reason,
+        });
+        setData((prev) => [result.requisition, ...(prev || [])]);
+        setIsDuplicateModalOpen(false);
+        showToast(
+          result.submitted
+            ? `Đã tạo và trình duyệt yêu cầu ${result.requisition.id}: ${result.requisition.title}`
+            : `Đã tạo bản sao ${result.requisition.id} nhưng chưa trình duyệt được: ${result.error instanceof ApiError ? result.error.message : 'lỗi không xác định'}`
+        );
+      } else {
+        // Save as Draft (S3-05: bản sao luôn bắt đầu ở trạng thái Nháp, không kế thừa lịch sử duyệt)
+        const draftReq = await managerApi.copyAsDraft(selectedReqForDuplicate.dbId, {
+          title: duplicateForm.title,
+          quantity: Number(duplicateForm.targetCount) || 1,
+          target_onboard_date: duplicateForm.targetDate || undefined,
+          job_description: duplicateForm.description,
+          requirements: duplicateForm.requirements,
+          reason_detail: duplicateForm.reason,
+        });
+        setData((prev) => [draftReq, ...(prev || [])]);
+        setIsDuplicateModalOpen(false);
+        showToast(`Đã tạo và lưu bản nháp yêu cầu ${draftReq.id}: ${draftReq.title} (chưa gửi duyệt)`);
+      }
+      await reload();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu từ bản sao.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Filtered List
@@ -542,7 +261,7 @@ function RequisitionsContent() {
     <div className="space-y-6">
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <div className="fixed bottom-6 right-6 z-60 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
           <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
@@ -561,7 +280,7 @@ function RequisitionsContent() {
         </div>
 
         <button
-          onClick={() => handleOpenDuplicateModal(requisitions[0])}
+          onClick={handleOpenCreateModal}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95 shrink-0"
         >
           <Plus className="w-4 h-4" />
@@ -639,19 +358,23 @@ function RequisitionsContent() {
               </tr>
             </thead>
             <tbody className="text-xs divide-y divide-slate-100">
-              {paginatedList.length === 0 ? (
+              {loading ? (
+                <tr><td colSpan={7}><LoadingState /></td></tr>
+              ) : error ? (
+                <tr><td colSpan={7}><ErrorState error={error} onRetry={reload} /></td></tr>
+              ) : paginatedList.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
-                    Không tìm thấy yêu cầu tuyển dụng nào phù hợp với bộ lọc tìm kiếm.
+                    {requisitions.length === 0 ? 'Chưa có dữ liệu.' : 'Không tìm thấy yêu cầu tuyển dụng nào phù hợp với bộ lọc tìm kiếm.'}
                   </td>
                 </tr>
               ) : (
                 paginatedList.map((req) => (
-                  <tr key={req.id} className="hover:bg-slate-50/60 transition-colors">
+                  <tr key={req.dbId} className="hover:bg-slate-50/60 transition-colors">
                     {/* Title & Code */}
                     <td className="py-4 px-6">
                       <Link
-                        href={`/manager/requisitions/${req.id}`}
+                        href={`/manager/requisitions/${req.dbId}`}
                         className="group font-bold text-slate-900 hover:text-blue-600 transition-colors block"
                       >
                         <div className="text-sm font-extrabold group-hover:underline">{req.title}</div>
@@ -712,7 +435,7 @@ function RequisitionsContent() {
                       <div className="flex items-center justify-end gap-1.5">
                         {/* View Detail Link */}
                         <Link
-                          href={`/manager/requisitions/${req.id}`}
+                          href={`/manager/requisitions/${req.dbId}`}
                           className="p-2 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                           title="Xem chi tiết & Lịch sử duyệt"
                         >
@@ -763,10 +486,12 @@ function RequisitionsContent() {
                 </div>
                 <div>
                   <h3 className="font-black text-base text-slate-900 tracking-tight">
-                    Tạo yêu cầu mới (Bản sao)
+                    {isCreateMode ? 'Tạo yêu cầu mới' : 'Tạo yêu cầu mới (Bản sao)'}
                   </h3>
                   <p className="text-xs text-slate-400 font-medium">
-                    Sao chép toàn bộ tiêu chuẩn từ yêu cầu {selectedReqForDuplicate?.id}
+                    {isCreateMode
+                      ? 'Yêu cầu sẽ được gửi vào luồng phê duyệt ngay sau khi tạo'
+                      : `Sao chép toàn bộ tiêu chuẩn từ yêu cầu ${selectedReqForDuplicate?.id}`}
                   </p>
                 </div>
               </div>
@@ -790,7 +515,13 @@ function RequisitionsContent() {
             </div>
 
             {/* Form Fields */}
-            <form onSubmit={handleSubmitDuplicate} className="space-y-4 text-xs">
+            <form onSubmit={(e) => handleSubmitDuplicate(e, true)} className="space-y-4 text-xs">
+              {formError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{formError}</span>
+                </div>
+              )}
               {/* Title & Department */}
               <div className="space-y-1.5">
                 <label className="block font-bold text-slate-700">Chức danh tuyển dụng *</label>
@@ -807,22 +538,44 @@ function RequisitionsContent() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Level */}
                 <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">Cấp bậc</label>
+                  <label className="block font-bold text-slate-700">Chức danh {isCreateMode ? '*' : <span className="font-normal text-slate-400">(kế thừa)</span>}</label>
+                  {isCreateMode ? (
+                    <select
+                      required
+                      value={newTitleId}
+                      onChange={(e) => setNewTitleId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600"
+                    >
+                      <option value="">-- Chọn chức danh --</option>
+                      {(titleData?.titles || []).map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}{t.department_id ? ` — ${titleData?.depts.find((d) => d.id === t.department_id)?.name || ''}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
                   <input
                     type="text"
                     value={duplicateForm.level}
-                    onChange={(e) => setDuplicateForm({ ...duplicateForm, level: e.target.value })}
+                    readOnly
+                    title="Kế thừa từ tờ trình gốc; sửa trong bản nháp sau khi tạo nếu cần."
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600"
                   />
+                  )}
                 </div>
 
                 {/* Salary Range */}
                 <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">Dải lương đề xuất</label>
+                  <label className="block font-bold text-slate-700">Dải lương đề xuất <span className="font-normal text-slate-400">{isCreateMode ? '(theo chức danh)' : '(kế thừa)'}</span></label>
                   <input
                     type="text"
-                    value={duplicateForm.salaryRange}
-                    onChange={(e) => setDuplicateForm({ ...duplicateForm, salaryRange: e.target.value })}
+                    value={isCreateMode
+                      ? (chosenTitle?.min_salary && chosenTitle?.max_salary
+                        ? `${Math.round(chosenTitle.min_salary / 1_000_000)} - ${Math.round(chosenTitle.max_salary / 1_000_000)} Triệu`
+                        : 'Theo khung lương của chức danh')
+                      : duplicateForm.salaryRange}
+                    readOnly
+                    title="Kế thừa từ tờ trình gốc; sửa trong bản nháp sau khi tạo nếu cần."
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-emerald-700 focus:outline-none focus:border-blue-600"
                   />
                 </div>
@@ -860,10 +613,14 @@ function RequisitionsContent() {
                     <input
                       type="date"
                       required
+                      min={getLocalTodayDateString()}
                       value={duplicateForm.targetDate}
                       onChange={(e) => setDuplicateForm({ ...duplicateForm, targetDate: e.target.value })}
                       className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                     />
+                    {duplicateForm.targetDate && isPastDate(duplicateForm.targetDate) && (
+                      <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày cần người không được ở quá khứ</p>
+                    )}
                   </div>
 
                   {/* Reason (Lý do tuyển dụng bổ sung - col-span-2) */}
@@ -909,7 +666,7 @@ function RequisitionsContent() {
               </div>
 
               {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsDuplicateModalOpen(false)}
@@ -917,9 +674,22 @@ function RequisitionsContent() {
                 >
                   Hủy
                 </button>
+                {!isCreateMode && (
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={(e) => handleSubmitDuplicate(e, false)}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                  >
+                    <FileCheck className="w-4 h-4 text-slate-500" />
+                    <span>Lưu Bản Nháp</span>
+                  </button>
+                )}
                 <button
-                  type="submit"
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-md shadow-blue-500/30 transition-all cursor-pointer active:scale-95"
+                  type="button"
+                  disabled={submitting}
+                  onClick={(e) => handleSubmitDuplicate(e, true)}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-md shadow-blue-500/30 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
                   <span>Trình Duyệt Ngay</span>

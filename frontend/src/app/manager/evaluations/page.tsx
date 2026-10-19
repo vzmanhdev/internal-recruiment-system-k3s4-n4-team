@@ -1,6 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { interviewService, type InterviewItem as ApiInterview } from '@/services/interview.service';
+import { referralService } from '@/services/referral.service';
+import { useApiData } from '@/hooks/useApiData';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 import { Pagination } from '@/components/ui/Pagination';
 import {
   Star,
@@ -24,6 +29,8 @@ import clsx from 'clsx';
 
 interface CandidateCardItem {
   id: string;
+  applicationId: number;
+  interviewId: number;
   name: string;
   email: string;
   phone: string;
@@ -40,87 +47,41 @@ interface CandidateCardItem {
   initials: string;
 }
 
-const INITIAL_CANDIDATES: CandidateCardItem[] = [
-  {
-    id: 'CAN-001',
-    name: 'Nguyễn Quốc Bảo',
-    email: 'bao.nguyen@devtech.io',
-    phone: '0912 345 678',
-    positionId: 'REQ-2026-001',
-    positionTitle: 'Senior Frontend Engineer (React/Next.js)',
-    interviewRound: 'Vòng 2: Chuyên Sâu Kiến Trúc Frontend',
-    interviewDate: 'Hôm nay, 10:00 - 11:00',
-    status: 'PENDING_EVAL',
-    isOverdue: false,
-    skills: ['Next.js 15', 'TypeScript', 'Tailwind CSS', 'Micro-frontends'],
-    initials: 'QB',
-  },
-  {
-    id: 'CAN-002',
-    name: 'Vũ Hải Đăng',
-    email: 'dang.vu@techhub.vn',
-    phone: '0988 776 554',
-    positionId: 'REQ-2026-003',
-    positionTitle: 'Senior Backend Engineer (Golang/FastAPI)',
-    interviewRound: 'Vòng 1: Kỹ Năng Kỹ Thuật & Giải Thuật',
-    interviewDate: 'Hôm qua, 14:00 - 15:00',
-    status: 'PENDING_EVAL',
-    isOverdue: true,
-    skills: ['Golang', 'FastAPI', 'Redis', 'PostgreSQL', 'Docker'],
-    initials: 'HĐ',
-  },
-  {
-    id: 'CAN-003',
-    name: 'Phạm Thu Thảo',
-    email: 'thao.pham@designlab.co',
-    phone: '0903 221 443',
-    positionId: 'REQ-2026-004',
-    positionTitle: 'Chuyên viên Thiết Kế Trải Nghiệm (UI/UX Designer)',
-    interviewRound: 'Vòng 1: Đánh Giá Portfolio & Design System',
-    interviewDate: '08/01/2026',
-    status: 'EVALUATED',
-    score: 4.8,
-    recommendation: 'HIRE',
-    skills: ['Figma Tokens', 'B2B SaaS', 'Prototyping', 'User Research'],
-    comment: 'Tư duy sản phẩm rất chắc, hiểu sâu design tokens và nguyên lý thiết kế ứng dụng doanh nghiệp.',
-    initials: 'TT',
-  },
-  {
-    id: 'CAN-004',
-    name: 'Lê Minh Khang',
-    email: 'khang.le@systemops.com',
-    phone: '0934 112 889',
-    positionId: 'REQ-2026-003',
-    positionTitle: 'Senior Backend Engineer (Golang/FastAPI)',
-    interviewRound: 'Vòng 2: Văn Hóa Làm Việc & Team Fit',
-    interviewDate: '07/01/2026',
-    status: 'EVALUATED',
-    score: 4.2,
-    recommendation: 'HIRE',
-    skills: ['Golang', 'Kafka', 'System Architecture', 'CI/CD'],
-    comment: 'Kỹ năng giao tiếp và teamwork tốt, có năng lực lead nhóm nhỏ 3-4 bạn.',
-    initials: 'MK',
-  },
-  {
-    id: 'CAN-005',
-    name: 'Đặng Tuấn Kiệt',
-    email: 'kiet.dang@qualityhub.com',
-    phone: '0977 443 221',
-    positionId: 'REQ-2026-005',
-    positionTitle: 'QA Automation Engineer Lead',
-    interviewRound: 'Vòng 1: Automation Framework Test',
-    interviewDate: '06/01/2026',
-    status: 'EVALUATED',
-    score: 3.2,
-    recommendation: 'CONSIDER',
-    skills: ['Playwright', 'Selenium', 'Python', 'JMeter'],
-    comment: 'Framework chưa tối ưu cho song song kiểm thử, cần cân nhắc thêm vòng phụ.',
-    initials: 'TK',
-  },
-];
+/** One card per application I was invited to interview (latest round), from real interviews. */
+function toCandidateCards(list: ApiInterview[]): CandidateCardItem[] {
+  const latest = new Map<number, ApiInterview>();
+  for (const i of list) {
+    if (!i.is_my_interview || i.status === "cancelled") continue;
+    const prev = latest.get(i.application_id);
+    if (!prev || prev.scheduled_time < i.scheduled_time) latest.set(i.application_id, i);
+  }
+  return Array.from(latest.values()).map((i) => {
+    const when = new Date(i.scheduled_time);
+    const name = i.candidate_name || "—";
+    return {
+      id: String(i.application_id),
+      applicationId: i.application_id,
+      interviewId: i.id,
+      name,
+      email: i.candidate_email || "",
+      phone: "",
+      positionId: "",
+      positionTitle: i.job_title || "",
+      interviewRound: i.round_name || `Vòng ${i.round_number}`,
+      interviewDate: when.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }),
+      status: i.my_evaluation_submitted ? ("EVALUATED" as const) : ("PENDING_EVAL" as const),
+      isOverdue: !i.my_evaluation_submitted && Date.now() - when.getTime() > 24 * 3600 * 1000,
+      skills: [],
+      initials: name.split(" ").filter(Boolean).slice(-2).map((x) => x[0]).join("").toUpperCase(),
+    };
+  });
+}
 
 export default function EvaluationsPage() {
-  const [candidates, setCandidates] = useState<CandidateCardItem[]>(INITIAL_CANDIDATES);
+  const { data, error, loading, reload, setData } = useApiData(async () => toCandidateCards(await interviewService.getInterviews()));
+  const candidates = useMemo(() => data || [], [data]);
+  const setCandidates = (fn: (prev: CandidateCardItem[]) => CandidateCardItem[]) => setData((prev) => fn(prev || []));
+  const [saving, setSaving] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'EVALUATED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCandidateForEval, setActiveCandidateForEval] = useState<CandidateCardItem | null>(null);
@@ -175,31 +136,42 @@ export default function EvaluationsPage() {
     setEvalComment(candidate.comment || '');
   };
 
-  const handleSaveScorecard = (e: React.FormEvent) => {
+  const handleSaveScorecard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCandidateForEval) return;
-
     const avgScore = Number(((technicalScore + problemSolvingScore + cultureScore) / 3).toFixed(1));
-
-    setCandidates((prev) =>
-      prev.map((c) =>
-        c.id === activeCandidateForEval.id
-          ? {
-              ...c,
-              status: 'EVALUATED',
-              score: avgScore,
-              recommendation,
-              comment: evalComment || 'Đã hoàn tất đánh giá chuyên môn và đồng ý đề xuất.',
-              isOverdue: false,
-            }
-          : c
-      )
-    );
-
-    setActiveCandidateForEval(null);
-    setToastMessage(`Đã lưu phiếu đánh giá cho ứng viên ${activeCandidateForEval.name} thành công!`);
+    setSaving(true);
+    try {
+      // UI scale 1–5 → API scale 1–10; conclusion is mandatory (S6-08).
+      await referralService.submitEvaluation({
+        application_id: activeCandidateForEval.applicationId,
+        interview_id: activeCandidateForEval.interviewId,
+        technical_score: technicalScore * 2,
+        communication_score: problemSolvingScore * 2,
+        culture_fit_score: cultureScore * 2,
+        overall_score: Math.max(1, Math.round(avgScore * 2)),
+        recommendation: recommendation === 'HIRE' ? 'hire' : recommendation === 'CONSIDER' ? 'hold' : 'reject',
+        comments: evalComment.trim() || undefined,
+      });
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === activeCandidateForEval.id
+            ? { ...c, status: 'EVALUATED', score: avgScore, recommendation, comment: evalComment, isOverdue: false }
+            : c
+        )
+      );
+      setActiveCandidateForEval(null);
+      setToastMessage(`Đã nộp phiếu đánh giá cho ứng viên ${activeCandidateForEval.name}.`);
+    } catch (err) {
+      setToastMessage(err instanceof ApiError ? err.message : 'Không nộp được phiếu đánh giá.');
+    } finally {
+      setSaving(false);
+    }
     setTimeout(() => setToastMessage(null), 4000);
   };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
     <div className="space-y-6">
@@ -598,6 +570,7 @@ export default function EvaluationsPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving}
                   className="flex items-center gap-1.5 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95"
                 >
                   <CheckCircle2 className="w-4 h-4" />

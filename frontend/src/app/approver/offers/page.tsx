@@ -27,10 +27,18 @@ import {
 import clsx from 'clsx';
 import { ApprovalTimeline } from '@/features/approver/components/ApprovalTimeline';
 import type { OfferApprovalItem, ApprovalTimelineItem } from '@/features/approver/types';
-import { INITIAL_OFFERS } from '@/features/approver/mock-data';
+import { approverApi } from '@/features/approver/api';
+import { useApiData } from '@/hooks/useApiData';
+import { useAuth } from '@/providers/auth-provider';
+import { ErrorState, LoadingState } from '@/components/ui/DataStates';
+import { ApiError } from '@/lib/api-client';
 
 export default function ApproverOffersPage() {
-  const [offers, setOffers] = useState<OfferApprovalItem[]>(INITIAL_OFFERS);
+  const { user } = useAuth();
+  // Real queue: offers waiting for approval (the backend lets this user decide only at their level).
+  const { data, error, loading, reload, setData } = useApiData(async () => (await approverApi.offers()).filter((o) => o.status === 'pending'));
+  const offers = data || [];
+  const setOffers = (fn: (prev: OfferApprovalItem[]) => OfferApprovalItem[]) => setData((prev) => fn(prev || []));
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [selectedBudgetStatus, setSelectedBudgetStatus] = useState('ALL');
@@ -98,51 +106,18 @@ export default function ApproverOffersPage() {
 
     setIsSubmitting(true);
     try {
-      const timestamp =
-        new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) +
-        ' - ' +
-        new Date().toLocaleDateString('vi-VN');
-
-      let actionText = '';
-      let newStatus: OfferApprovalItem['status'] = 'sent';
-
-      if (action === 'approved') {
-        actionText = `ĐÃ DUYỆT OFFER: Đề xuất lương ${selectedOffer.offered_salary.toLocaleString('vi-VN')} VNĐ cho ứng viên ${selectedOffer.candidate_name} đã được thông qua!`;
-        newStatus = 'sent';
-      } else if (action === 'rejected') {
-        actionText = `ĐÃ BÁC BỎ OFFER: Hồ sơ đề xuất của ứng viên ${selectedOffer.candidate_name} đã bị từ chối.`;
-        newStatus = 'rejected';
-      } else {
-        actionText = `YÊU CẦU ĐÀM PHÁN LẠI: Đã gửi thông báo yêu cầu HR Manager đàm phán lại mức đãi ngộ với ứng viên ${selectedOffer.candidate_name}!`;
-        newStatus = 'changes_requested';
-      }
-
-      const newTimelineLog: ApprovalTimelineItem = {
-        id: Date.now(),
-        step_name: 'Thẩm Định Hạn Mức Ban Giám Đốc',
-        approver_name: 'Phạm Văn Hùng',
-        approver_role: 'Phó Tổng Giám Đốc / Ban Giám Đốc',
-        action: action,
-        comment: actionComment.trim() || (action === 'approved' ? 'Đã phê duyệt mức lương theo thẩm quyền Ban Giám Đốc.' : ''),
-        created_at: timestamp,
-      };
-
-      setOffers((prev) =>
-        prev.map((o) =>
-          o.id === selectedOffer.id
-            ? {
-                ...o,
-                status: newStatus,
-                timeline: [...o.timeline, newTimelineLog],
-              }
-            : o
-        )
-      );
-
+      const updated = await approverApi.decideOffer(selectedOffer.id, action, actionComment.trim() || undefined);
+      setOffers((prev) => (updated.status === 'pending' ? prev.map((o) => (o.id === updated.id ? updated : o)) : prev.filter((o) => o.id !== updated.id)));
+      const actionText =
+        action === 'approved'
+          ? `Đã duyệt offer của ứng viên ${updated.candidate_name}.${updated.status === 'pending' ? ' Offer chuyển lên cấp duyệt cao hơn.' : ''}`
+          : action === 'rejected'
+            ? `Đã từ chối offer của ứng viên ${updated.candidate_name}.`
+            : `Đã yêu cầu điều chỉnh offer của ứng viên ${updated.candidate_name}.`;
       showToast(actionText, action === 'approved' ? 'success' : action === 'rejected' ? 'error' : 'warning');
       handleCloseModal();
     } catch (err) {
-      showToast('Có lỗi xảy ra khi xử lý đề xuất offer.', 'error');
+      showToast(err instanceof ApiError ? err.message : 'Có lỗi xảy ra khi xử lý đề xuất offer.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -204,12 +179,9 @@ export default function ApproverOffersPage() {
 
         <div className="flex items-center gap-3 self-start md:self-auto shrink-0">
           <div className="px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 text-right">
-            <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Hội Đồng Thẩm Định</span>
-            <span className="text-sm font-extrabold text-slate-900 block">Ban Giám Đốc (BOD)</span>
-            <span className="text-[10px] text-blue-600 font-semibold flex items-center justify-end gap-1 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              Quyết Định Vượt Trần Quỹ Lương
-            </span>
+            <span className="text-[11px] font-bold text-slate-400 block uppercase tracking-wider">Người thẩm định</span>
+            <span className="text-sm font-extrabold text-slate-900 block">{user?.full_name || '—'}</span>
+            <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">{offers.length} offer đang chờ duyệt</span>
           </div>
         </div>
       </div>
@@ -257,17 +229,20 @@ export default function ApproverOffersPage() {
               className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600 cursor-pointer"
             >
               <option value="ALL">Tất Cả Phòng Ban</option>
-              <option value="Dữ Liệu">Phân Tích Dữ Liệu</option>
-              <option value="Thiết Kế">Thiết Kế UI/UX</option>
-              <option value="AI">Trí Tuệ Nhân Tạo (AI Lab)</option>
-              <option value="Công Nghệ">Công Nghệ Thông Tin</option>
+              {Array.from(new Set(offers.map((o) => o.department).filter(Boolean))).map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
             </select>
           </div>
         </div>
 
         {/* 3. Bảng Offer Full Màn Hình */}
         <div className="p-6">
-          {filteredOffers.length === 0 ? (
+          {loading ? (
+            <LoadingState />
+          ) : error ? (
+            <ErrorState error={error} onRetry={reload} />
+          ) : filteredOffers.length === 0 ? (
             <div className="py-16 text-center text-slate-400">
               <DollarSign className="w-12 h-12 mx-auto mb-3 text-slate-300 stroke-[1.5]" />
               <p className="text-sm font-bold text-slate-700">Không có đề xuất offer nào phù hợp</p>
