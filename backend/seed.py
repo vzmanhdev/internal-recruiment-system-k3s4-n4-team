@@ -20,19 +20,21 @@ from app.models.email_automation import EmailTemplate, EmailLog
 from app.models.audit import AuditLog, Permission, RolePermission
 from app.db.seed_rbac import seed_rbac
 
-def reset_and_seed_database():
-    print("=========================================================================")
-    print("[1/4] RESETTING DATABASE: Dropping all existing tables...")
-    print("=========================================================================")
-    try:
-        Base.metadata.drop_all(bind=engine)
-        print("[SUCCESS] All database tables successfully dropped.")
-    except Exception as e:
-        print(f"[WARNING] Table drop error (will proceed to create): {e}")
+def reset_and_seed_database(drop_tables: bool = False):
+    if drop_tables:
+        print("=========================================================================")
+        print("[1/4] RESETTING DATABASE: Dropping all existing tables...")
+        print("=========================================================================")
+        try:
+            Base.metadata.drop_all(bind=engine)
+            print("[SUCCESS] All database tables successfully dropped.")
+        except Exception as e:
+            print(f"[WARNING] Table drop error (will proceed to create): {e}")
 
-    print("\n[2/4] CREATING DATABASE SCHEMA...")
-    Base.metadata.create_all(bind=engine)
-    print("[SUCCESS] Database schema successfully initialized.")
+    print("\n[2/4] CREATING / CHECKING DATABASE SCHEMA...")
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+    seed_rbac()
+    print("[SUCCESS] Database schema and RBAC successfully initialized.")
 
     db: Session = SessionLocal()
 
@@ -134,6 +136,7 @@ def reset_and_seed_database():
             db.refresh(user)
             user_objs[u["role"]] = user
         print(f" -> Seeded {len(users_seed)} User Accounts across 7 Business Roles")
+        seed_rbac()
 
         # 3. Job Requisitions
         req1 = JobRequisition(
