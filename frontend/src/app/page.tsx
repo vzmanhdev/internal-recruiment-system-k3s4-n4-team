@@ -130,6 +130,7 @@ export default function LandingPage() {
 
   // Dynamic Career Page Settings (CMS by HR)
   const [careerSettings, setCareerSettings] = useState<CareerSettings>(DEFAULT_CAREER_SETTINGS);
+  const [bannerSrc, setBannerSrc] = useState<string>(DEFAULT_CAREER_SETTINGS.banner_url || "");
   const [isHRUser, setIsHRUser] = useState(false);
 
   // Active step hovered on timeline
@@ -163,10 +164,12 @@ export default function LandingPage() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (isMounted && data && data.configured !== false && data.company_name) {
+          const finalBanner = data.banner_url || DEFAULT_CAREER_SETTINGS.banner_url;
+          setBannerSrc(finalBanner);
           setCareerSettings({
             company_name: data.company_name,
             slogan: data.slogan || DEFAULT_CAREER_SETTINGS.slogan,
-            banner_url: data.banner_url || DEFAULT_CAREER_SETTINGS.banner_url,
+            banner_url: finalBanner,
             about_us: data.about_us || DEFAULT_CAREER_SETTINGS.about_us,
             benefits:
               data.benefits && data.benefits.length > 0
@@ -308,6 +311,7 @@ export default function LandingPage() {
               src="https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=1600&auto=format&fit=crop"
               alt="Môi trường làm việc"
               fill
+              unoptimized
               priority
               sizes="100vw"
               className="object-cover object-center filter blur-[10px] scale-105 opacity-[0.25]"
@@ -403,13 +407,19 @@ export default function LandingPage() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center mb-16">
               {/* Photo on Left */}
               <div className="lg:col-span-5 relative">
-                <div className="relative rounded-3xl overflow-hidden border-4 border-white shadow-xl shadow-sky-500/10 aspect-[4/3] group">
+                <div className="relative rounded-3xl overflow-hidden border-4 border-white shadow-xl shadow-sky-500/10 aspect-[4/3] group bg-slate-100">
                   <Image
-                    src={careerSettings.banner_url || DEFAULT_CAREER_SETTINGS.banner_url!}
+                    src={bannerSrc || DEFAULT_CAREER_SETTINGS.banner_url!}
                     alt="Môi trường làm việc"
                     fill
+                    unoptimized
                     sizes="(max-width: 1024px) 100vw, 40vw"
                     className="object-cover transition-transform duration-700 group-hover:scale-105"
+                    onError={() => {
+                      if (bannerSrc !== DEFAULT_CAREER_SETTINGS.banner_url) {
+                        setBannerSrc(DEFAULT_CAREER_SETTINGS.banner_url!);
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -880,7 +890,7 @@ export default function LandingPage() {
 
                     <div className="flex items-center gap-4 pt-4 border-t border-slate-100">
                       <div className="relative w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 border-blue-200 shadow-xs">
-                        <Image src={item.avatar} alt={item.name} fill sizes="48px" className="object-cover" />
+                        <Image src={item.avatar} alt={item.name} fill unoptimized sizes="48px" className="object-cover" />
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-slate-900">{item.name}</h4>
