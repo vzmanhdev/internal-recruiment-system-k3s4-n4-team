@@ -25,6 +25,7 @@ export interface JobPostingItem {
   published_at?: string | null;
   created_at?: string;
   review_note?: string | null;
+  is_expired?: boolean;
 }
 
 export const jobService = {

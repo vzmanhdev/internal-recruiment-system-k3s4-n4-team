@@ -41,6 +41,8 @@ const entries: Array<[string, Omit<RoutePolicy, "pattern">]> = [
   ["/forbidden", { public: true }],
   ["/ui-preview", { public: true }],
   // candidate portal: job board, apply and status lookup are public (S4-01…S4-05)
+  ["/jobs", { public: true }],
+  ["/jobs/[id]", { public: true }],
   ["/candidate/jobs", { public: true }],
   ["/candidate/jobs/[id]", { public: true }],
   ["/candidate/apply/[id]", { public: true }],

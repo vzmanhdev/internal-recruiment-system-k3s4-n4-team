@@ -42,13 +42,16 @@ interface CustomRequestInit extends RequestInit {
   _retry?: boolean;
 }
 
+import { policyFor } from "@/lib/auth/route-registry";
+
 let refreshPromise: Promise<string | null> | null = null;
 
 function endLocalSession(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem("access_token");
   localStorage.removeItem("user_info");
-  if (!window.location.pathname.startsWith("/login")) {
+  const path = window.location.pathname;
+  if (!path.startsWith("/login") && !policyFor(path)?.public) {
     const next = window.location.pathname + window.location.search;
     window.location.href = `/login?next=${encodeURIComponent(next)}`;
   }
