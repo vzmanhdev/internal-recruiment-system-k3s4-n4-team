@@ -48,8 +48,11 @@ DEFAULT_CAREER_DATA = {
     "slogan": "Cùng nhau tạo nên những điều lớn lao và bứt phá nấc thang sự nghiệp",
     "contact_email": "tuyendung@enterprise.com",
     "contact_phone": "1900 6868",
+    "address": "Tầng 12, Tòa nhà Enterprise Tower, Cầu Giấy, Hà Nội",
+    "website": "https://enterprise.com",
+    "logo_url": "",
     "banner_url": "https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop",
-    "about_us": "Về danh tiếng và thị trường, công ty là điểm tựa vững chắc cho sự nghiệp của bạn. Chúng tôi tin rằng tài sản quý giá nhất chính là đội ngũ nhân sự.",
+    "about_us": "Về danh tiếng và thị trường, công ty là điểm tựa vững chắc cho sự nghiệp của bạn. Chúng tôi tin rằng tài sản quý giá nhất chính là đội ngũ nhân sự. Sứ mệnh của chúng tôi là tạo nên không gian làm việc mở, công bằng và cơ hội phát triển không giới hạn cho mọi nhân viên.",
     "benefits": [
         {"title": "Bảo hiểm toàn diện", "description": "Bảo hiểm toàn diện nhân lương, bảo hiểm y tế mở rộng cho cả gia đình.", "icon": "ShieldCheck"},
         {"title": "Đào tạo chuyên sâu", "description": "Đào tạo chuyên sâu các kỹ năng mới, hỗ trợ 100% học bổng chứng chỉ quốc tế.", "icon": "GraduationCap"},
@@ -65,13 +68,13 @@ def career_page(db: Session = Depends(get_db)):
     row = db.query(CareerPageSettings).filter(CareerPageSettings.id == 1).first()
     if row and row.data():
         d = row.data()
-        return d | {
+        return {
+            **DEFAULT_CAREER_DATA,
+            **d,
             "configured": True,
-            "contact_email": d.get("contact_email") or DEFAULT_CAREER_DATA["contact_email"],
-            "contact_phone": d.get("contact_phone") or DEFAULT_CAREER_DATA["contact_phone"],
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }
-    return {"configured": False}
+    return {**DEFAULT_CAREER_DATA, "configured": False}
 
 
 @router.post("/applications/status")

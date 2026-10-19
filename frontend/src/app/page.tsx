@@ -55,6 +55,10 @@ interface CareerSettings {
   logo_url?: string;
   banner_url?: string;
   about_us?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  address?: string;
+  website?: string;
   benefits?: CareerBenefit[];
   updated_at?: string;
 }
@@ -288,7 +292,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col bg-white text-slate-800 font-sans selection:bg-blue-500 selection:text-white">
       {/* Top Global Navigation */}
-      <Header />
+      <Header logoUrl={careerSettings.logo_url} companyName={careerSettings.company_name} />
 
       <main className="flex-1">
         {/* ========================================================================= */}
@@ -1024,7 +1028,13 @@ export default function LandingPage() {
       </main>
 
       {/* Global Footer */}
-      <Footer />
+      <Footer
+        logoUrl={careerSettings.logo_url}
+        companyName={careerSettings.company_name}
+        contactEmail={careerSettings.contact_email}
+        contactPhone={careerSettings.contact_phone}
+        address={careerSettings.address}
+      />
     </div>
   );
 }

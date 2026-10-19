@@ -26,7 +26,12 @@ export const NAV_SECTIONS = [
   { id: "faq", label: "Hỗ Trợ" },
 ];
 
-export function Header() {
+export interface HeaderProps {
+  logoUrl?: string;
+  companyName?: string;
+}
+
+export function Header({ logoUrl, companyName }: HeaderProps = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const isHomePage = pathname === "/";
@@ -149,7 +154,7 @@ export function Header() {
       <Container className="max-w-[1400px]">
         <div className="flex items-center justify-between h-20">
           {/* Brand Logo */}
-          <BrandLogo size="md" href="/" />
+          <BrandLogo size="md" href="/" logoUrl={logoUrl} companyName={companyName} />
 
           {/* Desktop Navigation Links with Active State & Smooth Scrolling */}
           <nav className="hidden lg:flex items-center gap-1.5 xl:gap-2">

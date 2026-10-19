@@ -2,9 +2,11 @@ import { ApiError, HTTP_STATUS_MESSAGES_VI } from "@/lib/api-client";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
+export type FileUploadKind = "cv" | "avatar" | "company_logo" | "company_banner";
+
 export interface UploadedFile {
   id: string;
-  kind: "cv" | "avatar";
+  kind: FileUploadKind;
   original_name: string;
   content_type: string;
   size_bytes: number;
@@ -13,7 +15,7 @@ export interface UploadedFile {
 }
 
 /** Multipart upload (type and size are validated by the server from the file bytes). */
-export async function uploadFile(kind: "cv" | "avatar", file: File): Promise<UploadedFile> {
+export async function uploadFile(kind: FileUploadKind, file: File): Promise<UploadedFile> {
   const form = new FormData();
   form.append("kind", kind);
   form.append("file", file);

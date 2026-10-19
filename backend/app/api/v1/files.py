@@ -13,7 +13,7 @@ from app.models.master_data import StoredFile
 from app.models.referral_eval import InternalReferral
 from app.models.user import User
 from app.services import file_storage
-from app.services.access_scope import role_codes, visible_applications, FULL_ACCESS_ROLES
+from app.services.access_scope import has_permission, role_codes, visible_applications, FULL_ACCESS_ROLES
 from app.services.cv_parser import parse_cv
 
 router = APIRouter()
@@ -40,6 +40,12 @@ async def upload_file(
     user = _optional_user(authorization, db)
     if kind == "avatar" and not user:
         raise HTTPException(status_code=401, detail="Vui lòng đăng nhập để tải ảnh đại diện.")
+    if kind in ("company_logo", "company_banner"):
+        if not user:
+            raise HTTPException(status_code=401, detail="Vui lòng đăng nhập để tải ảnh thương hiệu.")
+        roles = role_codes(db, user)
+        if not (has_permission(db, user, "master_data:manage") or (roles & {"admin", "hr_manager"})):
+            raise HTTPException(status_code=403, detail="Chỉ Quản trị viên hoặc Trưởng phòng Nhân sự mới có quyền tải ảnh thương hiệu công ty.")
     ip = request.client.host if request.client else None
     if not user:
         recent = db.query(StoredFile).filter(StoredFile.uploader_ip == ip, StoredFile.owner_id.is_(None),
@@ -62,6 +68,8 @@ async def upload_file(
 
 
 def _can_download(db: Session, user: Optional[User], item: StoredFile) -> bool:
+    if item.kind in ("company_logo", "company_banner"):
+        return True
     if item.kind == "avatar":
         return user is not None
     if user is None:

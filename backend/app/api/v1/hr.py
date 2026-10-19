@@ -4,6 +4,7 @@ Read access to active departments / job titles is open to every authenticated us
 requisitions); salary bands are only returned to HR (S2-05 AC3). All writes require HR Manager (or Admin).
 """
 import json
+import re
 from datetime import datetime
 from typing import List, Optional, Union, Tuple
 
@@ -1147,6 +1148,22 @@ def create_onboarding_template(payload: OnboardingTemplateIn, authorization: Opt
 
 
 # ------------------------------------------------------------------ public career page content
+def sanitize_text_content(val: Optional[str]) -> str:
+    if not val:
+        return ""
+    # Strip dangerous HTML tags (TC-S2-09-X01)
+    clean = re.sub(r"(?is)<script.*?>.*?</script>", "", val)
+    clean = re.sub(r"(?is)<style.*?>.*?</style>", "", clean)
+    clean = re.sub(r"(?is)<iframe.*?>.*?</iframe>", "", clean)
+    clean = re.sub(r"(?is)<object.*?>.*?</object>", "", clean)
+    clean = re.sub(r"(?is)<embed.*?>.*?</embed>", "", clean)
+    # Strip javascript: URLs
+    clean = re.sub(r"(?i)javascript:", "", clean)
+    # Strip inline event handlers (onerror=, onclick=, onload=...)
+    clean = re.sub(r"(?i)\s+on\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", clean)
+    return clean.strip()
+
+
 class CareerBenefit(BaseModel):
     title: str = Field(..., min_length=1, max_length=120)
     description: str = Field("", max_length=500)
@@ -1156,33 +1173,102 @@ class CareerBenefit(BaseModel):
 class CareerPageIn(BaseModel):
     company_name: str = Field(..., min_length=1, max_length=150)
     slogan: str = Field("", max_length=300)
+    contact_email: str = Field("", max_length=150)
+    contact_phone: str = Field("", max_length=50)
+    address: str = Field("", max_length=300)
+    website: str = Field("", max_length=255)
     logo_url: str = Field("", max_length=500)
     banner_url: str = Field("", max_length=1000)
-    about_us: str = Field("", max_length=5000)
+    about_us: str = Field("", max_length=10000)
     benefits: List[CareerBenefit] = Field(default_factory=list, max_length=20)
 
     @field_validator("logo_url", "banner_url")
     @classmethod
     def safe_url(cls, v: str) -> str:
         v = (v or "").strip()
-        if v and not (v.startswith("https://") or v.startswith("/")):
-            raise ValueError("Đường dẫn ảnh phải bắt đầu bằng https:// hoặc là đường dẫn nội bộ (/...).")
+        if v and not (v.startswith("https://") or v.startswith("/") or v.startswith("http://")):
+            raise ValueError("Đường dẫn ảnh phải bắt đầu bằng https://, http:// hoặc là đường dẫn nội bộ (/...).")
         return v
+
+
+@router.get("/career-page")
+def get_career_page_admin(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """Returns current career page configuration with author/timestamp metadata for HR management."""
+    from app.models.master_data import CareerPageSettings
+    from app.api.v1.public import DEFAULT_CAREER_DATA
+    authorize(authorization, db)
+    row = db.query(CareerPageSettings).filter(CareerPageSettings.id == 1).first()
+    if row and row.data():
+        d = row.data()
+        updater = db.query(User).filter(User.id == row.updated_by_id).first() if row.updated_by_id else None
+        return {
+            **DEFAULT_CAREER_DATA,
+            **d,
+            "configured": True,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            "updated_by_name": updater.full_name if updater else None,
+            "updated_by_email": updater.email if updater else None,
+        }
+    return {**DEFAULT_CAREER_DATA, "configured": False}
 
 
 @router.put("/career-page")
 def save_career_page(payload: CareerPageIn, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     from app.models.master_data import CareerPageSettings
+    from app.api.v1.admin import record_audit_log
     user = authorize(authorization, db)
+
+    # Sanitize inputs (TC-S2-09-X01)
+    clean_company_name = sanitize_text_content(payload.company_name)
+    clean_slogan = sanitize_text_content(payload.slogan)
+    clean_about_us = sanitize_text_content(payload.about_us)
+    clean_address = sanitize_text_content(payload.address)
+    clean_benefits = [
+        {
+            "title": sanitize_text_content(b.title),
+            "description": sanitize_text_content(b.description),
+            "icon": (b.icon or "Award").strip(),
+        }
+        for b in payload.benefits
+    ]
+
+    saved_dict = {
+        "company_name": clean_company_name,
+        "slogan": clean_slogan,
+        "contact_email": payload.contact_email.strip(),
+        "contact_phone": payload.contact_phone.strip(),
+        "address": clean_address,
+        "website": payload.website.strip(),
+        "logo_url": payload.logo_url.strip(),
+        "banner_url": payload.banner_url.strip(),
+        "about_us": clean_about_us,
+        "benefits": clean_benefits,
+    }
+
     row = db.query(CareerPageSettings).filter(CareerPageSettings.id == 1).first()
     if not row:
         row = CareerPageSettings(id=1)
         db.add(row)
-    row.data_json = json.dumps(payload.model_dump(), ensure_ascii=False)
+    row.data_json = json.dumps(saved_dict, ensure_ascii=False)
     row.updated_by_id = user.id
     row.updated_at = datetime.utcnow()
-    db.commit(); db.refresh(row)
-    return row.data() | {"updated_at": row.updated_at.isoformat()}
+    db.commit()
+    db.refresh(row)
+
+    record_audit_log(
+        db,
+        user.email,
+        "UPDATE_CAREER_PAGE",
+        "CareerPageSettings",
+        "1",
+        f"Cập nhật trang giới thiệu công ty: {clean_company_name}",
+    )
+
+    return row.data() | {
+        "configured": True,
+        "updated_at": row.updated_at.isoformat(),
+        "updated_by_name": user.full_name,
+    }
 
 
 # ------------------------------------------------------------------ SLA thresholds (S5-10)
