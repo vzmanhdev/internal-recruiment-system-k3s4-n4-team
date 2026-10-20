@@ -88,10 +88,10 @@ export default function CandidateJobsPage() {
   if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
-    <div className="space-y-8">
+    <div className="w-full h-full p-6 sm:p-8 space-y-6 sm:space-y-8">
       {/* 1. Header có Logo công ty & Hero Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 text-white shadow-xl shadow-blue-500/10 p-6 sm:p-10">
-        <div className="relative z-10 max-w-3xl space-y-4">
+      <div className="w-full relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 text-white shadow-xl shadow-blue-500/10 p-6 sm:p-10">
+        <div className="relative z-10 w-full space-y-4">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-blue-100 text-xs font-extrabold">
             <Sparkles className="w-4 h-4 text-yellow-300" />
             <span>{settings?.company_name || 'Tuyển Dụng Nhân Tài 2026'}</span>
@@ -101,7 +101,7 @@ export default function CandidateJobsPage() {
             Gia nhập đội ngũ của chúng tôi
           </h1>
 
-          <p className="text-xs sm:text-base text-blue-100/90 font-medium leading-relaxed max-w-2xl">
+          <p className="text-xs sm:text-base text-blue-100/90 font-medium leading-relaxed w-full">
             {settings?.slogan || 'Cùng chúng tôi kiến tạo các giải pháp công nghệ tiên phong, làm việc trong môi trường cởi mở, minh bạch với đãi ngộ xứng đáng và lộ trình thăng tiến rõ ràng.'}
           </p>
 
@@ -124,8 +124,8 @@ export default function CandidateJobsPage() {
       </div>
 
       {/* 2. Thanh Tìm kiếm & Lọc (Mobile-first: Xếp dọc trên mobile, ngang trên PC) */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+      <div className="w-full bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 w-full">
           {/* Ô tìm kiếm từ khóa với gợi ý thông minh */}
           <div className="flex-1 min-w-0">
             <SearchAutocompleteInput
@@ -138,7 +138,7 @@ export default function CandidateJobsPage() {
           </div>
 
           {/* Lọc theo Phòng ban */}
-          <div className="w-full md:w-56">
+          <div className="w-full md:w-64">
             <div className="relative">
               <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
               <select
@@ -157,7 +157,7 @@ export default function CandidateJobsPage() {
           </div>
 
           {/* Lọc theo Địa điểm */}
-          <div className="w-full md:w-48">
+          <div className="w-full md:w-56">
             <div className="relative">
               <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
               <select
@@ -202,7 +202,7 @@ export default function CandidateJobsPage() {
 
       {/* 3. Danh sách việc làm dạng Card */}
       {filteredJobs.length === 0 ? (
-        <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-sm space-y-4">
+        <div className="w-full bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-sm space-y-4">
           <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
             <Briefcase className="w-6 h-6" />
           </div>
@@ -210,7 +210,7 @@ export default function CandidateJobsPage() {
             <h3 className="font-extrabold text-base text-slate-800">
               Không tìm thấy vị trí tuyển dụng phù hợp
             </h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+            <p className="text-xs text-slate-500 mt-1">
               Vui lòng thử tìm kiếm bằng từ khóa khác hoặc nới lỏng các tiêu chí phòng ban và địa điểm.
             </p>
           </div>
@@ -224,11 +224,11 @@ export default function CandidateJobsPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+        <div className="w-full grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
           {filteredJobs.map((job) => (
             <div
               key={job.id}
-              className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-sm hover:shadow-md hover:border-blue-300 transition-all flex flex-col justify-between gap-5 group"
+              className="w-full bg-white rounded-xl sm:rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-sm hover:shadow-md hover:border-blue-300 transition-all flex flex-col justify-between gap-5 group"
             >
               <div className="space-y-3.5">
                 {/* Header Card: Badges & Title */}
