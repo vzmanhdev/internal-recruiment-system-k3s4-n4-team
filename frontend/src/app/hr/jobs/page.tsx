@@ -26,8 +26,6 @@ import {
   ExternalLink,
   ShieldCheck,
   Layers,
-  Smartphone,
-  Monitor,
   AlertTriangle,
   User,
   Share2,
@@ -160,7 +158,6 @@ export default function HRJobsPage() {
 
   // Modal: Xem trước giao diện tin đăng (Live Portal Preview - S3-10 AC2)
   const [previewJob, setPreviewJob] = useState<JobPostingReview | null>(null);
-  const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
 
   // Modal: Yêu cầu sửa lại (Bắt buộc nhập lý do)
   const [revisionJob, setRevisionJob] = useState<JobPostingReview | null>(null);
@@ -670,14 +667,10 @@ export default function HRJobsPage() {
         </div>
       </div>
 
-      {/* MODAL 1: LIVE PORTAL PREVIEW VỚI RESPONSIVE SWITCHER (S3-10 AC2) */}
+      {/* MODAL 1: LIVE PORTAL PREVIEW (S3-10 AC2) */}
       {previewJob && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/70 backdrop-blur-xs overflow-y-auto">
-          <div
-            className={`w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150 transition-all ${
-              previewDevice === "mobile" ? "max-w-[420px]" : "max-w-5xl"
-            }`}
-          >
+          <div className="w-full max-w-5xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150 transition-all">
             {/* Modal Top Bar */}
             <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
@@ -697,41 +690,14 @@ export default function HRJobsPage() {
                 </div>
               </div>
 
-              {/* Responsive Device Switcher (Desktop vs Mobile) */}
-              <div className="flex items-center gap-2">
-                <div className="flex items-center bg-white/10 p-1 rounded-xl border border-white/15">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewDevice("desktop")}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                      previewDevice === "desktop" ? "bg-blue-600 text-white shadow-xs" : "text-slate-300 hover:text-white"
-                    }`}
-                    title="Mô phỏng màn hình máy tính"
-                  >
-                    <Monitor className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Desktop</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewDevice("mobile")}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                      previewDevice === "mobile" ? "bg-blue-600 text-white shadow-xs" : "text-slate-300 hover:text-white"
-                    }`}
-                    title="Mô phỏng điện thoại di động (375px)"
-                  >
-                    <Smartphone className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Mobile</span>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setPreviewJob(null)}
-                  className="text-slate-400 hover:text-white p-1 rounded-xl cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewJob(null)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+                title="Đóng xem trước"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
             {/* Modal Body: Mock Public Career Site Exactly */}
@@ -812,9 +778,9 @@ export default function HRJobsPage() {
               </div>
 
               {/* 2-Column Responsive Body Layout */}
-              <div className={`grid gap-6 ${previewDevice === "desktop" ? "grid-cols-1 lg:grid-cols-12" : "grid-cols-1"}`}>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Left Column: Details */}
-                <div className={`space-y-6 ${previewDevice === "desktop" ? "lg:col-span-8" : "w-full"}`}>
+                <div className="space-y-6 lg:col-span-8">
                   {/* Mô tả công việc */}
                   <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-xs space-y-3">
                     <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -882,7 +848,7 @@ export default function HRJobsPage() {
                 </div>
 
                 {/* Right Column: Application Widget */}
-                <div className={`space-y-5 ${previewDevice === "desktop" ? "lg:col-span-4" : "w-full"}`}>
+                <div className="space-y-5 lg:col-span-4">
                   <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs space-y-4">
                     <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
                       Tổng Quan Vị Trí Tuyển Dụng
