@@ -27,6 +27,7 @@ import {
   Award,
   Layers,
   ArrowRight,
+  AlertCircle,
 } from 'lucide-react';
 import { careerApi, type CandidateJob, type CareerPageSettingsData } from '@/features/candidate/api';
 import { useApiData } from '@/hooks/useApiData';
@@ -237,13 +238,23 @@ export default function CandidateJobDetailPage() {
 
           {/* Desktop Quick Action Button */}
           <div className="hidden lg:flex flex-col items-end gap-3 shrink-0">
-            <Link
-              href={`/candidate/apply/${job.id}`}
-              className="px-8 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm shadow-md shadow-blue-500/25 transition-all flex items-center gap-2 active:scale-95 cursor-pointer"
-            >
-              <Send className="w-4 h-4" />
-              <span>Ứng tuyển ngay</span>
-            </Link>
+            {job.isExpired ? (
+              <Link
+                href="/#jobs"
+                className="px-6 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm transition-all flex items-center gap-2 cursor-pointer border border-slate-200"
+              >
+                <Briefcase className="w-4 h-4 text-slate-500" />
+                <span>Xem các vị trí khác</span>
+              </Link>
+            ) : (
+              <Link
+                href={`/candidate/apply/${job.id}`}
+                className="px-8 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm shadow-md shadow-blue-500/25 transition-all flex items-center gap-2 active:scale-95 cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                <span>Ứng tuyển ngay</span>
+              </Link>
+            )}
 
             <button
               type="button"
@@ -256,6 +267,36 @@ export default function CandidateJobDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Expired Job Banner (SCRUM-69 AC3) */}
+      {job.isExpired && (
+        <div className="bg-amber-50 border border-amber-200/90 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-amber-900 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="p-3 rounded-2xl bg-amber-100 text-amber-700 shrink-0">
+              <Clock className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-amber-950 flex items-center gap-2">
+                <span>Vị trí này đã hết hạn nhận hồ sơ</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-800 text-[10px] font-black uppercase">
+                  Đã đóng
+                </span>
+              </h2>
+              <p className="text-xs sm:text-sm text-amber-800/90 mt-1">
+                Hạn chót ứng tuyển là ngày <strong>{job.deadline}</strong>. Cảm ơn bạn đã quan tâm đến cơ hội nghề nghiệp tại tập đoàn, vui lòng tham khảo các vị trí đang mở khác.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/#jobs"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs sm:text-sm shrink-0 transition-colors shadow-xs cursor-pointer"
+          >
+            <Briefcase className="w-4 h-4" />
+            <span>Xem vị trí khác</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      )}
 
       {/* 3. Cấu trúc chia 2 cột trên PC (JD 70% - Tóm tắt 30%), gộp 1 cột trên Mobile */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -391,13 +432,29 @@ export default function CandidateJobDetailPage() {
             </div>
 
             <div className="pt-2">
-              <Link
-                href={`/candidate/apply/${job.id}`}
-                className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
-              >
-                <Send className="w-4 h-4" />
-                <span>Nộp hồ sơ ứng tuyển</span>
-              </Link>
+              {job.isExpired ? (
+                <div className="space-y-2">
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                    <span className="text-xs font-bold text-amber-800 block">Đã đóng nhận hồ sơ</span>
+                    <span className="text-[11px] text-amber-700 block mt-0.5">Hạn nộp: {job.deadline}</span>
+                  </div>
+                  <Link
+                    href="/#jobs"
+                    className="w-full py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer border border-slate-200"
+                  >
+                    <Briefcase className="w-4 h-4 text-slate-500" />
+                    <span>Xem các vị trí khác</span>
+                  </Link>
+                </div>
+              ) : (
+                <Link
+                  href={`/candidate/apply/${job.id}`}
+                  className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Nộp hồ sơ ứng tuyển</span>
+                </Link>
+              )}
             </div>
           </div>
 
@@ -435,20 +492,30 @@ export default function CandidateJobDetailPage() {
             <Share2 className="w-5 h-5" />
           </button>
 
-          <Link
-            href={`/candidate/apply/${job.id}`}
-            className="bg-blue-600 w-full rounded-full py-3.5 text-base sm:text-lg font-bold shadow-lg shadow-blue-500/25 text-white hover:bg-blue-700 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Send className="w-5 h-5" />
-            <span>Ứng tuyển ngay</span>
-          </Link>
+          {job.isExpired ? (
+            <Link
+              href="/#jobs"
+              className="bg-slate-800 w-full rounded-full py-3.5 text-base sm:text-lg font-bold text-white hover:bg-slate-900 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+            >
+              <Briefcase className="w-5 h-5 text-slate-300" />
+              <span>Xem các vị trí khác</span>
+            </Link>
+          ) : (
+            <Link
+              href={`/candidate/apply/${job.id}`}
+              className="bg-blue-600 w-full rounded-full py-3.5 text-base sm:text-lg font-bold shadow-lg shadow-blue-500/25 text-white hover:bg-blue-700 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Send className="w-5 h-5" />
+              <span>Ứng tuyển ngay</span>
+            </Link>
+          )}
         </div>
       </div>
 
       {/* ========================================================================= */}
       {/* 5. MODAL ỨNG TUYỂN NHANH (QUICK APPLY MODAL - KHÔNG CẦN TÀI KHOẢN)        */}
       {/* ========================================================================= */}
-      {isApplyModalOpen && (
+      {isApplyModalOpen && !job.isExpired && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 flex flex-col animate-in zoom-in-95 duration-200">
             {/* Modal Header */}

@@ -327,3 +327,95 @@ def test_candidate_and_hm_cannot_manage_categories(ctx):
 
     hm_del = client.delete(f"/api/v1/hr/categories/{cat['id']}", headers=ctx["h"]["hm"])
     assert hm_del.status_code in (401, 403)
+
+
+# -----------------------------------------------------------------------------
+# SCRUM-227: Pagination & is_active Filtering
+# -----------------------------------------------------------------------------
+def test_pagination_and_is_active_filter(ctx):
+    """Subtask SCRUM-227: Phân trang và lọc theo trạng thái is_active."""
+    headers = ctx["h"]["hrm"]
+
+    # Create 5 items, 3 active, 2 inactive
+    for i in range(1, 4):
+        client.post("/api/v1/hr/categories", headers=headers, json={
+            "category_type": "tag",
+            "name": f"Tag Active {i}",
+            "is_active": True,
+        })
+    for i in range(4, 6):
+        client.post("/api/v1/hr/categories", headers=headers, json={
+            "category_type": "tag",
+            "name": f"Tag Inactive {i}",
+            "is_active": False,
+        })
+
+    # Test is_active=true filter
+    res_active = client.get("/api/v1/hr/categories?category_type=tag&is_active=true", headers=headers).json()
+    assert len(res_active) == 3
+    assert all(x["is_active"] is True for x in res_active)
+
+    # Test is_active=false filter
+    res_inactive = client.get("/api/v1/hr/categories?category_type=tag&is_active=false", headers=headers).json()
+    assert len(res_inactive) == 2
+    assert all(x["is_active"] is False for x in res_inactive)
+
+    # Test pagination: page=1, page_size=2
+    res_page1 = client.get("/api/v1/hr/categories?category_type=tag&page=1&page_size=2", headers=headers).json()
+    assert res_page1["total"] == 5
+    assert res_page1["page"] == 1
+    assert res_page1["page_size"] == 2
+    assert res_page1["total_pages"] == 3
+    assert len(res_page1["items"]) == 2
+
+    # Test pagination: page=3, page_size=2
+    res_page3 = client.get("/api/v1/hr/categories?category_type=tag&page=3&page_size=2", headers=headers).json()
+    assert len(res_page3["items"]) == 1
+
+
+# -----------------------------------------------------------------------------
+# AC2: ApprovalFlow Reference Checking
+# -----------------------------------------------------------------------------
+def test_cannot_delete_or_rename_approval_type_in_use_by_approval_flow(ctx):
+    """AC2: Loại luồng phê duyệt đang được tham chiếu bởi ApprovalFlow thì không thể xóa hoặc đổi tên."""
+    headers = ctx["h"]["hrm"]
+
+    # Create approval_type category
+    cat = client.post("/api/v1/hr/categories", headers=headers, json={
+        "category_type": "approval_type",
+        "name": "Tuyển dụng tiêu chuẩn",
+    }).json()
+
+    # Link an ApprovalFlow to it
+    from app.models.hr import ApprovalFlow
+    db = TestingSessionLocal()
+    flow = ApprovalFlow(
+        name="Luồng phê duyệt tiêu chuẩn",
+        approval_type="job_requisition",
+        status="active",
+        min_salary_threshold=0,
+        max_salary_threshold=50000000,
+    )
+    db.add(flow)
+    db.commit()
+    db.close()
+
+    # Verify usage_count >= 1 and in_use is True
+    items = client.get("/api/v1/hr/categories?category_type=approval_type&search=tiêu chuẩn", headers=headers).json()
+    assert len(items) == 1
+    assert items[0]["in_use"] is True
+    assert items[0]["usage_count"] >= 1
+
+    # Attempt to delete -> 409 Conflict
+    del_res = client.delete(f"/api/v1/hr/categories/{cat['id']}", headers=headers)
+    assert del_res.status_code == 409
+    assert "tham chiếu" in del_res.json()["detail"]
+
+    # Attempt to rename -> 409 Conflict
+    ren_res = client.put(f"/api/v1/hr/categories/{cat['id']}", headers=headers, json={
+        "name": "Tuyển dụng đổi tên",
+        "is_active": True
+    })
+    assert ren_res.status_code == 409
+    assert "đổi tên" in ren_res.json()["detail"]
+

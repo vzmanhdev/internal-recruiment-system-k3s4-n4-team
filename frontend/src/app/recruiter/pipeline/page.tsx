@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { getSearchScore } from '@/utils/vietnameseSearch';
 import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
@@ -48,6 +48,7 @@ import { apiRequest, ApiError } from '@/lib/api-client';
 import { candidatesApi, type ApiApplication } from '@/features/candidates/api';
 import { jobService } from '@/services/job.service';
 import { masterDataService } from '@/services/master-data.service';
+import { slaService, type SlaRuleItem } from '@/services/sla.service';
 import { uploadFile as uploadCvFile, openProtectedFile } from '@/services/file.service';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
@@ -79,7 +80,9 @@ export interface Candidate {
   source: string;
   avatar: string;
   columnId: ColumnId;
-  daysInStage: number; // Số ngày nằm ở cột này (Nghiệp vụ SLA: > 3 ngày => Quá hạn)
+  daysInStage: number; // Số ngày nằm ở cột này
+  isOverdue?: boolean; // Cờ vi phạm SLA từ database hoặc logic
+  stageEnteredAt?: string;
   tags: string[];
   evaluation?: 'pass' | 'review' | 'fail' | null;
   cvSummary: {
@@ -195,6 +198,8 @@ function toCard(a: ApiApplication & { stage_entered_at?: string | null }): Candi
     avatar: '',
     columnId,
     daysInStage: since ? Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / DAY_MS)) : 0,
+    isOverdue: a.is_overdue ?? false,
+    stageEnteredAt: a.stage_entered_at || undefined,
     tags: a.tags || [],
     evaluation: ratingToEval(a.rating),
     cvSummary: {
@@ -222,6 +227,48 @@ export default function RecruiterPipelinePage() {
   const setCandidates = (fn: (prev: Candidate[]) => Candidate[]) => setData((prev) => fn(prev || []));
   const { data: openJobs } = useApiData(() => jobService.getJobs(), []);
   const { data: sourceCategories } = useApiData(() => masterDataService.categories('candidate_source'), []);
+  const { data: slaRulesData } = useApiData(() => slaService.getRules(), []);
+
+  const slaRulesMap = useMemo(() => {
+    const map: Record<string, number> = {
+      new: 3,
+      screening: 5,
+      interview: 7,
+      offer: 3,
+      hired: 999,
+    };
+    if (slaRulesData) {
+      for (const r of slaRulesData) {
+        if (r.stage === 'submitted') map['new'] = r.max_days;
+        if (r.stage === 'screening') map['screening'] = r.max_days;
+        if (r.stage === 'interviewing') map['interview'] = r.max_days;
+        if (r.stage === 'offered') map['offer'] = r.max_days;
+      }
+    }
+    return map;
+  }, [slaRulesData]);
+
+  const isCandidateOverdue = useCallback((c: Candidate) => {
+    if (c.columnId === 'hired') return false;
+    if (c.isOverdue) return true;
+    const threshold = slaRulesMap[c.columnId] ?? 3;
+    return c.daysInStage > threshold;
+  }, [slaRulesMap]);
+
+  const [slaScanning, setSlaScanning] = useState(false);
+  const handleTriggerSlaScan = async () => {
+    setSlaScanning(true);
+    try {
+      const res = await slaService.triggerCheck();
+      setToast(`Đã quét xong SLA: ${res.flagged} hồ sơ vi phạm, ${res.reminded} thông báo nhắc nhở đã gửi.`);
+      reload();
+    } catch (err: any) {
+      setToast(err?.message || 'Không thể kích hoạt quét SLA');
+    } finally {
+      setSlaScanning(false);
+    }
+  };
+
   const [addJobId, setAddJobId] = useState('');
   const [addCvUrl, setAddCvUrl] = useState<string | null>(null);
   const [addSaving, setAddSaving] = useState(false);
@@ -474,7 +521,7 @@ export default function RecruiterPipelinePage() {
       }
 
       const matchPos = selectedPosition === 'all' || c.position === selectedPosition;
-      const matchSla = slaFilterOnly ? c.daysInStage > 3 : true;
+      const matchSla = slaFilterOnly ? isCandidateOverdue(c) : true;
 
       return matchSearch && matchPos && matchSla;
     }).sort((a, b) => {
@@ -495,12 +542,12 @@ export default function RecruiterPipelinePage() {
       }
       return 0;
     });
-  }, [candidates, searchQuery, selectedPosition, slaFilterOnly]);
+  }, [candidates, searchQuery, selectedPosition, slaFilterOnly, isCandidateOverdue]);
 
-  // Đếm số lượng quá hạn SLA (> 3 ngày)
+  // Đếm số lượng quá hạn SLA dựa theo cấu hình từng giai đoạn
   const overdueCount = useMemo(() => {
-    return candidates.filter((c) => c.daysInStage > 3).length;
-  }, [candidates]);
+    return candidates.filter(isCandidateOverdue).length;
+  }, [candidates, isCandidateOverdue]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
@@ -582,7 +629,7 @@ export default function RecruiterPipelinePage() {
         </div>
 
         {/* SLA Status Widget & Action Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => setSlaFilterOnly(!slaFilterOnly)}
@@ -594,10 +641,21 @@ export default function RecruiterPipelinePage() {
             )}
           >
             <Clock className="w-3.5 h-3.5 animate-pulse" />
-            <span>Quá hạn SLA (&gt; 3 ngày): {overdueCount} hồ sơ</span>
+            <span>Quá hạn SLA: {overdueCount} hồ sơ</span>
           </button>
 
-          <span className="text-xs text-slate-400 font-bold hidden lg:inline">
+          <button
+            type="button"
+            onClick={handleTriggerSlaScan}
+            disabled={slaScanning}
+            className="px-3 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200/80"
+            title="Kích hoạt quét vi phạm SLA và gửi thông báo nhắc việc ngay lập tức"
+          >
+            <Clock className={clsx("w-3.5 h-3.5", slaScanning && "animate-spin text-blue-600")} />
+            <span>{slaScanning ? "Đang quét..." : "Quét SLA ngay"}</span>
+          </button>
+
+          <span className="text-xs text-slate-400 font-bold hidden lg:inline ml-1">
             Tổng số: <strong className="text-slate-800">{filteredCandidates.length}</strong> ứng viên
           </span>
         </div>
@@ -657,7 +715,8 @@ export default function RecruiterPipelinePage() {
                     </div>
                   ) : (
                     colCandidates.map((cand) => {
-                      const isSlaBreached = cand.daysInStage > 3;
+                      const colMaxDays = slaRulesMap[cand.columnId] ?? 3;
+                      const isSlaBreached = isCandidateOverdue(cand);
 
                       return (
                         <div
@@ -759,7 +818,7 @@ export default function RecruiterPipelinePage() {
                             </div>
                           )}
 
-                          {/* Cảnh báo SLA Quá hạn (> 3 ngày): Icon Đồng hồ đỏ nhấp nháy (User Story 3) */}
+                          {/* Cảnh báo SLA Quá hạn: Icon Đồng hồ đỏ nhấp nháy (User Story S5-10) */}
                           {isSlaBreached && (
                             <div className="p-2 rounded-xl bg-rose-100/80 border border-rose-300 text-rose-800 text-[10px] font-extrabold flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
@@ -767,7 +826,7 @@ export default function RecruiterPipelinePage() {
                                 <span>Quá hạn SLA ({cand.daysInStage} ngày ở cột này)</span>
                               </div>
                               <span className="text-[9px] bg-rose-200 text-rose-900 px-1.5 py-0.5 rounded font-black">
-                                &gt; 3 ngày
+                                &gt; {colMaxDays} ngày
                               </span>
                             </div>
                           )}
