@@ -101,9 +101,9 @@ export async function apiRequest<T>(path: string, init?: CustomRequestInit): Pro
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  // 15 seconds timeout to prevent request hanging when Backend is offline
+  // 30 seconds timeout to handle cloud database cold-starts safely
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {

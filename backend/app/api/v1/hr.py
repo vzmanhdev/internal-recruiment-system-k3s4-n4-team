@@ -483,24 +483,55 @@ def list_categories(
     else:
         rows = q.all()
 
+    # Bulk Reference Counting to eliminate N+1 queries over Neon Cloud (S2-08)
+    from collections import Counter
+    usage_map = Counter()
+
+    need_apps = category_type in (None, "candidate_source", "rejection_reason")
+    need_postings = category_type in (None, "work_location", "work_type")
+    need_reqs = category_type in (None, "work_location", "work_type")
+    need_flows = category_type in (None, "approval_type")
+
+    if need_apps:
+        for val, cnt in db.query(JobApplication.source, func.count(JobApplication.id)).filter(JobApplication.source.isnot(None)).group_by(JobApplication.source).all():
+            if val:
+                usage_map[val] += cnt
+        for val, cnt in db.query(JobApplication.rejection_reason, func.count(JobApplication.id)).filter(JobApplication.rejection_reason.isnot(None)).group_by(JobApplication.rejection_reason).all():
+            if val:
+                usage_map[val] += cnt
+
+    if need_postings:
+        for val, cnt in db.query(JobPosting.location, func.count(JobPosting.id)).filter(JobPosting.location.isnot(None)).group_by(JobPosting.location).all():
+            if val:
+                usage_map[val] += cnt
+        for val, cnt in db.query(JobPosting.type, func.count(JobPosting.id)).filter(JobPosting.type.isnot(None)).group_by(JobPosting.type).all():
+            if val:
+                usage_map[val] += cnt
+
+    if need_reqs:
+        for val, cnt in db.query(JobRequisition.work_location, func.count(JobRequisition.id)).filter(JobRequisition.work_location.isnot(None)).group_by(JobRequisition.work_location).all():
+            if val:
+                usage_map[val] += cnt
+        for val, cnt in db.query(JobRequisition.employment_type, func.count(JobRequisition.id)).filter(JobRequisition.employment_type.isnot(None)).group_by(JobRequisition.employment_type).all():
+            if val:
+                usage_map[val] += cnt
+
+    flow_map = {}
+    if need_flows:
+        for val, cnt in db.query(ApprovalFlow.approval_type, func.count(ApprovalFlow.id)).filter(ApprovalFlow.approval_type.isnot(None)).group_by(ApprovalFlow.approval_type).all():
+            if val:
+                flow_map[val] = cnt
+
     out = []
     for item in rows:
         data = item.to_dict()
-        # Reference counting across applications, postings, requisitions, approval flows (S2-08 AC2)
-        app_count = db.query(JobApplication.id).filter(
-            or_(JobApplication.source == item.name, JobApplication.rejection_reason == item.name)).count()
-        posting_count = db.query(JobPosting.id).filter(
-            or_(JobPosting.location == item.name, JobPosting.type == item.name)).count()
-        req_count = db.query(JobRequisition.id).filter(
-            or_(JobRequisition.work_location == item.name, JobRequisition.employment_type == item.name)).count()
-        flow_count = 0
+        total_usage = usage_map[item.name]
         if item.category_type == "approval_type":
             code = _canonical_approval_type(item.name)
-            flow_count = db.query(ApprovalFlow.id).filter(
-                or_(ApprovalFlow.approval_type == item.name, ApprovalFlow.approval_type == code)
-            ).count()
+            total_usage += flow_map.get(item.name, 0)
+            if code != item.name:
+                total_usage += flow_map.get(code, 0)
 
-        total_usage = app_count + posting_count + req_count + flow_count
         data["usage_count"] = total_usage
         data["in_use"] = (total_usage > 0)
         out.append(data)
