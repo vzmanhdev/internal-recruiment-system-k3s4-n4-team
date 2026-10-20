@@ -1,3 +1,18 @@
-import { Header } from "@/components/layout/Header";
-import { JobExplorer } from "@/features/jobs/components/JobExplorer";
-export default function JobsPage(){return <><Header/><main className="inner-page container"><header className="page-intro"><span className="eyebrow">Cơ hội dành cho bạn</span><h1>Vị trí tuyển dụng nội bộ</h1><p>Tìm vai trò phù hợp để phát huy thế mạnh và tiếp tục phát triển trong tổ chức.</p></header><JobExplorer/></main></>}
+'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function JobsIndexPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/#jobs');
+  }, [router]);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 font-medium">
+      Đang chuyển hướng đến danh sách việc làm...
+    </div>
+  );
+}
