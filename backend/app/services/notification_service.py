@@ -49,12 +49,14 @@ def _in_app_enabled(db: Session, user_id: int, ntype: str) -> bool:
 
 
 def notify(db: Session, recipient_ids: Iterable[int], ntype: str, title: str, message: str = "",
-           link: Optional[str] = None, entity_type: Optional[str] = None, entity_id=None) -> int:
+           link: Optional[str] = None, entity_type: Optional[str] = None, entity_id=None,
+           dedupe_key: Optional[str] = None) -> int:
     created = 0
     for uid in dict.fromkeys(i for i in recipient_ids if i):
         if not _in_app_enabled(db, uid, ntype):
             continue
         db.add(Notification(recipient_id=uid, type=ntype, title=title, message=message, link=link,
-                            entity_type=entity_type, entity_id=str(entity_id) if entity_id is not None else None))
+                            entity_type=entity_type, entity_id=str(entity_id) if entity_id is not None else None,
+                            dedupe_key=dedupe_key))
         created += 1
     return created

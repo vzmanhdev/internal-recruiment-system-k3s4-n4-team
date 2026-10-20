@@ -1546,11 +1546,12 @@ def save_career_page(payload: CareerPageIn, authorization: Optional[str] = Heade
 class SlaRuleIn(BaseModel):
     stage: str
     max_days: int = Field(..., ge=1, le=90)
+    is_active: Optional[bool] = True
 
 
 @router.get("/sla-rules")
 def list_sla_rules(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    authorize(authorization, db)
+    _authenticated(authorization, db)
     return [r.to_dict() for r in db.query(SlaRule).order_by(SlaRule.stage).all()]
 
 
@@ -1560,9 +1561,27 @@ def upsert_sla_rule(payload: SlaRuleIn, authorization: Optional[str] = Header(No
     if payload.stage not in PIPELINE_STAGES:
         raise HTTPException(status_code=422, detail=f"Giai đoạn không hợp lệ (chỉ nhận {', '.join(sorted(PIPELINE_STAGES))}).")
     rule = db.query(SlaRule).filter(SlaRule.stage == payload.stage).first() or SlaRule(stage=payload.stage)
-    rule.max_days, rule.is_active = payload.max_days, True
+    rule.max_days = payload.max_days
+    if payload.is_active is not None:
+        rule.is_active = payload.is_active
     db.add(rule); db.commit(); db.refresh(rule)
     return rule.to_dict()
+
+
+@router.post("/sla-check")
+def trigger_sla_check(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """Trigger the daily SLA check on-demand (S5-10)."""
+    user = _authenticated(authorization, db)
+    require_any_permission(db, user, "master_data:manage", "requisition:view", "candidate:view", "requisition:read", "candidate:read")
+    from app.services.scheduled_jobs import run_sla_check
+    result = run_sla_check(db)
+    return {
+        "success": True,
+        "flagged": result["flagged"],
+        "reminded": result["reminded"],
+        "overdue_application_ids": result["overdue_application_ids"],
+        "message": f"Đã quét xong: {result['flagged']} hồ sơ quá hạn SLA, gửi {result['reminded']} thông báo nhắc việc.",
+    }
 
 
 @router.get("/people")

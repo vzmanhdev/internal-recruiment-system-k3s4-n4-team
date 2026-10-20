@@ -31,12 +31,22 @@ def expire_postings(db: Session, today: Optional[date] = None) -> int:
     return closed
 
 
+STAGE_VI_LABELS = {
+    "submitted": "Hồ sơ mới",
+    "screening": "Thẩm định (Screening)",
+    "interviewing": "Phỏng vấn",
+    "offered": "Thư mời (Offer)",
+}
+
+
 def run_sla_check(db: Session, now: Optional[datetime] = None) -> dict:
-    """Flag applications that stayed too long in a stage and remind the assigned recruiters once per day."""
+    """Flag applications that stayed too long in a stage and remind the assigned recruiters once per day (S5-10)."""
     now = now or datetime.utcnow()
     rules = {r.stage: r.max_days for r in db.query(SlaRule).filter(SlaRule.is_active == True).all()}  # noqa: E712
     flagged, reminded = 0, 0
     today_key = now.strftime("%Y-%m-%d")
+    overdue_app_ids = []
+
     for app in db.query(JobApplication).filter(JobApplication.status.in_(list(rules))).all():
         entered = app.stage_entered_at or app.created_at
         overdue = entered is not None and now - entered > timedelta(days=rules[app.status])
@@ -45,22 +55,49 @@ def run_sla_check(db: Session, now: Optional[datetime] = None) -> dict:
         if not overdue:
             continue
         flagged += 1
+        overdue_app_ids.append(app.id)
+
+        # 1. Recruiters assigned to the requisition
         req_id = app.job_posting.requisition_id if app.job_posting else None
         recruiters = [r[0] for r in db.query(RecruiterAssignment.recruiter_id).filter(RecruiterAssignment.requisition_id == req_id).all()] if req_id else []
+
+        # 2. Fallback to job creator or general active recruiters/HR managers
+        if not recruiters:
+            if app.job_posting and app.job_posting.created_by_id:
+                recruiters = [app.job_posting.created_by_id]
+            else:
+                from app.services.notification_service import users_with_roles
+                recruiters = users_with_roles(db, ["recruiter", "hr_manager"])
+
+        stage_name = STAGE_VI_LABELS.get(app.status, app.status)
+        days_in = (now - entered).days if entered else 0
+        limit_days = rules[app.status]
+
         for rid in recruiters:
             key = f"sla:{app.id}:{rid}:{today_key}"
             if db.query(Notification.id).filter(Notification.dedupe_key == key).first():
-                continue  # no duplicate reminder on the same day
-            created = notify(db, [rid], "sla_overdue", f"Hồ sơ quá hạn SLA: {app.full_name}",
-                             f"Giai đoạn '{app.status}' quá {rules[app.status]} ngày", link=f"/hr/candidates?application={app.id}",
-                             entity_type="APPLICATION", entity_id=app.id)
+                continue  # no duplicate reminder on the same day (TC-S5-10-03, TC-S5-10-X01)
+
+            created = notify(
+                db,
+                [rid],
+                "sla_overdue",
+                f"Hồ sơ quá hạn SLA: {app.full_name}",
+                f"Hồ sơ '{app.full_name}' đã nằm ở giai đoạn '{stage_name}' {days_in} ngày (vượt quá ngưỡng SLA {limit_days} ngày). Vui lòng xử lý sớm.",
+                link=f"/recruiter/pipeline?application={app.id}",
+                entity_type="APPLICATION",
+                entity_id=app.id,
+                dedupe_key=key,
+            )
             if created:
-                db.flush()
-                last = db.query(Notification).filter(Notification.recipient_id == rid).order_by(Notification.id.desc()).first()
-                last.dedupe_key = key
                 reminded += 1
+
     db.commit()
-    return {"flagged": flagged, "reminded": reminded}
+    return {
+        "flagged": flagged,
+        "reminded": reminded,
+        "overdue_application_ids": overdue_app_ids,
+    }
 
 
 _worker_started = False

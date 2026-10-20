@@ -29,6 +29,8 @@ export interface ApiApplication {
   created_at?: string | null;
   updated_at?: string | null;
   applied_date?: string | null;
+  stage_entered_at?: string | null;
+  is_overdue?: boolean | null;
 }
 
 export const STAGE_LABEL: Record<string, string> = {

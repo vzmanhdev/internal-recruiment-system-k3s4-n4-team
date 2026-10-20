@@ -9,7 +9,8 @@ from app.db.session import engine, SessionLocal, Base
 from app.core.security import hash_password
 import app.models  # Register all SQLAlchemy models and relationships
 from app.models.user import User
-from app.models.hr import Department, JobTitle, Competency, SharedCategory
+from app.models.hr import Department, JobTitle, Competency, SharedCategory, RecruiterAssignment
+from app.models.master_data import SlaRule
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
 from app.models.job import JobPosting
 from app.models.application import JobApplication, ApplicationLog
@@ -345,7 +346,10 @@ def reset_and_seed_database(drop_tables: bool = False):
         db.refresh(job5)
         print(" -> Seeded 5 Realistic Jobs (Pending, Published, Needs Revision, Closed)")
 
-        # 5. Job Applications
+        # 5. Job Applications (S5-10 demo set with on-time & overdue SLA stages)
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+
         app1 = JobApplication(
             job_posting_id=job1.id,
             candidate_id=user_objs["candidate"].id,
@@ -356,7 +360,10 @@ def reset_and_seed_database(drop_tables: bool = False):
             current_position="Kỹ sư Phần mềm",
             years_of_experience=4,
             status="interviewing",
-            score=88
+            score=88,
+            stage_entered_at=now - timedelta(days=2),
+            is_overdue=False,
+            created_at=now - timedelta(days=5),
         )
         db.add(app1)
 
@@ -369,11 +376,95 @@ def reset_and_seed_database(drop_tables: bool = False):
             current_position="Backend Engineer",
             years_of_experience=5,
             status="offered",
-            score=92
+            score=92,
+            stage_entered_at=now - timedelta(days=1),
+            is_overdue=False,
+            created_at=now - timedelta(days=6),
         )
         db.add(app2)
+
+        # App 3: Quá hạn SLA ở Hồ sơ mới (submitted 4 ngày > ngưỡng 3 ngày)
+        app3 = JobApplication(
+            job_posting_id=job1.id,
+            full_name="Đặng Văn Long",
+            email="long.dang@gmail.com",
+            phone="0911223344",
+            current_company="MISA JSC",
+            current_position="Junior Python Developer",
+            years_of_experience=2,
+            status="submitted",
+            score=79,
+            stage_entered_at=now - timedelta(days=4),
+            is_overdue=True,
+            created_at=now - timedelta(days=4),
+        )
+        db.add(app3)
+
+        # App 4: Hồ sơ mới đúng hạn (submitted 1 ngày <= ngưỡng 3 ngày)
+        app4 = JobApplication(
+            job_posting_id=job1.id,
+            full_name="Lê Thu Trang",
+            email="trang.le@outlook.com",
+            phone="0922334455",
+            current_company="VNPT IT",
+            current_position="Data Analyst",
+            years_of_experience=3,
+            status="submitted",
+            score=85,
+            stage_entered_at=now - timedelta(days=1),
+            is_overdue=False,
+            created_at=now - timedelta(days=1),
+        )
+        db.add(app4)
+
+        # App 5: Quá hạn SLA ở Thẩm định (screening 6 ngày > ngưỡng 5 ngày)
+        app5 = JobApplication(
+            job_posting_id=job1.id,
+            full_name="Trần Quốc Bảo",
+            email="bao.tran@yahoo.com",
+            phone="0933445566",
+            current_company="Viettel Telecom",
+            current_position="DevOps Specialist",
+            years_of_experience=4,
+            status="screening",
+            score=83,
+            stage_entered_at=now - timedelta(days=6),
+            is_overdue=True,
+            created_at=now - timedelta(days=7),
+        )
+        db.add(app5)
         db.commit()
-        print(" -> Seeded 2 Applications")
+        print(" -> Seeded 5 Realistic Applications (with SLA on-time & overdue cases)")
+
+        # 5.1 Recruiter Assignment for Requisition #1 (S5-10 AC2)
+        existing_assign = db.query(RecruiterAssignment).filter(
+            RecruiterAssignment.requisition_id == req1.id,
+            RecruiterAssignment.recruiter_id == user_objs["recruiter"].id
+        ).first()
+        if not existing_assign:
+            db.add(RecruiterAssignment(
+                requisition_id=req1.id,
+                recruiter_id=user_objs["recruiter"].id,
+                assignment_type="primary"
+            ))
+            db.commit()
+            print(" -> Seeded Recruiter Assignment (recruiter@company.com assigned to Requisition #1)")
+
+        # 5.2 SLA Rules (S5-10 AC1)
+        sla_defaults = [
+            ("submitted", 3),    # Hồ sơ mới phải sàng lọc trong 3 ngày
+            ("screening", 5),    # Thẩm định hồ sơ trong 5 ngày
+            ("interviewing", 7), # Phỏng vấn trong 7 ngày
+            ("offered", 3),      # Thư mời offer trong 3 ngày
+        ]
+        for stage, max_days in sla_defaults:
+            r = db.query(SlaRule).filter(SlaRule.stage == stage).first()
+            if not r:
+                db.add(SlaRule(stage=stage, max_days=max_days, is_active=True))
+            else:
+                r.max_days, r.is_active = max_days, True
+        db.commit()
+        print(" -> Seeded 4 SLA Threshold Rules (submitted: 3d, screening: 5d, interviewing: 7d, offered: 3d)")
 
         # 6. Interview Schedule
         from datetime import datetime, timedelta

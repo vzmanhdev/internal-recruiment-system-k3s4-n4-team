@@ -6,7 +6,8 @@ import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard, FileCheck, ShieldCheck, Briefcase, Users, Calendar, 
   FileText, Award, Layers, Target, Mail, Send, BarChart3, History, 
-  ChevronRight, Sparkles, Building2, UserCheck, Sparkle, UserPlus, Globe
+  ChevronRight, Sparkles, Building2, UserCheck, Sparkle, UserPlus, Globe,
+  Clock
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -52,6 +53,7 @@ const hrNavigationGroups: NavGroup[] = [
       { label: "Luồng phê duyệt động", href: "/hr/master-data/approval-flows", icon: Layers },
       { label: "Khung năng lực & Đánh giá", href: "/hr/competencies", icon: UserCheck, badge: "Scorecard" },
       { label: "Danh mục dùng chung", href: "/hr/master-data/lookups", icon: Layers },
+      { label: "Thiết lập SLA tuyển dụng", href: "/hr/master-data/sla-rules", icon: Clock, badge: "SLA" },
     ]
   },
   {
