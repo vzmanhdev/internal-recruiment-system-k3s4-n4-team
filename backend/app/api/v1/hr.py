@@ -59,7 +59,7 @@ def _now_label() -> str:
 
 # ------------------------------------------------------------------ departments (S2-04)
 class DepartmentUpdate(DepartmentCreate):
-    head_user_id: Optional[int] = None
+    pass
 
 
 @router.get("/departments")
@@ -69,103 +69,264 @@ def list_departments(include_inactive: bool = False, authorization: Optional[str
     if not (include_inactive and _is_hr(db, user)):
         q = q.filter(Department.is_active == True)  # noqa: E712
     rows = q.order_by(Department.sort_order, Department.name).all()
-    # read-only context for the organisation tree: head's name, active members, open (published) postings
-    heads = {u.id: u.full_name for u in db.query(User).filter(User.id.in_({d.head_user_id for d in rows if d.head_user_id} or {-1})).all()}
+    
+    # Read-only context for the organisation tree: head info, members, open postings, open requisitions, child count
+    head_ids = {d.head_user_id for d in rows if d.head_user_id}
+    heads = {u.id: u for u in db.query(User).filter(User.id.in_(head_ids or {-1})).all()}
     out = []
     for d in rows:
         data = d.to_dict()
-        data["head_name"] = heads.get(d.head_user_id)
+        head_user = heads.get(d.head_user_id)
+        data["head_name"] = head_user.full_name if head_user else None
+        data["head_email"] = head_user.email if head_user else None
+        data["head_title"] = head_user.job_title if head_user else None
         data["member_count"] = db.query(User.id).filter(User.department == d.name, User.account_status == "active").count()
         data["open_positions"] = db.query(JobPosting.id).filter(JobPosting.department_id == d.id, JobPosting.status == "published").count()
+        data["open_requisitions_count"] = db.query(JobRequisition.id).filter(
+            JobRequisition.department_id == d.id,
+            JobRequisition.status.in_(["submitted", "pending_approval", "approved", "in_progress", "open"])
+        ).count()
+        data["children_count"] = db.query(Department.id).filter(Department.parent_id == d.id, Department.is_active == True).count()
         out.append(data)
     return out
 
 
 def _validate_department(db: Session, payload, department_id: Optional[int] = None):
+    # S2-04 AC2: Mỗi phòng ban bắt buộc phải có ít nhất một người phụ trách hợp lệ
+    head_id = getattr(payload, "head_user_id", None)
+    if not head_id or head_id <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Mỗi phòng ban bắt buộc phải có ít nhất một người phụ trách (Trưởng bộ phận/Manager)."
+        )
+    head_user = db.query(User).filter(User.id == head_id, User.account_status == "active").first()
+    if not head_user:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Người phụ trách được chỉ định không tồn tại hoặc đã bị vô hiệu hóa."
+        )
+
+    # S2-04 AC1: Cấu trúc cây nhiều cấp và chống chu trình (Cycle Prevention - TC-S2-04-X01)
     if payload.parent_id:
         if payload.parent_id == department_id:
-            raise HTTPException(status_code=400, detail="Phòng ban không thể là cha của chính nó")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Phòng ban không thể là đơn vị trực thuộc của chính nó."
+            )
         parent = db.query(Department).filter(Department.id == payload.parent_id).first()
         if not parent:
-            raise HTTPException(status_code=400, detail="Phòng ban cha không tồn tại")
-        # prevent cycles in the tree
-        seen, cur = {department_id}, parent
-        while cur is not None and cur.parent_id:
-            if cur.parent_id in seen:
-                raise HTTPException(status_code=400, detail="Cấu trúc phòng ban bị vòng lặp")
-            seen.add(cur.id)
-            cur = db.query(Department).filter(Department.id == cur.parent_id).first()
-    head = getattr(payload, "head_user_id", None)
-    if head and not db.query(User.id).filter(User.id == head, User.account_status == "active").first():
-        raise HTTPException(status_code=422, detail="Người phụ trách không tồn tại hoặc không hoạt động")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Phòng ban cấp trên trực tiếp không tồn tại."
+            )
+        
+        # Ngăn ngừa chu trình trong cây khi chỉnh sửa phòng ban
+        if department_id:
+            cur = parent
+            visited = {department_id}
+            while cur is not None:
+                if cur.id in visited:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cấu trúc phòng ban bị vòng lặp (chu trình). Không thể chọn phòng ban con hoặc cháu làm đơn vị cấp trên."
+                    )
+                visited.add(cur.id)
+                if cur.parent_id:
+                    cur = db.query(Department).filter(Department.id == cur.parent_id).first()
+                else:
+                    break
 
 
 @router.post("/departments", status_code=status.HTTP_201_CREATED)
-def create_department(payload: DepartmentUpdate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    authorize(authorization, db)
-    if db.query(Department).filter(Department.code == payload.code).first():
+def create_department(payload: DepartmentCreate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    current_user = authorize(authorization, db)
+    if db.query(Department).filter(Department.code == payload.code.strip().upper()).first():
         raise HTTPException(status_code=409, detail="Mã phòng ban đã tồn tại", headers={"X-Field-Error": "code"})
     _validate_department(db, payload)
-    item = Department(**payload.model_dump())
-    db.add(item); db.commit(); db.refresh(item)
+    
+    item = Department(
+        name=payload.name.strip(),
+        code=payload.code.strip().upper(),
+        parent_id=payload.parent_id,
+        head_user_id=payload.head_user_id,
+        description=payload.description.strip() if payload.description else None,
+        sort_order=payload.sort_order,
+        is_active=True
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    # Ghi nhật ký AuditLog
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="department:create",
+        target_entity="DEPARTMENT",
+        target_id=str(item.id),
+        payload_json=json.dumps({"name": item.name, "code": item.code, "parent_id": item.parent_id, "head_user_id": item.head_user_id}),
+        ip_address="127.0.0.1",
+        created_at=datetime.utcnow()
+    )
+    db.add(audit)
+    db.commit()
+
     return item.to_dict()
 
 
 @router.put("/departments/{department_id}")
 def update_department(department_id: int, payload: DepartmentUpdate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    authorize(authorization, db)
+    current_user = authorize(authorization, db)
     item = db.query(Department).filter(Department.id == department_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
-    dup = db.query(Department).filter(Department.code == payload.code, Department.id != department_id).first()
+    
+    dup = db.query(Department).filter(
+        Department.code == payload.code.strip().upper(),
+        Department.id != department_id
+    ).first()
     if dup:
         raise HTTPException(status_code=409, detail="Mã phòng ban đã tồn tại")
+    
     _validate_department(db, payload, department_id)
-    for key, value in payload.model_dump().items():
-        setattr(item, key, value)
-    db.commit(); db.refresh(item)
+    
+    item.name = payload.name.strip()
+    item.code = payload.code.strip().upper()
+    item.parent_id = payload.parent_id
+    item.head_user_id = payload.head_user_id
+    item.description = payload.description.strip() if payload.description else None
+    item.sort_order = payload.sort_order
+
+    # Ghi nhật ký AuditLog
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="department:update",
+        target_entity="DEPARTMENT",
+        target_id=str(department_id),
+        payload_json=json.dumps({"name": item.name, "code": item.code, "parent_id": item.parent_id, "head_user_id": item.head_user_id}),
+        ip_address="127.0.0.1",
+        created_at=datetime.utcnow()
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(item)
     return item.to_dict()
 
 
 @router.post("/departments/{department_id}/deactivate")
 def deactivate_department(department_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    authorize(authorization, db)
+    current_user = authorize(authorization, db)
     item = db.query(Department).filter(Department.id == department_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
+    
     item.is_active = False
-    db.commit(); db.refresh(item)
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="department:deactivate",
+        target_entity="DEPARTMENT",
+        target_id=str(department_id),
+        payload_json=json.dumps({"name": item.name, "code": item.code}),
+        ip_address="127.0.0.1",
+        created_at=datetime.utcnow()
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(item)
     return item.to_dict()
 
 
 @router.post("/departments/{department_id}/activate")
 def activate_department(department_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    authorize(authorization, db)
+    current_user = authorize(authorization, db)
     item = db.query(Department).filter(Department.id == department_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
+    
     item.is_active = True
-    db.commit(); db.refresh(item)
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="department:activate",
+        target_entity="DEPARTMENT",
+        target_id=str(department_id),
+        payload_json=json.dumps({"name": item.name, "code": item.code}),
+        ip_address="127.0.0.1",
+        created_at=datetime.utcnow()
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(item)
     return item.to_dict()
 
 
 @router.delete("/departments/{department_id}")
 def delete_department(department_id: int, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    """S2-04 AC3: a department referenced by requisitions/postings/children cannot be deleted — only deactivated."""
-    authorize(authorization, db)
+    """S2-04 AC3: Phòng ban đang có yêu cầu tuyển dụng mở thì không xoá được, chỉ ngừng áp dụng."""
+    current_user = authorize(authorization, db)
     item = db.query(Department).filter(Department.id == department_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Không tìm thấy phòng ban")
-    referenced = (
-        db.query(JobRequisition.id).filter(JobRequisition.department_id == department_id).first()
-        or db.query(JobPosting.id).filter(JobPosting.department_id == department_id).first()
-        or db.query(Department.id).filter(Department.parent_id == department_id).first()
-        or db.query(JobTitle.id).filter(JobTitle.department_id == department_id).first()
+
+    # 1. AC3: Chặn xóa nếu có Yêu cầu tuyển dụng đang mở
+    open_req = db.query(JobRequisition).filter(
+        JobRequisition.department_id == department_id,
+        JobRequisition.status.in_(["submitted", "pending_approval", "approved", "in_progress", "open"])
+    ).first()
+    if open_req:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Phòng ban '{item.name}' đang có yêu cầu tuyển dụng mở (Mã: {open_req.code}), không thể xóa. Theo tiêu chuẩn AC3, bạn chỉ có thể ngừng áp dụng phòng ban này."
+        )
+
+    # 2. AC3: Chặn xóa nếu có Tin tuyển dụng đang mở/chờ duyệt
+    open_post = db.query(JobPosting).filter(
+        JobPosting.department_id == department_id,
+        JobPosting.status.in_(["published", "pending_review"])
+    ).first()
+    if open_post:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Phòng ban '{item.name}' đang có tin tuyển dụng công khai hoặc chờ duyệt ({open_post.title}), không thể xóa. Bạn chỉ có thể ngừng áp dụng phòng ban này."
+        )
+
+    # 3. Chặn xóa nếu có phòng ban con trực thuộc
+    child_dept = db.query(Department).filter(Department.parent_id == department_id).first()
+    if child_dept:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Phòng ban '{item.name}' đang có phòng ban con trực thuộc ('{child_dept.name}'), không thể xóa. Vui lòng chuyển hoặc xóa phòng ban con trước."
+        )
+
+    # 4. Chặn xóa nếu đang được gắn chức danh công việc
+    job_title = db.query(JobTitle).filter(JobTitle.department_id == department_id).first()
+    if job_title:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Phòng ban '{item.name}' đang gắn với chức danh '{job_title.name}', không thể xóa. Bạn chỉ có thể ngừng áp dụng phòng ban này."
+        )
+
+    dept_name = item.name
+    dept_code = item.code
+    db.delete(item)
+    
+    # Ghi nhật ký AuditLog
+    audit = AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="department:delete",
+        target_entity="DEPARTMENT",
+        target_id=str(department_id),
+        payload_json=json.dumps({"name": dept_name, "code": dept_code}),
+        ip_address="127.0.0.1",
+        created_at=datetime.utcnow()
     )
-    if referenced:
-        raise HTTPException(status_code=409, detail="Phòng ban đang được tham chiếu (yêu cầu tuyển dụng, tin đăng, chức danh hoặc phòng ban con) — chỉ có thể ngừng áp dụng.")
-    db.delete(item); db.commit()
-    return {"success": True}
+    db.add(audit)
+    db.commit()
+
+    return {"success": True, "message": f"Đã xóa hoàn toàn phòng ban {dept_name}."}
 
 
 # ------------------------------------------------------------------ job titles & salary bands (S2-05)
@@ -1405,15 +1566,35 @@ def upsert_sla_rule(payload: SlaRuleIn, authorization: Optional[str] = Header(No
 
 
 @router.get("/people")
-def list_people(role: str, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    """Minimal directory (id, name, email) used to pick interviewers / recruiters / onboarding owners.
+def list_people(role: Optional[str] = None, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """Minimal directory (id, name, email) used to pick interviewers / recruiters / onboarding owners / department heads.
     Only recruitment staff may call it and only active users are returned."""
     from app.models.rbac import Role, UserRole
     user = _authenticated(authorization, db)
     if not any(has_permission(db, user, c) for c in ("master_data:manage", "requisition:assign", "interview:schedule", "requisition:create", "offer:create")):
         raise HTTPException(status_code=403, detail="Bạn không có quyền xem danh bạ nhân sự.")
-    if role not in {"interviewer", "recruiter", "hiring_manager", "approver", "hr_manager"}:
+    
+    q = (db.query(User).join(UserRole, UserRole.user_id == User.id).join(Role, Role.id == UserRole.role_id)
+         .filter(User.account_status == "active"))
+    
+    if role and role in {"interviewer", "recruiter", "hiring_manager", "approver", "hr_manager", "admin"}:
+        q = q.filter(Role.code == role)
+    elif role in {"managers", "all_managers"}:
+        q = q.filter(Role.code.in_(["hiring_manager", "hr_manager", "approver", "admin"]))
+    elif role:
         raise HTTPException(status_code=422, detail="Vai trò không hợp lệ.")
-    rows = (db.query(User).join(UserRole, UserRole.user_id == User.id).join(Role, Role.id == UserRole.role_id)
-            .filter(Role.code == role, User.account_status == "active").order_by(User.full_name).all())
-    return [{"id": u.id, "full_name": u.full_name, "email": u.email, "job_title": u.job_title} for u in rows]
+    else:
+        # Default: all active staff
+        q = q.filter(Role.code.in_(["hiring_manager", "hr_manager", "approver", "admin", "recruiter", "interviewer"]))
+        
+    rows = q.order_by(User.full_name).distinct().all()
+    return [
+        {
+            "id": u.id,
+            "full_name": u.full_name,
+            "email": u.email,
+            "job_title": u.job_title or (u.role.upper() if u.role else "Quản lý"),
+            "role": u.role,
+        }
+        for u in rows
+    ]

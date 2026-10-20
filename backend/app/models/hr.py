@@ -9,14 +9,27 @@ class Department(Base):
     name = Column(String(120), nullable=False)
     code = Column(String(30), unique=True, nullable=False)
     parent_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
-    head_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # S2-04: người phụ trách
+    head_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # S2-04 AC2: người phụ trách
+    description = Column(Text, nullable=True)
     sort_order = Column(Integer, default=0, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    parent = relationship("Department", remote_side=[id], foreign_keys=[parent_id], backref="children")
+    head_user = relationship("User", foreign_keys=[head_user_id])
+
     def to_dict(self):
-        return {"id": self.id, "name": self.name, "code": self.code, "parent_id": self.parent_id, "head_user_id": self.head_user_id,
-                "sort_order": self.sort_order, "is_active": self.is_active}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "code": self.code,
+            "parent_id": self.parent_id,
+            "head_user_id": self.head_user_id,
+            "description": self.description or "",
+            "sort_order": self.sort_order,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 class JobTitle(Base):
     __tablename__ = "job_titles"

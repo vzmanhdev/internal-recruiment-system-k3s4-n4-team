@@ -5,6 +5,8 @@ class DepartmentCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=120)
     code: str = Field(..., min_length=2, max_length=30)
     parent_id: Optional[int] = None
+    head_user_id: int = Field(..., gt=0, description="ID người phụ trách phòng ban (bắt buộc theo AC2)")
+    description: Optional[str] = None
     sort_order: int = Field(0, ge=0)
 
 class JobTitleCreate(BaseModel):

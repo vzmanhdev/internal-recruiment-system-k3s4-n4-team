@@ -34,6 +34,8 @@ import {
   ArrowRight,
   Archive,
   RefreshCw,
+  Monitor,
+  Smartphone,
 } from "lucide-react";
 
 const lines = (text?: string | null): string[] =>
@@ -158,6 +160,7 @@ export default function HRJobsPage() {
 
   // Modal: Xem trước giao diện tin đăng (Live Portal Preview - S3-10 AC2)
   const [previewJob, setPreviewJob] = useState<JobPostingReview | null>(null);
+  const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
 
   // Modal: Yêu cầu sửa lại (Bắt buộc nhập lý do)
   const [revisionJob, setRevisionJob] = useState<JobPostingReview | null>(null);
@@ -690,6 +693,34 @@ export default function HRJobsPage() {
                 </div>
               </div>
 
+              {/* Responsive Device Switcher (S3-10 AC2) */}
+              <div className="flex items-center gap-1.5 bg-slate-800/90 p-1 rounded-xl border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setPreviewDevice("desktop")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    previewDevice === "desktop"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Desktop</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDevice("mobile")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    previewDevice === "mobile"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Mobile 375px</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setPreviewJob(null)}
@@ -701,7 +732,16 @@ export default function HRJobsPage() {
             </div>
 
             {/* Modal Body: Mock Public Career Site Exactly */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-[#f8fafc] text-slate-800">
+            <div className={`overflow-y-auto flex-1 transition-all ${
+              previewDevice === "mobile"
+                ? "bg-slate-900/90 py-6 px-4 flex justify-center items-start"
+                : "p-4 sm:p-6 bg-[#f8fafc]"
+            }`}>
+              <div className={
+                previewDevice === "mobile"
+                  ? "w-[375px] max-w-full bg-[#f8fafc] text-slate-800 rounded-[36px] border-8 border-slate-700 shadow-2xl p-4 space-y-4 overflow-hidden"
+                  : "w-full space-y-6 text-slate-800"
+              }>
               {/* Brand Top Banner */}
               <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -777,10 +817,10 @@ export default function HRJobsPage() {
                 </div>
               </div>
 
-              {/* 2-Column Responsive Body Layout */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* 2-Column Responsive Body Layout (Desktop 70/30, Mobile Stacked) */}
+              <div className={previewDevice === "mobile" ? "flex flex-col gap-4" : "grid grid-cols-1 lg:grid-cols-12 gap-6"}>
                 {/* Left Column: Details */}
-                <div className="space-y-6 lg:col-span-8">
+                <div className={`space-y-6 ${previewDevice === "mobile" ? "w-full" : "lg:col-span-8"}`}>
                   {/* Mô tả công việc */}
                   <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-xs space-y-3">
                     <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -848,7 +888,7 @@ export default function HRJobsPage() {
                 </div>
 
                 {/* Right Column: Application Widget */}
-                <div className="space-y-5 lg:col-span-4">
+                <div className={`space-y-5 ${previewDevice === "mobile" ? "w-full" : "lg:col-span-4"}`}>
                   <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs space-y-4">
                     <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
                       Tổng Quan Vị Trí Tuyển Dụng
@@ -903,6 +943,7 @@ export default function HRJobsPage() {
                     )}
                   </div>
                 </div>
+              </div>
               </div>
             </div>
 

@@ -41,24 +41,7 @@ def reset_and_seed_database(drop_tables: bool = False):
     try:
         print("\n[3/4] SEEDING DEMO DATA & 7 BUSINESS ROLE ACCOUNTS...")
 
-        # 1. Departments
-        depts_data = [
-            ("Khối Công Nghệ Thông Tin", "IT"),
-            ("Khối Nhân Sự & Đào Tạo", "HR"),
-            ("Khối Kinh Doanh & Phát Triển", "SALES"),
-            ("Khối Tài Chính & Kế Toán", "FINANCE"),
-            ("Khối Marketing & Truyền Thông", "MKT")
-        ]
-        dept_objs = {}
-        for name, code in depts_data:
-            dept = Department(name=name, code=code)
-            db.add(dept)
-            db.commit()
-            db.refresh(dept)
-            dept_objs[code] = dept
-        print(f" -> Created {len(dept_objs)} Departments")
-
-        # 2. Users for all 7 Business Roles (Bcrypt Encrypted with 'password123')
+        # 1. Users for all 7 Business Roles (Bcrypt Encrypted with 'password123')
         hashed_pwd = hash_password("password123")
         users_seed = [
             {
@@ -121,22 +104,86 @@ def reset_and_seed_database(drop_tables: bool = False):
 
         user_objs = {}
         for u in users_seed:
-            user = User(
-                email=u["email"],
-                hashed_password=hashed_pwd,
-                full_name=u["full_name"],
-                phone=u["phone"],
-                role=u["role"],
-                employee_code=u["code"],
-                is_active=True,
-                account_status="active"
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
+            user = db.query(User).filter(User.email == u["email"]).first()
+            if not user:
+                user = User(
+                    email=u["email"],
+                    hashed_password=hashed_pwd,
+                    full_name=u["full_name"],
+                    phone=u["phone"],
+                    role=u["role"],
+                    employee_code=u["code"],
+                    is_active=True,
+                    account_status="active"
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
             user_objs[u["role"]] = user
         print(f" -> Seeded {len(users_seed)} User Accounts across 7 Business Roles")
         seed_rbac()
+
+        # 2. Departments with Multi-level Hierarchy (AC1) and Mandatory Head (AC2)
+        root_depts = [
+            ("Khối Công Nghệ Thông Tin", "IT", user_objs["hiring_manager"].id),
+            ("Khối Nhân Sự & Đào Tạo", "HR", user_objs["hr_manager"].id),
+            ("Khối Kinh Doanh & Phát Triển", "SALES", user_objs["approver"].id),
+            ("Khối Tài Chính & Kế Toán", "FINANCE", user_objs["admin"].id),
+            ("Khối Marketing & Truyền Thông", "MKT", user_objs["recruiter"].id)
+        ]
+        dept_objs = {}
+        for name, code, head_id in root_depts:
+            dept = db.query(Department).filter(Department.code == code).first()
+            if not dept:
+                dept = Department(name=name, code=code, head_user_id=head_id, is_active=True)
+                db.add(dept)
+                db.commit()
+                db.refresh(dept)
+            else:
+                dept.head_user_id = head_id
+                db.commit()
+            dept_objs[code] = dept
+
+        # Sub-departments (Level 2 & Level 3)
+        sub_depts = [
+            ("Bộ Phận Phát Triển Phần Mềm", "IT-DEV", dept_objs["IT"].id, user_objs["hiring_manager"].id, "Lập trình & giải pháp số"),
+            ("Bộ Phận Vận Hành & An Ninh Mạng", "IT-OPS", dept_objs["IT"].id, user_objs["admin"].id, "Hạ tầng Cloud & Security"),
+            ("Ban Tuyển Dụng & Thu Hút Nhân Tài", "HR-TA", dept_objs["HR"].id, user_objs["hr_manager"].id, "Tuyển dụng & Employer Branding"),
+            ("Ban Đào Tạo & Phát Triển Văn Hóa", "HR-LD", dept_objs["HR"].id, user_objs["hr_manager"].id, "Đào tạo & văn hóa doanh nghiệp"),
+        ]
+        for name, code, parent_id, head_id, desc in sub_depts:
+            sub = db.query(Department).filter(Department.code == code).first()
+            if not sub:
+                sub = Department(name=name, code=code, parent_id=parent_id, head_user_id=head_id, description=desc, is_active=True)
+                db.add(sub)
+                db.commit()
+                db.refresh(sub)
+            else:
+                sub.parent_id = parent_id
+                sub.head_user_id = head_id
+                sub.description = desc
+                db.commit()
+            dept_objs[code] = sub
+
+        if "IT-DEV" in dept_objs:
+            lvl3 = [
+                ("Nhóm Backend & Nền Tảng Cloud", "IT-DEV-BE", dept_objs["IT-DEV"].id, user_objs["hiring_manager"].id, "FastAPI, PostgreSQL & Cloud"),
+                ("Nhóm Frontend & Trải Nghiệm Số", "IT-DEV-FE", dept_objs["IT-DEV"].id, user_objs["hiring_manager"].id, "Next.js & Design System"),
+            ]
+            for name, code, parent_id, head_id, desc in lvl3:
+                l3 = db.query(Department).filter(Department.code == code).first()
+                if not l3:
+                    l3 = Department(name=name, code=code, parent_id=parent_id, head_user_id=head_id, description=desc, is_active=True)
+                    db.add(l3)
+                    db.commit()
+                    db.refresh(l3)
+                else:
+                    l3.parent_id = parent_id
+                    l3.head_user_id = head_id
+                    l3.description = desc
+                    db.commit()
+                dept_objs[code] = l3
+        print(f" -> Seeded multi-level hierarchy Departments with heads")
 
         # 3. Job Requisitions
         req1 = JobRequisition(
