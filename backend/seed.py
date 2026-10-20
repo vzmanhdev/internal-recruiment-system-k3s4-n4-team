@@ -201,11 +201,14 @@ def reset_and_seed_database(drop_tables: bool = False):
             type="Full-time",
             level="Senior",
             location="Hà Nội",
-            description="Tham gia thiết kế kiến trúc Backend hệ thống Microservices & FastAPI.",
-            requirements="Thành thạo Python, SQLAlchemy, PostgreSQL, Docker.",
-            benefits="Lương tháng 13, Thưởng dự án, Du lịch hàng năm.",
+            deadline="2026-12-31",
+            description="Tham gia thiết kế kiến trúc Backend hệ thống Microservices & FastAPI, tối ưu hóa truy vấn cơ sở dữ liệu quy mô lớn.",
+            requirements="Thành thạo Python, SQLAlchemy, PostgreSQL, Docker. Tối thiểu 3 năm kinh nghiệm phát triển backend enterprise.",
+            benefits="Lương tháng 13, Thưởng dự án theo quý, Cấp Macbook Pro M3, Du lịch nghỉ dưỡng hàng năm.",
             status="published",
-            created_by_id=user_objs["hr_manager"].id
+            created_by_id=user_objs["recruiter"].id,
+            published_by_id=user_objs["hr_manager"].id,
+            published_at=datetime.utcnow()
         )
         db.add(job1)
 
@@ -219,17 +222,81 @@ def reset_and_seed_database(drop_tables: bool = False):
             type="Full-time",
             level="Mid-Level",
             location="Hà Nội",
-            description="Chịu trách nhiệm toàn bộ quy trình tuyển dụng nhân sự Công nghệ & Khối vận hành.",
-            requirements="Có 2+ năm kinh nghiệm tuyển dụng Tech, giao tiếp xuất sắc.",
-            benefits="Môi trường trẻ trung, cơ hội thăng tiến Trưởng nhóm.",
+            deadline="2026-11-30",
+            description="Chịu trách nhiệm toàn bộ quy trình tuyển dụng nhân sự Công nghệ & Khối vận hành, xây dựng nguồn ứng viên chất lượng cao.",
+            requirements="Có 2+ năm kinh nghiệm tuyển dụng Tech, kỹ năng phỏng vấn và đánh giá ứng viên chuyên sâu, giao tiếp xuất sắc.",
+            benefits="Môi trường trẻ trung năng động, cơ hội thăng tiến Trưởng nhóm Tuyển dụng, chế độ bảo hiểm sức khỏe VIP.",
             status="published",
-            created_by_id=user_objs["hr_manager"].id
+            created_by_id=user_objs["recruiter"].id,
+            published_by_id=user_objs["hr_manager"].id,
+            published_at=datetime.utcnow()
         )
         db.add(job2)
+
+        job3 = JobPosting(
+            slug="chuyen-vien-marketing-tuyen-dung",
+            title="Chuyên Viên Marketing & Employer Branding",
+            requisition_id=req2.id,
+            department_id=dept_objs["MKT"].id,
+            department_name=dept_objs["MKT"].name,
+            salary_range="15 - 22 Triệu",
+            type="Full-time",
+            level="Mid-Level",
+            location="TP. Hồ Chí Minh",
+            deadline="2026-12-15",
+            description="Xây dựng chiến dịch thương hiệu nhà tuyển dụng (Employer Branding), sáng tạo nội dung truyền thông tuyển dụng trên LinkedIn, TikTok và Website Career.",
+            requirements="Tối thiểu 2 năm kinh nghiệm Marketing/Branding; sáng tạo nội dung thu hút; có kinh nghiệm chạy quảng cáo Meta/LinkedIn.",
+            benefits="Laptop làm việc, Thưởng chiến dịch tuyển dụng, Du lịch nghỉ dưỡng 5 sao hàng năm, Phụ cấp ăn trưa.",
+            status="pending_review",
+            created_by_id=user_objs["recruiter"].id
+        )
+        db.add(job3)
+
+        job4 = JobPosting(
+            slug="data-engineer-postgresql-etl",
+            title="Kỹ Sư Dữ Liệu (Data Engineer - ETL / PostgreSQL)",
+            requisition_id=req1.id,
+            department_id=dept_objs["IT"].id,
+            department_name=dept_objs["IT"].name,
+            salary_range="20 - 30 Triệu",
+            type="Full-time",
+            level="Mid-Level",
+            location="Hà Nội",
+            deadline="2026-12-20",
+            description="Thiết kế và triển khai luồng dữ liệu ETL/ELT tổng hợp báo cáo tuyển dụng thời gian thực từ nhiều nguồn.",
+            requirements="Thành thạo PostgreSQL, Python, SQL nâng cao, kinh nghiệm tối ưu hóa truy vấn Data Warehouse.",
+            benefits="Thưởng theo hiệu quả công việc, Bảo hiểm quốc tế, Môi trường làm việc Hybrid linh hoạt.",
+            status="draft",
+            review_note="Cần điều chỉnh dải lương tối thiểu từ 20M lên 25M theo quy định dải lương mới của khối IT và bổ sung yêu cầu về Apache Airflow.",
+            created_by_id=user_objs["recruiter"].id
+        )
+        db.add(job4)
+
+        job5 = JobPosting(
+            slug="thuc-tap-sinh-nhan-su-hr-intern",
+            title="Thực Tập Sinh Nhân Sự (HR Intern - Đã đóng)",
+            requisition_id=req2.id,
+            department_id=dept_objs["HR"].id,
+            department_name=dept_objs["HR"].name,
+            salary_range="5 - 7 Triệu",
+            type="Thực tập",
+            level="Fresher",
+            location="Hà Nội",
+            deadline="2026-09-30",
+            description="Hỗ trợ sắp xếp lịch phỏng vấn và lọc hồ sơ ứng viên bước đầu.",
+            requirements="Sinh viên năm cuối các trường Đại học chuyên ngành Nhân sự, Quản trị kinh doanh.",
+            benefits="Hỗ trợ dấu thực tập, Phụ cấp hàng tháng, Được đào tạo bài bản từ chuyên gia.",
+            status="closed",
+            created_by_id=user_objs["recruiter"].id
+        )
+        db.add(job5)
         db.commit()
         db.refresh(job1)
         db.refresh(job2)
-        print(" -> Seeded 2 Published Jobs")
+        db.refresh(job3)
+        db.refresh(job4)
+        db.refresh(job5)
+        print(" -> Seeded 5 Realistic Jobs (Pending, Published, Needs Revision, Closed)")
 
         # 5. Job Applications
         app1 = JobApplication(

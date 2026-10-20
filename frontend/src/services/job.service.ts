@@ -21,7 +21,12 @@ export interface JobPostingItem {
   status: string;
   views_count?: number;
   applications_count?: number;
+  created_by_id?: number | null;
+  creator_name?: string | null;
+  creator_email?: string | null;
   published_by_id?: number | null;
+  published_by_name?: string | null;
+  published_by_email?: string | null;
   published_at?: string | null;
   created_at?: string;
   review_note?: string | null;
