@@ -4,13 +4,14 @@ Read access to active departments / job titles is open to every authenticated us
 requisitions); salary bands are only returned to HR (S2-05 AC3). All writes require HR Manager (or Admin).
 """
 import json
+import math
 import re
 from datetime import datetime
 from typing import List, Optional, Union, Tuple
 
 from fastapi import APIRouter, Header, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 
 from app.api.deps import authenticate_bearer
@@ -420,10 +421,45 @@ class CategoryUpdate(BaseModel):
     is_active: bool = True
 
 
+def _canonical_approval_type(name: str) -> str:
+    nl = name.lower()
+    if "headcount" in nl or "ngân sách" in nl or "định biên" in nl:
+        return "headcount"
+    if "salary" in nl or "ngoại lệ" in nl or "lương" in nl:
+        return "salary_exception"
+    if "offer" in nl or "thư mời" in nl:
+        return "offer"
+    if "requisition" in nl or "tuyển dụng" in nl:
+        return "job_requisition"
+    return nl.replace(" ", "_")
+
+
+def _category_in_use(db: Session, item: SharedCategory) -> bool:
+    name = item.name
+    # Check applications (source, rejection_reason)
+    if db.query(JobApplication.id).filter(or_(JobApplication.source == name, JobApplication.rejection_reason == name)).first():
+        return True
+    # Check postings (location, type)
+    if db.query(JobPosting.id).filter(or_(JobPosting.location == name, JobPosting.type == name)).first():
+        return True
+    # Check requisitions (work_location, employment_type)
+    if db.query(JobRequisition.id).filter(or_(JobRequisition.work_location == name, JobRequisition.employment_type == name)).first():
+        return True
+    # Check approval flows (approval_type)
+    if item.category_type == "approval_type":
+        code = _canonical_approval_type(name)
+        if db.query(ApprovalFlow.id).filter(or_(ApprovalFlow.approval_type == name, ApprovalFlow.approval_type == code)).first():
+            return True
+    return False
+
+
 @router.get("/categories")
 def list_categories(
     category_type: Optional[str] = None,
     search: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=100),
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
@@ -433,41 +469,83 @@ def list_categories(
         q = q.filter(SharedCategory.category_type == category_type)
     if search and search.strip():
         q = q.filter(SharedCategory.name.ilike(f"%{search.strip()}%"))
-    rows = q.order_by(SharedCategory.category_type, SharedCategory.sort_order).all()
+    if is_active is not None:
+        q = q.filter(SharedCategory.is_active == is_active)
+
+    # Sort order
+    q = q.order_by(SharedCategory.category_type, SharedCategory.sort_order.asc(), SharedCategory.id.asc())
+
+    is_paginated = (page is not None and page_size is not None)
+    total = q.count() if is_paginated else 0
+
+    if is_paginated:
+        rows = q.offset((page - 1) * page_size).limit(page_size).all()
+    else:
+        rows = q.all()
+
     out = []
     for item in rows:
         data = item.to_dict()
-        # Reference counting across applications, postings and requisitions (S2-08 AC2)
+        # Reference counting across applications, postings, requisitions, approval flows (S2-08 AC2)
         app_count = db.query(JobApplication.id).filter(
             or_(JobApplication.source == item.name, JobApplication.rejection_reason == item.name)).count()
         posting_count = db.query(JobPosting.id).filter(
             or_(JobPosting.location == item.name, JobPosting.type == item.name)).count()
         req_count = db.query(JobRequisition.id).filter(
             or_(JobRequisition.work_location == item.name, JobRequisition.employment_type == item.name)).count()
-        total_usage = app_count + posting_count + req_count
+        flow_count = 0
+        if item.category_type == "approval_type":
+            code = _canonical_approval_type(item.name)
+            flow_count = db.query(ApprovalFlow.id).filter(
+                or_(ApprovalFlow.approval_type == item.name, ApprovalFlow.approval_type == code)
+            ).count()
+
+        total_usage = app_count + posting_count + req_count + flow_count
         data["usage_count"] = total_usage
         data["in_use"] = (total_usage > 0)
         out.append(data)
+
+    if is_paginated:
+        return {
+            "items": out,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if page_size and page_size > 0 else 1
+        }
     return out
 
 
 @router.post("/categories", status_code=status.HTTP_201_CREATED)
 def create_category(payload: CategoryCreate, authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
     authorize(authorization, db)
-    if db.query(SharedCategory.id).filter(SharedCategory.category_type == payload.category_type, SharedCategory.name == payload.name).first():
-        raise HTTPException(status_code=409, detail="Giá trị danh mục đã tồn tại")
-    item = SharedCategory(**payload.model_dump())
-    db.add(item); db.commit(); db.refresh(item)
-    return item.to_dict()
+    clean_name = payload.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Tên danh mục không được để trống")
+    if db.query(SharedCategory.id).filter(
+        SharedCategory.category_type == payload.category_type,
+        func.lower(SharedCategory.name) == clean_name.lower()
+    ).first():
+        raise HTTPException(status_code=409, detail="Giá trị danh mục đã tồn tại trong nhóm này")
 
+    sort_order = payload.sort_order
+    if not sort_order:
+        max_order = db.query(func.max(SharedCategory.sort_order)).filter(
+            SharedCategory.category_type == payload.category_type
+        ).scalar()
+        sort_order = (max_order + 1) if max_order is not None else 1
 
-def _category_in_use(db: Session, item: SharedCategory) -> bool:
-    name = item.name
-    return bool(
-        db.query(JobApplication.id).filter(or_(JobApplication.source == name, JobApplication.rejection_reason == name)).first()
-        or db.query(JobPosting.id).filter(or_(JobPosting.location == name, JobPosting.type == name)).first()
-        or db.query(JobRequisition.id).filter(or_(JobRequisition.work_location == name, JobRequisition.employment_type == name)).first()
+    item = SharedCategory(
+        category_type=payload.category_type,
+        name=clean_name,
+        sort_order=sort_order,
+        is_active=payload.is_active
     )
+    db.add(item); db.commit(); db.refresh(item)
+    data = item.to_dict()
+    data["usage_count"] = 0
+    data["in_use"] = False
+    return data
 
 
 @router.put("/categories/reorder")
@@ -488,11 +566,24 @@ def update_category(category_id: int, payload: CategoryUpdate, authorization: Op
     item = db.query(SharedCategory).filter(SharedCategory.id == category_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Không tìm thấy giá trị danh mục")
-    if payload.name != item.name and _category_in_use(db, item):
-        raise HTTPException(status_code=409, detail="Giá trị đang được tham chiếu, không đổi tên được — hãy tạo giá trị mới và ngừng áp dụng giá trị cũ.")
-    item.name, item.is_active = payload.name, payload.is_active
+    clean_name = payload.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Tên danh mục không được để trống")
+    if clean_name != item.name:
+        if _category_in_use(db, item):
+            raise HTTPException(status_code=409, detail="Giá trị đang được tham chiếu, không đổi tên được — hãy tạo giá trị mới và ngừng áp dụng giá trị cũ.")
+        if db.query(SharedCategory.id).filter(
+            SharedCategory.id != category_id,
+            SharedCategory.category_type == item.category_type,
+            func.lower(SharedCategory.name) == clean_name.lower()
+        ).first():
+            raise HTTPException(status_code=409, detail="Tên danh mục đã tồn tại trong nhóm này")
+    item.name = clean_name
+    item.is_active = payload.is_active
     db.commit(); db.refresh(item)
-    return item.to_dict()
+    data = item.to_dict()
+    data["in_use"] = _category_in_use(db, item)
+    return data
 
 
 @router.delete("/categories/{category_id}")
@@ -689,22 +780,10 @@ def list_approval_types(authorization: Optional[str] = Header(None), db: Session
         ]
         return defaults
 
-    def _canonical_code(name: str) -> str:
-        nl = name.lower()
-        if "headcount" in nl or "ngân sách" in nl or "định biên" in nl:
-            return "headcount"
-        if "salary" in nl or "ngoại lệ" in nl or "lương" in nl:
-            return "salary_exception"
-        if "offer" in nl or "thư mời" in nl:
-            return "offer"
-        if "requisition" in nl or "tuyển dụng" in nl:
-            return "job_requisition"
-        return nl.replace(" ", "_")
-
     seen_codes = set()
     result = []
     for c in cats:
-        code = _canonical_code(c.name)
+        code = _canonical_approval_type(c.name)
         if code not in seen_codes:
             seen_codes.add(code)
             result.append({"code": code, "name": c.name, "description": ""})

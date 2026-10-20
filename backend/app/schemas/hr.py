@@ -35,6 +35,7 @@ class CategoryCreate(BaseModel):
     category_type: str = Field(..., min_length=2, max_length=60)
     name: str = Field(..., min_length=2, max_length=120)
     sort_order: int = Field(0, ge=0)
+    is_active: bool = True
 
 class ReorderCategories(BaseModel):
     ids: List[int] = Field(..., min_length=1)

@@ -322,14 +322,69 @@ def reset_and_seed_database(drop_tables: bool = False):
         db.add(c1)
         db.add(c2)
 
-        sc1 = SharedCategory(category_type="candidate_source", name="Cổng tuyển dụng công ty (Career Site)", sort_order=1)
-        sc2 = SharedCategory(category_type="candidate_source", name="Mạng xã hội LinkedIn", sort_order=2)
-        sc3 = SharedCategory(category_type="candidate_source", name="Giới thiệu nội bộ (Referral)", sort_order=3)
-        db.add(sc1)
-        db.add(sc2)
-        db.add(sc3)
+        categories_seed = [
+            # 1. candidate_source (Nguồn ứng viên)
+            ("candidate_source", "Cổng tuyển dụng công ty (Career Site)", 1),
+            ("candidate_source", "Mạng xã hội LinkedIn", 2),
+            ("candidate_source", "Giới thiệu nội bộ (Referral)", 3),
+            ("candidate_source", "TopCV", 4),
+            ("candidate_source", "VietnamWorks", 5),
+            ("candidate_source", "Headhunter / Đơn vị săn đầu người", 6),
+            ("candidate_source", "Ngày hội việc làm (Job Fair)", 7),
+
+            # 2. rejection_reason (Lý do loại hồ sơ)
+            ("rejection_reason", "Kỹ năng chuyên môn chưa đáp ứng yêu cầu", 1),
+            ("rejection_reason", "Kỳ vọng mức lương vượt khung ngân sách", 2),
+            ("rejection_reason", "Không phù hợp văn hóa doanh nghiệp", 3),
+            ("rejection_reason", "Ứng viên từ chối nhận offer", 4),
+            ("rejection_reason", "Không đến tham dự phỏng vấn", 5),
+            ("rejection_reason", "Đã tuyển đủ chỉ tiêu cho vị trí", 6),
+
+            # 3. work_location (Địa điểm làm việc)
+            ("work_location", "Hà Nội - Trụ sở chính (Tòa Keangnam)", 1),
+            ("work_location", "TP. Hồ Chí Minh - Chi nhánh miền Nam", 2),
+            ("work_location", "Đà Nẵng - Trung tâm R&D", 3),
+            ("work_location", "Cần Thơ - Văn phòng đại diện", 4),
+            ("work_location", "Hải Phòng", 5),
+
+            # 4. work_type (Hình thức làm việc)
+            ("work_type", "Toàn thời gian (Full-time)", 1),
+            ("work_type", "Bán thời gian (Part-time)", 2),
+            ("work_type", "Làm việc từ xa (Remote)", 3),
+            ("work_type", "Làm việc kết hợp (Hybrid)", 4),
+            ("work_type", "Thực tập sinh (Internship)", 5),
+
+            # 5. contract_type (Loại hợp đồng)
+            ("contract_type", "Hợp đồng thử việc 2 tháng", 1),
+            ("contract_type", "Hợp đồng xác định thời hạn 1 năm", 2),
+            ("contract_type", "Hợp đồng xác định thời hạn 3 năm", 3),
+            ("contract_type", "Hợp đồng không xác định thời hạn", 4),
+            ("contract_type", "Hợp đồng cộng tác viên", 5),
+
+            # 6. approval_type (Loại luồng phê duyệt)
+            ("approval_type", "Tuyển dụng tiêu chuẩn (Standard Requisition)", 1),
+            ("approval_type", "Vượt ngân sách định biên (Over-budget)", 2),
+            ("approval_type", "Tuyển gấp bổ sung (Urgent Headcount)", 3),
+            ("approval_type", "Tuyển dụng cấp quản lý (Executive Hiring)", 4),
+
+            # 7. tag (Nhãn ứng viên)
+            ("tag", "Tiềm năng (Talent Pool)", 1),
+            ("tag", "Ưu tiên phỏng vấn", 2),
+            ("tag", "Đã từng làm việc tại công ty", 3),
+            ("tag", "Giới thiệu bởi ban lãnh đạo", 4),
+            ("tag", "Tiếng Anh thành thạo", 5),
+        ]
+
+        for cat_type, name, order in categories_seed:
+            existing_cat = db.query(SharedCategory).filter(
+                SharedCategory.category_type == cat_type,
+                SharedCategory.name == name
+            ).first()
+            if not existing_cat:
+                db.add(SharedCategory(category_type=cat_type, name=name, sort_order=order, is_active=True))
+
         db.commit()
-        print(" -> Seeded Job Titles, Competencies & Master Data Categories")
+        print(" -> Seeded Job Titles, Competencies & Master Data Categories (7 Groups)")
 
         print("\n=========================================================================")
         print("[4/4] SEED COMPLETED SUCCESSFULLY! DEMO ACCOUNTS READY FOR TESTING:")

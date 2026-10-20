@@ -146,7 +146,7 @@ npm install
 npm run dev
 ```
 > Ứng dụng Frontend sẽ chạy tại: **http://localhost:3000**
-
+`
 ---
 
 ### Cách 2: Khởi chạy tự động bằng Script

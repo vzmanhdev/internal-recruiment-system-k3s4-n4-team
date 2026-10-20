@@ -16,6 +16,14 @@ export interface Category {
   in_use?: boolean;
 }
 
+export interface PaginatedCategories {
+  items: Category[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export interface ApprovalFlowStep {
   step_num: number;
   role: string;
@@ -97,14 +105,26 @@ export const masterDataService = {
   headcounts: () => apiRequest<Headcount[]>("/hr/headcounts"),
   saveHeadcount: (h: { department_id: number; year: number; budget_quantity: number; reason?: string }) => apiRequest<Headcount>("/hr/headcounts", json("POST", h)),
 
-  categories: (type?: string, search?: string) => {
+  categories: (type?: string, search?: string, isActive?: boolean) => {
     const params = new URLSearchParams();
     if (type) params.append("category_type", type);
     if (search) params.append("search", search);
+    if (isActive !== undefined) params.append("is_active", String(isActive));
     const qs = params.toString();
     return apiRequest<Category[]>(qs ? `/hr/categories?${qs}` : "/hr/categories");
   },
-  createCategory: (c: { category_type: string; name: string; sort_order: number }) => apiRequest<Category>("/hr/categories", json("POST", c)),
+  categoriesPaginated: (type?: string, search?: string, isActive?: boolean, page: number = 1, pageSize: number = 10) => {
+    const params = new URLSearchParams();
+    if (type) params.append("category_type", type);
+    if (search) params.append("search", search);
+    if (isActive !== undefined) params.append("is_active", String(isActive));
+    params.append("page", String(page));
+    params.append("page_size", String(pageSize));
+    const qs = params.toString();
+    return apiRequest<PaginatedCategories>(`/hr/categories?${qs}`);
+  },
+  createCategory: (c: { category_type: string; name: string; sort_order?: number; is_active?: boolean }) =>
+    apiRequest<Category>("/hr/categories", json("POST", c)),
   updateCategory: (id: number, c: { name: string; is_active: boolean }) => apiRequest<Category>(`/hr/categories/${id}`, json("PUT", c)),
   deleteCategory: (id: number) => apiRequest(`/hr/categories/${id}`, { method: "DELETE" }),
   reorderCategories: (ids: number[]) => apiRequest<Category[]>("/hr/categories/reorder", json("PUT", { ids })),
