@@ -196,7 +196,7 @@ export default function CandidateLayout({ children }: { children: React.ReactNod
           )}
         </div>
       </header>
-      <main className="px-4 lg:px-6 py-5">{children}</main>
+      <main className="w-full min-h-[calc(100vh-3.5rem)]">{children}</main>
     </div>
   );
 }
