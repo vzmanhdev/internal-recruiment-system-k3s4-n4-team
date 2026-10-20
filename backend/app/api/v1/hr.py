@@ -1574,18 +1574,22 @@ def list_people(role: Optional[str] = None, authorization: Optional[str] = Heade
     if not any(has_permission(db, user, c) for c in ("master_data:manage", "requisition:assign", "interview:schedule", "requisition:create", "offer:create")):
         raise HTTPException(status_code=403, detail="Bạn không có quyền xem danh bạ nhân sự.")
     
-    q = (db.query(User).join(UserRole, UserRole.user_id == User.id).join(Role, Role.id == UserRole.role_id)
-         .filter(User.account_status == "active"))
+    q = db.query(User).filter(User.account_status == "active")
     
     if role and role in {"interviewer", "recruiter", "hiring_manager", "approver", "hr_manager", "admin"}:
-        q = q.filter(Role.code == role)
+        q = q.outerjoin(UserRole, UserRole.user_id == User.id).outerjoin(Role, Role.id == UserRole.role_id)
+        q = q.filter((Role.code == role) | (User.role == role))
     elif role in {"managers", "all_managers"}:
-        q = q.filter(Role.code.in_(["hiring_manager", "hr_manager", "approver", "admin"]))
+        mgr_roles = ["hiring_manager", "hr_manager", "approver", "admin"]
+        q = q.outerjoin(UserRole, UserRole.user_id == User.id).outerjoin(Role, Role.id == UserRole.role_id)
+        q = q.filter((Role.code.in_(mgr_roles)) | (User.role.in_(mgr_roles)))
     elif role:
         raise HTTPException(status_code=422, detail="Vai trò không hợp lệ.")
     else:
         # Default: all active staff
-        q = q.filter(Role.code.in_(["hiring_manager", "hr_manager", "approver", "admin", "recruiter", "interviewer"]))
+        staff_roles = ["hiring_manager", "hr_manager", "approver", "admin", "recruiter", "interviewer"]
+        q = q.outerjoin(UserRole, UserRole.user_id == User.id).outerjoin(Role, Role.id == UserRole.role_id)
+        q = q.filter((Role.code.in_(staff_roles)) | (User.role.in_(staff_roles)))
         
     rows = q.order_by(User.full_name).distinct().all()
     return [

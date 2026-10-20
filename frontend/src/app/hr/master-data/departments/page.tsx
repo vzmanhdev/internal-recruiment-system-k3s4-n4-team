@@ -103,7 +103,9 @@ export default function HRDepartmentsPage() {
     const [depts, budgets, managers] = await Promise.all([
       masterDataService.departments(true),
       masterDataService.headcounts().catch(() => []),
-      masterDataService.people("all_managers").catch(() => []),
+      masterDataService.people("all_managers").catch(async () => {
+        return masterDataService.people().catch(() => []);
+      }),
     ]);
 
     return {
