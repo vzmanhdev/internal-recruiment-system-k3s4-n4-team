@@ -10,9 +10,13 @@ const STEP_LABEL: Record<string, string> = {
   manager: "Trưởng bộ phận", hr: "Trưởng phòng Nhân sự", executive: "Ban Giám đốc", hr_manager: "Trưởng phòng Nhân sự", approver: "Ban Giám đốc",
 };
 
-const money = (n?: number | null) => (n ? `${Math.round(n / 1_000_000)}` : "?");
-export const salaryRange = (min?: number | null, max?: number | null) =>
-  min || max ? `${money(min)} - ${money(max)} triệu VNĐ` : "Thỏa thuận";
+const fmtVND = (n?: number | null) => (n != null ? `${new Intl.NumberFormat('vi-VN').format(n)} đ` : "?");
+export const salaryRange = (min?: number | null, max?: number | null) => {
+  if (!min && !max) return "Thỏa thuận";
+  if (min && max) return `${fmtVND(min)} – ${fmtVND(max)}`;
+  if (min) return `Từ ${fmtVND(min)}`;
+  return `Đến ${fmtVND(max!)}`;
+};
 
 function reqStatus(s: string): RequisitionApprovalItem["status"] {
   if (s === "pending_executive") return "pending_board";
@@ -126,7 +130,7 @@ export const approverApi = {
 
 /** Requisitions waiting on any step (the backend decides whether this user may act on the current step). */
 export const isPendingRequisition = (r: RequisitionApprovalItem) =>
-  r.status === "pending_manager" || r.status === "pending_hr" || r.status === "pending_board";
+  typeof r.status === "string" && r.status.startsWith("pending_");
 
 export interface MyDecision {
   id: string;
