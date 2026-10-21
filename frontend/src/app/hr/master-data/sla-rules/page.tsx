@@ -155,7 +155,7 @@ export default function SlaRulesPage() {
   const stagesList = ["submitted", "screening", "interviewing", "offered"];
 
   return (
-    <div className="w-full space-y-5 antialiased font-sans">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 antialiased font-sans max-w-7xl mx-auto">
       {/* Toast Alert */}
       {toast && (
         <div

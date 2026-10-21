@@ -590,7 +590,7 @@ export default function HRDepartmentsPage() {
   if (error) return <ErrorState error={error} onRetry={reload} />;
 
   return (
-    <div className="w-full space-y-5 pb-12">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Toast Feedback */}
       {toast && (
         <div
