@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Pagination } from '@/components/ui/Pagination';
 import { apiRequest, ApiError } from '@/lib/api-client';
 import { offerService, type OfferItem as ApiOffer } from '@/services/offer.service';
 import { requisitionService } from '@/services/requisition.service';
@@ -148,17 +149,33 @@ export default function HROffersPage() {
     setIsDetailModalOpen(true);
   };
 
-  const filteredOffers = offers.filter((item) => {
-    const matchesSearch = 
-      item.candidate_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.position.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (filterStatus === 'all') return matchesSearch;
-    if (filterStatus === 'over_band') return matchesSearch && item.is_over_band;
-    if (filterStatus === 'in_band') return matchesSearch && !item.is_over_band;
-    return matchesSearch && item.status === filterStatus;
-  });
+  const filteredOffers = useMemo(() => {
+    return offers.filter((item) => {
+      const matchesSearch = 
+        item.candidate_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.position.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      if (filterStatus === 'all') return matchesSearch;
+      if (filterStatus === 'over_band') return matchesSearch && item.is_over_band;
+      if (filterStatus === 'in_band') return matchesSearch && !item.is_over_band;
+      return matchesSearch && item.status === filterStatus;
+    });
+  }, [offers, searchQuery, filterStatus]);
+
+  // Pagination states & slices
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterStatus]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOffers.length / pageSize));
+  const paginatedOffers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredOffers.slice(start, start + pageSize);
+  }, [filteredOffers, currentPage, pageSize]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
@@ -249,14 +266,14 @@ export default function HROffersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {filteredOffers.length === 0 ? (
+              {paginatedOffers.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-8 text-center text-slate-400">
                     Không tìm thấy bản ghi Offer nào phù hợp.
                   </td>
                 </tr>
               ) : (
-                filteredOffers.map((off) => (
+                paginatedOffers.map((off) => (
                   <tr key={off.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-4">
                       <div className="font-bold text-slate-900">{off.candidate_name}</div>
@@ -333,6 +350,25 @@ export default function HROffersPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Phân Trang Offers */}
+        {filteredOffers.length > 0 && (
+          <div className="p-4 border-t border-slate-100 bg-white rounded-b-2xl">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredOffers.length}
+              pageSize={pageSize}
+              pageSizeOptions={[5, 10, 20, 50]}
+              onPageSizeChange={(sz) => {
+                setPageSize(sz);
+                setCurrentPage(1);
+              }}
+              onPageChange={(p) => setCurrentPage(p)}
+              itemLabel="đề xuất offer"
+            />
+          </div>
+        )}
       </div>
 
       {/* Modal Form Tạo Offer */}

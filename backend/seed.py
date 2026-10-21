@@ -60,7 +60,7 @@ def reset_and_seed_database(drop_tables: bool = False):
                 "code": "NV-HRM-02"
             },
             {
-                "email": "truongbophan@company.com",
+                "email": " ",
                 "full_name": "Trần Trưởng Bộ Phận",
                 "role": "hiring_manager",
                 "phone": "0923456799",
@@ -517,10 +517,45 @@ def reset_and_seed_database(drop_tables: bool = False):
         print(" -> Seeded Email Template")
 
         # 10. Master Data (JobTitles, Competencies, SharedCategories)
-        jt1 = JobTitle(name="Kỹ Sư Backend", department_id=dept_objs["IT"].id, level="Senior", min_salary=25000000, max_salary=35000000, description="Kỹ sư phát triển Backend")
-        jt2 = JobTitle(name="Chuyên Viên Tuyển Dụng", department_id=dept_objs["HR"].id, level="Mid-Level", min_salary=18000000, max_salary=25000000, description="Recruitment Specialist")
-        db.add(jt1)
-        db.add(jt2)
+        standard_titles = [
+            # HR & Sub-depts
+            {"name": "Chuyên Viên Tuyển Dụng & Thu Hút Nhân Tài (TA)", "dept": dept_objs.get("HR-TA", dept_objs["HR"]).id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 28000000, "description": "Phụ trách sourcing và tuyển chọn nhân sự"},
+            {"name": "Trưởng Nhóm Tuyển Dụng (TA Team Lead)", "dept": dept_objs.get("HR-TA", dept_objs["HR"]).id, "level": "Senior", "min_salary": 28000000, "max_salary": 42000000, "description": "Quản lý chiến lược thu hút nhân tài"},
+            {"name": "Chuyên Viên Đào Tạo & Phát Triển (L&D)", "dept": dept_objs.get("HR-LD", dept_objs["HR"]).id, "level": "Mid-Level", "min_salary": 16000000, "max_salary": 25000000, "description": "Lộ trình đào tạo nội bộ"},
+            {"name": "Chuyên Viên C&B (Tiền Lương & Đãi Ngộ)", "dept": dept_objs["HR"].id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 26000000, "description": "Thang bảng lương và đãi ngộ"},
+            {"name": "HR Generalist / Đối Tác Nhân Sự (HRBP)", "dept": dept_objs["HR"].id, "level": "Senior", "min_salary": 25000000, "max_salary": 38000000, "description": "Đối tác nhân sự chiến lược"},
+            {"name": "Chuyên Viên Tuyển Dụng", "dept": dept_objs["HR"].id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 25000000, "description": "Recruitment Specialist"},
+
+            # IT & Sub-depts
+            {"name": "Kỹ Sư Backend", "dept": dept_objs["IT"].id, "level": "Senior", "min_salary": 25000000, "max_salary": 35000000, "description": "Kỹ sư phát triển Backend"},
+            {"name": "Kỹ Sư Backend (Python / FastAPI)", "dept": dept_objs.get("IT-DEV-BE", dept_objs["IT"]).id, "level": "Senior", "min_salary": 25000000, "max_salary": 40000000, "description": "RESTful APIs & Microservices"},
+            {"name": "Kỹ Sư Backend (Mid-Level)", "dept": dept_objs.get("IT-DEV-BE", dept_objs["IT"]).id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 25000000, "description": "Lập trình Backend"},
+            {"name": "Kỹ Sư Frontend (React / Next.js)", "dept": dept_objs.get("IT-DEV-FE", dept_objs["IT"]).id, "level": "Senior", "min_salary": 24000000, "max_salary": 38000000, "description": "Phát triển giao diện web hiện đại"},
+            {"name": "Kỹ Sư Frontend (Mid-Level)", "dept": dept_objs.get("IT-DEV-FE", dept_objs["IT"]).id, "level": "Mid-Level", "min_salary": 16000000, "max_salary": 24000000, "description": "Lập trình giao diện Frontend"},
+            {"name": "Kỹ Sư DevOps & Điện Toán Đám Mây", "dept": dept_objs.get("IT-OPS", dept_objs["IT"]).id, "level": "Senior", "min_salary": 30000000, "max_salary": 48000000, "description": "CI/CD & Cloud Infrastructure"},
+            {"name": "Kỹ Sư Quản Trị Hệ Thống (SysAdmin)", "dept": dept_objs.get("IT-OPS", dept_objs["IT"]).id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 28000000, "description": "Vận hành hệ thống máy chủ"},
+            {"name": "Kỹ Sư Kiểm Thử Tự Động (QA Automation)", "dept": dept_objs.get("IT-DEV", dept_objs["IT"]).id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 27000000, "description": "Kiểm thử tự động hóa"},
+            {"name": "Kiến Trúc Sư Giải Pháp (Solution Architect)", "dept": dept_objs["IT"].id, "level": "Lead", "min_salary": 45000000, "max_salary": 70000000, "description": "Kiến trúc hệ thống tổng thể"},
+
+            # Sales, Finance, Marketing
+            {"name": "Chuyên Viên Kinh Doanh B2B", "dept": dept_objs["SALES"].id, "level": "Mid-Level", "min_salary": 15000000, "max_salary": 25000000, "description": "Kinh doanh giải pháp B2B"},
+            {"name": "Trưởng Phòng Kinh Doanh (Sales Manager)", "dept": dept_objs["SALES"].id, "level": "Senior", "min_salary": 30000000, "max_salary": 50000000, "description": "Quản lý kinh doanh"},
+            {"name": "Kế Toán Tổng Hợp", "dept": dept_objs["FINANCE"].id, "level": "Mid-Level", "min_salary": 15000000, "max_salary": 22000000, "description": "Kế toán tài chính"},
+            {"name": "Chuyên Viên Phân Tích Tài Chính (FP&A)", "dept": dept_objs["FINANCE"].id, "level": "Senior", "min_salary": 25000000, "max_salary": 38000000, "description": "Phân tích tài chính"},
+            {"name": "Chuyên Viên Digital Marketing", "dept": dept_objs["MKT"].id, "level": "Mid-Level", "min_salary": 16000000, "max_salary": 26000000, "description": "Marketing kỹ thuật số"}
+        ]
+        for st in standard_titles:
+            existing_title = db.query(JobTitle).filter(JobTitle.name == st["name"]).first()
+            if not existing_title:
+                db.add(JobTitle(
+                    name=st["name"],
+                    department_id=st["dept"],
+                    level=st["level"],
+                    min_salary=st["min_salary"],
+                    max_salary=st["max_salary"],
+                    description=st["description"],
+                    is_active=True
+                ))
 
         c1 = Competency(name="Kỹ năng Lập trình Python / FastAPI", category="Technical", description="Thành thạo REST API, ORM", required_level=4, weight=0.4)
         c2 = Competency(name="Kỹ năng Giao tiếp & Đàm phán", category="Soft Skills", description="Khả năng làm việc nhóm & trao đổi ứng viên", required_level=3, weight=0.3)

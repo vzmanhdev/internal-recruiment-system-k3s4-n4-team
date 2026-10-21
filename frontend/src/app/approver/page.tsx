@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   FileText,
   DollarSign,
@@ -72,6 +74,11 @@ export default function ApproverWorkspacePage() {
   const [actionComment, setActionComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // 6. Toast Feedback Notification
   const [toast, setToast] = useState<{
     message: string;
@@ -82,7 +89,7 @@ export default function ApproverWorkspacePage() {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
-    }, 4500);
+    }, 6000);
   };
 
   // Filtered lists
@@ -113,6 +120,29 @@ export default function ApproverWorkspacePage() {
       return matchSearch && matchDept && matchOverBudget;
     });
   }, [offers, searchQuery, selectedDept, selectedPriority]);
+
+  // Pagination states & slices
+  const [reqPage, setReqPage] = useState(1);
+  const [reqPageSize, setReqPageSize] = useState(10);
+  const [offerPage, setOfferPage] = useState(1);
+  const [offerPageSize, setOfferPageSize] = useState(10);
+
+  useEffect(() => {
+    setReqPage(1);
+    setOfferPage(1);
+  }, [searchQuery, selectedDept, selectedPriority, activeTab]);
+
+  const reqTotalPages = Math.max(1, Math.ceil(filteredRequisitions.length / reqPageSize));
+  const paginatedRequisitions = useMemo(() => {
+    const start = (reqPage - 1) * reqPageSize;
+    return filteredRequisitions.slice(start, start + reqPageSize);
+  }, [filteredRequisitions, reqPage, reqPageSize]);
+
+  const offerTotalPages = Math.max(1, Math.ceil(filteredOffers.length / offerPageSize));
+  const paginatedOffers = useMemo(() => {
+    const start = (offerPage - 1) * offerPageSize;
+    return filteredOffers.slice(start, start + offerPageSize);
+  }, [filteredOffers, offerPage, offerPageSize]);
 
   // KPIs
   const pendingReqCount = requisitions.filter(isPendingRequisition).length;
@@ -207,30 +237,6 @@ export default function ApproverWorkspacePage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed top-6 right-6 z-50 max-w-md animate-in slide-in-from-top-3 fade-in duration-300">
-          <div
-            className={clsx(
-              'rounded-2xl p-4 shadow-xl border flex items-start gap-3 backdrop-blur-md',
-              toast.type === 'success' && 'bg-emerald-50/95 border-emerald-200 text-emerald-900',
-              toast.type === 'error' && 'bg-rose-50/95 border-rose-200 text-rose-900',
-              toast.type === 'warning' && 'bg-amber-50/95 border-amber-200 text-amber-900',
-              toast.type === 'info' && 'bg-blue-50/95 border-blue-200 text-blue-900'
-            )}
-          >
-            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
-            {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />}
-            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />}
-            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />}
-            <div className="flex-1 text-xs font-semibold leading-relaxed">{toast.message}</div>
-            <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 1. Header Banner & Quick Summary */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-blue-100/40 via-amber-100/20 to-transparent rounded-full -mr-20 -mt-20 pointer-events-none" />
@@ -466,7 +472,8 @@ export default function ApproverWorkspacePage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-100 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -480,7 +487,7 @@ export default function ApproverWorkspacePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-xs">
-                    {filteredRequisitions.map((req) => {
+                    {paginatedRequisitions.map((req) => {
                       const isPending = req.status.startsWith('pending');
                       return (
                         <tr
@@ -582,6 +589,24 @@ export default function ApproverWorkspacePage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Phân Trang Requisitions */}
+              <div className="pt-4 border-t border-slate-100">
+                <Pagination
+                  currentPage={reqPage}
+                  totalPages={reqTotalPages}
+                  totalItems={filteredRequisitions.length}
+                  pageSize={reqPageSize}
+                  pageSizeOptions={[5, 10, 20, 50]}
+                  onPageSizeChange={(sz) => {
+                    setReqPageSize(sz);
+                    setReqPage(1);
+                  }}
+                  onPageChange={(p) => setReqPage(p)}
+                  itemLabel="yêu cầu tuyển dụng"
+                />
+              </div>
+              </>
             )}
           </div>
         )}
@@ -602,7 +627,8 @@ export default function ApproverWorkspacePage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-100 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -616,7 +642,7 @@ export default function ApproverWorkspacePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 text-xs">
-                    {filteredOffers.map((offer) => {
+                    {paginatedOffers.map((offer) => {
                       return (
                         <tr
                           key={offer.id}
@@ -723,6 +749,24 @@ export default function ApproverWorkspacePage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Phân Trang Offers */}
+              <div className="pt-4 border-t border-slate-100">
+                <Pagination
+                  currentPage={offerPage}
+                  totalPages={offerTotalPages}
+                  totalItems={filteredOffers.length}
+                  pageSize={offerPageSize}
+                  pageSizeOptions={[5, 10, 20, 50]}
+                  onPageSizeChange={(sz) => {
+                    setOfferPageSize(sz);
+                    setOfferPage(1);
+                  }}
+                  onPageChange={(p) => setOfferPage(p)}
+                  itemLabel="đề xuất offer"
+                />
+              </div>
+              </>
             )}
           </div>
         )}
@@ -1268,6 +1312,31 @@ export default function ApproverWorkspacePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Toast Notification (Rendered via createPortal directly to document.body with z-[99999]) */}
+      {mounted && toast && createPortal(
+        <div className="fixed top-6 right-6 z-[99999] max-w-md animate-in slide-in-from-top-3 fade-in duration-300 pointer-events-auto shadow-2xl">
+          <div
+            className={clsx(
+              'rounded-2xl p-4 shadow-2xl border flex items-start gap-3 backdrop-blur-md',
+              toast.type === 'success' && 'bg-emerald-50/95 border-emerald-200 text-emerald-900',
+              toast.type === 'error' && 'bg-rose-50/95 border-rose-200 text-rose-900',
+              toast.type === 'warning' && 'bg-amber-50/95 border-amber-200 text-amber-900',
+              toast.type === 'info' && 'bg-blue-50/95 border-blue-200 text-blue-900'
+            )}
+          >
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
+            {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />}
+            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />}
+            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />}
+            <div className="flex-1 text-xs font-semibold leading-relaxed">{toast.message}</div>
+            <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

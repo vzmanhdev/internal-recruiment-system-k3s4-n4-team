@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   DollarSign,
   Search,
@@ -48,6 +50,10 @@ export default function ApproverOffersPage() {
   const [modalAction, setModalAction] = useState<string | null>(null);
   const [actionComment, setActionComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Toast Feedback Notification
   const [toast, setToast] = useState<{
@@ -59,7 +65,7 @@ export default function ApproverOffersPage() {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
-    }, 4500);
+    }, 6000);
   };
 
   // Filtered List
@@ -83,6 +89,20 @@ export default function ApproverOffersPage() {
       return matchSearch && matchDept && matchBudget;
     });
   }, [offers, searchQuery, selectedDept, selectedBudgetStatus]);
+
+  // Pagination states & slices
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedDept, selectedBudgetStatus]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOffers.length / pageSize));
+  const paginatedOffers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredOffers.slice(start, start + pageSize);
+  }, [filteredOffers, currentPage, pageSize]);
 
   const handleOpenOfferModal = (offer: OfferApprovalItem) => {
     setSelectedOffer(offer);
@@ -125,30 +145,6 @@ export default function ApproverOffersPage() {
 
   return (
     <div className="w-full space-y-6 animate-in fade-in duration-500">
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed top-6 right-6 z-50 max-w-md animate-in slide-in-from-top-3 fade-in duration-300">
-          <div
-            className={clsx(
-              'rounded-2xl p-4 shadow-xl border flex items-start gap-3 backdrop-blur-md',
-              toast.type === 'success' && 'bg-emerald-50/95 border-emerald-200 text-emerald-900',
-              toast.type === 'error' && 'bg-rose-50/95 border-rose-200 text-rose-900',
-              toast.type === 'warning' && 'bg-amber-50/95 border-amber-200 text-amber-900',
-              toast.type === 'info' && 'bg-blue-50/95 border-blue-200 text-blue-900'
-            )}
-          >
-            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
-            {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />}
-            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />}
-            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />}
-            <div className="flex-1 text-xs font-semibold leading-relaxed">{toast.message}</div>
-            <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 1. Header Trang Chuyên Biệt (Không còn 4 cards lớn ở trên) */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -251,7 +247,8 @@ export default function ApproverOffersPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -265,7 +262,7 @@ export default function ApproverOffersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 text-xs">
-                  {filteredOffers.map((offer) => {
+                  {paginatedOffers.map((offer) => {
                     return (
                       <tr
                         key={offer.id}
@@ -372,6 +369,24 @@ export default function ApproverOffersPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Phân Trang Offers */}
+            <div className="pt-4 border-t border-slate-100">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={filteredOffers.length}
+                pageSize={pageSize}
+                pageSizeOptions={[5, 10, 20, 50]}
+                onPageSizeChange={(sz) => {
+                  setPageSize(sz);
+                  setCurrentPage(1);
+                }}
+                onPageChange={(p) => setCurrentPage(p)}
+                itemLabel="đề xuất offer"
+              />
+            </div>
+            </>
           )}
         </div>
       </div>
@@ -580,6 +595,31 @@ export default function ApproverOffersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Toast Notification (Rendered via createPortal directly to document.body with z-[99999]) */}
+      {mounted && toast && createPortal(
+        <div className="fixed top-6 right-6 z-[99999] max-w-md animate-in slide-in-from-top-3 fade-in duration-300 pointer-events-auto shadow-2xl">
+          <div
+            className={clsx(
+              'rounded-2xl p-4 shadow-2xl border flex items-start gap-3 backdrop-blur-md',
+              toast.type === 'success' && 'bg-emerald-50/95 border-emerald-200 text-emerald-900',
+              toast.type === 'error' && 'bg-rose-50/95 border-rose-200 text-rose-900',
+              toast.type === 'warning' && 'bg-amber-50/95 border-amber-200 text-amber-900',
+              toast.type === 'info' && 'bg-blue-50/95 border-blue-200 text-blue-900'
+            )}
+          >
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
+            {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />}
+            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />}
+            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />}
+            <div className="flex-1 text-xs font-semibold leading-relaxed">{toast.message}</div>
+            <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

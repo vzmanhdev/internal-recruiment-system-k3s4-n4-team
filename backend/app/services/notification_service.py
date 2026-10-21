@@ -23,6 +23,8 @@ NOTIFICATION_TYPES: Dict[str, tuple] = {
     "interview_response": ("Ứng viên phản hồi lịch phỏng vấn", False),
     "evaluation_pending": ("Phiếu đánh giá cần nộp", False),
     "job_review": ("Tin tuyển dụng được trả lại để chỉnh sửa", False),
+    "requisition_created": ("Yêu cầu tuyển dụng đã lưu nháp", True),
+    "requisition_submitted": ("Yêu cầu tuyển dụng đã trình duyệt", True),
 }
 
 
