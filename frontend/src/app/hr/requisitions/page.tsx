@@ -968,7 +968,7 @@ export default function HRRequisitionsPage() {
                               {/* Nút bàn giao / đổi recruiter với tooltip rõ ràng */}
                               <button
                                 type="button"
-                                title="Bàn giao hoặc đổi Recruiter phụ trách"
+                                title="Bàn giao phụ trách (kèm lý do và lưu vết kiểm toán)"
                                 onClick={() => openHandoverModal(req)}
                                 className={`p-1 rounded-md border text-xs transition-colors cursor-pointer shrink-0 ${
                                   req.needsHandover
@@ -1019,7 +1019,7 @@ export default function HRRequisitionsPage() {
                                 className="h-7 px-2.5 flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 transition-colors cursor-pointer"
                                 title="Xem chi tiết và luồng phê duyệt"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-3.5 h-3.5 shrink-0" />
                                 <span>Chi tiết</span>
                               </Link>
 
@@ -1325,7 +1325,7 @@ export default function HRRequisitionsPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      Approval Engine Rule
+                      Quy tắc Luồng Phê Duyệt
                     </span>
                     <span className="text-xs text-slate-400">
                       Cấu hình tự động định tuyến tờ trình
@@ -1383,7 +1383,7 @@ export default function HRRequisitionsPage() {
                     {/* Chuỗi các bước phê duyệt nối tiếp (Workflow Steps Visual) */}
                     <div className="space-y-2">
                       <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
-                        Trình tự các bước duyệt (Sequential Chain):
+                        Trình tự các bước duyệt:
                       </span>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
