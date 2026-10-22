@@ -41,6 +41,8 @@ const entries: Array<[string, Omit<RoutePolicy, "pattern">]> = [
   ["/forbidden", { public: true }],
   ["/ui-preview", { public: true }],
   // candidate portal: job board, apply and status lookup are public (S4-01…S4-05)
+  ["/jobs", { public: true }],
+  ["/jobs/[id]", { public: true }],
   ["/candidate/jobs", { public: true }],
   ["/candidate/jobs/[id]", { public: true }],
   ["/candidate/apply/[id]", { public: true }],
@@ -99,6 +101,8 @@ const entries: Array<[string, Omit<RoutePolicy, "pattern">]> = [
   ["/hr/master-data/headcount", ws("hr", ["master_data:manage"])],
   ["/hr/master-data/approval-flows", ws("hr", ["master_data:manage"])],
   ["/hr/master-data/lookups", ws("hr", ["master_data:manage"])],
+  ["/hr/master-data/sla-rules", ws("hr", ["master_data:manage"])],
+  ["/hr/sla-rules", ws("hr", ["master_data:manage"])],
   ["/hr/categories", ws("hr", ["master_data:manage"])],
   ["/hr/competencies", ws("hr", ["master_data:manage"])],
   ["/hr/career-page-config", ws("hr", ["master_data:manage"])],

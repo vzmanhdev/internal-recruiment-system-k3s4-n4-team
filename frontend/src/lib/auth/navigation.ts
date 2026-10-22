@@ -69,6 +69,7 @@ export const NAVIGATION: NavGroup[] = [
         leaf("hr.positions", "Chức danh & dải lương", "badge", "/hr/master-data/positions"),
         leaf("hr.competencies", "Khung năng lực", "target", "/hr/master-data/competencies"),
         leaf("hr.lookups", "Danh mục dùng chung", "layers", "/hr/master-data/lookups", "/hr/categories"),
+        leaf("hr.sla-rules", "Thiết lập SLA tuyển dụng", "clock", "/hr/master-data/sla-rules", "/hr/sla-rules"),
         leaf("hr.career-page", "Trang tuyển dụng công khai", "megaphone", "/hr/career-page-config"),
       ]),
     ],

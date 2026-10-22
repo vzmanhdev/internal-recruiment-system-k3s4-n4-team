@@ -12,8 +12,10 @@ from app.models.user import User
 from app.models.job import JobPosting
 from app.models.requisition import JobRequisition
 from app.models.hr import Department
+from app.models.audit import AuditLog
 from app.api.deps import get_current_user_obj, authenticate_bearer
 from app.services.access_scope import has_permission
+from app.services.notification_service import notify
 from app.core.search import build_search_filter, build_search_score
 
 router = APIRouter()
@@ -276,6 +278,8 @@ def publish_job(
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
     if job.status not in {"draft", "pending_review"}:
         raise HTTPException(status_code=409, detail=f"Không thể xuất bản tin ở trạng thái '{job.status}'.")
+    if _is_expired(job):
+        raise HTTPException(status_code=422, detail="Không thể xuất bản tin tuyển dụng đã quá hạn nộp hồ sơ.")
     req = db.query(JobRequisition).filter(JobRequisition.id == job.requisition_id).first()
     if not req or req.status != "approved":
         raise HTTPException(status_code=409, detail="Tờ trình gốc không còn ở trạng thái Đã duyệt.")
@@ -283,6 +287,26 @@ def publish_job(
     job.published_by_id = current_user.id
     job.published_at = datetime.utcnow()
     job.review_note = None
+
+    # Audit log (S3-10 AC3)
+    db.add(AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="job_posting:publish",
+        target_entity="job_posting",
+        target_id=str(job.id),
+        payload_json=json.dumps({"title": job.title, "published_at": job.published_at.isoformat() if job.published_at else None}, ensure_ascii=False)
+    ))
+
+    # Notify author (S3-10)
+    if job.created_by_id:
+        notify(
+            db, [job.created_by_id], "job_published",
+            f"Tin tuyển dụng đã xuất bản: {job.title}",
+            f"Trưởng phòng HR ({current_user.full_name}) đã phê duyệt và xuất bản tin lên Career Portal.",
+            link="/recruiter/jobs", entity_type="JOB", entity_id=job.id
+        )
+
     db.commit()
     db.refresh(job)
     return _out(job)
@@ -304,7 +328,17 @@ def request_job_changes(job_id: int, payload: ReviewRequest, current_user: User 
     if job.status != "pending_review":
         raise HTTPException(status_code=409, detail=f"Chỉ trả lại được tin đang chờ duyệt (hiện tại '{job.status}').")
     job.status, job.review_note = "draft", payload.reason.strip()
-    from app.services.notification_service import notify
+
+    # Audit log (S3-10)
+    db.add(AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="job_posting:request_changes",
+        target_entity="job_posting",
+        target_id=str(job.id),
+        payload_json=json.dumps({"title": job.title, "reason": job.review_note}, ensure_ascii=False)
+    ))
+
     if job.created_by_id:
         notify(db, [job.created_by_id], "job_review", f"Tin tuyển dụng cần chỉnh sửa: {job.title}", job.review_note,
                link="/recruiter/jobs", entity_type="JOB", entity_id=job.id)
@@ -324,6 +358,17 @@ def close_job(
     if not job:
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
     job.status = "closed"
+
+    # Audit log (S3-10)
+    db.add(AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="job_posting:close",
+        target_entity="job_posting",
+        target_id=str(job.id),
+        payload_json=json.dumps({"title": job.title}, ensure_ascii=False)
+    ))
+
     db.commit()
     db.refresh(job)
     return _out(job)
