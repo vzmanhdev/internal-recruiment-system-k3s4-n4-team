@@ -854,16 +854,6 @@ export default function HRRequisitionsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-<<<<<<< HEAD
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
-                      <th className="py-3.5 px-4 min-w-[200px]">Mã REQ & Chức danh</th>
-                      <th className="py-3.5 px-3 whitespace-nowrap">Phòng ban</th>
-                      <th className="py-3.5 px-3 text-center whitespace-nowrap">Chỉ tiêu</th>
-                      <th className="py-3.5 px-3 whitespace-nowrap">Cảnh báo SLA phê duyệt</th>
-                      <th className="py-3.5 px-4 whitespace-nowrap">Phân công Recruiter</th>
-                      <th className="py-3.5 px-3 text-center whitespace-nowrap">Trạng thái REQ</th>
-                      <th className="py-3.5 pl-4 pr-6 sm:pr-8 text-right whitespace-nowrap min-w-[270px] w-fit">Thao tác</th>
-=======
                     <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold text-[11px] uppercase tracking-wider">
                       <th className="py-2.5 px-3.5 w-[30%]">Vị trí & Mã REQ</th>
                       <th className="py-2.5 px-3 w-[15%]">Phòng ban</th>
@@ -872,7 +862,6 @@ export default function HRRequisitionsPage() {
                       <th className="py-2.5 px-3 w-[15%]">Recruiter</th>
                       <th className="py-2.5 px-3 text-center w-[10%]">Trạng thái</th>
                       <th className="py-2.5 px-3.5 text-right w-[15%]">Thao tác</th>
->>>>>>> 3c198bda1d2f18bd74203a66bde96b0c26057a15
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white font-medium">
@@ -920,15 +909,6 @@ export default function HRRequisitionsPage() {
                             </span>
                           </td>
 
-<<<<<<< HEAD
-                          {/* Badge Cảnh báo SLA trễ hạn */}
-                          <td className="py-3.5 px-3 whitespace-nowrap">
-                            {isStuckOverdue || req.slaStatus === "overdue" ? (
-                              /* Cảnh báo đỏ nhấp nháy nếu YC kẹt quá 3 ngày */
-                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 animate-pulse shadow-xs">
-                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                <span>Kẹt duyệt {req.pendingSinceDays} ngày (&gt;3 ngày)</span>
-=======
                           {/* Thời hạn */}
                           <td className="py-3 px-3">
                             <div className="space-y-0.5">
@@ -940,7 +920,6 @@ export default function HRRequisitionsPage() {
                                 <span className="text-slate-500">
                                   Hạn: {req.targetDate ? formatDateVN(req.targetDate) : "Chưa đặt"}
                                 </span>
->>>>>>> 3c198bda1d2f18bd74203a66bde96b0c26057a15
                               </div>
 
                               {req.isOverdue ? (
@@ -968,32 +947,6 @@ export default function HRRequisitionsPage() {
                             </div>
                           </td>
 
-<<<<<<< HEAD
-                          {/* Cột Phân công Recruiter Dropdown & Nút Bàn giao */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <div className="flex items-center gap-1.5">
-                              <select
-                                value={req.primaryRecruiter}
-                                onChange={(e) =>
-                                  handleAssignRecruiter(req.id, e.target.value)
-                                }
-                                className={`text-xs px-2.5 py-1.5 rounded-xl border font-bold transition-all focus:outline-hidden ${
-                                  req.needsHandover
-                                    ? "bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-400/30"
-                                    : req.primaryRecruiter === "Chưa phân công"
-                                    ? "bg-amber-50 text-amber-800 border-amber-200"
-                                    : "bg-white text-slate-800 border-slate-200 hover:border-blue-300"
-                                }`}
-                              >
-                                {RECRUITER_LIST.map((name, i) => (
-                                  <option key={i} value={name}>
-                                    {name === "Chưa phân công"
-                                      ? "⚠️ Chưa phân công"
-                                      : `👤 ${name}`}
-                                  </option>
-                                ))}
-                              </select>
-=======
                           {/* Recruiter */}
                           <td className="py-3 px-3">
                             <div className="flex items-center justify-between gap-1 max-w-[160px]">
@@ -1011,16 +964,11 @@ export default function HRRequisitionsPage() {
                                   </span>
                                 </div>
                               )}
->>>>>>> 3c198bda1d2f18bd74203a66bde96b0c26057a15
 
                               {/* Nút bàn giao / đổi recruiter với tooltip rõ ràng */}
                               <button
                                 type="button"
-<<<<<<< HEAD
                                 title="Bàn giao phụ trách (kèm lý do và lưu vết kiểm toán)"
-=======
-                                title="Bàn giao hoặc đổi Recruiter phụ trách"
->>>>>>> 3c198bda1d2f18bd74203a66bde96b0c26057a15
                                 onClick={() => openHandoverModal(req)}
                                 className={`p-1 rounded-md border text-xs transition-colors cursor-pointer shrink-0 ${
                                   req.needsHandover
