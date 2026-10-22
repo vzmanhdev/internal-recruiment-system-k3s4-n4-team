@@ -44,6 +44,29 @@ export interface CandidateEmailLog {
   contentSnippet: string;
 }
 
+export interface CandidateInterviewItem {
+  id: number;
+  round_number: number;
+  round_name: string;
+  scheduled_time: string | null;
+  duration_minutes: number;
+  location: string;
+  meeting_link?: string | null;
+  status: string;
+  candidate_response?: string | null;
+  candidate_response_note?: string | null;
+  feedback_notes?: string | null;
+  score?: number | null;
+  passed?: boolean | null;
+  interviewers?: Array<{
+    id: number;
+    interviewer_id: number;
+    interviewer_name?: string | null;
+    interviewer_email?: string | null;
+    role_in_interview?: string;
+  }>;
+}
+
 export interface UnifiedCandidate {
   id: string;
   name: string;
@@ -55,6 +78,7 @@ export interface UnifiedCandidate {
   avatar: string;
   latestPosition: string;
   latestStatus: string;
+  latestStatusCode?: string;
   source: string;
   expectedSalary: string;
   currentSalary?: string;
@@ -69,4 +93,5 @@ export interface UnifiedCandidate {
   evaluation: CandidateEvaluation;
   notes: CandidateNote[];
   emailLogs?: CandidateEmailLog[];
+  interviews?: CandidateInterviewItem[];
 }

@@ -83,6 +83,7 @@ function RequisitionsContent() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit_draft' | 'duplicate'>('create');
   const [editingReqId, setEditingReqId] = useState<number | null>(null);
+  const [sourceReq, setSourceReq] = useState<ManagerRequisitionItem | null>(null);
 
   // Helper: Default future date (today + 30 days)
   const getDefaultFutureDate = () => {
@@ -206,6 +207,7 @@ function RequisitionsContent() {
   const handleOpenCreateModal = () => {
     setModalMode('create');
     setEditingReqId(null);
+    setSourceReq(null);
     setFormError(null);
     const defaultDept = masterData?.depts[0]?.id ? String(masterData.depts[0].id) : '';
     setForm({
@@ -231,6 +233,7 @@ function RequisitionsContent() {
   const handleOpenEditDraftModal = async (req: ManagerRequisitionItem) => {
     setModalMode('edit_draft');
     setEditingReqId(req.dbId);
+    setSourceReq(null);
     setFormError(null);
     try {
       const fullReq = await requisitionService.getRequisitionById(req.dbId);
@@ -260,6 +263,7 @@ function RequisitionsContent() {
   const handleOpenDuplicateModal = async (req: ManagerRequisitionItem) => {
     setModalMode('duplicate');
     setEditingReqId(null);
+    setSourceReq(req);
     setFormError(null);
     try {
       const fullReq = await requisitionService.getRequisitionById(req.dbId);
@@ -289,11 +293,29 @@ function RequisitionsContent() {
     }
   };
 
+  // Action: Quick Clone 1-click (S3-05)
+  const handleQuickClone = async (req: ManagerRequisitionItem) => {
+    try {
+      setSubmitting(true);
+      const actorLabel = user?.full_name || user?.email || 'Trưởng bộ phận';
+      const { requisition: cloned } = await managerApi.cloneRequisition(req.dbId);
+      setData((prev) => [cloned, ...(prev || [])]);
+      showToast(
+        `📋 [Sao Chép Nhanh Thành Công] Đã nhân bản yêu cầu ${req.id} thành bản nháp mới ${cloned.id} (${cloned.title}) cho ${actorLabel}. Toàn bộ JD và tiêu chuẩn ứng viên được giữ nguyên, lịch sử duyệt rỗng.`
+      );
+      await reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không thể sao chép nhanh yêu cầu.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Check URL query param ?cloneId=...
   useEffect(() => {
     const cloneId = searchParams.get('cloneId');
     if (cloneId && requisitions.length > 0) {
-      const target = requisitions.find((r) => r.id === cloneId);
+      const target = requisitions.find((r) => r.id === cloneId || String(r.dbId) === cloneId);
       if (target) {
         handleOpenDuplicateModal(target);
       }
@@ -367,8 +389,29 @@ function RequisitionsContent() {
           setData((prev) => (prev || []).map((r) => (r.dbId === editingReqId ? updated : r)));
           showToast(`✅ [Lưu Nháp Thành Công] Đã cập nhật bản nháp yêu cầu ${updated.id} cho Trưởng bộ phận ${actorLabel}.`);
         }
+      } else if (modalMode === 'duplicate' && sourceReq) {
+        // S3-05: Gọi trực tiếp cloneRequisition API chuyên dụng
+        const { requisition: cloned } = await managerApi.cloneRequisition(sourceReq.dbId, {
+          title: payload.title,
+          quantity: payload.quantity,
+          target_onboard_date: payload.target_onboard_date,
+          reason: payload.reason,
+          reason_detail: payload.reason_detail,
+        });
+
+        // Nếu người dùng có sửa thêm các trường khác (như lương, JD, yêu cầu, quyền lợi...)
+        const updated = await managerApi.updateRequisition(cloned.dbId, payload);
+
+        if (submitForApproval) {
+          const submitted = await managerApi.submitRequisition(updated.dbId);
+          setData((prev) => [submitted, ...(prev || [])]);
+          showToast(`🚀 [Sao Chép & Trình Duyệt Thành Công] Đã sao chép yêu cầu ${sourceReq.id} thành mã mới ${submitted.id} (${submitted.title}) và gửi trình duyệt cho ${actorLabel}.`);
+        } else {
+          setData((prev) => [updated, ...(prev || [])]);
+          showToast(`📋 [Sao Chép Bản Nháp Thành Công] Đã nhân bản yêu cầu ${sourceReq.id} thành bản nháp mới ${updated.id} (${updated.title}) cho ${actorLabel}. Toàn bộ JD/yêu cầu được kế thừa, lịch sử duyệt rỗng.`);
+        }
       } else {
-        // Tạo mới từ đầu hoặc tạo từ bản sao
+        // Tạo mới từ đầu
         const result = await managerApi.createRequisition({
           ...payload,
           save_as_draft: !submitForApproval,
@@ -694,14 +737,28 @@ function RequisitionsContent() {
                           <span>Xem chi tiết</span>
                         </Link>
 
-                        {/* Duplicate Action (S3-05) */}
+                        {/* S3-05 Quick Clone (1-click) */}
                         <button
+                          data-testid={`quick-clone-btn-${req.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickClone(req);
+                          }}
+                          className="p-2 rounded-[8px] text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          title="Sao chép nhanh thành bản nháp (1-click)"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                        </button>
+
+                        {/* S3-05 Duplicate with edit modal */}
+                        <button
+                          data-testid={`duplicate-btn-${req.id}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleOpenDuplicateModal(req);
                           }}
                           className="p-2 rounded-[8px] text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
-                          title="Sao chép yêu cầu (Duplicate)"
+                          title="Sao chép & xem lại/chỉnh sửa (Duplicate)"
                         >
                           <Copy className="w-4 h-4" />
                         </button>
@@ -763,6 +820,22 @@ function RequisitionsContent() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* S3-05: Duplicate Mode Informational Banner */}
+            {modalMode === 'duplicate' && sourceReq && (
+              <div className="p-4 rounded-xl bg-indigo-50/90 border border-indigo-200 text-indigo-900 text-xs space-y-1.5 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 font-bold text-indigo-800">
+                  <Copy className="w-4 h-4 text-indigo-600" />
+                  <span>Chế độ Sao chép Yêu cầu Tuyển dụng (S3-05)</span>
+                  <span className="ml-auto font-mono text-[11px] bg-indigo-200/70 text-indigo-800 px-2.5 py-0.5 rounded-full font-bold">
+                    Nguồn: {sourceReq.id}
+                  </span>
+                </div>
+                <p className="text-slate-600 leading-relaxed">
+                  Hệ thống đã tự động kế thừa toàn bộ <strong>mô tả công việc (JD)</strong>, <strong>tiêu chuẩn ứng viên</strong>, <strong>quyền lợi</strong> và <strong>dải lương</strong> từ yêu cầu <strong>{sourceReq.id}</strong>. Bản sao sẽ luôn được tạo ở trạng thái <strong>Bản nháp (Draft)</strong> và <strong>không kế thừa lịch sử duyệt</strong> của yêu cầu cũ.
+                </p>
+              </div>
+            )}
 
             {/* Error Banner */}
             {formError && (

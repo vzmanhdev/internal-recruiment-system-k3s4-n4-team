@@ -173,6 +173,19 @@ export const requisitionService = {
     return apiRequest<RequisitionItem>(`/requisitions/${id}/copy`, { method: "POST" });
   },
 
+  async cloneRequisition(
+    id: number,
+    payload?: { title?: string; quantity?: number; target_onboard_date?: string; reason?: string; reason_detail?: string }
+  ): Promise<RequisitionItem & { source_requisition_code?: string; source_requisition_id?: number }> {
+    return apiRequest<RequisitionItem & { source_requisition_code?: string; source_requisition_id?: number }>(
+      `/requisitions/${id}/clone`,
+      {
+        method: "POST",
+        body: payload ? JSON.stringify(payload) : undefined,
+      }
+    );
+  },
+
   /** Nudge the approvers of the current step (creator only, once per day). */
   async remind(id: number): Promise<{
     sent: number;

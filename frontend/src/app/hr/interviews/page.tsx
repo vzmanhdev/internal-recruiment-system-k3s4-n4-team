@@ -145,8 +145,9 @@ function CreateInterviewModal({
       });
       if (res?.conflicts && res.conflicts.length > 0) {
         const first = res.conflicts[0];
-        const who = first.who ? first.who.join(', ') : `Phòng ${first.room}`;
-        setConflictWarning(`⚠️ Cảnh báo xung đột: ${who} đã có lịch phỏng vấn lúc ${new Date(first.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}. Bạn cần nhập lý do ghi đè để tiếp tục.`);
+        const who = first.who ? first.who.join(', ') : `Phòng ${first.room || ''}`;
+        const timeStr = first.at ? new Date(first.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'khung giờ này';
+        setConflictWarning(`⚠️ Cảnh báo xung đột: ${who} đã có lịch phỏng vấn lúc ${timeStr}. Bạn cần nhập lý do ghi đè để tiếp tục.`);
       } else {
         setConflictWarning(null);
       }

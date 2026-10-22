@@ -23,17 +23,27 @@ DEFAULT_TEMPLATES = [
         "name": "Thư mời phỏng vấn",
         "category": "Phỏng vấn",
         "subject": "[{company_name}] Thư mời phỏng vấn vị trí {job_title}",
-        "body_html": """<div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-<h2 style="color: #2563eb;">Thư mời phỏng vấn - {candidate_name}</h2>
-<p>Chào <strong>{candidate_name}</strong>,</p>
-<p>Chúc mừng bạn đã vượt qua vòng lọc hồ sơ vị trí <strong>{job_title}</strong> tại {company_name}. Trân trọng mời bạn tham gia buổi phỏng vấn chuyên môn với thông tin chi tiết như sau:</p>
-<ul>
-  <li><strong>Thời gian:</strong> {interview_time}</li>
-  <li><strong>Địa điểm / Link họp:</strong> {interview_location}</li>
-  <li><strong>Người phỏng vấn:</strong> {interviewer_name}</li>
-</ul>
-<p>Vui lòng xác nhận sự tham gia của bạn qua email này hoặc cổng thông tin ứng viên tại: <a href="{portal_link}">{portal_link}</a>.</p>
-<p>Trân trọng,<br/><strong>{interviewer_name} & Bộ phận Tuyển dụng</strong></p>
+        "body_html": """<div style="font-family: Arial, sans-serif; padding: 24px; color: #1e293b; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+<h2 style="color: #2563eb; margin-top: 0; font-size: 20px;">Thư mời phỏng vấn vị trí {job_title}</h2>
+<p>Kính gửi <strong>{candidate_name}</strong>,</p>
+<p>Chúc mừng bạn đã vượt qua vòng sơ loại hồ sơ cho vị trí <strong>{job_title}</strong> tại <strong>{company_name}</strong>. Hội đồng tuyển dụng trân trọng kính mời bạn tham gia buổi phỏng vấn với các thông tin chi tiết dưới đây:</p>
+<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+  <p style="margin: 6px 0;"><strong>Vị trí ứng tuyển:</strong> {job_title}</p>
+  <p style="margin: 6px 0;"><strong>Thời gian phỏng vấn:</strong> {interview_time}</p>
+  <p style="margin: 6px 0;"><strong>Hình thức / Địa điểm:</strong> {interview_location}</p>
+  <p style="margin: 6px 0;"><strong>Hội đồng phỏng vấn:</strong> {interviewer_name}</p>
+</div>
+<div style="background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 4px; padding: 14px 16px; margin: 16px 0;">
+  <strong style="color: #1d4ed8; font-size: 14px;">Hướng dẫn chuẩn bị:</strong>
+  <p style="margin: 6px 0 0 0; color: #334155; font-size: 13px; line-height: 1.5;">{preparation_notes}</p>
+</div>
+<p style="margin-top: 18px;">Để đảm bảo công tác chuẩn bị chu đáo nhất, bạn vui lòng bấm xác nhận sự tham gia hoặc gửi yêu cầu đề nghị đổi lịch qua liên kết sau:</p>
+<div style="text-align: center; margin: 24px 0;">
+  <a href="{portal_link}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; font-weight: bold; font-size: 14px; border-radius: 8px; display: inline-block;">Xác nhận tham dự hoặc Đổi lịch</a>
+</div>
+<p style="font-size: 12px; color: #64748b;">(Hoặc truy cập trực tiếp đường dẫn: <a href="{portal_link}" style="color: #2563eb;">{portal_link}</a>)</p>
+<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+<p style="margin-bottom: 0;">Trân trọng,<br/><strong>Bộ phận Tuyển dụng & HR - {company_name}</strong></p>
 </div>""",
         "is_auto_send": True,
         "is_active": True

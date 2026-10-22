@@ -127,15 +127,31 @@ export default function RequisitionDetailPage() {
     );
   };
 
-  // Action: Sao chép yêu cầu này (Duplicate)
-  const handleDuplicate = () => {
+  // Action: Sao chép yêu cầu này (Duplicate - S3-05)
+  const handleDuplicate = async () => {
     if (!requisition) return;
-    showToast(
-      'Chuyển sang bản sao tờ trình',
-      `Đang sao chép thông tin từ tờ trình ${requisition.id}...`,
-      'info'
-    );
-    router.push(`/manager/requisitions?cloneId=${requisition.id}`);
+    try {
+      showToast(
+        'Đang sao chép tờ trình',
+        `Hệ thống đang nhân bản thông tin tờ trình ${requisition.id}...`,
+        'info'
+      );
+      const cloned = await requisitionService.cloneRequisition(requisition.dbId);
+      showToast(
+        'Sao chép tờ trình thành công (S3-05)',
+        `Đã tạo bản nháp mới ${cloned.code} (${cloned.title}) từ ${requisition.id}. Toàn bộ JD, yêu cầu và dải lương đã được giữ nguyên; lịch sử duyệt được làm mới.`,
+        'success'
+      );
+      setTimeout(() => {
+        router.push(`/manager/requisitions/${cloned.id}`);
+      }, 1200);
+    } catch (err) {
+      showToast(
+        'Không thể sao chép tờ trình',
+        err instanceof ApiError ? err.message : 'Có lỗi xảy ra khi sao chép yêu cầu tuyển dụng.',
+        'error'
+      );
+    }
   };
 
   if (loading) return <LoadingState />;
