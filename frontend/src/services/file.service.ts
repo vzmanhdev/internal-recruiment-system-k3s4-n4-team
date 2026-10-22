@@ -11,7 +11,14 @@ export interface UploadedFile {
   content_type: string;
   size_bytes: number;
   url: string;
-  parsed?: { status: "parsed" | "failed"; full_name?: string | null; email?: string | null; phone?: string | null };
+  parsed?: {
+    status: "parsed" | "failed";
+    full_name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    skills?: string[];
+    education?: string | null;
+  };
 }
 
 /** Multipart upload (type and size are validated by the server from the file bytes). */

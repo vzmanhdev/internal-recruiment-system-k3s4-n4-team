@@ -1,5 +1,37 @@
 import { apiRequest } from "@/lib/api-client";
 
+export interface ConflictSessionDetail {
+  interview_id: number;
+  type: 'interviewer' | 'room';
+  who?: string[];
+  who_details?: Array<{ id: number; name: string; email?: string }>;
+  conflicting_interviewer_ids?: number[];
+  room?: string;
+  at?: string;
+  start_time?: string;
+  end_time?: string;
+  duration_minutes?: number;
+  candidate?: string;
+  candidate_id?: number;
+  job_title?: string;
+  round_name?: string;
+  location?: string;
+  meeting_link?: string | null;
+}
+
+export interface SuggestedSlot {
+  start_time: string;
+  end_time: string;
+  formatted_range: string;
+  formatted_date?: string;
+}
+
+export interface ConflictCheckResponse {
+  has_conflict: boolean;
+  conflicts: ConflictSessionDetail[];
+  suggested_slot?: SuggestedSlot | null;
+}
+
 export interface InterviewItem {
   id: number;
   application_id: number;
@@ -14,12 +46,17 @@ export interface InterviewItem {
   location: string;
   meeting_link?: string;
   status: string;
+  override_reason?: string | null;
+  cancel_reason?: string | null;
   feedback_notes?: string;
   score?: number;
   passed?: boolean;
   interviewers?: any[];
   cv_url?: string | null;
   candidate_response?: string | null;
+  candidate_response_note?: string | null;
+  candidate_responded_at?: string | null;
+  preparation_notes?: string | null;
   my_evaluation_submitted?: boolean;
   is_my_interview?: boolean;
   is_own_application?: boolean;
@@ -38,7 +75,7 @@ export const interviewService = {
     return apiRequest<InterviewItem[]>(`/interviews${queryString}`);
   },
 
-  async scheduleInterview(data: Partial<InterviewItem> & { interviewer_ids?: number[] }): Promise<InterviewItem> {
+  async scheduleInterview(data: Partial<InterviewItem> & { interviewer_ids?: number[]; override_conflict_reason?: string }): Promise<InterviewItem> {
     return apiRequest<InterviewItem>("/interviews", {
       method: "POST",
       body: JSON.stringify(data),
@@ -108,8 +145,8 @@ export const interviewService = {
     location: string;
     meeting_link?: string | null;
     interviewer_ids: number[];
-  }): Promise<{ conflicts: Array<{ interview_id: number; type: string; who?: string[]; room?: string; at: string; candidate?: string }> }> {
-    return apiRequest("/interviews/conflicts", {
+  }): Promise<ConflictCheckResponse> {
+    return apiRequest<ConflictCheckResponse>("/interviews/conflicts", {
       method: "POST",
       body: JSON.stringify(data),
     });

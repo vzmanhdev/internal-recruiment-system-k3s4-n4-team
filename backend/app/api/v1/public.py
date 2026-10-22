@@ -104,29 +104,63 @@ def withdraw_by_link(payload: TokenAction, db: Session = Depends(get_db)):
     """S4-06: withdrawal from the confirmation e-mail; first call previews, second call (confirm=true) executes."""
     from app.api.v1.applications import withdraw
     app = _by_token(db, JobApplication, JobApplication.withdraw_token_hash, payload.token)
+    cand_view = app.candidate_view()
     if not payload.confirm:
-        return {"confirm_required": True, "job_title": app.job_posting.title if app.job_posting else None,
-                "status": app.candidate_view()["public_status"]}
-    withdraw(db, app, None, payload.reason)
+        return {
+            "confirm_required": True,
+            "job_title": app.job_posting.title if app.job_posting else None,
+            "department": app.job_posting.department_name if app.job_posting else None,
+            "status": cand_view["public_status"],
+            "current_status": app.status,
+            "tracking_code": cand_view["tracking_code"],
+            "candidate_name": app.full_name,
+            "full_name": app.full_name,
+            "email": app.email,
+            "phone": app.phone,
+            "applied_date": cand_view["applied_date"],
+            "can_withdraw": app.status not in ("hired", "rejected", "withdrawn", "onboarded", "offered"),
+        }
+    reason = (payload.reason or "Ứng viên chủ động rút hồ sơ").strip()
+    withdraw(db, app, None, reason)
     db.commit()
-    return {"withdrawn": True, "status": "Kết thúc"}
+    db.refresh(app)
+    return {
+        "withdrawn": True,
+        "status": "Kết thúc",
+        "current_status": "withdrawn",
+        "tracking_code": app.tracking_code or f"APP-{app.id:08d}",
+        "job_title": app.job_posting.title if app.job_posting else None,
+        "candidate_name": app.full_name,
+        "withdrawn_at": app.stage_entered_at.isoformat() if app.stage_entered_at else datetime.utcnow().isoformat(),
+        "reason": reason,
+        "message": f"Hồ sơ ứng tuyển vị trí {app.job_posting.title if app.job_posting else ''} đã được rút thành công. Cảm ơn bạn đã quan tâm đến công ty.",
+    }
 
 
 @router.get("/interviews")
 def interview_by_link(token: str, db: Session = Depends(get_db)):
     i = _by_token(db, InterviewSchedule, InterviewSchedule.confirmation_token_hash, token)
     if i.status != "scheduled":
-        raise HTTPException(status_code=410, detail=INVALID_LINK)
+        raise HTTPException(status_code=410, detail="Buổi phỏng vấn đã bị hủy hoặc thay đổi. Liên kết không còn hiệu lực.")
+    if i.scheduled_time < datetime.now():
+        raise HTTPException(status_code=410, detail="Buổi phỏng vấn đã kết thúc, liên kết không còn hiệu lực.")
     posting = i.application.job_posting if i.application else None
     return {
+        "id": i.id,
+        "candidate_name": i.application.full_name if i.application else None,
+        "candidate_email": i.application.email if i.application else None,
         "job_title": posting.title if posting else None,
         "department": posting.department_name if posting else None,
         "round_name": i.round_name,
+        "round_number": i.round_number,
         "scheduled_time": i.scheduled_time.isoformat(),
         "duration_minutes": i.duration_minutes,
         "location": i.location,
         "meeting_link": i.meeting_link,
+        "preparation_notes": i.preparation_notes or "Vui lòng có mặt trước 10 phút, trang phục lịch sự. Nếu phỏng vấn online, hãy kiểm tra camera/micro và kết nối Internet ổn định. Nếu trực tiếp, vui lòng mang theo CV bản in.",
         "candidate_response": i.candidate_response,
+        "candidate_response_note": i.candidate_response_note,
+        "candidate_responded_at": i.candidate_responded_at.isoformat() if i.candidate_responded_at else None,
     }
 
 
@@ -136,14 +170,31 @@ def interview_reply(payload: InterviewReply, db: Session = Depends(get_db)):
     if payload.response not in ("confirmed", "reschedule_requested"):
         raise HTTPException(status_code=422, detail="Phản hồi chỉ nhận 'confirmed' hoặc 'reschedule_requested'.")
     i = _by_token(db, InterviewSchedule, InterviewSchedule.confirmation_token_hash, payload.token)
-    if i.status != "scheduled" or i.scheduled_time < datetime.now():
-        raise HTTPException(status_code=410, detail=INVALID_LINK)
+    if i.status != "scheduled":
+        raise HTTPException(status_code=410, detail="Buổi phỏng vấn đã bị hủy hoặc không còn ở trạng thái chờ phỏng vấn.")
+    if i.scheduled_time < datetime.now():
+        raise HTTPException(status_code=410, detail="Buổi phỏng vấn đã kết thúc trong quá khứ, liên kết không còn hiệu lực.")
     i.candidate_response, i.candidate_response_note, i.candidate_responded_at = payload.response, payload.note, datetime.utcnow()
-    notify(db, [i.created_by_id], "interview_response",
-           f"{i.application.full_name} {'xác nhận tham dự' if payload.response == 'confirmed' else 'đề nghị đổi lịch'} phỏng vấn",
-           payload.note or "", link=f"/hr/interviews?interview={i.id}", entity_type="INTERVIEW", entity_id=i.id)
+    posting = i.application.job_posting if i.application else None
+    action_label = "xác nhận tham dự" if payload.response == "confirmed" else "đề nghị đổi lịch"
+    recipients = [i.created_by_id]
+    if i.interviewers:
+        recipients.extend(intv.interviewer_id for intv in i.interviewers)
+    notify(db, list(dict.fromkeys(recipients)), "interview_response",
+           f"{i.application.full_name} {action_label} phỏng vấn",
+           payload.note or "", link=f"/recruiter/interviews?interview={i.id}", entity_type="INTERVIEW", entity_id=i.id)
     db.commit()
-    return {"candidate_response": i.candidate_response}
+    return {
+        "status": "success",
+        "candidate_response": i.candidate_response,
+        "candidate_response_note": i.candidate_response_note,
+        "candidate_responded_at": i.candidate_responded_at.isoformat() if i.candidate_responded_at else None,
+        "job_title": posting.title if posting else None,
+        "scheduled_time": i.scheduled_time.isoformat(),
+        "location": i.location,
+        "meeting_link": i.meeting_link,
+        "message": f"Đã ghi nhận {action_label} của bạn thành công.",
+    }
 
 
 @router.get("/offers")

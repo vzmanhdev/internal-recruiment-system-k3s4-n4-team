@@ -27,6 +27,7 @@ class InterviewSchedule(Base):
     candidate_responded_at = Column(DateTime, nullable=True)
     cancel_reason = Column(Text, nullable=True)
     override_reason = Column(Text, nullable=True)
+    preparation_notes = Column(Text, nullable=True)
     
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -50,6 +51,7 @@ class InterviewSchedule(Base):
             "duration_minutes": self.duration_minutes,
             "location": self.location,
             "meeting_link": self.meeting_link,
+            "preparation_notes": self.preparation_notes,
             "status": self.status,
             "cancel_reason": self.cancel_reason,
             "override_reason": self.override_reason,

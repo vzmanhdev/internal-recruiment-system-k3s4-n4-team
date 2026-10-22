@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +22,12 @@ from app.services.access_scope import (
 router = APIRouter()
 
 FEEDBACK_STATUSES = {"completed", "cancelled"}
+ICT = timezone(timedelta(hours=7))
+
+
+def _current_time() -> datetime:
+    """Current time in Vietnam ICT (UTC+7) as naive datetime for consistent DB comparisons."""
+    return datetime.now(ICT).replace(tzinfo=None)
 
 
 class InterviewCreate(BaseModel):
@@ -34,6 +40,7 @@ class InterviewCreate(BaseModel):
     meeting_link: Optional[str] = None
     interviewer_ids: List[int] = Field(default_factory=list)
     override_conflict_reason: Optional[str] = None
+    preparation_notes: Optional[str] = None
 
 
 class InterviewUpdate(BaseModel):
@@ -43,6 +50,7 @@ class InterviewUpdate(BaseModel):
     meeting_link: Optional[str] = None
     interviewer_ids: List[int] = Field(..., min_length=1)
     override_conflict_reason: Optional[str] = None
+    preparation_notes: Optional[str] = None
     reason: Optional[str] = Field(default=None, max_length=500)  # why the slot moved (kept in the application history)
 
 
@@ -80,10 +88,15 @@ class AskedQuestionIn(BaseModel):
 
 def _parse_time(value: str) -> datetime:
     try:
-        dt = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+        raw = value.strip()
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        dt = datetime.fromisoformat(raw)
     except ValueError:
         raise HTTPException(status_code=422, detail="Thời gian phỏng vấn không đúng định dạng (ISO 8601, ví dụ 2026-10-20T09:00).")
-    return dt.replace(tzinfo=None)
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(ICT).replace(tzinfo=None)
+    return dt
 
 
 def _overlaps(row: InterviewSchedule, start: datetime, end: datetime) -> bool:
@@ -92,34 +105,121 @@ def _overlaps(row: InterviewSchedule, start: datetime, end: datetime) -> bool:
 
 def find_conflicts(db: Session, interviewer_ids: List[int], location: str, meeting_link: Optional[str], start: datetime,
                    minutes: int, exclude_id: Optional[int] = None) -> List[dict]:
-    """S6-04: conflicts per interviewer and per room (physical location; online links are not rooms)."""
+    """S6-04: conflicts per interviewer and per room with rich session details."""
     end = start + timedelta(minutes=minutes)
-    candidates = db.query(InterviewSchedule).filter(InterviewSchedule.status == "scheduled",
-                                                    InterviewSchedule.scheduled_time < end)
+    candidates = db.query(InterviewSchedule).filter(
+        InterviewSchedule.status == "scheduled",
+        InterviewSchedule.scheduled_time < end
+    )
     if exclude_id:
         candidates = candidates.filter(InterviewSchedule.id != exclude_id)
     conflicts = []
+    
+    # Pure online keywords that are not physical rooms
+    online_keywords = {"trực tuyến", "online", "google meet", "teams", "ms teams", "zoom"}
+    loc_clean = (location or "").strip()
+    is_online_a = not loc_clean or loc_clean.lower() in online_keywords
+    
     for row in candidates.all():
         if not _overlaps(row, start, end):
             continue
+            
+        row_end = row.scheduled_time + timedelta(minutes=row.duration_minutes)
+        candidate_name = row.application.full_name if row.application else None
+        candidate_id = row.application.candidate_id if row.application else None
+        job_title = row.application.job_posting.title if (row.application and row.application.job_posting) else None
+        round_name = row.round_name
+        
         shared = {i.interviewer_id for i in row.interviewers} & set(interviewer_ids)
         if shared:
-            names = [u.full_name for u in db.query(User).filter(User.id.in_(shared)).all()]
-            conflicts.append({"interview_id": row.id, "type": "interviewer", "who": names,
-                              "at": row.scheduled_time.isoformat(), "candidate": row.application.full_name if row.application else None})
-        if not meeting_link and not row.meeting_link and location and row.location and row.location.strip().lower() == location.strip().lower():
-            conflicts.append({"interview_id": row.id, "type": "room", "room": row.location, "at": row.scheduled_time.isoformat(),
-                              "candidate": row.application.full_name if row.application else None})
+            conflicted_users = db.query(User).filter(User.id.in_(shared)).all()
+            names = [u.full_name for u in conflicted_users]
+            who_details = [{"id": u.id, "name": u.full_name, "email": u.email} for u in conflicted_users]
+            conflicts.append({
+                "interview_id": row.id,
+                "type": "interviewer",
+                "who": names,
+                "who_details": who_details,
+                "conflicting_interviewer_ids": list(shared),
+                "at": row.scheduled_time.isoformat(),
+                "start_time": row.scheduled_time.isoformat(),
+                "end_time": row_end.isoformat(),
+                "duration_minutes": row.duration_minutes,
+                "candidate": candidate_name,
+                "candidate_id": candidate_id,
+                "job_title": job_title,
+                "round_name": round_name,
+                "location": row.location,
+                "meeting_link": row.meeting_link,
+            })
+            
+        row_loc_clean = (row.location or "").strip()
+        is_online_b = not row_loc_clean or row_loc_clean.lower() in online_keywords
+        if not is_online_a and not is_online_b and loc_clean.lower() == row_loc_clean.lower():
+            conflicts.append({
+                "interview_id": row.id,
+                "type": "room",
+                "room": row.location,
+                "at": row.scheduled_time.isoformat(),
+                "start_time": row.scheduled_time.isoformat(),
+                "end_time": row_end.isoformat(),
+                "duration_minutes": row.duration_minutes,
+                "candidate": candidate_name,
+                "candidate_id": candidate_id,
+                "job_title": job_title,
+                "round_name": round_name,
+                "location": row.location,
+                "meeting_link": row.meeting_link,
+            })
     return conflicts
 
 
-def _raise_conflicts(conflicts: List[dict]):
+def suggest_next_slot(db: Session, interviewer_ids: List[int], location: str, meeting_link: Optional[str],
+                      start: datetime, minutes: int, exclude_id: Optional[int] = None) -> Optional[dict]:
+    """S6-04 AC2: Suggest the next available contiguous slot for the requested interviewers and room."""
+    current_candidate = start
+    for _ in range(12):  # Scan up to 12 forward steps (e.g., several hours ahead)
+        confs = find_conflicts(db, interviewer_ids, location, meeting_link, current_candidate, minutes, exclude_id)
+        if not confs:
+            slot_end = current_candidate + timedelta(minutes=minutes)
+            return {
+                "start_time": current_candidate.isoformat(),
+                "end_time": slot_end.isoformat(),
+                "formatted_range": f"{current_candidate.strftime('%H:%M')} - {slot_end.strftime('%H:%M')}",
+                "formatted_date": current_candidate.strftime("%d/%m/%Y"),
+            }
+        max_end = None
+        for c in confs:
+            if "end_time" in c:
+                c_end = _parse_time(c["end_time"])
+                if max_end is None or c_end > max_end:
+                    max_end = c_end
+        next_dt = max_end if max_end else (current_candidate + timedelta(minutes=30))
+        # Round up to nearest 15-minute mark
+        remainder = next_dt.minute % 15
+        if remainder != 0:
+            next_dt += timedelta(minutes=15 - remainder)
+        current_candidate = next_dt
+    return None
+
+
+def _raise_conflicts(conflicts: List[dict], suggested_slot: Optional[dict] = None):
     first = conflicts[0]
     what = ", ".join(first.get("who") or []) if first["type"] == "interviewer" else f"Phòng {first.get('room')}"
+    candidate_info = f" với ứng viên '{first.get('candidate')}'" if first.get("candidate") else ""
+    time_str = ""
+    if "start_time" in first and "end_time" in first:
+        try:
+            st = _parse_time(first["start_time"]).strftime("%H:%M")
+            et = _parse_time(first["end_time"]).strftime("%H:%M")
+            time_str = f" lúc {st} - {et}"
+        except Exception:
+            pass
     raise HTTPException(status_code=409, detail={
         "code": "INTERVIEW_CONFLICT",
-        "message": f"{what} đã có lịch trùng thời gian (lịch #{first['interview_id']}). Có thể ghi đè kèm lý do.",
+        "message": f"Phát hiện xung đột lịch! {what} đã có lịch{time_str}{candidate_info} (buổi #{first['interview_id']}). Trùng là lỗi chặn, cần xác nhận ghi đè kèm lý do (tối thiểu 10 ký tự) để lưu.",
         "conflicts": conflicts,
+        "suggested_slot": suggested_slot,
     })
 
 
@@ -141,10 +241,12 @@ def _invite(db: Session, interview: InterviewSchedule, app: JobApplication, inte
     names = ", ".join(u.full_name for u in db.query(User).filter(User.id.in_(interviewer_ids)).all())
     when = interview.scheduled_time.strftime("%H:%M - %d/%m/%Y")
     link = frontend_link("/candidate/interview/link", raw)
+    prep_notes = interview.preparation_notes or "Vui lòng có mặt trước 10 phút, trang phục lịch sự. Nếu phỏng vấn online, hãy kiểm tra camera/micro và kết nối Internet ổn định. Nếu trực tiếp, vui lòng mang theo CV bản in."
     queue_template_email(db, "INVITE_INTERVIEW", app.email, app.full_name, {
         "candidate_name": app.full_name, "job_title": app.job_posting.title if app.job_posting else "",
         "interview_time": when, "interview_location": interview.meeting_link or interview.location,
         "interviewer_name": names, "portal_link": link,
+        "preparation_notes": prep_notes,
     }, related_entity="APPLICATION", related_id=app.id,
         footer_html=f'<p style="font-size:12px">Xác nhận tham dự hoặc đề nghị đổi lịch: <a href="{link}">{link}</a></p>')
     notify(db, interviewer_ids, "interview_invited",
@@ -205,8 +307,16 @@ def list_interviews(
 @router.post("/conflicts")
 def check_conflicts(payload: InterviewUpdate, current_user: User = Depends(get_current_user_obj), db: Session = Depends(get_db)):
     require_any_permission(db, current_user, "interview:schedule")
-    return {"conflicts": find_conflicts(db, payload.interviewer_ids, payload.location, payload.meeting_link,
-                                        _parse_time(payload.scheduled_time), payload.duration_minutes)}
+    start = _parse_time(payload.scheduled_time)
+    conflicts = find_conflicts(db, payload.interviewer_ids, payload.location, payload.meeting_link,
+                               start, payload.duration_minutes)
+    suggested = suggest_next_slot(db, payload.interviewer_ids, payload.location, payload.meeting_link,
+                                  start, payload.duration_minutes) if conflicts else None
+    return {
+        "has_conflict": len(conflicts) > 0,
+        "conflicts": conflicts,
+        "suggested_slot": suggested,
+    }
 
 
 @router.post("/bulk")
@@ -214,7 +324,7 @@ def bulk_schedule(payload: BulkSchedule, current_user: User = Depends(get_curren
     """S6-03: consecutive slots for several candidates; preview first, then confirm (all-or-nothing)."""
     require_any_permission(db, current_user, "interview:schedule")
     start = _parse_time(payload.start_time)
-    if start < datetime.now():
+    if start < _current_time():
         raise HTTPException(status_code=422, detail="Không thể đặt lịch phỏng vấn trong quá khứ.")
     interviewer_ids = _validate_interviewers(db, payload.interviewer_ids)
     apps = []
@@ -266,18 +376,23 @@ def schedule_interview(payload: InterviewCreate, current_user: User = Depends(ge
         raise HTTPException(status_code=409, detail=f"Không thể đặt lịch cho hồ sơ ở trạng thái '{app.status}'.")
 
     start = _parse_time(payload.scheduled_time)
-    if start < datetime.now():
+    if start < _current_time():
         raise HTTPException(status_code=422, detail="Không thể đặt lịch phỏng vấn trong quá khứ.")
     interviewer_ids = _validate_interviewers(db, payload.interviewer_ids)
     conflicts = find_conflicts(db, interviewer_ids, payload.location, payload.meeting_link, start, payload.duration_minutes)
-    if conflicts and not (payload.override_conflict_reason or "").strip():
-        _raise_conflicts(conflicts)
+    
+    override_reason = (payload.override_conflict_reason or "").strip()
+    if conflicts:
+        if len(override_reason) < 10:
+            suggested = suggest_next_slot(db, interviewer_ids, payload.location, payload.meeting_link, start, payload.duration_minutes)
+            _raise_conflicts(conflicts, suggested)
 
     interview = InterviewSchedule(
         application_id=app.id, round_number=payload.round_number, round_name=payload.round_name, scheduled_time=start,
         duration_minutes=payload.duration_minutes, location=payload.location, meeting_link=payload.meeting_link,
+        preparation_notes=payload.preparation_notes or "Vui lòng có mặt trước 10 phút, trang phục lịch sự. Nếu phỏng vấn online, hãy kiểm tra camera/micro và kết nối Internet ổn định. Nếu trực tiếp, vui lòng mang theo CV bản in.",
         status="scheduled", created_by_id=current_user.id,
-        override_reason=payload.override_conflict_reason if conflicts else None,
+        override_reason=override_reason if (conflicts and override_reason) else None,
     )
     db.add(interview)
     db.flush()
@@ -288,6 +403,11 @@ def schedule_interview(payload: InterviewCreate, current_user: User = Depends(ge
         db.add(ApplicationLog(application_id=app.id, changed_by_id=current_user.id, from_status=app.status,
                               to_status="interviewing", comment=f"Đặt lịch {payload.round_name}"))
         app.status, app.stage_entered_at = "interviewing", datetime.utcnow()
+    
+    if conflicts and override_reason:
+        conflict_desc = "; ".join([f"buổi #{c['interview_id']} ({c['type']}: {', '.join(c.get('who') or []) or c.get('room')})" for c in conflicts])
+        db.add(ApplicationLog(application_id=app.id, changed_by_id=current_user.id, from_status=app.status,
+                              to_status=app.status, comment=f"Xác nhận ghi đè xung đột lịch với {conflict_desc}. Lý do: {override_reason}"))
     _invite(db, interview, app, interviewer_ids)
     db.commit()
     db.refresh(interview)
@@ -309,16 +429,23 @@ def reschedule_interview(interview_id: int, payload: InterviewUpdate, current_us
     if _has_evaluation(db, interview):
         raise HTTPException(status_code=409, detail="Buổi phỏng vấn đã có phiếu đánh giá được nộp, không sửa được.")
     start = _parse_time(payload.scheduled_time)
-    if start < datetime.now():
+    if start < _current_time():
         raise HTTPException(status_code=422, detail="Không thể đặt lịch phỏng vấn trong quá khứ.")
     interviewer_ids = _validate_interviewers(db, payload.interviewer_ids)
     conflicts = find_conflicts(db, interviewer_ids, payload.location, payload.meeting_link, start, payload.duration_minutes, exclude_id=interview.id)
-    if conflicts and not (payload.override_conflict_reason or "").strip():
-        _raise_conflicts(conflicts)
+    
+    override_reason = (payload.override_conflict_reason or "").strip()
+    if conflicts:
+        if len(override_reason) < 10:
+            suggested = suggest_next_slot(db, interviewer_ids, payload.location, payload.meeting_link, start, payload.duration_minutes, exclude_id=interview.id)
+            _raise_conflicts(conflicts, suggested)
+
     previous = {i.interviewer_id for i in interview.interviewers}
     interview.scheduled_time, interview.duration_minutes = start, payload.duration_minutes
     interview.location, interview.meeting_link = payload.location, payload.meeting_link
-    interview.override_reason = payload.override_conflict_reason if conflicts else None
+    interview.override_reason = override_reason if (conflicts and override_reason) else None
+    if payload.preparation_notes is not None:
+        interview.preparation_notes = payload.preparation_notes
     db.query(InterviewInterviewer).filter(InterviewInterviewer.interview_id == interview.id).delete(synchronize_session=False)
     for iid in interviewer_ids:
         db.add(InterviewInterviewer(interview_id=interview.id, interviewer_id=iid))
@@ -326,9 +453,14 @@ def reschedule_interview(interview_id: int, payload: InterviewUpdate, current_us
     db.refresh(interview)
     _invite(db, interview, interview.application, sorted(set(interviewer_ids) | previous), changed=True)
     app = interview.application
+    
+    reschedule_comment = f"Dời lịch {interview.round_name} sang {start.strftime('%H:%M %d/%m/%Y')}" + (f": {payload.reason.strip()}" if (payload.reason or "").strip() else "")
+    if conflicts and override_reason:
+        conflict_desc = "; ".join([f"buổi #{c['interview_id']} ({c['type']}: {', '.join(c.get('who') or []) or c.get('room')})" for c in conflicts])
+        reschedule_comment += f" [Ghi đè xung đột với {conflict_desc}. Lý do: {override_reason}]"
+        
     db.add(ApplicationLog(application_id=app.id, changed_by_id=current_user.id, from_status=app.status, to_status=app.status,
-                          comment=f"Dời lịch {interview.round_name} sang {start.strftime('%H:%M %d/%m/%Y')}"
-                                  + (f": {payload.reason.strip()}" if (payload.reason or "").strip() else "")))
+                          comment=reschedule_comment))
     db.commit()
     db.refresh(interview)
     return interview.to_dict()
@@ -343,7 +475,7 @@ def cancel_interview(interview_id: int, payload: InterviewCancel, current_user: 
         raise HTTPException(status_code=409, detail=f"Không thể huỷ lịch ở trạng thái '{interview.status}'.")
     if _has_evaluation(db, interview):
         raise HTTPException(status_code=409, detail="Buổi phỏng vấn đã có phiếu đánh giá được nộp, không huỷ được.")
-    interview.status, interview.cancel_reason, interview.confirmation_token_hash = "cancelled", payload.reason.strip(), None
+    interview.status, interview.cancel_reason = "cancelled", payload.reason.strip()
     app = interview.application
     ids = [i.interviewer_id for i in interview.interviewers]
     notify(db, ids, "interview_invited", f"Huỷ lịch phỏng vấn: {app.full_name}", payload.reason,
@@ -382,12 +514,21 @@ def candidate_response(interview_id: int, payload: CandidateReply, current_user:
     if interview.status != "scheduled" or interview.scheduled_time < datetime.now():
         raise HTTPException(status_code=409, detail="Lịch phỏng vấn này không còn nhận phản hồi.")
     interview.candidate_response, interview.candidate_response_note = payload.response, payload.note
-    interview.candidate_responded_at = datetime.utcnow()
-    notify(db, [interview.created_by_id], "interview_response",
-           f"{app.full_name} {'xác nhận tham dự' if payload.response == 'confirmed' else 'đề nghị đổi lịch'} phỏng vấn",
-           payload.note or "", link=f"/hr/interviews?interview={interview.id}", entity_type="INTERVIEW", entity_id=interview.id)
+    recipients = [interview.created_by_id]
+    if interview.interviewers:
+        recipients.extend(intv.interviewer_id for intv in interview.interviewers)
+    action_label = "xác nhận tham dự" if payload.response == "confirmed" else "đề nghị đổi lịch"
+    notify(db, list(dict.fromkeys(recipients)), "interview_response",
+           f"{app.full_name} {action_label} phỏng vấn",
+           payload.note or "", link=f"/recruiter/interviews?interview={interview.id}", entity_type="INTERVIEW", entity_id=interview.id)
     db.commit()
-    return {"id": interview.id, "candidate_response": interview.candidate_response}
+    return {
+        "id": interview.id,
+        "candidate_response": interview.candidate_response,
+        "candidate_response_note": interview.candidate_response_note,
+        "candidate_responded_at": interview.candidate_responded_at.isoformat() if interview.candidate_responded_at else None,
+        "message": f"Đã ghi nhận {action_label} của bạn thành công.",
+    }
 
 
 @router.put("/{interview_id}/feedback")

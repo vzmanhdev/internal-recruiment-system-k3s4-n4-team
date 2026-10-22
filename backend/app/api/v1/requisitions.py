@@ -124,6 +124,14 @@ class RequisitionCloseRequest(BaseModel):
     confirm_active_candidates: bool = False
 
 
+class RequisitionCloneRequest(BaseModel):
+    title: Optional[str] = None
+    quantity: Optional[int] = Field(default=None, ge=1)
+    target_onboard_date: Optional[str] = None
+    reason: Optional[str] = None
+    reason_detail: Optional[str] = None
+
+
 def _role_codes(db: Session, user: User) -> set:
     return {r["code"] for r in get_user_roles(db, user)}
 
@@ -838,30 +846,110 @@ def resume_requisition(
     return req.to_dict()
 
 
-# Sao chép yêu cầu tuyển dụng (S3-05)
+# Sao chép yêu cầu tuyển dụng (S3-05: EP-03)
+@router.post("/{req_id}/clone", status_code=201)
 @router.post("/{req_id}/copy", status_code=201)
-def copy_requisition(
+def clone_requisition(
     req_id: int,
+    payload: Optional[RequisitionCloneRequest] = None,
     current_user: User = Depends(require_permission("requisition:create")),
     db: Session = Depends(get_db)
 ):
+    """
+    S3-05: 'Là Trưởng bộ phận, tôi muốn sao chép một yêu cầu tuyển dụng đã có để tạo yêu cầu mới...'
+    - S3-05-AC01: Sao chép toàn bộ mô tả công việc (job_description), yêu cầu ứng viên (requirements),
+      quyền lợi (benefits), dải lương (min_salary, max_salary, is_salary_negotiable), vị trí chức danh, phòng ban.
+    - S3-05-AC02: Bản sao luôn bắt đầu ở trạng thái Nháp ('draft'), sinh mã độc nhất mới (code),
+      không kế thừa lịch sử duyệt (approval_logs rỗng), không kế thừa phân công recruiter (recruiter_assignments rỗng).
+    - TC-S3-05-X01: Không thừa hưởng token duyệt hoặc phê duyệt cũ, bảo mật phân quyền phòng ban.
+    """
     src = _get_or_404(db, req_id)
     _ensure_visible(db, current_user, src)
+
+    # AC1: Sao chép mô tả công việc và yêu cầu ứng viên, có thể ghi đè tiêu đề/số lượng nếu truyền payload
+    title = (payload.title.strip() if payload and payload.title and payload.title.strip() else f"{src.title} (Bản sao)")
+    quantity = payload.quantity if (payload and payload.quantity is not None) else src.quantity
+    reason = payload.reason if (payload and payload.reason) else src.reason
+    reason_detail = payload.reason_detail if (payload and payload.reason_detail) else (src.reason_detail or f"Sao chép từ yêu cầu {src.code}")
+
+    target_date = None
+    if payload and payload.target_onboard_date:
+        try:
+            parsed = date.fromisoformat(payload.target_onboard_date[:10])
+            if parsed < date.today():
+                raise HTTPException(status_code=422, detail="Ngày cần người không được ở quá khứ.")
+            target_date = payload.target_onboard_date[:10]
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Ngày cần người không đúng định dạng YYYY-MM-DD.")
+    elif src.target_onboard_date:
+        try:
+            parsed = date.fromisoformat(src.target_onboard_date[:10])
+            if parsed >= date.today():
+                target_date = src.target_onboard_date[:10]
+        except ValueError:
+            target_date = None
+
+    # AC2: Bản sao luôn bắt đầu ở trạng thái Nháp, không kế thừa lịch sử duyệt và phân công
     copy = JobRequisition(
-        code=_next_code(db), title=src.title, department_id=src.department_id, job_title_id=src.job_title_id,
-        job_title_name=src.job_title_name, quantity=src.quantity, reason=src.reason, reason_detail=src.reason_detail,
-        priority=src.priority, employment_type=src.employment_type, work_location=src.work_location,
-        min_salary=src.min_salary, max_salary=src.max_salary, is_salary_negotiable=src.is_salary_negotiable,
-        job_description=src.job_description, requirements=src.requirements, benefits=src.benefits,
+        code=_next_code(db),
+        title=title,
+        department_id=src.department_id,
+        job_title_id=src.job_title_id,
+        job_title_name=src.job_title_name,
+        quantity=quantity,
+        reason=reason,
+        reason_detail=reason_detail,
+        priority=src.priority,
+        employment_type=src.employment_type,
+        work_location=src.work_location,
+        min_salary=src.min_salary,
+        max_salary=src.max_salary,
+        is_salary_negotiable=src.is_salary_negotiable,
+        target_onboard_date=target_date,
+        job_description=src.job_description,
+        requirements=src.requirements,
+        benefits=src.benefits,
         salary_justification=src.salary_justification,
-        status="draft", current_approval_step="draft", created_by_id=current_user.id,
-    )  # always a draft, no approval history and no needed-by date inherited
+        status="draft",
+        current_approval_step="draft",
+        approval_chain_json=None,
+        approval_step_index=0,
+        headcount_overridden=False,
+        reject_reason=None,
+        created_by_id=current_user.id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
     db.add(copy)
     db.flush()
-    _audit(db, current_user, "REQUISITION_COPY", copy, {"source_id": src.id})
+
+    _audit(db, current_user, "REQUISITION_CLONE", copy, {
+        "source_id": src.id,
+        "source_code": src.code,
+        "new_code": copy.code,
+        "title": copy.title
+    })
+
+    notify(
+        db,
+        [current_user.id],
+        "requisition_created",
+        f"Sao chép tờ trình {src.code} thành công",
+        f"Đã sao chép tờ trình '{src.title}' ({src.code}) thành bản nháp mới {copy.code} ({copy.title}). Lịch sử phê duyệt được khởi tạo mới hoàn toàn.",
+        link=f"/manager/requisitions?search={copy.code}",
+        entity_type="REQUISITION",
+        entity_id=copy.id,
+    )
+
     db.commit()
     db.refresh(copy)
-    return copy.to_dict()
+
+    res = copy.to_dict()
+    res["source_requisition_code"] = src.code
+    res["source_requisition_id"] = src.id
+    res["cloned_from"] = {"id": src.id, "code": src.code, "title": src.title}
+    res["message"] = f"Sao chép thành công từ {src.code} sang {copy.code} (Trạng thái: Bản nháp)"
+    return res
 
 
 @router.post("/{req_id}/remind")

@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, Field
 
@@ -55,7 +55,13 @@ class ApplicationCreate(BaseModel):
     cover_letter: Optional[str] = None
     referral_code: Optional[str] = None
     source: Optional[str] = None
+    linkedin_url: Optional[str] = None
     website: Optional[str] = Field(default=None, description="honeypot — must stay empty (S4-03 anti-spam)")
+
+
+class ManualCandidateCreate(ApplicationCreate):
+    confirm_duplicate: bool = False
+    notes: Optional[str] = None
 
 
 class ApplicationStatusUpdate(BaseModel):
@@ -161,19 +167,29 @@ def _log(db: Session, app: JobApplication, actor_id: int, to_status: str, commen
 
 def _assigned_recruiters(db: Session, app: JobApplication) -> list:
     req_id = app.job_posting.requisition_id if app.job_posting else None
-    return [r[0] for r in db.query(RecruiterAssignment.recruiter_id).filter(RecruiterAssignment.requisition_id == req_id).all()] if req_id else []
+    assigned = [r[0] for r in db.query(RecruiterAssignment.recruiter_id).filter(RecruiterAssignment.requisition_id == req_id).all()] if req_id else []
+    if not assigned and app.job_posting and app.job_posting.created_by_id:
+        assigned = [app.job_posting.created_by_id]
+    if not assigned:
+        from app.services.notification_service import users_with_roles
+        assigned = users_with_roles(db, ["recruiter", "hr_manager"])
+    return assigned
 
 
 def _create_application(db: Session, payload: ApplicationCreate, job: JobPosting, applicant: Optional[User],
                         client_ip: Optional[str], default_source: Optional[str]) -> tuple:
     email = payload.email.strip().lower()
+    phone = payload.phone.strip()
     duplicate = db.query(JobApplication).filter(
-        JobApplication.job_posting_id == job.id, JobApplication.email == email,
+        JobApplication.job_posting_id == job.id,
+        or_(JobApplication.email == email, JobApplication.phone == phone),
         JobApplication.status.notin_(CLOSED_FOR_DUPLICATE),
     ).first()
     if duplicate:
         raise HTTPException(status_code=409, detail={"code": "DUPLICATE_APPLICATION",
-                                                     "message": "Bạn đã nộp hồ sơ cho vị trí này và hồ sơ vẫn đang được xử lý."})
+                                                     "message": f"Ứng viên {duplicate.full_name} đã có hồ sơ đang xử lý tại vị trí này (Mã: {duplicate.tracking_code}, Trạng thái: {duplicate.status}).",
+                                                     "tracking_code": duplicate.tracking_code,
+                                                     "status": duplicate.status})
     cv_file = _validate_cv_url(db, payload.cv_url)
     parsed = None
     if cv_file:
@@ -181,14 +197,23 @@ def _create_application(db: Session, payload: ApplicationCreate, job: JobPosting
             parsed = parse_cv(file_storage.read_bytes(cv_file.storage_name), cv_file.content_type)
         except OSError:
             parsed = {"status": "failed"}
+
+    # TC-S5-08-X01: Sourcing/Thêm tay giữ nguyên person_key nếu đã có hồ sơ trong hệ thống
+    existing_person = db.query(JobApplication.person_key).filter(
+        or_(JobApplication.email == email, JobApplication.phone == phone),
+        JobApplication.person_key.isnot(None),
+    ).first()
+    person_key = existing_person[0] if existing_person and existing_person[0] else email
+
     raw_token, token_hash = new_link_token()
     app = JobApplication(
         job_posting_id=job.id, candidate_id=applicant.id if applicant else None,
-        full_name=payload.full_name.strip(), email=email, phone=payload.phone.strip(),
+        full_name=payload.full_name.strip(), email=email, phone=phone,
         current_company=payload.current_company, current_position=payload.current_position,
         years_of_experience=payload.years_of_experience, cv_url=payload.cv_url, cover_letter=payload.cover_letter,
-        referral_code=payload.referral_code, source=payload.source or default_source, client_ip=client_ip,
-        status="submitted", tracking_code=_new_tracking_code(db), person_key=email,
+        referral_code=payload.referral_code, source=payload.source or default_source,
+        linkedin_url=getattr(payload, "linkedin_url", None), client_ip=client_ip,
+        status="submitted", tracking_code=_new_tracking_code(db), person_key=person_key,
         parsed_cv_json=json.dumps(parsed, ensure_ascii=False) if parsed else None,
         withdraw_token_hash=token_hash, stage_entered_at=datetime.utcnow(),
     )
@@ -213,6 +238,20 @@ def _possible_duplicates(db: Session, app: JobApplication) -> list:
         or_(JobApplication.person_key.is_(None), JobApplication.person_key != app.person_key),
     ).all()
     return [{"id": r.id, "full_name": r.full_name, "email": r.email, "phone": r.phone, "job_title": r.job_posting.title if r.job_posting else None,
+             "status": r.status, "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows]
+
+
+def _all_related_applications(db: Session, app: JobApplication) -> list:
+    rows = db.query(JobApplication).filter(
+        JobApplication.id != app.id,
+        or_(
+            JobApplication.email == app.email,
+            JobApplication.phone == app.phone,
+            and_(JobApplication.person_key.isnot(None), JobApplication.person_key == app.person_key)
+        ),
+    ).order_by(JobApplication.created_at.desc()).all()
+    return [{"id": r.id, "tracking_code": r.tracking_code, "full_name": r.full_name, "email": r.email, "phone": r.phone,
+             "job_title": r.job_posting.title if r.job_posting else None,
              "status": r.status, "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows]
 
 
@@ -342,8 +381,75 @@ def delete_saved_filter(filter_id: int, current_user: User = Depends(get_current
     return {"success": True}
 
 
+@router.get("/check-duplicate")
+def check_candidate_duplicate(
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    job_posting_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user_obj),
+    db: Session = Depends(get_db),
+):
+    """S5-08 / TC-S5-08-02 / TC-S5-08-X01: real-time duplicate check before creating manual candidate."""
+    require_any_permission(db, current_user, "candidate:create")
+    clean_email = email.strip().lower() if email and email.strip() else None
+    clean_phone = phone.strip() if phone and phone.strip() else None
+    if not clean_email and not clean_phone:
+        return {"is_duplicate": False, "same_job_conflict": False, "existing_applications": [], "suggested_action": "CLEAR"}
+
+    filters = []
+    if clean_email:
+        filters.append(JobApplication.email == clean_email)
+    if clean_phone:
+        filters.append(JobApplication.phone == clean_phone)
+
+    existing = db.query(JobApplication).filter(or_(*filters)).order_by(JobApplication.created_at.desc()).all()
+    if not existing:
+        return {"is_duplicate": False, "same_job_conflict": False, "existing_applications": [], "suggested_action": "CLEAR"}
+
+    same_job = None
+    if job_posting_id:
+        same_job = next((a for a in existing if a.job_posting_id == job_posting_id and a.status not in CLOSED_FOR_DUPLICATE), None)
+
+    existing_list = [
+        {
+            "id": a.id,
+            "tracking_code": a.tracking_code,
+            "full_name": a.full_name,
+            "email": a.email,
+            "phone": a.phone,
+            "job_id": a.job_posting_id,
+            "job_title": a.job_posting.title if a.job_posting else "Không xác định",
+            "status": a.status,
+            "created_at": a.created_at.strftime("%d/%m/%Y") if a.created_at else None,
+            "cv_url": a.cv_url,
+        }
+        for a in existing
+    ]
+
+    action = "BLOCKED" if same_job else "CONFIRM_LINK"
+    msg = (
+        f"Ứng viên đã có hồ sơ đang xử lý tại vị trí này (Mã: {same_job.tracking_code}, Trạng thái: {same_job.status}). Không thể tạo hồ sơ trùng lặp."
+        if same_job else
+        f"Phát hiện ứng viên đã có {len(existing)} hồ sơ trong hệ thống. Hệ thống sẽ tự động liên kết hồ sơ của ứng viên."
+    )
+
+    return {
+        "is_duplicate": True,
+        "same_job_conflict": bool(same_job),
+        "active_application_in_job": {
+            "id": same_job.id,
+            "tracking_code": same_job.tracking_code,
+            "status": same_job.status,
+            "job_title": same_job.job_posting.title if same_job.job_posting else None,
+        } if same_job else None,
+        "existing_applications": existing_list,
+        "suggested_action": action,
+        "message": msg,
+    }
+
+
 @router.post("/manual", status_code=201)
-def add_candidate_manually(payload: ApplicationCreate, current_user: User = Depends(get_current_user_obj), db: Session = Depends(get_db)):
+def add_candidate_manually(payload: ManualCandidateCreate, current_user: User = Depends(get_current_user_obj), db: Session = Depends(get_db)):
     """S5-08: recruiter enters a sourced candidate; goes through the same duplicate checks."""
     require_any_permission(db, current_user, "candidate:create")
     job = db.query(JobPosting).filter(JobPosting.id == payload.job_posting_id).first()
@@ -351,11 +457,35 @@ def add_candidate_manually(payload: ApplicationCreate, current_user: User = Depe
         raise HTTPException(status_code=404, detail="Không tìm thấy tin tuyển dụng")
     if not (role_codes(db, current_user) & FULL_ACCESS_ROLES) and job.id not in scoped_posting_ids(db, current_user):
         raise HTTPException(status_code=403, detail="Vị trí này không thuộc phạm vi bạn phụ trách.")
-    app, _ = _create_application(db, payload, job, None, None, "Recruiter nhập tay")
-    _log(db, app, current_user.id, "submitted", "Recruiter thêm ứng viên thủ công")
+    source_str = payload.source or "LinkedIn Sourcing"
+    app, _ = _create_application(db, payload, job, None, None, source_str)
+    log_comment = f"Recruiter thêm ứng viên thủ công từ nguồn {source_str}"
+    if payload.notes and payload.notes.strip():
+        log_comment += f". Ghi chú: {payload.notes.strip()}"
+    _log(db, app, current_user.id, "submitted", log_comment)
+
+    from app.models.audit import AuditLog
+    db.add(AuditLog(
+        actor_id=current_user.id,
+        actor_email=current_user.email,
+        action="CANDIDATE_MANUAL_CREATE",
+        target_entity="JobApplication",
+        target_id=str(app.id),
+        payload_json=json.dumps({
+            "candidate_name": app.full_name,
+            "email": app.email,
+            "phone": app.phone,
+            "tracking_code": app.tracking_code,
+            "job_title": job.title,
+            "source": source_str,
+            "linkedin_url": app.linkedin_url,
+        }, ensure_ascii=False)
+    ))
+
     db.commit(); db.refresh(app)
     out = app.to_dict()
     out["possible_duplicates"] = _possible_duplicates(db, app)
+    out["related_applications"] = _all_related_applications(db, app)
     return out
 
 
@@ -440,6 +570,7 @@ def candidate_profile(app_id: int, current_user: User = Depends(get_current_user
         "notes": [n.to_dict(authors.get(n.author_id)) for n in notes],
         "timeline": [{**t, "at": t["at"].isoformat() if t["at"] else None} for t in timeline],
         "possible_duplicates": _possible_duplicates(db, app),
+        "interviews": [i.to_dict() for i in app.interviews] if app.interviews else [],
     }
 
 
@@ -671,15 +802,40 @@ def withdraw(db: Session, app: JobApplication, actor_id: Optional[int], reason: 
     """Shared by the authenticated endpoint and the email-link flow (S4-06)."""
     if app.status in TERMINAL_STATUSES or app.status == "offered":
         raise HTTPException(status_code=409, detail=f"Không thể rút hồ sơ ở trạng thái '{app.status}'.")
+    from_status = app.status
+    withdraw_reason = (reason or "Ứng viên chủ động rút hồ sơ").strip()
     actor = actor_id or app.candidate_id
+    code = app.tracking_code or f"APP-{app.id:08d}"
+    job_name = app.job_posting.title if app.job_posting else "vị trí tuyển dụng"
+
     if actor:
-        db.add(ApplicationLog(application_id=app.id, changed_by_id=actor, from_status=app.status,
-                              to_status="withdrawn", comment=reason or "Ứng viên rút hồ sơ"))
+        db.add(ApplicationLog(application_id=app.id, changed_by_id=actor, from_status=from_status,
+                              to_status="withdrawn", comment=withdraw_reason))
     else:  # anonymous applicant via the e-mail link: no user account to attribute the stage log to
+        import json
         from app.models.audit import AuditLog
+        payload_data = json.dumps({
+            "from_status": from_status,
+            "to_status": "withdrawn",
+            "reason": withdraw_reason,
+            "tracking_code": code,
+            "candidate_name": app.full_name,
+        }, ensure_ascii=False)
         db.add(AuditLog(actor_id=None, actor_email=app.email, action="APPLICATION_WITHDRAWN_VIA_LINK",
-                        target_entity="APPLICATION", target_id=str(app.id), payload_json=f"from={app.status}"))
-    app.status, app.stage_entered_at, app.withdraw_token_hash = "withdrawn", datetime.utcnow(), None
-    notify(db, _assigned_recruiters(db, app), "application_withdrawn", f"{app.full_name} đã rút hồ sơ",
-           app.job_posting.title if app.job_posting else "", link=f"/hr/candidates?application={app.id}",
-           entity_type="APPLICATION", entity_id=app.id)
+                        target_entity="APPLICATION", target_id=str(app.id), payload_json=payload_data))
+
+    app.status = "withdrawn"
+    app.rejection_reason = withdraw_reason
+    app.stage_entered_at = datetime.utcnow()
+    app.withdraw_token_hash = None
+
+    notify(
+        db,
+        _assigned_recruiters(db, app),
+        "application_withdrawn",
+        f"Ứng viên {app.full_name} đã rút hồ sơ ({code})",
+        f"Vị trí: {job_name} · Lý do: {withdraw_reason}",
+        link=f"/recruiter/applications?id={app.id}",
+        entity_type="APPLICATION",
+        entity_id=app.id,
+    )

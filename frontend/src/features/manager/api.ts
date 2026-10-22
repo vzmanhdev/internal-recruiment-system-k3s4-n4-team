@@ -195,6 +195,17 @@ export const managerApi = {
     });
     return toManagerRequisition(updated);
   },
+
+  async cloneRequisition(
+    id: number,
+    payload?: { title?: string; quantity?: number; target_onboard_date?: string; reason?: string; reason_detail?: string }
+  ) {
+    const raw = await requisitionService.cloneRequisition(id, payload);
+    return {
+      requisition: toManagerRequisition(raw),
+      raw,
+    };
+  },
 };
 
 export interface CandidateApproverView {
