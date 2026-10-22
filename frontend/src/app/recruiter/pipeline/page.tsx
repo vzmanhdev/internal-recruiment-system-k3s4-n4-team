@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { getSearchScore } from '@/utils/vietnameseSearch';
 import { SearchAutocompleteInput } from '@/components/ui/SearchAutocompleteInput';
@@ -45,9 +45,10 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { apiRequest, ApiError } from '@/lib/api-client';
-import { candidatesApi, type ApiApplication } from '@/features/candidates/api';
+import { candidatesApi, type ApiApplication, type DuplicateCheckResult } from '@/features/candidates/api';
 import { jobService } from '@/services/job.service';
 import { masterDataService } from '@/services/master-data.service';
+import { slaService, type SlaRuleItem } from '@/services/sla.service';
 import { uploadFile as uploadCvFile, openProtectedFile } from '@/services/file.service';
 import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
@@ -79,7 +80,9 @@ export interface Candidate {
   source: string;
   avatar: string;
   columnId: ColumnId;
-  daysInStage: number; // Số ngày nằm ở cột này (Nghiệp vụ SLA: > 3 ngày => Quá hạn)
+  daysInStage: number; // Số ngày nằm ở cột này
+  isOverdue?: boolean; // Cờ vi phạm SLA từ database hoặc logic
+  stageEnteredAt?: string;
   tags: string[];
   evaluation?: 'pass' | 'review' | 'fail' | null;
   cvSummary: {
@@ -185,7 +188,7 @@ function toCard(a: ApiApplication & { stage_entered_at?: string | null }): Candi
     name: a.full_name,
     email: a.email,
     phone: a.phone || '',
-    linkedInUrl: '',
+    linkedInUrl: a.linkedin_url || '',
     position: a.job_title || '',
     university: a.parsed_cv?.education || '',
     experience: a.years_of_experience != null ? `${a.years_of_experience} năm kinh nghiệm` : '',
@@ -195,6 +198,8 @@ function toCard(a: ApiApplication & { stage_entered_at?: string | null }): Candi
     avatar: '',
     columnId,
     daysInStage: since ? Math.max(0, Math.floor((Date.now() - new Date(since).getTime()) / DAY_MS)) : 0,
+    isOverdue: a.is_overdue ?? false,
+    stageEnteredAt: a.stage_entered_at || undefined,
     tags: a.tags || [],
     evaluation: ratingToEval(a.rating),
     cvSummary: {
@@ -213,6 +218,17 @@ function toCard(a: ApiApplication & { stage_entered_at?: string | null }): Candi
 // 3. MAIN PIPELINE COMPONENT
 // ==========================================
 
+export interface RichToast {
+  type: 'success' | 'warning' | 'error' | 'info';
+  title: string;
+  message: string;
+  candidateName?: string;
+  trackingCode?: string;
+  jobTitle?: string;
+  source?: string;
+  details?: string;
+}
+
 export default function RecruiterPipelinePage() {
   const { data, error, loading, reload, setData } = useApiData(
     () => apiRequest<ApiApplication[]>('/applications').then((rows) => rows.map(toCard).filter((c): c is Candidate => c !== null)),
@@ -222,6 +238,48 @@ export default function RecruiterPipelinePage() {
   const setCandidates = (fn: (prev: Candidate[]) => Candidate[]) => setData((prev) => fn(prev || []));
   const { data: openJobs } = useApiData(() => jobService.getJobs(), []);
   const { data: sourceCategories } = useApiData(() => masterDataService.categories('candidate_source'), []);
+  const { data: slaRulesData } = useApiData(() => slaService.getRules(), []);
+
+  const slaRulesMap = useMemo(() => {
+    const map: Record<string, number> = {
+      new: 3,
+      screening: 5,
+      interview: 7,
+      offer: 3,
+      hired: 999,
+    };
+    if (slaRulesData) {
+      for (const r of slaRulesData) {
+        if (r.stage === 'submitted') map['new'] = r.max_days;
+        if (r.stage === 'screening') map['screening'] = r.max_days;
+        if (r.stage === 'interviewing') map['interview'] = r.max_days;
+        if (r.stage === 'offered') map['offer'] = r.max_days;
+      }
+    }
+    return map;
+  }, [slaRulesData]);
+
+  const isCandidateOverdue = useCallback((c: Candidate) => {
+    if (c.columnId === 'hired') return false;
+    if (c.isOverdue) return true;
+    const threshold = slaRulesMap[c.columnId] ?? 3;
+    return c.daysInStage > threshold;
+  }, [slaRulesMap]);
+
+  const [slaScanning, setSlaScanning] = useState(false);
+  const handleTriggerSlaScan = async () => {
+    setSlaScanning(true);
+    try {
+      const res = await slaService.triggerCheck();
+      setToast(`Đã quét xong SLA: ${res.flagged} hồ sơ vi phạm, ${res.reminded} thông báo nhắc nhở đã gửi.`);
+      reload();
+    } catch (err: any) {
+      setToast(err?.message || 'Không thể kích hoạt quét SLA');
+    } finally {
+      setSlaScanning(false);
+    }
+  };
+
   const [addJobId, setAddJobId] = useState('');
   const [addCvUrl, setAddCvUrl] = useState<string | null>(null);
   const [addSaving, setAddSaving] = useState(false);
@@ -229,7 +287,11 @@ export default function RecruiterPipelinePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPosition, setSelectedPosition] = useState('all');
   const [slaFilterOnly, setSlaFilterOnly] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<string | RichToast | null>(null);
+  const [dupCheck, setDupCheck] = useState<DuplicateCheckResult | null>(null);
+  const [dupChecking, setDupChecking] = useState(false);
+  const [confirmDuplicate, setConfirmDuplicate] = useState(false);
 
   // Drag and Drop state
   const [draggedCandidateId, setDraggedCandidateId] = useState<string | null>(null);
@@ -241,13 +303,14 @@ export default function RecruiterPipelinePage() {
   const [newTagInput, setNewTagInput] = useState('');
   const [quickNoteInput, setQuickNoteInput] = useState('');
 
-  // Modal 2: Form Thêm ứng viên thủ công (User Story 2)
+  // Modal 2: Form Thêm ứng viên thủ công (User Story S5-08)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addForm, setAddForm] = useState({
     name: '',
     email: '',
     phone: '',
     linkedInUrl: '',
+    company: '',
     position: '',
     university: '',
     experience: '',
@@ -257,10 +320,33 @@ export default function RecruiterPipelinePage() {
     cvFileName: '',
   });
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string | RichToast) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 5000);
   };
+
+  const runDuplicateCheck = useCallback(async (email?: string, phone?: string, jobId?: string) => {
+    const targetEmail = (email !== undefined ? email : addForm.email).trim();
+    const targetPhone = (phone !== undefined ? phone : addForm.phone).trim();
+    const targetJob = jobId !== undefined ? jobId : addJobId;
+    if (!targetEmail && !targetPhone) {
+      setDupCheck(null);
+      return;
+    }
+    setDupChecking(true);
+    try {
+      const res = await candidatesApi.checkDuplicate(
+        targetEmail || undefined,
+        targetPhone || undefined,
+        targetJob ? Number(targetJob) : undefined
+      );
+      setDupCheck(res);
+    } catch {
+      // ignore network errors for background duplicate checking
+    } finally {
+      setDupChecking(false);
+    }
+  }, [addForm.email, addForm.phone, addJobId]);
 
   // The open quick-view always reflects the latest board data
   const selectedCandidate = candidates.find((c) => c.id === selectedId) || null;
@@ -408,25 +494,83 @@ export default function RecruiterPipelinePage() {
     try {
       const stored = await uploadCvFile('cv', file);
       setAddCvUrl(stored.url);
+      const parsed = stored.parsed;
+      const isSuccess = parsed && parsed.status === 'parsed';
+
+      // AC2: Tự động điền các trường còn trống, không ghi đè dữ liệu recruiter đã nhập trước đó
       setAddForm((f) => ({
-        ...f, cvFileName: file.name,
-        name: f.name || stored.parsed?.full_name || '', email: f.email || stored.parsed?.email || '', phone: f.phone || stored.parsed?.phone || '',
+        ...f,
+        cvFileName: file.name,
+        name: f.name || parsed?.full_name || '',
+        email: f.email || parsed?.email || '',
+        phone: f.phone || parsed?.phone || '',
+        university: f.university || parsed?.education || '',
       }));
+
+      if (isSuccess) {
+        showToast({
+          type: 'success',
+          title: 'Đã Bóc Tách CV Thành Công!',
+          message: `Đã trích xuất thông tin từ tệp "${file.name}". Các ô chưa điền đã được điền sẵn từ CV (không ghi đè ô đã nhập).`,
+          candidateName: parsed?.full_name || undefined,
+          details: `Email: ${parsed?.email || 'N/A'} • SĐT: ${parsed?.phone || 'N/A'}${parsed?.skills?.length ? ` • Kỹ năng: ${parsed.skills.join(', ')}` : ''}`,
+        });
+      } else {
+        showToast({
+          type: 'warning',
+          title: 'CV Đã Đính Kèm (Không có text)',
+          message: `Tệp "${file.name}" đã tải lên thành công. Tệp scan/ảnh không chứa text trích xuất được. Vui lòng tự nhập tay thông tin.`,
+          details: 'Tiêu chuẩn AC3: Quá trình nộp hồ sơ không bị gián đoạn.',
+        });
+      }
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Không tải được CV lên.');
+      showToast({
+        type: 'error',
+        title: 'Tải CV Thất Bại',
+        message: err instanceof ApiError ? err.message : 'Không tải được CV lên máy chủ.',
+      });
     }
   };
 
   const handleAddManualCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!addForm.name.trim() || !addForm.email.trim() || !addForm.phone.trim()) {
-      showToast('Vui lòng nhập đủ họ tên, email và số điện thoại.');
+      showToast({
+        type: 'warning',
+        title: 'Thiếu Thông Tin Bắt Buộc',
+        message: 'Vui lòng nhập đủ họ tên, email và số điện thoại của ứng viên.',
+      });
       return;
     }
     if (!addJobId) {
-      showToast('Vui lòng chọn tin tuyển dụng cho ứng viên.');
+      showToast({
+        type: 'warning',
+        title: 'Chưa Chọn Vị Trí',
+        message: 'Vui lòng chọn tin tuyển dụng mục tiêu cho ứng viên.',
+      });
       return;
     }
+
+    // AC2 / TC-S5-08-02: Kiểm tra trùng cùng vị trí
+    if (dupCheck?.same_job_conflict) {
+      showToast({
+        type: 'error',
+        title: 'Ứng Viên Đã Tồn Tại Trong Vị Trí Này',
+        message: `Ứng viên đã có hồ sơ đang xử lý (Mã: ${dupCheck.active_application_in_job?.tracking_code || 'APP-...'}). Không được tạo hồ sơ trùng lặp trong cùng đợt tuyển dụng.`,
+      });
+      return;
+    }
+
+    // TC-S5-08-X01: Cảnh báo xác nhận khi trùng vị trí khác
+    if (dupCheck?.is_duplicate && !confirmDuplicate) {
+      showToast({
+        type: 'warning',
+        title: 'Phát Hiện Trùng Hồ Sơ Cũ',
+        message: 'Ứng viên đã có hồ sơ trong hệ thống. Vui lòng tích chọn ô xác nhận trước khi tiếp tục.',
+      });
+      return;
+    }
+
     setAddSaving(true);
     try {
       const created = await candidatesApi.addManual({
@@ -434,22 +578,49 @@ export default function RecruiterPipelinePage() {
         full_name: addForm.name.trim(),
         email: addForm.email.trim(),
         phone: addForm.phone.trim(),
+        linkedin_url: addForm.linkedInUrl.trim() || undefined,
         cv_url: addCvUrl || undefined,
         source: addForm.source,
+        current_company: addForm.company.trim() || undefined,
+        current_position: addForm.position.trim() || undefined,
+        years_of_experience: Number(addForm.experience) || 0,
+        notes: addForm.notes.trim() || undefined,
+        confirm_duplicate: confirmDuplicate,
       });
+
       const extra = [addForm.notes.trim(), addForm.linkedInUrl.trim() && `LinkedIn: ${addForm.linkedInUrl.trim()}`].filter(Boolean).join('\n');
       if (extra) await candidatesApi.addNote(created.id, extra).catch(() => undefined);
+
       setIsAddModalOpen(false);
       reload();
-      showToast(`Đã thêm ứng viên "${created.full_name}" vào cột "CV Mới"!`);
+
+      showToast({
+        type: 'success',
+        title: 'Thêm Ứng Viên Thành Công!',
+        message: `Đã đưa ứng viên vào vị trí ${created.job_title || ''} từ nguồn ${created.source || addForm.source}`,
+        candidateName: created.full_name,
+        trackingCode: created.tracking_code || undefined,
+        jobTitle: created.job_title || undefined,
+        source: created.source || addForm.source,
+        details: (created.related_applications && created.related_applications.length > 0)
+          ? `Hệ thống đã tự động liên kết với ${created.related_applications.length} hồ sơ trước đó của ứng viên.`
+          : undefined,
+      });
+
       setAddJobId('');
       setAddCvUrl(null);
+      setDupCheck(null);
+      setConfirmDuplicate(false);
       setAddForm({
-        name: '', email: '', phone: '', linkedInUrl: '', position: '', university: '',
+        name: '', email: '', phone: '', linkedInUrl: '', company: '', position: '', university: '',
         experience: '', matchScore: 0, source: 'LinkedIn Sourcing', notes: '', cvFileName: '',
       });
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Không thêm được ứng viên.');
+      showToast({
+        type: 'error',
+        title: 'Không Thêm Được Ứng Viên',
+        message: err instanceof ApiError ? err.message : 'Có lỗi xảy ra khi lưu ứng viên.',
+      });
     } finally {
       setAddSaving(false);
     }
@@ -474,7 +645,7 @@ export default function RecruiterPipelinePage() {
       }
 
       const matchPos = selectedPosition === 'all' || c.position === selectedPosition;
-      const matchSla = slaFilterOnly ? c.daysInStage > 3 : true;
+      const matchSla = slaFilterOnly ? isCandidateOverdue(c) : true;
 
       return matchSearch && matchPos && matchSla;
     }).sort((a, b) => {
@@ -495,12 +666,12 @@ export default function RecruiterPipelinePage() {
       }
       return 0;
     });
-  }, [candidates, searchQuery, selectedPosition, slaFilterOnly]);
+  }, [candidates, searchQuery, selectedPosition, slaFilterOnly, isCandidateOverdue]);
 
-  // Đếm số lượng quá hạn SLA (> 3 ngày)
+  // Đếm số lượng quá hạn SLA dựa theo cấu hình từng giai đoạn
   const overdueCount = useMemo(() => {
-    return candidates.filter((c) => c.daysInStage > 3).length;
-  }, [candidates]);
+    return candidates.filter(isCandidateOverdue).length;
+  }, [candidates, isCandidateOverdue]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
@@ -509,9 +680,80 @@ export default function RecruiterPipelinePage() {
     <div className="flex-1 overflow-hidden flex flex-col space-y-4 antialiased font-sans">
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2.5 shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{toast}</span>
+        <div
+          className={clsx(
+            'fixed bottom-6 right-6 z-50 p-4 rounded-3xl shadow-2xl border text-xs max-w-sm w-full animate-in fade-in slide-in-from-bottom-4 duration-200',
+            typeof toast === 'string'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 flex items-center gap-2.5'
+              : toast.type === 'error'
+              ? 'bg-rose-50/95 text-rose-900 border-rose-200 backdrop-blur-xs'
+              : toast.type === 'warning'
+              ? 'bg-amber-50/95 text-amber-900 border-amber-200 backdrop-blur-xs'
+              : 'bg-white/95 text-slate-800 border-emerald-200 ring-2 ring-emerald-500/15 backdrop-blur-xs'
+          )}
+        >
+          {typeof toast === 'string' ? (
+            <>
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <span className="font-bold">{toast}</span>
+            </>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-2 font-black text-xs text-slate-900">
+                  {toast.type === 'error' ? (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  ) : toast.type === 'warning' ? (
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  )}
+                  <span>{toast.title}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setToast(null)}
+                  className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer font-bold px-1"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-slate-600 font-medium text-[11px] leading-relaxed">{toast.message}</p>
+              {(toast.candidateName || toast.trackingCode || toast.jobTitle) && (
+                <div className="p-2 rounded-2xl bg-slate-50 border border-slate-100 grid grid-cols-2 gap-2 text-[10px]">
+                  {toast.candidateName && (
+                    <div>
+                      <span className="text-slate-400 font-medium block">Ứng viên:</span>
+                      <strong className="text-slate-900 font-bold truncate block">{toast.candidateName}</strong>
+                    </div>
+                  )}
+                  {toast.trackingCode && (
+                    <div>
+                      <span className="text-slate-400 font-medium block">Mã hồ sơ:</span>
+                      <strong className="font-mono text-blue-700 bg-blue-50 px-1 py-0.5 rounded block truncate">{toast.trackingCode}</strong>
+                    </div>
+                  )}
+                  {toast.jobTitle && (
+                    <div className="col-span-2">
+                      <span className="text-slate-400 font-medium block">Vị trí:</span>
+                      <strong className="text-slate-800 truncate block">{toast.jobTitle}</strong>
+                    </div>
+                  )}
+                  {toast.source && (
+                    <div className="col-span-2">
+                      <span className="text-slate-400 font-medium block">Nguồn Sourcing:</span>
+                      <strong className="text-indigo-700">{toast.source}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
+              {toast.details && (
+                <p className="text-[10px] text-emerald-800 bg-emerald-50/80 p-2 rounded-xl font-semibold border border-emerald-100">
+                  {toast.details}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -582,7 +824,7 @@ export default function RecruiterPipelinePage() {
         </div>
 
         {/* SLA Status Widget & Action Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => setSlaFilterOnly(!slaFilterOnly)}
@@ -594,10 +836,21 @@ export default function RecruiterPipelinePage() {
             )}
           >
             <Clock className="w-3.5 h-3.5 animate-pulse" />
-            <span>Quá hạn SLA (&gt; 3 ngày): {overdueCount} hồ sơ</span>
+            <span>Quá hạn SLA: {overdueCount} hồ sơ</span>
           </button>
 
-          <span className="text-xs text-slate-400 font-bold hidden lg:inline">
+          <button
+            type="button"
+            onClick={handleTriggerSlaScan}
+            disabled={slaScanning}
+            className="px-3 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200/80"
+            title="Kích hoạt quét vi phạm SLA và gửi thông báo nhắc việc ngay lập tức"
+          >
+            <Clock className={clsx("w-3.5 h-3.5", slaScanning && "animate-spin text-blue-600")} />
+            <span>{slaScanning ? "Đang quét..." : "Quét SLA ngay"}</span>
+          </button>
+
+          <span className="text-xs text-slate-400 font-bold hidden lg:inline ml-1">
             Tổng số: <strong className="text-slate-800">{filteredCandidates.length}</strong> ứng viên
           </span>
         </div>
@@ -657,7 +910,8 @@ export default function RecruiterPipelinePage() {
                     </div>
                   ) : (
                     colCandidates.map((cand) => {
-                      const isSlaBreached = cand.daysInStage > 3;
+                      const colMaxDays = slaRulesMap[cand.columnId] ?? 3;
+                      const isSlaBreached = isCandidateOverdue(cand);
 
                       return (
                         <div
@@ -759,7 +1013,7 @@ export default function RecruiterPipelinePage() {
                             </div>
                           )}
 
-                          {/* Cảnh báo SLA Quá hạn (> 3 ngày): Icon Đồng hồ đỏ nhấp nháy (User Story 3) */}
+                          {/* Cảnh báo SLA Quá hạn: Icon Đồng hồ đỏ nhấp nháy (User Story S5-10) */}
                           {isSlaBreached && (
                             <div className="p-2 rounded-xl bg-rose-100/80 border border-rose-300 text-rose-800 text-[10px] font-extrabold flex items-center justify-between">
                               <div className="flex items-center gap-1.5">
@@ -767,7 +1021,7 @@ export default function RecruiterPipelinePage() {
                                 <span>Quá hạn SLA ({cand.daysInStage} ngày ở cột này)</span>
                               </div>
                               <span className="text-[9px] bg-rose-200 text-rose-900 px-1.5 py-0.5 rounded font-black">
-                                &gt; 3 ngày
+                                &gt; {colMaxDays} ngày
                               </span>
                             </div>
                           )}
@@ -1260,7 +1514,7 @@ export default function RecruiterPipelinePage() {
                 />
               </div>
 
-              {/* Link LinkedIn - Yêu cầu cốt lõi của User Story 2 */}
+              {/* Link LinkedIn - Yêu cầu cốt lõi của User Story S5-08 */}
               <div>
                 <label className="block font-bold text-slate-800 mb-1 flex items-center gap-1.5">
                   <Linkedin className="w-3.5 h-3.5 text-blue-600" />
@@ -1277,22 +1531,34 @@ export default function RecruiterPipelinePage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-800 mb-1">Email liên hệ</label>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    Email liên hệ <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="email"
+                    required
                     placeholder="ungvien@gmail.com"
                     value={addForm.email}
-                    onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                    onChange={(e) => {
+                      setAddForm({ ...addForm, email: e.target.value });
+                    }}
+                    onBlur={() => runDuplicateCheck()}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-800 mb-1">Số điện thoại</label>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    Số điện thoại <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="tel"
+                    required
                     placeholder="0987654321"
                     value={addForm.phone}
-                    onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                    onChange={(e) => {
+                      setAddForm({ ...addForm, phone: e.target.value });
+                    }}
+                    onBlur={() => runDuplicateCheck()}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
                   />
                 </div>
@@ -1300,10 +1566,16 @@ export default function RecruiterPipelinePage() {
 
               {/* Vị trí ứng tuyển */}
               <div>
-                <label className="block font-bold text-slate-800 mb-1">Vị trí đẩy vào Pipeline</label>
+                <label className="block font-bold text-slate-800 mb-1">
+                  Vị trí đẩy vào Pipeline <span className="text-rose-500">*</span>
+                </label>
                 <select
                   value={addJobId}
-                  onChange={(e) => setAddJobId(e.target.value)}
+                  onChange={(e) => {
+                    const newJobId = e.target.value;
+                    setAddJobId(newJobId);
+                    runDuplicateCheck(undefined, undefined, newJobId);
+                  }}
                   required
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
                 >
@@ -1314,14 +1586,103 @@ export default function RecruiterPipelinePage() {
                 </select>
               </div>
 
-              {/* Upload CV - Yêu cầu User Story 2 */}
+              {/* Duplicate check status banner */}
+              {dupChecking && (
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 text-[11px] flex items-center gap-2 animate-pulse">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-500 animate-spin" />
+                  <span>Đang kiểm tra dữ liệu phát hiện trùng lặp...</span>
+                </div>
+              )}
+
+              {/* AC2: Duplicate Warning / Block Banners */}
+              {dupCheck?.same_job_conflict && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-1 animate-in fade-in">
+                  <div className="flex items-center gap-2 font-bold text-rose-900">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Ứng viên đã có hồ sơ đang xử lý tại vị trí này!</span>
+                  </div>
+                  <p className="text-[11px] text-rose-700 leading-relaxed">
+                    Mã hồ sơ: <strong className="font-mono bg-rose-100 px-1 py-0.5 rounded">{dupCheck.active_application_in_job?.tracking_code}</strong> (Trạng thái: <strong>{dupCheck.active_application_in_job?.status}</strong>). Không thể tạo hồ sơ trùng lặp trong cùng một đợt tuyển dụng.
+                  </p>
+                </div>
+              )}
+
+              {dupCheck?.is_duplicate && !dupCheck.same_job_conflict && (
+                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2 animate-in fade-in">
+                  <div className="flex items-center gap-2 font-bold text-amber-950">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Phát hiện ứng viên đã có {dupCheck.existing_applications.length} hồ sơ trong hệ thống</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800">
+                    Ứng viên đã từng nộp hồ sơ ở vị trí khác. Hệ thống sẽ tự động liên kết hồ sơ của ứng viên theo mã cá nhân (person_key) mà không làm mất lịch sử và CV cũ.
+                  </p>
+                  <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
+                    {dupCheck.existing_applications.map((app) => (
+                      <div key={app.id} className="flex items-center justify-between bg-white/80 p-2 rounded-xl border border-amber-200/60 text-[11px]">
+                        <span className="font-bold text-slate-800">{app.job_title}</span>
+                        <span className="font-mono text-[10px] text-slate-500">{app.tracking_code}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <label className="flex items-center gap-2 text-[11px] font-bold text-amber-950 cursor-pointer pt-2 border-t border-amber-200/80">
+                    <input
+                      type="checkbox"
+                      checked={confirmDuplicate}
+                      onChange={(e) => setConfirmDuplicate(e.target.checked)}
+                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-amber-300 cursor-pointer"
+                    />
+                    <span>Xác nhận tiếp tục thêm ứng viên vào pipeline vị trí này</span>
+                  </label>
+                </div>
+              )}
+
+              {/* Thông tin công việc & Kinh nghiệm */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">Công ty hiện tại</label>
+                  <input
+                    type="text"
+                    placeholder="Ví dụ: VNG, FPT..."
+                    value={addForm.company}
+                    onChange={(e) => setAddForm({ ...addForm, company: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">Số năm kinh nghiệm</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Ví dụ: 3"
+                    value={addForm.experience}
+                    onChange={(e) => setAddForm({ ...addForm, experience: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Upload CV - Yêu cầu User Story S5-08 */}
               <div>
-                <label className="block font-bold text-slate-800 mb-1 flex items-center gap-1.5">
-                  <Upload className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Upload hồ sơ CV (PDF / DOCX)</span>
+                <label className="block font-bold text-slate-800 mb-1 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Upload className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Upload hồ sơ CV (PDF / DOCX)</span>
+                  </div>
+                  {addForm.cvFileName && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddCvUrl(null);
+                        setAddForm({ ...addForm, cvFileName: '' });
+                      }}
+                      className="text-[10px] text-rose-600 hover:underline cursor-pointer font-bold"
+                    >
+                      Xóa CV
+                    </button>
+                  )}
                 </label>
                 <label className="block p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 hover:bg-slate-100/80 transition-colors text-center cursor-pointer">
-                  <input type="file" accept=".pdf,.docx" className="hidden" onChange={handleAddCvFile} />
+                  <input type="file" accept=".pdf,.docx,.doc" className="hidden" onChange={handleAddCvFile} />
                   <FileText className="w-6 h-6 text-slate-400 mx-auto mb-1" />
                   <p className="text-xs font-bold text-slate-700">{addForm.cvFileName || 'Kéo thả CV hoặc bấm để chọn tệp'}</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">
@@ -1357,7 +1718,7 @@ export default function RecruiterPipelinePage() {
                   <input
                     type="text"
                     disabled
-                    value="Hệ thống tự tính"
+                    value="Hệ thống tự động tính"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-500 focus:outline-none"
                   />
                 </div>
@@ -1367,7 +1728,7 @@ export default function RecruiterPipelinePage() {
                 <label className="block font-bold text-slate-800 mb-1">Ghi chú ban đầu</label>
                 <textarea
                   rows={2}
-                  placeholder="Ghi chú về ứng viên..."
+                  placeholder="Ghi chú về ứng viên (ví dụ: lý do sourcing từ LinkedIn, ấn tượng ban đầu)..."
                   value={addForm.notes}
                   onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white"
@@ -1385,8 +1746,8 @@ export default function RecruiterPipelinePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={addSaving}
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 cursor-pointer disabled:opacity-60"
+                  disabled={addSaving || dupCheck?.same_job_conflict || (dupCheck?.is_duplicate && !confirmDuplicate)}
+                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs shadow-md shadow-blue-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {addSaving ? 'Đang lưu...' : 'Thêm Vào Pipeline'}
                 </button>

@@ -9,7 +9,7 @@ import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { 
   BookOpen, Plus, Search, Filter, Edit3, Trash2, CheckCircle2, 
   XCircle, AlertCircle, HelpCircle, ArrowLeft, RefreshCw, Sparkles, X, Check,
-  Lightbulb, Tag, Award
+  Lightbulb, Tag, Award, Eye
 } from 'lucide-react';
 
 export default function HRInterviewQuestionsPage() {
@@ -21,6 +21,7 @@ export default function HRInterviewQuestionsPage() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  const [viewingQuestion, setViewingQuestion] = useState<Question | null>(null);
   const [formCode, setFormCode] = useState('');
   const [formContent, setFormContent] = useState('');
   const [formJobTitle, setFormJobTitle] = useState('Senior Python Backend Engineer');
@@ -264,81 +265,161 @@ export default function HRInterviewQuestionsPage() {
         </div>
       </div>
 
-      {/* Danh sách Câu hỏi */}
-      <div className="space-y-3.5">
-        {filteredQuestions.length === 0 ? (
-          <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-slate-300">
-            <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-            <h3 className="font-bold text-slate-800 text-sm">Chưa có câu hỏi nào phù hợp</h3>
-            <p className="text-xs text-slate-500 mt-1">Bấm "+ Thêm Câu Hỏi Mới" để bổ sung vào ngân hàng câu hỏi.</p>
-          </div>
-        ) : (
-          filteredQuestions.map((q) => (
-            <div
-              key={q.id}
-              className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs hover:shadow-md transition-all space-y-3"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-100 pb-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded text-[11px] font-bold">
-                      {q.code}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
-                      q.difficulty === 'easy' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                      q.difficulty === 'hard' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                      'bg-amber-50 text-amber-700 border-amber-200'
-                    }`}>
-                      {q.difficulty === 'easy' ? 'Cơ Bản' : q.difficulty === 'hard' ? 'Nâng Cao' : 'Trung Bình'}
-                    </span>
-                    <span className="text-xs font-bold text-slate-500">• {q.job_title}</span>
-                  </div>
-                  <h2 className="text-sm font-bold text-slate-900 pt-1 leading-relaxed">{q.content}</h2>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenModal(q)}
-                    className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    title="Chỉnh sửa câu hỏi"
+      {/* Danh sách Câu hỏi dạng Bảng (Data Table) */}
+      <div className="bg-white rounded-xl shadow-sm border border-blue-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[1050px]">
+            <thead>
+              <tr className="bg-blue-50/80 border-b border-blue-100 text-blue-800 text-xs font-semibold uppercase tracking-wider">
+                <th className="py-3.5 px-4 w-[110px]">Mã câu hỏi</th>
+                <th className="py-3.5 px-4 min-w-[280px]">Nội dung câu hỏi</th>
+                <th className="py-3.5 px-4 w-[120px] text-center">Độ khó</th>
+                <th className="py-3.5 px-4 min-w-[180px]">Chức danh áp dụng</th>
+                <th className="py-3.5 px-4 min-w-[160px]">Tiêu chí năng lực</th>
+                <th className="py-3.5 px-4 min-w-[220px]">Gợi ý trả lời</th>
+                <th className="py-3.5 px-4 w-[100px] text-center">Tần suất</th>
+                <th className="py-3.5 px-4 w-[110px] text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50 bg-white">
+              {filteredQuestions.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-12 text-center bg-white">
+                    <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                    <h3 className="font-bold text-slate-800 text-sm">Chưa có câu hỏi nào phù hợp</h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Thử thay đổi bộ lọc hoặc bấm &quot;+ Thêm Câu Hỏi Mới&quot; để bổ sung vào ngân hàng câu hỏi.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredQuestions.map((q) => (
+                  <tr
+                    key={q.id}
+                    className="border-b border-gray-50 hover:bg-blue-50/40 transition-colors duration-200 group"
                   >
-                    <Edit3 className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeactivate(q.id, q.code)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                    title="Đóng câu hỏi"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+                    {/* Mã câu hỏi */}
+                    <td className="px-4 py-4 align-top">
+                      <span className="font-mono text-blue-600 font-medium bg-blue-50/70 border border-blue-200/80 px-2.5 py-1 rounded-md text-xs inline-block">
+                        {q.code}
+                      </span>
+                    </td>
 
-              {/* Criteria badge & Suggested answer */}
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase">Tiêu chí năng lực:</span>
-                  <span className="px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[11px]">
-                    {q.criteria_name || 'Chung'}
-                  </span>
-                  <span className="text-slate-400">• Đã sử dụng {q.times_used || 0} lần</span>
-                </div>
+                    {/* Nội dung câu hỏi */}
+                    <td className="px-4 py-4 align-top">
+                      <div
+                        className="text-gray-700 text-sm font-semibold line-clamp-3 leading-relaxed"
+                        title={q.content}
+                      >
+                        {q.content}
+                      </div>
+                    </td>
 
-                {q.suggested_answer && (
-                  <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl space-y-1">
-                    <div className="flex items-center gap-1.5 text-blue-900 font-bold text-[11px]">
-                      <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
-                      <span>Gợi ý câu trả lời & Dấu hiệu nhận biết (Guidance):</span>
-                    </div>
-                    <p className="text-slate-600 text-[11px] leading-relaxed">{q.suggested_answer}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))
-        )}
+                    {/* Độ khó */}
+                    <td className="px-4 py-4 align-top text-center">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium uppercase border ${
+                          q.difficulty === 'easy'
+                            ? 'bg-green-50 text-green-700 border-green-200'
+                            : q.difficulty === 'hard'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                        }`}
+                      >
+                        {q.difficulty === 'easy'
+                          ? 'Cơ Bản'
+                          : q.difficulty === 'hard'
+                          ? 'Nâng Cao'
+                          : 'Trung Bình'}
+                      </span>
+                    </td>
+
+                    {/* Chức danh áp dụng */}
+                    <td className="px-4 py-4 align-top">
+                      <span className="text-gray-700 text-sm font-medium">
+                        {q.job_title || 'Mọi chức danh'}
+                      </span>
+                    </td>
+
+                    {/* Tiêu chí năng lực */}
+                    <td className="px-4 py-4 align-top">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50/60 border border-blue-100 text-blue-700 font-medium text-xs">
+                        <Award className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <span className="truncate max-w-[150px]" title={q.criteria_name || 'Chung'}>
+                          {q.criteria_name || 'Chung'}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Gợi ý trả lời */}
+                    <td className="px-4 py-4 align-top">
+                      {q.suggested_answer ? (
+                        <div
+                          className="flex items-start gap-1.5 text-xs text-gray-600 bg-blue-50/40 border border-blue-100/70 rounded-lg p-2.5"
+                          title={q.suggested_answer}
+                        >
+                          <Lightbulb className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                          <span className="line-clamp-2 leading-relaxed">
+                            {q.suggested_answer}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 italic text-xs">—</span>
+                      )}
+                    </td>
+
+                    {/* Tần suất */}
+                    <td className="px-4 py-4 align-top text-center">
+                      <span className="inline-block px-2.5 py-1 rounded-full bg-blue-50/60 text-blue-700 font-semibold text-xs border border-blue-100/60">
+                        {q.times_used || 0} lần
+                      </span>
+                    </td>
+
+                    {/* Thao tác */}
+                    <td className="px-4 py-4 align-top text-right">
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setViewingQuestion(q)}
+                          className="text-blue-500 hover:text-blue-700 transition-transform duration-200 hover:scale-110 cursor-pointer"
+                          title="Xem chi tiết câu hỏi"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenModal(q)}
+                          className="text-orange-500 hover:text-orange-700 transition-transform duration-200 hover:scale-110 cursor-pointer"
+                          title="Chỉnh sửa câu hỏi"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeactivate(q.id, q.code)}
+                          className="text-red-500 hover:text-red-700 transition-transform duration-200 hover:scale-110 cursor-pointer"
+                          title="Đóng câu hỏi"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Table footer info */}
+        <div className="px-4 py-3 bg-blue-50/30 border-t border-blue-100 flex items-center justify-between text-xs text-slate-500">
+          <span>
+            Hiển thị <strong className="text-blue-800">{filteredQuestions.length}</strong> / {questions.length} câu hỏi
+          </span>
+          <span className="text-[11px] text-slate-400 hidden sm:inline">
+            * Nhấn icon Xem, Sửa hoặc Xóa ở cột Thao tác để cập nhật
+          </span>
+        </div>
       </div>
 
       {/* Modal Thêm / Sửa Câu Hỏi */}
@@ -455,6 +536,113 @@ export default function HRInterviewQuestionsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Xem Chi Tiết Câu Hỏi */}
+      {viewingQuestion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-blue-100 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-blue-50/40">
+              <div className="flex items-center gap-2.5">
+                <span className="font-mono bg-blue-100/80 text-blue-800 border border-blue-200 px-2.5 py-1 rounded-md text-xs font-bold">
+                  {viewingQuestion.code}
+                </span>
+                <h2 className="text-base font-bold text-slate-900">Chi Tiết Câu Hỏi Phỏng Vấn</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingQuestion(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              {/* Meta badges */}
+              <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-100">
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-medium uppercase border ${
+                    viewingQuestion.difficulty === 'easy'
+                      ? 'bg-green-50 text-green-700 border-green-200'
+                      : viewingQuestion.difficulty === 'hard'
+                      ? 'bg-red-50 text-red-700 border-red-200'
+                      : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                  }`}
+                >
+                  {viewingQuestion.difficulty === 'easy'
+                    ? 'Cơ Bản'
+                    : viewingQuestion.difficulty === 'hard'
+                    ? 'Nâng Cao'
+                    : 'Trung Bình'}
+                </span>
+
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium">
+                  {viewingQuestion.job_title || 'Mọi chức danh'}
+                </span>
+
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
+                  <Award className="w-3.5 h-3.5 text-blue-500" />
+                  <span>{viewingQuestion.criteria_name || 'Chung'}</span>
+                </div>
+
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+                  Đã sử dụng {viewingQuestion.times_used || 0} lần
+                </span>
+              </div>
+
+              {/* Nội dung câu hỏi */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Nội dung câu hỏi
+                </label>
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold text-sm leading-relaxed">
+                  {viewingQuestion.content}
+                </div>
+              </div>
+
+              {/* Gợi ý trả lời */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Gợi ý câu trả lời & Tiêu chuẩn đánh giá</span>
+                </label>
+                {viewingQuestion.suggested_answer ? (
+                  <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl text-slate-700 text-xs leading-relaxed">
+                    {viewingQuestion.suggested_answer}
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 italic text-xs">
+                    Chưa có gợi ý câu trả lời cho câu hỏi này.
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setViewingQuestion(null)}
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const q = viewingQuestion;
+                    setViewingQuestion(null);
+                    handleOpenModal(q);
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  <span>Chỉnh sửa câu hỏi này</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

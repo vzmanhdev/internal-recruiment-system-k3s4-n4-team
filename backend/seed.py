@@ -9,7 +9,8 @@ from app.db.session import engine, SessionLocal, Base
 from app.core.security import hash_password
 import app.models  # Register all SQLAlchemy models and relationships
 from app.models.user import User
-from app.models.hr import Department, JobTitle, Competency, SharedCategory
+from app.models.hr import Department, JobTitle, Competency, SharedCategory, RecruiterAssignment
+from app.models.master_data import SlaRule
 from app.models.requisition import JobRequisition, RequisitionApprovalLog
 from app.models.job import JobPosting
 from app.models.application import JobApplication, ApplicationLog
@@ -41,24 +42,7 @@ def reset_and_seed_database(drop_tables: bool = False):
     try:
         print("\n[3/4] SEEDING DEMO DATA & 7 BUSINESS ROLE ACCOUNTS...")
 
-        # 1. Departments
-        depts_data = [
-            ("Khối Công Nghệ Thông Tin", "IT"),
-            ("Khối Nhân Sự & Đào Tạo", "HR"),
-            ("Khối Kinh Doanh & Phát Triển", "SALES"),
-            ("Khối Tài Chính & Kế Toán", "FINANCE"),
-            ("Khối Marketing & Truyền Thông", "MKT")
-        ]
-        dept_objs = {}
-        for name, code in depts_data:
-            dept = Department(name=name, code=code)
-            db.add(dept)
-            db.commit()
-            db.refresh(dept)
-            dept_objs[code] = dept
-        print(f" -> Created {len(dept_objs)} Departments")
-
-        # 2. Users for all 7 Business Roles (Bcrypt Encrypted with 'password123')
+        # 1. Users for all 7 Business Roles (Bcrypt Encrypted with 'password123')
         hashed_pwd = hash_password("password123")
         users_seed = [
             {
@@ -76,7 +60,7 @@ def reset_and_seed_database(drop_tables: bool = False):
                 "code": "NV-HRM-02"
             },
             {
-                "email": "truongbophan@company.com",
+                "email": " ",
                 "full_name": "Trần Trưởng Bộ Phận",
                 "role": "hiring_manager",
                 "phone": "0923456799",
@@ -121,22 +105,86 @@ def reset_and_seed_database(drop_tables: bool = False):
 
         user_objs = {}
         for u in users_seed:
-            user = User(
-                email=u["email"],
-                hashed_password=hashed_pwd,
-                full_name=u["full_name"],
-                phone=u["phone"],
-                role=u["role"],
-                employee_code=u["code"],
-                is_active=True,
-                account_status="active"
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
+            user = db.query(User).filter(User.email == u["email"]).first()
+            if not user:
+                user = User(
+                    email=u["email"],
+                    hashed_password=hashed_pwd,
+                    full_name=u["full_name"],
+                    phone=u["phone"],
+                    role=u["role"],
+                    employee_code=u["code"],
+                    is_active=True,
+                    account_status="active"
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
             user_objs[u["role"]] = user
         print(f" -> Seeded {len(users_seed)} User Accounts across 7 Business Roles")
         seed_rbac()
+
+        # 2. Departments with Multi-level Hierarchy (AC1) and Mandatory Head (AC2)
+        root_depts = [
+            ("Khối Công Nghệ Thông Tin", "IT", user_objs["hiring_manager"].id),
+            ("Khối Nhân Sự & Đào Tạo", "HR", user_objs["hr_manager"].id),
+            ("Khối Kinh Doanh & Phát Triển", "SALES", user_objs["approver"].id),
+            ("Khối Tài Chính & Kế Toán", "FINANCE", user_objs["admin"].id),
+            ("Khối Marketing & Truyền Thông", "MKT", user_objs["recruiter"].id)
+        ]
+        dept_objs = {}
+        for name, code, head_id in root_depts:
+            dept = db.query(Department).filter(Department.code == code).first()
+            if not dept:
+                dept = Department(name=name, code=code, head_user_id=head_id, is_active=True)
+                db.add(dept)
+                db.commit()
+                db.refresh(dept)
+            else:
+                dept.head_user_id = head_id
+                db.commit()
+            dept_objs[code] = dept
+
+        # Sub-departments (Level 2 & Level 3)
+        sub_depts = [
+            ("Bộ Phận Phát Triển Phần Mềm", "IT-DEV", dept_objs["IT"].id, user_objs["hiring_manager"].id, "Lập trình & giải pháp số"),
+            ("Bộ Phận Vận Hành & An Ninh Mạng", "IT-OPS", dept_objs["IT"].id, user_objs["admin"].id, "Hạ tầng Cloud & Security"),
+            ("Ban Tuyển Dụng & Thu Hút Nhân Tài", "HR-TA", dept_objs["HR"].id, user_objs["hr_manager"].id, "Tuyển dụng & Employer Branding"),
+            ("Ban Đào Tạo & Phát Triển Văn Hóa", "HR-LD", dept_objs["HR"].id, user_objs["hr_manager"].id, "Đào tạo & văn hóa doanh nghiệp"),
+        ]
+        for name, code, parent_id, head_id, desc in sub_depts:
+            sub = db.query(Department).filter(Department.code == code).first()
+            if not sub:
+                sub = Department(name=name, code=code, parent_id=parent_id, head_user_id=head_id, description=desc, is_active=True)
+                db.add(sub)
+                db.commit()
+                db.refresh(sub)
+            else:
+                sub.parent_id = parent_id
+                sub.head_user_id = head_id
+                sub.description = desc
+                db.commit()
+            dept_objs[code] = sub
+
+        if "IT-DEV" in dept_objs:
+            lvl3 = [
+                ("Nhóm Backend & Nền Tảng Cloud", "IT-DEV-BE", dept_objs["IT-DEV"].id, user_objs["hiring_manager"].id, "FastAPI, PostgreSQL & Cloud"),
+                ("Nhóm Frontend & Trải Nghiệm Số", "IT-DEV-FE", dept_objs["IT-DEV"].id, user_objs["hiring_manager"].id, "Next.js & Design System"),
+            ]
+            for name, code, parent_id, head_id, desc in lvl3:
+                l3 = db.query(Department).filter(Department.code == code).first()
+                if not l3:
+                    l3 = Department(name=name, code=code, parent_id=parent_id, head_user_id=head_id, description=desc, is_active=True)
+                    db.add(l3)
+                    db.commit()
+                    db.refresh(l3)
+                else:
+                    l3.parent_id = parent_id
+                    l3.head_user_id = head_id
+                    l3.description = desc
+                    db.commit()
+                dept_objs[code] = l3
+        print(f" -> Seeded multi-level hierarchy Departments with heads")
 
         # 3. Job Requisitions
         req1 = JobRequisition(
@@ -201,11 +249,14 @@ def reset_and_seed_database(drop_tables: bool = False):
             type="Full-time",
             level="Senior",
             location="Hà Nội",
-            description="Tham gia thiết kế kiến trúc Backend hệ thống Microservices & FastAPI.",
-            requirements="Thành thạo Python, SQLAlchemy, PostgreSQL, Docker.",
-            benefits="Lương tháng 13, Thưởng dự án, Du lịch hàng năm.",
+            deadline="2026-12-31",
+            description="Tham gia thiết kế kiến trúc Backend hệ thống Microservices & FastAPI, tối ưu hóa truy vấn cơ sở dữ liệu quy mô lớn.",
+            requirements="Thành thạo Python, SQLAlchemy, PostgreSQL, Docker. Tối thiểu 3 năm kinh nghiệm phát triển backend enterprise.",
+            benefits="Lương tháng 13, Thưởng dự án theo quý, Cấp Macbook Pro M3, Du lịch nghỉ dưỡng hàng năm.",
             status="published",
-            created_by_id=user_objs["hr_manager"].id
+            created_by_id=user_objs["recruiter"].id,
+            published_by_id=user_objs["hr_manager"].id,
+            published_at=datetime.utcnow()
         )
         db.add(job1)
 
@@ -219,19 +270,86 @@ def reset_and_seed_database(drop_tables: bool = False):
             type="Full-time",
             level="Mid-Level",
             location="Hà Nội",
-            description="Chịu trách nhiệm toàn bộ quy trình tuyển dụng nhân sự Công nghệ & Khối vận hành.",
-            requirements="Có 2+ năm kinh nghiệm tuyển dụng Tech, giao tiếp xuất sắc.",
-            benefits="Môi trường trẻ trung, cơ hội thăng tiến Trưởng nhóm.",
+            deadline="2026-11-30",
+            description="Chịu trách nhiệm toàn bộ quy trình tuyển dụng nhân sự Công nghệ & Khối vận hành, xây dựng nguồn ứng viên chất lượng cao.",
+            requirements="Có 2+ năm kinh nghiệm tuyển dụng Tech, kỹ năng phỏng vấn và đánh giá ứng viên chuyên sâu, giao tiếp xuất sắc.",
+            benefits="Môi trường trẻ trung năng động, cơ hội thăng tiến Trưởng nhóm Tuyển dụng, chế độ bảo hiểm sức khỏe VIP.",
             status="published",
-            created_by_id=user_objs["hr_manager"].id
+            created_by_id=user_objs["recruiter"].id,
+            published_by_id=user_objs["hr_manager"].id,
+            published_at=datetime.utcnow()
         )
         db.add(job2)
+
+        job3 = JobPosting(
+            slug="chuyen-vien-marketing-tuyen-dung",
+            title="Chuyên Viên Marketing & Employer Branding",
+            requisition_id=req2.id,
+            department_id=dept_objs["MKT"].id,
+            department_name=dept_objs["MKT"].name,
+            salary_range="15 - 22 Triệu",
+            type="Full-time",
+            level="Mid-Level",
+            location="TP. Hồ Chí Minh",
+            deadline="2026-12-15",
+            description="Xây dựng chiến dịch thương hiệu nhà tuyển dụng (Employer Branding), sáng tạo nội dung truyền thông tuyển dụng trên LinkedIn, TikTok và Website Career.",
+            requirements="Tối thiểu 2 năm kinh nghiệm Marketing/Branding; sáng tạo nội dung thu hút; có kinh nghiệm chạy quảng cáo Meta/LinkedIn.",
+            benefits="Laptop làm việc, Thưởng chiến dịch tuyển dụng, Du lịch nghỉ dưỡng 5 sao hàng năm, Phụ cấp ăn trưa.",
+            status="pending_review",
+            created_by_id=user_objs["recruiter"].id
+        )
+        db.add(job3)
+
+        job4 = JobPosting(
+            slug="data-engineer-postgresql-etl",
+            title="Kỹ Sư Dữ Liệu (Data Engineer - ETL / PostgreSQL)",
+            requisition_id=req1.id,
+            department_id=dept_objs["IT"].id,
+            department_name=dept_objs["IT"].name,
+            salary_range="20 - 30 Triệu",
+            type="Full-time",
+            level="Mid-Level",
+            location="Hà Nội",
+            deadline="2026-12-20",
+            description="Thiết kế và triển khai luồng dữ liệu ETL/ELT tổng hợp báo cáo tuyển dụng thời gian thực từ nhiều nguồn.",
+            requirements="Thành thạo PostgreSQL, Python, SQL nâng cao, kinh nghiệm tối ưu hóa truy vấn Data Warehouse.",
+            benefits="Thưởng theo hiệu quả công việc, Bảo hiểm quốc tế, Môi trường làm việc Hybrid linh hoạt.",
+            status="draft",
+            review_note="Cần điều chỉnh dải lương tối thiểu từ 20M lên 25M theo quy định dải lương mới của khối IT và bổ sung yêu cầu về Apache Airflow.",
+            created_by_id=user_objs["recruiter"].id
+        )
+        db.add(job4)
+
+        job5 = JobPosting(
+            slug="thuc-tap-sinh-nhan-su-hr-intern",
+            title="Thực Tập Sinh Nhân Sự (HR Intern - Đã đóng)",
+            requisition_id=req2.id,
+            department_id=dept_objs["HR"].id,
+            department_name=dept_objs["HR"].name,
+            salary_range="5 - 7 Triệu",
+            type="Thực tập",
+            level="Fresher",
+            location="Hà Nội",
+            deadline="2026-09-30",
+            description="Hỗ trợ sắp xếp lịch phỏng vấn và lọc hồ sơ ứng viên bước đầu.",
+            requirements="Sinh viên năm cuối các trường Đại học chuyên ngành Nhân sự, Quản trị kinh doanh.",
+            benefits="Hỗ trợ dấu thực tập, Phụ cấp hàng tháng, Được đào tạo bài bản từ chuyên gia.",
+            status="closed",
+            created_by_id=user_objs["recruiter"].id
+        )
+        db.add(job5)
         db.commit()
         db.refresh(job1)
         db.refresh(job2)
-        print(" -> Seeded 2 Published Jobs")
+        db.refresh(job3)
+        db.refresh(job4)
+        db.refresh(job5)
+        print(" -> Seeded 5 Realistic Jobs (Pending, Published, Needs Revision, Closed)")
 
-        # 5. Job Applications
+        # 5. Job Applications (S5-10 demo set with on-time & overdue SLA stages)
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+
         app1 = JobApplication(
             job_posting_id=job1.id,
             candidate_id=user_objs["candidate"].id,
@@ -242,7 +360,10 @@ def reset_and_seed_database(drop_tables: bool = False):
             current_position="Kỹ sư Phần mềm",
             years_of_experience=4,
             status="interviewing",
-            score=88
+            score=88,
+            stage_entered_at=now - timedelta(days=2),
+            is_overdue=False,
+            created_at=now - timedelta(days=5),
         )
         db.add(app1)
 
@@ -255,11 +376,95 @@ def reset_and_seed_database(drop_tables: bool = False):
             current_position="Backend Engineer",
             years_of_experience=5,
             status="offered",
-            score=92
+            score=92,
+            stage_entered_at=now - timedelta(days=1),
+            is_overdue=False,
+            created_at=now - timedelta(days=6),
         )
         db.add(app2)
+
+        # App 3: Quá hạn SLA ở Hồ sơ mới (submitted 4 ngày > ngưỡng 3 ngày)
+        app3 = JobApplication(
+            job_posting_id=job1.id,
+            full_name="Đặng Văn Long",
+            email="long.dang@gmail.com",
+            phone="0911223344",
+            current_company="MISA JSC",
+            current_position="Junior Python Developer",
+            years_of_experience=2,
+            status="submitted",
+            score=79,
+            stage_entered_at=now - timedelta(days=4),
+            is_overdue=True,
+            created_at=now - timedelta(days=4),
+        )
+        db.add(app3)
+
+        # App 4: Hồ sơ mới đúng hạn (submitted 1 ngày <= ngưỡng 3 ngày)
+        app4 = JobApplication(
+            job_posting_id=job1.id,
+            full_name="Lê Thu Trang",
+            email="trang.le@outlook.com",
+            phone="0922334455",
+            current_company="VNPT IT",
+            current_position="Data Analyst",
+            years_of_experience=3,
+            status="submitted",
+            score=85,
+            stage_entered_at=now - timedelta(days=1),
+            is_overdue=False,
+            created_at=now - timedelta(days=1),
+        )
+        db.add(app4)
+
+        # App 5: Quá hạn SLA ở Thẩm định (screening 6 ngày > ngưỡng 5 ngày)
+        app5 = JobApplication(
+            job_posting_id=job1.id,
+            full_name="Trần Quốc Bảo",
+            email="bao.tran@yahoo.com",
+            phone="0933445566",
+            current_company="Viettel Telecom",
+            current_position="DevOps Specialist",
+            years_of_experience=4,
+            status="screening",
+            score=83,
+            stage_entered_at=now - timedelta(days=6),
+            is_overdue=True,
+            created_at=now - timedelta(days=7),
+        )
+        db.add(app5)
         db.commit()
-        print(" -> Seeded 2 Applications")
+        print(" -> Seeded 5 Realistic Applications (with SLA on-time & overdue cases)")
+
+        # 5.1 Recruiter Assignment for Requisition #1 (S5-10 AC2)
+        existing_assign = db.query(RecruiterAssignment).filter(
+            RecruiterAssignment.requisition_id == req1.id,
+            RecruiterAssignment.recruiter_id == user_objs["recruiter"].id
+        ).first()
+        if not existing_assign:
+            db.add(RecruiterAssignment(
+                requisition_id=req1.id,
+                recruiter_id=user_objs["recruiter"].id,
+                assignment_type="primary"
+            ))
+            db.commit()
+            print(" -> Seeded Recruiter Assignment (recruiter@company.com assigned to Requisition #1)")
+
+        # 5.2 SLA Rules (S5-10 AC1)
+        sla_defaults = [
+            ("submitted", 3),    # Hồ sơ mới phải sàng lọc trong 3 ngày
+            ("screening", 5),    # Thẩm định hồ sơ trong 5 ngày
+            ("interviewing", 7), # Phỏng vấn trong 7 ngày
+            ("offered", 3),      # Thư mời offer trong 3 ngày
+        ]
+        for stage, max_days in sla_defaults:
+            r = db.query(SlaRule).filter(SlaRule.stage == stage).first()
+            if not r:
+                db.add(SlaRule(stage=stage, max_days=max_days, is_active=True))
+            else:
+                r.max_days, r.is_active = max_days, True
+        db.commit()
+        print(" -> Seeded 4 SLA Threshold Rules (submitted: 3d, screening: 5d, interviewing: 7d, offered: 3d)")
 
         # 6. Interview Schedule
         from datetime import datetime, timedelta
@@ -312,10 +517,45 @@ def reset_and_seed_database(drop_tables: bool = False):
         print(" -> Seeded Email Template")
 
         # 10. Master Data (JobTitles, Competencies, SharedCategories)
-        jt1 = JobTitle(name="Kỹ Sư Backend", department_id=dept_objs["IT"].id, level="Senior", min_salary=25000000, max_salary=35000000, description="Kỹ sư phát triển Backend")
-        jt2 = JobTitle(name="Chuyên Viên Tuyển Dụng", department_id=dept_objs["HR"].id, level="Mid-Level", min_salary=18000000, max_salary=25000000, description="Recruitment Specialist")
-        db.add(jt1)
-        db.add(jt2)
+        standard_titles = [
+            # HR & Sub-depts
+            {"name": "Chuyên Viên Tuyển Dụng & Thu Hút Nhân Tài (TA)", "dept": dept_objs.get("HR-TA", dept_objs["HR"]).id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 28000000, "description": "Phụ trách sourcing và tuyển chọn nhân sự"},
+            {"name": "Trưởng Nhóm Tuyển Dụng (TA Team Lead)", "dept": dept_objs.get("HR-TA", dept_objs["HR"]).id, "level": "Senior", "min_salary": 28000000, "max_salary": 42000000, "description": "Quản lý chiến lược thu hút nhân tài"},
+            {"name": "Chuyên Viên Đào Tạo & Phát Triển (L&D)", "dept": dept_objs.get("HR-LD", dept_objs["HR"]).id, "level": "Mid-Level", "min_salary": 16000000, "max_salary": 25000000, "description": "Lộ trình đào tạo nội bộ"},
+            {"name": "Chuyên Viên C&B (Tiền Lương & Đãi Ngộ)", "dept": dept_objs["HR"].id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 26000000, "description": "Thang bảng lương và đãi ngộ"},
+            {"name": "HR Generalist / Đối Tác Nhân Sự (HRBP)", "dept": dept_objs["HR"].id, "level": "Senior", "min_salary": 25000000, "max_salary": 38000000, "description": "Đối tác nhân sự chiến lược"},
+            {"name": "Chuyên Viên Tuyển Dụng", "dept": dept_objs["HR"].id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 25000000, "description": "Recruitment Specialist"},
+
+            # IT & Sub-depts
+            {"name": "Kỹ Sư Backend", "dept": dept_objs["IT"].id, "level": "Senior", "min_salary": 25000000, "max_salary": 35000000, "description": "Kỹ sư phát triển Backend"},
+            {"name": "Kỹ Sư Backend (Python / FastAPI)", "dept": dept_objs.get("IT-DEV-BE", dept_objs["IT"]).id, "level": "Senior", "min_salary": 25000000, "max_salary": 40000000, "description": "RESTful APIs & Microservices"},
+            {"name": "Kỹ Sư Backend (Mid-Level)", "dept": dept_objs.get("IT-DEV-BE", dept_objs["IT"]).id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 25000000, "description": "Lập trình Backend"},
+            {"name": "Kỹ Sư Frontend (React / Next.js)", "dept": dept_objs.get("IT-DEV-FE", dept_objs["IT"]).id, "level": "Senior", "min_salary": 24000000, "max_salary": 38000000, "description": "Phát triển giao diện web hiện đại"},
+            {"name": "Kỹ Sư Frontend (Mid-Level)", "dept": dept_objs.get("IT-DEV-FE", dept_objs["IT"]).id, "level": "Mid-Level", "min_salary": 16000000, "max_salary": 24000000, "description": "Lập trình giao diện Frontend"},
+            {"name": "Kỹ Sư DevOps & Điện Toán Đám Mây", "dept": dept_objs.get("IT-OPS", dept_objs["IT"]).id, "level": "Senior", "min_salary": 30000000, "max_salary": 48000000, "description": "CI/CD & Cloud Infrastructure"},
+            {"name": "Kỹ Sư Quản Trị Hệ Thống (SysAdmin)", "dept": dept_objs.get("IT-OPS", dept_objs["IT"]).id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 28000000, "description": "Vận hành hệ thống máy chủ"},
+            {"name": "Kỹ Sư Kiểm Thử Tự Động (QA Automation)", "dept": dept_objs.get("IT-DEV", dept_objs["IT"]).id, "level": "Mid-Level", "min_salary": 18000000, "max_salary": 27000000, "description": "Kiểm thử tự động hóa"},
+            {"name": "Kiến Trúc Sư Giải Pháp (Solution Architect)", "dept": dept_objs["IT"].id, "level": "Lead", "min_salary": 45000000, "max_salary": 70000000, "description": "Kiến trúc hệ thống tổng thể"},
+
+            # Sales, Finance, Marketing
+            {"name": "Chuyên Viên Kinh Doanh B2B", "dept": dept_objs["SALES"].id, "level": "Mid-Level", "min_salary": 15000000, "max_salary": 25000000, "description": "Kinh doanh giải pháp B2B"},
+            {"name": "Trưởng Phòng Kinh Doanh (Sales Manager)", "dept": dept_objs["SALES"].id, "level": "Senior", "min_salary": 30000000, "max_salary": 50000000, "description": "Quản lý kinh doanh"},
+            {"name": "Kế Toán Tổng Hợp", "dept": dept_objs["FINANCE"].id, "level": "Mid-Level", "min_salary": 15000000, "max_salary": 22000000, "description": "Kế toán tài chính"},
+            {"name": "Chuyên Viên Phân Tích Tài Chính (FP&A)", "dept": dept_objs["FINANCE"].id, "level": "Senior", "min_salary": 25000000, "max_salary": 38000000, "description": "Phân tích tài chính"},
+            {"name": "Chuyên Viên Digital Marketing", "dept": dept_objs["MKT"].id, "level": "Mid-Level", "min_salary": 16000000, "max_salary": 26000000, "description": "Marketing kỹ thuật số"}
+        ]
+        for st in standard_titles:
+            existing_title = db.query(JobTitle).filter(JobTitle.name == st["name"]).first()
+            if not existing_title:
+                db.add(JobTitle(
+                    name=st["name"],
+                    department_id=st["dept"],
+                    level=st["level"],
+                    min_salary=st["min_salary"],
+                    max_salary=st["max_salary"],
+                    description=st["description"],
+                    is_active=True
+                ))
 
         c1 = Competency(name="Kỹ năng Lập trình Python / FastAPI", category="Technical", description="Thành thạo REST API, ORM", required_level=4, weight=0.4)
         c2 = Competency(name="Kỹ năng Giao tiếp & Đàm phán", category="Soft Skills", description="Khả năng làm việc nhóm & trao đổi ứng viên", required_level=3, weight=0.3)

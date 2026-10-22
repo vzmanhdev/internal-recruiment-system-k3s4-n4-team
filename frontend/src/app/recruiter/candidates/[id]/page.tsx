@@ -39,6 +39,8 @@ import {
   ShieldCheck,
   AlertCircle,
   Award,
+  Video,
+  Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { UnifiedCandidate, CandidateEmailLog } from '@/features/candidates/types';
@@ -68,8 +70,8 @@ export function UnifiedCandidateDetailView({
     setData((prev) => (prev ? ({ ...prev, ...fn(prev) } as typeof prev) : prev));
   const [toast, setToast] = useState<string | null>(null);
 
-  // Tab switch in Center column: Timeline vs Email Logs
-  const [centerTab, setCenterTab] = useState<'timeline' | 'emails'>('timeline');
+  // Tab switch in Center column: Timeline vs Interviews vs Email Logs
+  const [centerTab, setCenterTab] = useState<'timeline' | 'interviews' | 'emails'>('timeline');
 
   // Modal Email Log detail & Compose state
   const [selectedEmail, setSelectedEmail] = useState<CandidateEmailLog | null>(null);
@@ -458,6 +460,23 @@ export function UnifiedCandidateDetailView({
 
                 <button
                   type="button"
+                  onClick={() => setCenterTab('interviews')}
+                  className={clsx(
+                    'font-black text-sm pb-2 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer',
+                    centerTab === 'interviews'
+                      ? 'border-purple-600 text-purple-600'
+                      : 'border-transparent text-slate-400 hover:text-slate-700'
+                  )}
+                >
+                  <Calendar className="w-4 h-4" />
+                  <span>Lịch Phỏng Vấn</span>
+                  <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-bold">
+                    {candidate.interviews?.length || 0}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setCenterTab('emails')}
                   className={clsx(
                     'font-black text-sm pb-2 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer',
@@ -473,6 +492,16 @@ export function UnifiedCandidateDetailView({
                   </span>
                 </button>
               </div>
+
+              {centerTab === 'interviews' && (
+                <Link
+                  href={`/recruiter/interviews?application_id=${candidate.applicationId}`}
+                  className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-[11px] shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Đặt Lịch PV</span>
+                </Link>
+              )}
 
               {centerTab === 'emails' && (
                 <button
@@ -532,8 +561,8 @@ export function UnifiedCandidateDetailView({
                                 app.status === 'active'
                                   ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                                   : app.status === 'hired'
-                                  ? 'bg-teal-50 text-teal-800 border-teal-300'
-                                  : 'bg-slate-100 text-slate-700 border-slate-300'
+                                    ? 'bg-teal-50 text-teal-800 border-teal-300'
+                                    : 'bg-slate-100 text-slate-700 border-slate-300'
                               )}
                             >
                               {app.stage}
@@ -606,7 +635,120 @@ export function UnifiedCandidateDetailView({
               </div>
             )}
 
-            {/* CONTENT 2: NHẬT KÝ GIAO TIẾP & EMAIL LOGS (User Story 3) */}
+            {/* CONTENT 2: LỊCH PHỎNG VẤN (S6-02 / AC4) */}
+            {centerTab === 'interviews' && (
+              <div className="space-y-4">
+                {(!candidate.interviews || candidate.interviews.length === 0) ? (
+                  <div className="py-12 text-center text-slate-400 text-xs space-y-3 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                    <Calendar className="w-8 h-8 mx-auto opacity-40 text-purple-400" />
+                    <p className="font-bold text-slate-700">Chưa có lịch phỏng vấn nào được xếp cho ứng viên này</p>
+                    <Link
+                      href={`/recruiter/interviews?application_id=${candidate.applicationId}`}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Xếp lịch phỏng vấn ngay</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {candidate.interviews.map((iv) => (
+                      <div
+                        key={iv.id}
+                        className="p-5 rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/30 via-white to-slate-50/50 hover:border-purple-300 transition-all space-y-3.5 text-xs shadow-2xs"
+                      >
+                        {/* Header: Round Name & Status Badge */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-black border border-purple-200">
+                              Vòng {iv.round_number}
+                            </span>
+                            <span className="font-black text-slate-900 text-sm">
+                              {iv.round_name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={clsx(
+                                "px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border",
+                                iv.status === 'scheduled'
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : iv.status === 'completed'
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-rose-50 text-rose-700 border-rose-200"
+                              )}
+                            >
+                              {iv.status === 'scheduled' ? 'Đã lên lịch' : iv.status === 'completed' ? 'Đã hoàn thành' : 'Đã hủy'}
+                            </span>
+                            {iv.candidate_response && (
+                              <span
+                                className={clsx(
+                                  "px-2 py-0.5 rounded-full text-[10px] font-bold border",
+                                  iv.candidate_response === 'accepted'
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : iv.candidate_response === 'reschedule_requested'
+                                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                                      : "bg-slate-100 text-slate-600 border-slate-200"
+                                )}
+                              >
+                                {iv.candidate_response === 'accepted' ? 'Ứng viên xác nhận' : iv.candidate_response === 'reschedule_requested' ? 'Xin dời lịch' : 'Chờ phản hồi'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Details grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-600">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-blue-500 shrink-0" />
+                            <span>
+                              {iv.scheduled_time ? new Date(iv.scheduled_time).toLocaleString('vi-VN') : '—'} ({iv.duration_minutes} phút)
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {iv.meeting_link ? (
+                              <Video className="w-4 h-4 text-emerald-500 shrink-0" />
+                            ) : (
+                              <MapPin className="w-4 h-4 text-rose-500 shrink-0" />
+                            )}
+                            <span className="truncate" title={iv.meeting_link || iv.location}>
+                              {iv.meeting_link ? (
+                                <a href={iv.meeting_link} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                                  {iv.meeting_link}
+                                </a>
+                              ) : (
+                                iv.location
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Interviewers list */}
+                        {iv.interviewers && iv.interviewers.length > 0 && (
+                          <div className="pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                              <Users className="w-3.5 h-3.5 text-purple-600" />
+                              Hội đồng PV:
+                            </span>
+                            {iv.interviewers.map((intv) => (
+                              <span
+                                key={intv.id}
+                                className="px-2 py-0.5 rounded-lg bg-white border border-slate-200 text-slate-800 text-[11px] font-semibold"
+                              >
+                                {intv.interviewer_name || intv.interviewer_email || `Interviewer #${intv.interviewer_id}`}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CONTENT 3: NHẬT KÝ GIAO TIẾP & EMAIL LOGS (User Story 3) */}
             {centerTab === 'emails' && (
               <div className="space-y-4">
                 {(!candidate.emailLogs || candidate.emailLogs.length === 0) ? (
@@ -639,19 +781,19 @@ export function UnifiedCandidateDetailView({
                                   log.templateType === 'offer'
                                     ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                     : log.templateType === 'interview'
-                                    ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                    : log.templateType === 'rejection'
-                                    ? 'bg-rose-50 text-rose-800 border-rose-200'
-                                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                                      ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                      : log.templateType === 'rejection'
+                                        ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                        : 'bg-amber-50 text-amber-800 border-amber-200'
                                 )}
                               >
                                 {log.templateType === 'offer'
                                   ? 'Thư Mời Nhận Việc (Offer)'
                                   : log.templateType === 'interview'
-                                  ? 'Thư Mời Phỏng Vấn'
-                                  : log.templateType === 'rejection'
-                                  ? 'Thư Từ Chối & Cảm Ơn'
-                                  : 'Thư Nhắc Nhở Phản Hồi'}
+                                    ? 'Thư Mời Phỏng Vấn'
+                                    : log.templateType === 'rejection'
+                                      ? 'Thư Từ Chối & Cảm Ơn'
+                                      : 'Thư Nhắc Nhở Phản Hồi'}
                               </span>
                               <span className="font-black text-slate-900 text-xs">
                                 {log.subject}

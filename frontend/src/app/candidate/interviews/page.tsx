@@ -11,6 +11,8 @@ import {
   Users,
   Send,
   ExternalLink,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { apiRequest, ApiError } from '@/lib/api-client';
 import { interviewService, type InterviewItem as ApiInterview } from '@/services/interview.service';
@@ -36,6 +38,7 @@ interface InterviewItem {
   status: 'pending_confirmation' | 'confirmed' | 'completed';
   note: string;
   interviewId: number;
+  preparationNotes?: string | null;
 }
 
 /** The applicant's own interviews (limited view from the API: no panel feedback or interviewer contacts). */
@@ -58,6 +61,7 @@ function toItem(i: ApiInterview, now: number): InterviewItem {
     address: i.meeting_link ? undefined : i.location,
     interviewers: [],
     status: finished ? 'completed' : i.candidate_response === 'confirmed' ? 'confirmed' : 'pending_confirmation',
+    preparationNotes: i.preparation_notes || null,
     note: i.status === 'cancelled' ? 'Buổi phỏng vấn đã bị hủy.'
       : i.candidate_response === 'reschedule_requested' ? 'Bạn đã gửi đề nghị đổi lịch — bộ phận tuyển dụng sẽ liên hệ lại.' : '',
   };
@@ -70,7 +74,7 @@ export default function CandidateInterviewsPage() {
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [rescheduleReason, setRescheduleReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastData, setToastData] = useState<{ title: string; message: string; details?: string; type?: 'success' | 'warning' | 'error' } | null>(null);
 
   const { data, error, loading, reload } = useApiData(async () => {
     const rows = await interviewService.getInterviews();
@@ -79,9 +83,9 @@ export default function CandidateInterviewsPage() {
   }, []);
   const [answered, setAnswered] = useState<Record<number, InterviewItem['status']>>({});
   const interviews = (data || []).map((i) => (answered[i.interviewId] ? { ...i, status: answered[i.interviewId] } : i));
-  const toast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+  const showToast = (title: string, message: string, details?: string, type: 'success' | 'warning' | 'error' = 'success') => {
+    setToastData({ title, message, details, type });
+    setTimeout(() => setToastData(null), 5000);
   };
 
   const filteredInterviews = interviews.filter((item) => {
@@ -100,9 +104,14 @@ export default function CandidateInterviewsPage() {
     try {
       await answer(item.interviewId, 'confirmed');
       setAnswered((prev) => ({ ...prev, [item.interviewId]: 'confirmed' }));
-      toast('Xác nhận tham gia phỏng vấn thành công!');
+      showToast(
+        'Xác Nhận Tham Dự Thành Công!',
+        `Bạn đã xác nhận tham gia buổi phỏng vấn vị trí ${item.position}.`,
+        `${item.dateDisplay} (${item.timeDisplay}) • ${item.locationOrUrl}`,
+        'success'
+      );
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Không gửi được xác nhận.');
+      showToast('Lỗi Xác Nhận', err instanceof ApiError ? err.message : 'Không gửi được xác nhận.', undefined, 'error');
     }
   };
 
@@ -110,22 +119,28 @@ export default function CandidateInterviewsPage() {
     e.preventDefault();
     if (!rescheduleReason.trim() || !rescheduleModalItem) return;
     if (rescheduleDate && isPastDate(rescheduleDate)) {
-      toast('Ngày bạn chọn không được ở trong quá khứ.');
+      showToast('Ngày Không Hợp Lệ', 'Ngày bạn chọn không được ở trong quá khứ.', undefined, 'warning');
       return;
     }
 
     setIsSubmitting(true);
     try {
       const when = [rescheduleDate, rescheduleTime].filter(Boolean).join(' ');
-      await answer(rescheduleModalItem.interviewId, 'reschedule_requested', `${when ? `Đề nghị đổi sang ${when}: ` : ''}${rescheduleReason.trim()}`);
-      toast(`Đã gửi yêu cầu đổi lịch cho buổi phỏng vấn ${rescheduleModalItem.round}.`);
+      const note = `${when ? `Đề nghị đổi sang ${when}: ` : ''}${rescheduleReason.trim()}`;
+      await answer(rescheduleModalItem.interviewId, 'reschedule_requested', note);
+      showToast(
+        'Đã Gửi Đề Xuất Đổi Lịch!',
+        `Đã gửi yêu cầu đổi lịch cho buổi phỏng vấn ${rescheduleModalItem.round}.`,
+        note,
+        'warning'
+      );
       setRescheduleModalItem(null);
       setRescheduleDate('');
       setRescheduleTime('');
       setRescheduleReason('');
       reload();
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Không gửi được yêu cầu đổi lịch.');
+      showToast('Lỗi Đổi Lịch', err instanceof ApiError ? err.message : 'Không gửi được yêu cầu đổi lịch.', undefined, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -136,11 +151,43 @@ export default function CandidateInterviewsPage() {
 
   return (
     <div className="w-full space-y-8 pb-12">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-4 z-50 max-w-md bg-emerald-700 text-white p-4 rounded-xl shadow-lg flex items-center gap-3 animate-in fade-in">
-          <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-200" />
-          <p className="text-xs sm:text-sm font-semibold">{toastMessage}</p>
+      {/* Rich Toast Notification */}
+      {toastData && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-20 right-4 z-50 max-w-md w-full bg-white border-2 rounded-2xl shadow-2xl p-4 flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-200"
+          style={{
+            borderColor:
+              toastData.type === 'success' ? '#10b981' :
+              toastData.type === 'warning' ? '#f59e0b' : '#ef4444',
+          }}
+        >
+          <div
+            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              toastData.type === 'success' ? 'bg-emerald-100 text-emerald-700' :
+              toastData.type === 'warning' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'
+            }`}
+          >
+            {toastData.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> :
+             toastData.type === 'warning' ? <Clock className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+          </div>
+          <div className="space-y-1 flex-1">
+            <h4 className="font-extrabold text-sm text-slate-900 leading-tight">{toastData.title}</h4>
+            <p className="text-xs text-slate-600 leading-snug">{toastData.message}</p>
+            {toastData.details && (
+              <p className="text-[11px] font-semibold text-blue-700 bg-blue-50/80 p-2 rounded-lg border border-blue-100">
+                {toastData.details}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setToastData(null)}
+            className="text-slate-400 hover:text-slate-700 p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 

@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { ManagerAppShell } from '@/components/layout/ManagerAppShell';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useAuth } from '@/providers/auth-provider';
 import { Pagination } from '@/components/ui/Pagination';
 import { managerApi, type ManagerRequisitionItem } from '@/features/manager/api';
 import { getLocalTodayDateString, isPastDate } from '@/utils/dateUtils';
@@ -11,6 +11,7 @@ import { useApiData } from '@/hooks/useApiData';
 import { ErrorState, LoadingState } from '@/components/ui/DataStates';
 import { ApiError } from '@/lib/api-client';
 import { masterDataService } from '@/services/master-data.service';
+import { requisitionService } from '@/services/requisition.service';
 import {
   FileCheck,
   Search,
@@ -22,24 +23,44 @@ import {
   Clock,
   AlertCircle,
   X,
-  ChevronRight,
   TrendingUp,
   Briefcase,
   Calendar,
   DollarSign,
   Send,
-  Building,
+  Building2,
   Sparkles,
+  Edit3,
   Layers,
   ArrowRight,
   ShieldCheck,
+  Save,
+  Check,
+  Info,
+  RotateCcw,
 } from 'lucide-react';
 import clsx from 'clsx';
 
 export type { ManagerRequisitionItem } from '@/features/manager/api';
 
+const formatVNDDisplay = (amount?: number | string | null): string => {
+  if (amount === '' || amount === undefined || amount === null) return '';
+  const num = typeof amount === 'number' ? amount : Number(String(amount).replace(/\D/g, ''));
+  if (isNaN(num) || num === 0) return '';
+  return new Intl.NumberFormat('vi-VN').format(num) + ' đ';
+};
+
+const parseVND = (val?: string | number | null): number | undefined => {
+  if (val === '' || val === undefined || val === null) return undefined;
+  const clean = String(val).replace(/\D/g, '');
+  if (!clean) return undefined;
+  const num = Number(clean);
+  return isNaN(num) ? undefined : num;
+};
 
 function RequisitionsContent() {
+  const { user } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { data, error, loading, reload, setData } = useApiData(() => managerApi.requisitions());
   const requisitions = data || [];
@@ -49,177 +70,380 @@ function RequisitionsContent() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
-  // Modal: Duplicate Requisition State
-  const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
-  const [selectedReqForDuplicate, setSelectedReqForDuplicate] = useState<ManagerRequisitionItem | null>(null);
+  // Master Data: Departments & Active Job Titles
+  const { data: masterData } = useApiData(async () => {
+    const [titles, depts] = await Promise.all([
+      masterDataService.jobTitles(),
+      masterDataService.departments(false),
+    ]);
+    return { titles: titles.filter((t) => t.is_active), depts: depts.filter((d) => d.is_active) };
+  }, []);
 
-  // Duplicate Form State
-  const [duplicateForm, setDuplicateForm] = useState({
-    title: '',
-    department: '',
-    level: '',
-    salaryRange: '',
-    targetCount: 1,
-    targetDate: '',
-    description: '',
-    requirements: '',
-    reason: 'Bổ sung định biên sprint mới',
-  });
+  // Modal State: Create, Edit Draft, or Duplicate
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'create' | 'edit_draft' | 'duplicate'>('create');
+  const [editingReqId, setEditingReqId] = useState<number | null>(null);
+  const [sourceReq, setSourceReq] = useState<ManagerRequisitionItem | null>(null);
 
-  // Feedback Toast & Modal Error State
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
-  };
-
-  // Helper: Default future date (today + 30 days) to prevent past date HTML5 validation block
+  // Helper: Default future date (today + 30 days)
   const getDefaultFutureDate = () => {
     const d = new Date();
     d.setDate(d.getDate() + 30);
     return d.toISOString().split('T')[0];
   };
 
-  // Job titles (with their department) for a requisition created from scratch
-  const { data: titleData } = useApiData(async () => {
-    const [titles, depts] = await Promise.all([masterDataService.jobTitles(), masterDataService.departments(false)]);
-    return { titles: titles.filter((t) => t.is_active), depts };
-  }, []);
-  const [newTitleId, setNewTitleId] = useState('');
-  const chosenTitle = titleData?.titles.find((t) => String(t.id) === newTitleId);
-  const isCreateMode = isDuplicateModalOpen && !selectedReqForDuplicate;
+  // Form State
+  const [form, setForm] = useState({
+    title: '',
+    departmentId: '',
+    jobTitleId: '',
+    quantity: 1,
+    reason: 'expansion' as 'replacement' | 'expansion' | 'seasonal',
+    reasonDetail: '',
+    minSalary: '' as number | string,
+    maxSalary: '' as number | string,
+    isSalaryNegotiable: false,
+    salaryJustification: '',
+    targetDate: getDefaultFutureDate(),
+    description: '',
+    requirements: '',
+    benefits: '',
+  });
 
-  // "+ Tạo Yêu Cầu Mới": the same form, empty, without a source requisition
-  const handleOpenCreateModal = () => {
-    setSelectedReqForDuplicate(null);
-    setNewTitleId('');
-    setDuplicateForm({
-      title: '', department: '', level: '', salaryRange: '', targetCount: 1, targetDate: getDefaultFutureDate(),
-      description: '', requirements: '', reason: '',
-    });
-    setFormError(null);
-    setIsDuplicateModalOpen(true);
+  // Real-time Salary Band Check State
+  const [isSalaryOutsideBand, setIsSalaryOutsideBand] = useState(false);
+  const [checkingBand, setCheckingBand] = useState(false);
+
+  // Feedback Toast & Error State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 5000);
   };
 
-  // Open modal with pre-filled requisition data
-  const handleOpenDuplicateModal = (req: ManagerRequisitionItem) => {
-    setSelectedReqForDuplicate(req);
-    // If targetDate from original requisition is empty or in the past, prefill with a valid future date
-    const validTargetDate = (!req.targetDate || isPastDate(req.targetDate))
-      ? getDefaultFutureDate()
-      : req.targetDate;
+  // Currently selected Job Title object
+  const chosenTitle = useMemo(() => {
+    return masterData?.titles.find((t) => String(t.id) === String(form.jobTitleId));
+  }, [masterData?.titles, form.jobTitleId]);
 
-    setDuplicateForm({
-      title: `${req.title} (Bản sao)`,
-      department: req.department,
-      level: req.level,
-      salaryRange: req.salaryRange,
-      targetCount: 1,
-      targetDate: validTargetDate,
-      description: req.description,
-      requirements: req.requirements,
-      reason: 'Bổ sung định biên sprint mới (Sao chép từ ' + req.id + ')',
-    });
+  // Filtered job titles according to selected department (supporting direct match, parent department match, or safe fallback)
+  const availableTitles = useMemo(() => {
+    if (!masterData?.titles || masterData.titles.length === 0) return [];
+    if (!form.departmentId) return masterData.titles;
+
+    const deptId = Number(form.departmentId);
+    const chosenDept = masterData.depts?.find((d) => d.id === deptId);
+    const parentDeptId = chosenDept?.parent_id;
+
+    // 1. Direct department match
+    const directMatches = masterData.titles.filter((t) => t.department_id === deptId);
+
+    // 2. Parent department match (e.g. HR titles for HR-TA subdepartment)
+    const parentMatches = parentDeptId
+      ? masterData.titles.filter((t) => t.department_id === parentDeptId)
+      : [];
+
+    // 3. Global titles (titles without specific department)
+    const globalMatches = masterData.titles.filter((t) => !t.department_id);
+
+    const matches = [...directMatches, ...parentMatches, ...globalMatches];
+    if (matches.length > 0) {
+      return matches;
+    }
+
+    // Fallback: If this sub-department has no specialized titles, show all active titles so user can still choose
+    return masterData.titles;
+  }, [masterData?.titles, masterData?.depts, form.departmentId]);
+
+  // Real-time checking if proposed salary is outside the standard band
+  useEffect(() => {
+    if (!form.jobTitleId || form.isSalaryNegotiable) {
+      setIsSalaryOutsideBand(false);
+      return;
+    }
+
+    const minVal = parseVND(form.minSalary);
+    const maxVal = parseVND(form.maxSalary);
+
+    if (minVal === undefined && maxVal === undefined) {
+      setIsSalaryOutsideBand(false);
+      return;
+    }
+
+    let active = true;
+    setCheckingBand(true);
+
+    // Call real-time check API
+    requisitionService
+      .checkSalaryBand(Number(form.jobTitleId), minVal, maxVal)
+      .then((res) => {
+        if (active) {
+          setIsSalaryOutsideBand(Boolean(res.outside));
+        }
+      })
+      .catch(() => {
+        // Fallback: evaluate locally if title has min_salary / max_salary
+        if (active && chosenTitle && (chosenTitle.min_salary || chosenTitle.max_salary)) {
+          const low = minVal !== undefined ? minVal : maxVal;
+          const high = maxVal !== undefined ? maxVal : minVal;
+          const outside =
+            (low !== undefined && chosenTitle.min_salary !== undefined && low < chosenTitle.min_salary) ||
+            (high !== undefined && chosenTitle.max_salary !== undefined && high > chosenTitle.max_salary);
+          setIsSalaryOutsideBand(Boolean(outside));
+        }
+      })
+      .finally(() => {
+        if (active) setCheckingBand(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [form.jobTitleId, form.minSalary, form.maxSalary, form.isSalaryNegotiable, chosenTitle]);
+
+  // Action: Open Modal in CREATE Mode (Từ đầu)
+  const handleOpenCreateModal = () => {
+    setModalMode('create');
+    setEditingReqId(null);
+    setSourceReq(null);
     setFormError(null);
-    setIsDuplicateModalOpen(true);
+    const defaultDept = masterData?.depts[0]?.id ? String(masterData.depts[0].id) : '';
+    setForm({
+      title: '',
+      departmentId: defaultDept,
+      jobTitleId: '',
+      quantity: 1,
+      reason: 'expansion',
+      reasonDetail: '',
+      minSalary: '',
+      maxSalary: '',
+      isSalaryNegotiable: false,
+      salaryJustification: '',
+      targetDate: getDefaultFutureDate(),
+      description: '',
+      requirements: '',
+      benefits: '',
+    });
+    setIsModalOpen(true);
+  };
+
+  // Action: Open Modal in EDIT DRAFT Mode (Sửa bản nháp)
+  const handleOpenEditDraftModal = async (req: ManagerRequisitionItem) => {
+    setModalMode('edit_draft');
+    setEditingReqId(req.dbId);
+    setSourceReq(null);
+    setFormError(null);
+    try {
+      const fullReq = await requisitionService.getRequisitionById(req.dbId);
+      setForm({
+        title: fullReq.title || '',
+        departmentId: fullReq.department_id ? String(fullReq.department_id) : '',
+        jobTitleId: fullReq.job_title_id ? String(fullReq.job_title_id) : '',
+        quantity: fullReq.quantity || 1,
+        reason: (fullReq.reason as 'replacement' | 'expansion' | 'seasonal') || 'replacement',
+        reasonDetail: fullReq.reason_detail || '',
+        minSalary: fullReq.min_salary ? String(fullReq.min_salary) : '',
+        maxSalary: fullReq.max_salary ? String(fullReq.max_salary) : '',
+        isSalaryNegotiable: Boolean(fullReq.is_salary_negotiable),
+        salaryJustification: fullReq.salary_justification || '',
+        targetDate: fullReq.target_onboard_date || getDefaultFutureDate(),
+        description: fullReq.job_description || '',
+        requirements: fullReq.requirements || '',
+        benefits: fullReq.benefits || '',
+      });
+      setIsModalOpen(true);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không tải được chi tiết bản nháp.');
+    }
+  };
+
+  // Action: Open Modal in DUPLICATE Mode (Sao chép yêu cầu cũ - S3-05)
+  const handleOpenDuplicateModal = async (req: ManagerRequisitionItem) => {
+    setModalMode('duplicate');
+    setEditingReqId(null);
+    setSourceReq(req);
+    setFormError(null);
+    try {
+      const fullReq = await requisitionService.getRequisitionById(req.dbId);
+      const validTargetDate = !fullReq.target_onboard_date || isPastDate(fullReq.target_onboard_date)
+        ? getDefaultFutureDate()
+        : fullReq.target_onboard_date;
+
+      setForm({
+        title: `${fullReq.title} (Bản sao)`,
+        departmentId: fullReq.department_id ? String(fullReq.department_id) : '',
+        jobTitleId: fullReq.job_title_id ? String(fullReq.job_title_id) : '',
+        quantity: fullReq.quantity || 1,
+        reason: (fullReq.reason as 'replacement' | 'expansion' | 'seasonal') || 'expansion',
+        reasonDetail: `Sao chép từ yêu cầu ${fullReq.code}`,
+        minSalary: fullReq.min_salary ? String(fullReq.min_salary) : '',
+        maxSalary: fullReq.max_salary ? String(fullReq.max_salary) : '',
+        isSalaryNegotiable: Boolean(fullReq.is_salary_negotiable),
+        salaryJustification: fullReq.salary_justification || '',
+        targetDate: validTargetDate,
+        description: fullReq.job_description || '',
+        requirements: fullReq.requirements || '',
+        benefits: fullReq.benefits || '',
+      });
+      setIsModalOpen(true);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không tải được thông tin yêu cầu cần sao chép.');
+    }
+  };
+
+  // Action: Quick Clone 1-click (S3-05)
+  const handleQuickClone = async (req: ManagerRequisitionItem) => {
+    try {
+      setSubmitting(true);
+      const actorLabel = user?.full_name || user?.email || 'Trưởng bộ phận';
+      const { requisition: cloned } = await managerApi.cloneRequisition(req.dbId);
+      setData((prev) => [cloned, ...(prev || [])]);
+      showToast(
+        `📋 [Sao Chép Nhanh Thành Công] Đã nhân bản yêu cầu ${req.id} thành bản nháp mới ${cloned.id} (${cloned.title}) cho ${actorLabel}. Toàn bộ JD và tiêu chuẩn ứng viên được giữ nguyên, lịch sử duyệt rỗng.`
+      );
+      await reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không thể sao chép nhanh yêu cầu.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Check URL query param ?cloneId=...
   useEffect(() => {
     const cloneId = searchParams.get('cloneId');
-    if (cloneId) {
-      const target = requisitions.find((r) => r.id === cloneId);
+    if (cloneId && requisitions.length > 0) {
+      const target = requisitions.find((r) => r.id === cloneId || String(r.dbId) === cloneId);
       if (target) {
         handleOpenDuplicateModal(target);
       }
     }
-  }, [searchParams, requisitions.length]); // re-run once the real list has loaded
+  }, [searchParams, requisitions.length]);
 
-  // Submit Duplicate Requisition (Lưu bản nháp hoặc Trình duyệt)
-  const handleSubmitDuplicate = async (e: React.FormEvent, submitForApproval = true) => {
+  // Form Submit Handler: Supports both "Save as Draft" and "Submit for Approval"
+  const handleSubmitForm = async (e: React.FormEvent, submitForApproval: boolean) => {
     e.preventDefault();
     setFormError(null);
 
-    if (duplicateForm.targetDate && isPastDate(duplicateForm.targetDate)) {
-      setFormError('Ngày cần người không được ở trong quá khứ. Vui lòng chọn ngày tương lai.');
+    // AC04: Validate Target Date (Không được ở quá khứ)
+    if (form.targetDate && isPastDate(form.targetDate)) {
+      setFormError('Ngày cần người không được ở trong quá khứ. Vui lòng chọn ngày trong tương lai.');
       return;
     }
-    if (!duplicateForm.title.trim()) {
+
+    if (!form.title.trim()) {
       setFormError('Vui lòng nhập chức danh / tiêu đề yêu cầu tuyển dụng.');
       return;
     }
 
-    if (!selectedReqForDuplicate) {
-      // create from scratch
-      const deptId = chosenTitle?.department_id ?? titleData?.depts[0]?.id;
-      if (!chosenTitle || !deptId) {
-        setFormError('Vui lòng chọn chức danh (thuộc một phòng ban) cho yêu cầu tuyển dụng.');
-        return;
-      }
-      setSubmitting(true);
-      try {
-        const created = await managerApi.createAndSubmit({
-          title: duplicateForm.title.trim() || chosenTitle.name,
-          department_id: deptId,
-          job_title_id: chosenTitle.id,
-          quantity: Number(duplicateForm.targetCount) || 1,
-          target_onboard_date: duplicateForm.targetDate || undefined,
-          job_description: duplicateForm.description,
-          requirements: duplicateForm.requirements,
-          reason_detail: duplicateForm.reason,
-        });
-        setData((prev) => [created, ...(prev || [])]);
-        setIsDuplicateModalOpen(false);
-        showToast(`Đã tạo và trình duyệt yêu cầu ${created.id}: ${created.title}`);
-        await reload();
-      } catch (err) {
-        setFormError(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu tuyển dụng.');
-      } finally {
-        setSubmitting(false);
-      }
+    if (!form.departmentId) {
+      setFormError('Vui lòng chọn phòng ban.');
       return;
     }
 
+    const minSalNum = parseVND(form.minSalary);
+    const maxSalNum = parseVND(form.maxSalary);
+
+    if (minSalNum !== undefined && maxSalNum !== undefined && minSalNum > maxSalNum) {
+      setFormError('Mức lương tối thiểu không được lớn hơn mức lương tối đa.');
+      return;
+    }
+
+    // AC03: Dải lương đề xuất nằm ngoài dải chuẩn thì bắt buộc nhập giải trình
+    if (isSalaryOutsideBand && !form.salaryJustification.trim()) {
+      setFormError('Dải lương đề xuất nằm ngoài dải chuẩn của chức danh — bắt buộc nhập giải trình.');
+      return;
+    }
+
+    const payload = {
+      title: form.title.trim(),
+      department_id: Number(form.departmentId),
+      job_title_id: form.jobTitleId ? Number(form.jobTitleId) : undefined,
+      quantity: Math.max(1, Number(form.quantity) || 1),
+      reason: form.reason,
+      reason_detail: form.reasonDetail.trim() || undefined,
+      min_salary: minSalNum,
+      max_salary: maxSalNum,
+      is_salary_negotiable: form.isSalaryNegotiable,
+      salary_justification: form.salaryJustification.trim() || undefined,
+      target_onboard_date: form.targetDate || undefined,
+      job_description: form.description.trim() || undefined,
+      requirements: form.requirements.trim() || undefined,
+      benefits: form.benefits.trim() || undefined,
+    };
+
     setSubmitting(true);
     try {
-      if (submitForApproval) {
-        // Save and submit for approval
-        const result = await managerApi.copyAndSubmit(selectedReqForDuplicate.dbId, {
-          title: duplicateForm.title,
-          quantity: Number(duplicateForm.targetCount) || 1,
-          target_onboard_date: duplicateForm.targetDate || undefined,
-          job_description: duplicateForm.description,
-          requirements: duplicateForm.requirements,
-          reason_detail: duplicateForm.reason,
+      const actorLabel = user?.full_name || user?.email || 'Trưởng bộ phận';
+
+      if (modalMode === 'edit_draft' && editingReqId) {
+        // Cập nhật bản nháp đã có
+        const updated = await managerApi.updateRequisition(editingReqId, payload);
+        if (submitForApproval) {
+          const submitted = await managerApi.submitRequisition(editingReqId);
+          setData((prev) => (prev || []).map((r) => (r.dbId === editingReqId ? submitted : r)));
+          showToast(`🚀 [Trình Duyệt Thành Công] Yêu cầu ${submitted.id} (${submitted.title}) đã được trình duyệt cho Trưởng bộ phận ${actorLabel}.`);
+        } else {
+          setData((prev) => (prev || []).map((r) => (r.dbId === editingReqId ? updated : r)));
+          showToast(`✅ [Lưu Nháp Thành Công] Đã cập nhật bản nháp yêu cầu ${updated.id} cho Trưởng bộ phận ${actorLabel}.`);
+        }
+      } else if (modalMode === 'duplicate' && sourceReq) {
+        // S3-05: Gọi trực tiếp cloneRequisition API chuyên dụng
+        const { requisition: cloned } = await managerApi.cloneRequisition(sourceReq.dbId, {
+          title: payload.title,
+          quantity: payload.quantity,
+          target_onboard_date: payload.target_onboard_date,
+          reason: payload.reason,
+          reason_detail: payload.reason_detail,
         });
-        setData((prev) => [result.requisition, ...(prev || [])]);
-        setIsDuplicateModalOpen(false);
-        showToast(
-          result.submitted
-            ? `Đã tạo và trình duyệt yêu cầu ${result.requisition.id}: ${result.requisition.title}`
-            : `Đã tạo bản sao ${result.requisition.id} nhưng chưa trình duyệt được: ${result.error instanceof ApiError ? result.error.message : 'lỗi không xác định'}`
-        );
+
+        // Nếu người dùng có sửa thêm các trường khác (như lương, JD, yêu cầu, quyền lợi...)
+        const updated = await managerApi.updateRequisition(cloned.dbId, payload);
+
+        if (submitForApproval) {
+          const submitted = await managerApi.submitRequisition(updated.dbId);
+          setData((prev) => [submitted, ...(prev || [])]);
+          showToast(`🚀 [Sao Chép & Trình Duyệt Thành Công] Đã sao chép yêu cầu ${sourceReq.id} thành mã mới ${submitted.id} (${submitted.title}) và gửi trình duyệt cho ${actorLabel}.`);
+        } else {
+          setData((prev) => [updated, ...(prev || [])]);
+          showToast(`📋 [Sao Chép Bản Nháp Thành Công] Đã nhân bản yêu cầu ${sourceReq.id} thành bản nháp mới ${updated.id} (${updated.title}) cho ${actorLabel}. Toàn bộ JD/yêu cầu được kế thừa, lịch sử duyệt rỗng.`);
+        }
       } else {
-        // Save as Draft (S3-05: bản sao luôn bắt đầu ở trạng thái Nháp, không kế thừa lịch sử duyệt)
-        const draftReq = await managerApi.copyAsDraft(selectedReqForDuplicate.dbId, {
-          title: duplicateForm.title,
-          quantity: Number(duplicateForm.targetCount) || 1,
-          target_onboard_date: duplicateForm.targetDate || undefined,
-          job_description: duplicateForm.description,
-          requirements: duplicateForm.requirements,
-          reason_detail: duplicateForm.reason,
+        // Tạo mới từ đầu
+        const result = await managerApi.createRequisition({
+          ...payload,
+          save_as_draft: !submitForApproval,
         });
-        setData((prev) => [draftReq, ...(prev || [])]);
-        setIsDuplicateModalOpen(false);
-        showToast(`Đã tạo và lưu bản nháp yêu cầu ${draftReq.id}: ${draftReq.title} (chưa gửi duyệt)`);
+        setData((prev) => [result, ...(prev || [])]);
+        if (submitForApproval) {
+          showToast(`🚀 [Trình Duyệt Thành Công] Yêu cầu ${result.id} (${result.title}) đã được tạo và trình duyệt cho Trưởng bộ phận ${actorLabel}.`);
+        } else {
+          showToast(`✅ [Lưu Nháp Thành Công] Yêu cầu ${result.id} (${result.title}) đã được lưu bản nháp cho Trưởng bộ phận ${actorLabel}.`);
+        }
       }
+
+      setIsModalOpen(false);
       await reload();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Không tạo được yêu cầu từ bản sao.');
+      setFormError(err instanceof ApiError ? err.message : 'Đã có lỗi xảy ra khi xử lý yêu cầu.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Quick submit for draft rows in table
+  const handleQuickSubmitDraft = async (req: ManagerRequisitionItem) => {
+    if (!confirm(`Bạn có chắc chắn muốn gửi trình duyệt yêu cầu ${req.id} (${req.title})?`)) return;
+    try {
+      const submitted = await managerApi.submitRequisition(req.dbId);
+      setData((prev) => (prev || []).map((r) => (r.dbId === req.dbId ? submitted : r)));
+      const actorLabel = user?.full_name || user?.email || 'Trưởng bộ phận';
+      showToast(`🚀 [Trình Duyệt Thành Công] Yêu cầu ${submitted.id} đã được gửi phê duyệt cho Trưởng bộ phận ${actorLabel}.`);
+      await reload();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Không thể gửi duyệt yêu cầu.');
     }
   };
 
@@ -255,15 +479,22 @@ function RequisitionsContent() {
   const totalCount = requisitions.length;
   const activeCount = requisitions.filter((r) => r.status === 'Active').length;
   const pendingCount = requisitions.filter((r) => r.status === 'Pending').length;
+  const draftCount = requisitions.filter((r) => r.status === 'Draft').length;
   const closedCount = requisitions.filter((r) => r.status === 'Closed').length;
 
   return (
     <div className="space-y-6">
-      {/* Toast Alert */}
+      {/* Toast Alert với thông tin User chi tiết */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-60 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <div className="fixed bottom-6 right-6 z-60 flex items-center gap-3 bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-lg">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <span className="text-xs font-semibold">{toastMessage}</span>
+          <div className="text-xs font-semibold leading-relaxed">{toastMessage}</div>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="p-1 hover:bg-slate-800 rounded-lg ml-auto text-slate-400 hover:text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -274,14 +505,20 @@ function RequisitionsContent() {
             <FileCheck className="w-7 h-7 text-blue-600" />
             Yêu Cầu Tuyển Dụng (Requisitions)
           </h1>
-          <p className="text-xs text-slate-500 font-medium mt-1">
-            Quản lý danh sách tờ trình tuyển dụng của bộ phận, theo dõi phê duyệt và tái sử dụng mẫu yêu cầu cũ
+          <p className="text-xs text-slate-500 font-medium mt-1 flex items-center gap-2">
+            <span>Quản lý danh sách tờ trình xin định biên nhân sự của bộ phận</span>
+            {user && (
+              <>
+                <span className="text-slate-300">•</span>
+                <span className="text-blue-600 font-bold">Trưởng bộ phận: {user.full_name || user.email}</span>
+              </>
+            )}
           </p>
         </div>
 
         <button
           onClick={handleOpenCreateModal}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95 shrink-0"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-[8px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95 shrink-0"
         >
           <Plus className="w-4 h-4" />
           <span>+ Tạo Yêu Cầu Mới</span>
@@ -289,34 +526,40 @@ function RequisitionsContent() {
       </div>
 
       {/* 2. STATS OVERVIEW CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
         <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng yêu cầu</span>
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng tờ trình</span>
           <div className="text-2xl font-black text-slate-900">{totalCount}</div>
-          <p className="text-[11px] text-slate-500">Toàn bộ tờ trình</p>
+          <p className="text-[11px] text-slate-500">Toàn bộ yêu cầu</p>
         </div>
 
         <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Đang tuyển (Active)</span>
-          <div className="text-2xl font-black text-emerald-600">{activeCount}</div>
-          <p className="text-[11px] text-emerald-600/80">Đang nhận CV & PV</p>
+          <span className="text-[11px] font-bold text-blue-500 uppercase tracking-wider">Bản nháp</span>
+          <div className="text-2xl font-black text-blue-600">{draftCount}</div>
+          <p className="text-[11px] text-blue-600/80">Chờ hoàn thiện</p>
         </div>
 
         <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Chờ duyệt (Pending)</span>
+          <span className="text-[11px] font-bold text-amber-500 uppercase tracking-wider">Chờ duyệt</span>
           <div className="text-2xl font-black text-amber-600">{pendingCount}</div>
-          <p className="text-[11px] text-amber-600/80">Đang luân chuyển 4 cấp</p>
+          <p className="text-[11px] text-amber-600/80">Đang luân chuyển</p>
         </div>
 
         <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-xs space-y-1">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Đã hoàn thành</span>
+          <span className="text-[11px] font-bold text-emerald-500 uppercase tracking-wider">Đang mở tuyển</span>
+          <div className="text-2xl font-black text-emerald-600">{activeCount}</div>
+          <p className="text-[11px] text-emerald-600/80">Đã duyệt & nhận CV</p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Đã đóng</span>
           <div className="text-2xl font-black text-slate-600">{closedCount}</div>
-          <p className="text-[11px] text-slate-500">Đủ chỉ tiêu hoặc đóng</p>
+          <p className="text-[11px] text-slate-500">Đã đủ / Hủy</p>
         </div>
       </div>
 
       {/* 3. SEARCH & FILTER TOOLBAR */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white rounded-[8px] shadow-sm border border-slate-100 p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
@@ -324,7 +567,7 @@ function RequisitionsContent() {
             placeholder="Tìm theo chức danh, mã REQ hoặc phòng ban..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200/80 rounded-[8px] text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
           />
         </div>
 
@@ -332,26 +575,27 @@ function RequisitionsContent() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full sm:w-auto px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-600"
+            className="w-full sm:w-auto px-3.5 py-2 bg-slate-50 border border-slate-200/80 rounded-[8px] text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-600"
           >
             <option value="ALL">Tất cả trạng thái</option>
-            <option value="Active">Đang mở (Active)</option>
+            <option value="Draft">Bản nháp (Draft)</option>
             <option value="Pending">Chờ duyệt (Pending)</option>
+            <option value="Active">Đang mở tuyển (Active)</option>
             <option value="Closed">Đã đóng (Closed)</option>
           </select>
         </div>
       </div>
 
-      {/* 4. DATA TABLE WITH "SAO CHÉP" (COPY) ACTION BUTTON */}
+      {/* 4. DATA TABLE */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100 text-xs text-slate-500 font-semibold tracking-wider uppercase">
                 <th className="py-4 px-6">Mã & Chức Danh</th>
-                <th className="py-4 px-6">Cấp Bậc</th>
+                <th className="py-4 px-6">Phòng Ban</th>
                 <th className="py-4 px-6 text-center">Tiến Độ Tuyển</th>
-                <th className="py-4 px-6">Dải Lương</th>
+                <th className="py-4 px-6">Dải Lương Đề Xuất</th>
                 <th className="py-4 px-6">Ngày Cần Người</th>
                 <th className="py-4 px-6">Trạng Thái</th>
                 <th className="py-4 px-6 text-right">Thao Tác</th>
@@ -359,32 +603,43 @@ function RequisitionsContent() {
             </thead>
             <tbody className="text-xs divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={7}><LoadingState /></td></tr>
+                <tr>
+                  <td colSpan={7} className="py-8"><LoadingState /></td>
+                </tr>
               ) : error ? (
-                <tr><td colSpan={7}><ErrorState error={error} onRetry={reload} /></td></tr>
+                <tr>
+                  <td colSpan={7} className="py-8"><ErrorState error={error} onRetry={reload} /></td>
+                </tr>
               ) : paginatedList.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-slate-400">
-                    {requisitions.length === 0 ? 'Chưa có dữ liệu.' : 'Không tìm thấy yêu cầu tuyển dụng nào phù hợp với bộ lọc tìm kiếm.'}
+                    {requisitions.length === 0
+                      ? 'Chưa có yêu cầu tuyển dụng nào. Nhấn "+ Tạo Yêu Cầu Mới" để bắt đầu.'
+                      : 'Không tìm thấy yêu cầu tuyển dụng nào phù hợp với bộ lọc tìm kiếm.'}
                   </td>
                 </tr>
               ) : (
                 paginatedList.map((req) => (
-                  <tr key={req.dbId} className="hover:bg-slate-50/60 transition-colors">
+                  <tr
+                    key={req.dbId}
+                    onClick={() => router.push(`/manager/requisitions/${req.dbId}`)}
+                    className="hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                  >
                     {/* Title & Code */}
                     <td className="py-4 px-6">
                       <Link
                         href={`/manager/requisitions/${req.dbId}`}
-                        className="group font-bold text-slate-900 hover:text-blue-600 transition-colors block"
+                        onClick={(e) => e.stopPropagation()}
+                        className="group/link font-bold text-slate-900 hover:text-blue-600 transition-colors block"
                       >
-                        <div className="text-sm font-extrabold group-hover:underline">{req.title}</div>
-                        <div className="text-[11px] text-slate-400 font-medium">{req.id} • {req.department}</div>
+                        <div className="text-sm font-extrabold group-hover/link:underline">{req.title}</div>
+                        <div className="text-[11px] text-slate-400 font-medium">{req.id} • {req.level}</div>
                       </Link>
                     </td>
 
-                    {/* Level */}
+                    {/* Department */}
                     <td className="py-4 px-6">
-                      <span className="font-bold text-slate-700">{req.level}</span>
+                      <span className="font-semibold text-slate-700">{req.department}</span>
                     </td>
 
                     {/* Progress: Hired / Target */}
@@ -401,7 +656,13 @@ function RequisitionsContent() {
 
                     {/* Salary */}
                     <td className="py-4 px-6 text-slate-700 font-semibold">
-                      {req.salaryRange}
+                      <div>{req.salaryRange}</div>
+                      {req.salaryJustification && (
+                        <div className="text-[10px] text-amber-600 font-medium flex items-center gap-1 mt-0.5" title={req.salaryJustification}>
+                          <AlertCircle className="w-3 h-3 shrink-0" />
+                          <span>Đã có giải trình</span>
+                        </div>
+                      )}
                     </td>
 
                     {/* Deadline */}
@@ -411,16 +672,22 @@ function RequisitionsContent() {
 
                     {/* Status Badges */}
                     <td className="py-4 px-6">
-                      {req.status === 'Active' && (
-                        <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          Đang mở tuyển
+                      {req.status === 'Draft' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                          Bản nháp
                         </span>
                       )}
                       {req.status === 'Pending' && (
                         <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                           Chờ phê duyệt
+                        </span>
+                      )}
+                      {req.status === 'Active' && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Đang mở tuyển
                         </span>
                       )}
                       {req.status === 'Closed' && (
@@ -430,25 +697,70 @@ function RequisitionsContent() {
                       )}
                     </td>
 
-                    {/* Action Column with COPY & VIEW */}
+                    {/* Action Column */}
                     <td className="py-4 px-6 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {/* View Detail Link */}
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Edit Draft Action (S2-10 AC02) */}
+                        {req.status === 'Draft' && (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditDraftModal(req);
+                              }}
+                              className="p-2 rounded-[8px] text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                              title="Sửa bản nháp"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickSubmitDraft(req);
+                              }}
+                              className="p-2 rounded-[8px] text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                              title="Gửi duyệt ngay"
+                            >
+                              <Send className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+
+                        {/* View Detail Button with text & icon */}
                         <Link
                           href={`/manager/requisitions/${req.dbId}`}
-                          className="p-2 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 font-bold text-xs transition-all cursor-pointer shadow-2xs group active:scale-95 shrink-0"
                           title="Xem chi tiết & Lịch sử duyệt"
                         >
-                          <Eye className="w-4 h-4" />
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Xem chi tiết</span>
                         </Link>
 
-                        {/* FEATURE 1: SAO CHÉP (COPY) ACTION BUTTON */}
+                        {/* S3-05 Quick Clone (1-click) */}
                         <button
-                          onClick={() => handleOpenDuplicateModal(req)}
-                          className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer group"
-                          title="Sao chép yêu cầu (Duplicate)"
+                          data-testid={`quick-clone-btn-${req.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickClone(req);
+                          }}
+                          className="p-2 rounded-[8px] text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          title="Sao chép nhanh thành bản nháp (1-click)"
                         >
-                          <Copy className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                          <Sparkles className="w-4 h-4" />
+                        </button>
+
+                        {/* S3-05 Duplicate with edit modal */}
+                        <button
+                          data-testid={`duplicate-btn-${req.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenDuplicateModal(req);
+                          }}
+                          className="p-2 rounded-[8px] text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                          title="Sao chép & xem lại/chỉnh sửa (Duplicate)"
+                        >
+                          <Copy className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -459,7 +771,7 @@ function RequisitionsContent() {
           </table>
         </div>
 
-        {/* Thanh Phân Trang (Pagination) */}
+        {/* Thanh Phân Trang */}
         <div className="px-6 pb-6">
           <Pagination
             currentPage={currentPage}
@@ -473,227 +785,479 @@ function RequisitionsContent() {
       </div>
 
       {/* ========================================================================= */}
-      {/* 5. MODAL: "TẠO YÊU CẦU MỚI (BẢN SAO)" - PRE-FILLED FORM                  */}
+      {/* 5. MODAL FORM: TẠO MỚI / CHỈNH SỬA BẢN NHÁP / SAO CHÉP                    */}
       {/* ========================================================================= */}
-      {isDuplicateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl p-6 md:p-8 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-5 max-h-[90vh] overflow-y-auto">
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-4xl p-6 md:p-8 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-6 my-8 max-h-[92vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                  <Copy className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-[8px] bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  {modalMode === 'create' ? <Plus className="w-5 h-5" /> : modalMode === 'edit_draft' ? <Edit3 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="font-black text-base text-slate-900 tracking-tight">
-                    {isCreateMode ? 'Tạo yêu cầu mới' : 'Tạo yêu cầu mới (Bản sao)'}
+                  <h3 className="font-black text-lg text-slate-900 tracking-tight">
+                    {modalMode === 'create'
+                      ? 'Tạo Yêu Cầu Tuyển Dụng Mới (Headcount Requisition)'
+                      : modalMode === 'edit_draft'
+                      ? 'Chỉnh Sửa Bản Nháp Yêu Cầu Tuyển Dụng'
+                      : 'Tạo Yêu Cầu Tuyển Dụng (Bản Sao)'}
                   </h3>
-                  <p className="text-xs text-slate-400 font-medium">
-                    {isCreateMode
-                      ? 'Yêu cầu sẽ được gửi vào luồng phê duyệt ngay sau khi tạo'
-                      : `Sao chép toàn bộ tiêu chuẩn từ yêu cầu ${selectedReqForDuplicate?.id}`}
+                  <p className="text-xs text-slate-500 font-medium">
+                    {modalMode === 'create'
+                      ? 'Khai báo thông số tuyển dụng để xin headcount có hồ sơ rõ ràng'
+                      : modalMode === 'edit_draft'
+                      ? 'Hoàn thiện thông tin trước khi gửi lên luồng phê duyệt'
+                      : 'Kế thừa tiêu chuẩn công việc từ yêu cầu trước đó'}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setIsDuplicateModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 cursor-pointer"
+                onClick={() => setIsModalOpen(false)}
+                className="p-2 rounded-[8px] text-slate-400 hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Notification hint */}
-            <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-blue-900 text-xs space-y-1">
-              <div className="flex items-center gap-1.5 font-bold">
-                <Sparkles className="w-4 h-4 text-blue-600" />
-                <span>Dữ liệu chuyên môn đã được điền sẵn (Pre-filled):</span>
-              </div>
-              <p className="text-[11px] text-blue-800 leading-relaxed font-medium">
-                Chức danh, Mô tả công việc, Yêu cầu kỹ năng và Dải lương đã tự động sao chép. Manager chỉ cần cập nhật <strong>Số lượng</strong> và <strong>Ngày cần người</strong> trước khi bấm Trình duyệt.
-              </p>
-            </div>
-
-            {/* Form Fields */}
-            <form onSubmit={(e) => handleSubmitDuplicate(e, true)} className="space-y-4 text-xs">
-              {formError && (
-                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-                  <span>{formError}</span>
+            {/* S3-05: Duplicate Mode Informational Banner */}
+            {modalMode === 'duplicate' && sourceReq && (
+              <div className="p-4 rounded-xl bg-indigo-50/90 border border-indigo-200 text-indigo-900 text-xs space-y-1.5 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 font-bold text-indigo-800">
+                  <Copy className="w-4 h-4 text-indigo-600" />
+                  <span>Chế độ Sao chép Yêu cầu Tuyển dụng (S3-05)</span>
+                  <span className="ml-auto font-mono text-[11px] bg-indigo-200/70 text-indigo-800 px-2.5 py-0.5 rounded-full font-bold">
+                    Nguồn: {sourceReq.id}
+                  </span>
                 </div>
-              )}
-              {/* Title & Department */}
-              <div className="space-y-1.5">
-                <label className="block font-bold text-slate-700">Chức danh tuyển dụng *</label>
-                <input
-                  type="text"
-                  required
-                  value={duplicateForm.title}
-                  onChange={(e) => setDuplicateForm({ ...duplicateForm, title: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-blue-600"
-                />
+                <p className="text-slate-600 leading-relaxed">
+                  Hệ thống đã tự động kế thừa toàn bộ <strong>mô tả công việc (JD)</strong>, <strong>tiêu chuẩn ứng viên</strong>, <strong>quyền lợi</strong> và <strong>dải lương</strong> từ yêu cầu <strong>{sourceReq.id}</strong>. Bản sao sẽ luôn được tạo ở trạng thái <strong>Bản nháp (Draft)</strong> và <strong>không kế thừa lịch sử duyệt</strong> của yêu cầu cũ.
+                </p>
               </div>
+            )}
 
-              {/* Two Column Grid for Key Inputs */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Level */}
-                <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">Chức danh {isCreateMode ? '*' : <span className="font-normal text-slate-400">(kế thừa)</span>}</label>
-                  {isCreateMode ? (
-                    <select
-                      required
-                      value={newTitleId}
-                      onChange={(e) => setNewTitleId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600"
-                    >
-                      <option value="">-- Chọn chức danh --</option>
-                      {(titleData?.titles || []).map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}{t.department_id ? ` — ${titleData?.depts.find((d) => d.id === t.department_id)?.name || ''}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                  <input
-                    type="text"
-                    value={duplicateForm.level}
-                    readOnly
-                    title="Kế thừa từ tờ trình gốc; sửa trong bản nháp sau khi tạo nếu cần."
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600"
-                  />
-                  )}
-                </div>
-
-                {/* Salary Range */}
-                <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">Dải lương đề xuất <span className="font-normal text-slate-400">{isCreateMode ? '(theo chức danh)' : '(kế thừa)'}</span></label>
-                  <input
-                    type="text"
-                    value={isCreateMode
-                      ? (chosenTitle?.min_salary && chosenTitle?.max_salary
-                        ? `${Math.round(chosenTitle.min_salary / 1_000_000)} - ${Math.round(chosenTitle.max_salary / 1_000_000)} Triệu`
-                        : 'Theo khung lương của chức danh')
-                      : duplicateForm.salaryRange}
-                    readOnly
-                    title="Kế thừa từ tờ trình gốc; sửa trong bản nháp sau khi tạo nếu cần."
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-emerald-700 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
+            {/* Error Banner */}
+            {formError && (
+              <div className="p-4 rounded-[8px] bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2.5 animate-in fade-in duration-200">
+                <AlertCircle className="w-5 h-5 shrink-0 text-rose-600" />
+                <span className="flex-1">{formError}</span>
               </div>
+            )}
 
-              {/* KEY EDITABLE FIELDS: TARGET COUNT & TARGET DATE */}
-              <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200/90 space-y-3">
-                <div className="text-[11px] font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
-                  <Briefcase className="w-4 h-4 text-amber-700" />
-                  <span>Các thông số cần xác nhận điều chỉnh:</span>
+            {/* Form */}
+            <form onSubmit={(e) => handleSubmitForm(e, true)} className="space-y-5 text-xs">
+              {/* SECTION 1: CƠ CẤU & CHỨC DANH */}
+              <div className="space-y-3">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  <span>1. Cơ Cấu Tổ Chức & Chức Danh Tuyển Dụng</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Target Count (Số lượng cần tuyển) */}
-                  <div className="space-y-1">
-                    <label className="block font-bold text-slate-800">
-                      Số lượng cần tuyển (Headcount) *
-                    </label>
+                  {/* Department */}
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">Phòng ban đề xuất *</label>
+                    <select
+                      required
+                      value={form.departmentId}
+                      onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
+                    >
+                      <option value="">-- Chọn phòng ban --</option>
+                      {(masterData?.depts || []).map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Standard Job Title */}
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">Chức danh chuẩn (Master Data) *</label>
+                    <select
+                      required
+                      value={form.jobTitleId}
+                      onChange={(e) => {
+                        const tId = e.target.value;
+                        const tObj = masterData?.titles.find((t) => String(t.id) === tId);
+                        setForm({
+                          ...form,
+                          jobTitleId: tId,
+                          title: form.title || tObj?.name || '',
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
+                    >
+                      <option value="">-- Chọn chức danh tiêu chuẩn --</option>
+                      {availableTitles.map((t) => {
+                        const dept = masterData?.depts.find((d) => d.id === t.department_id);
+                        return (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.level}){dept ? ` • ${dept.code}` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Job Title / Requisition Title */}
+                <div className="space-y-1.5">
+                  <label className="block font-bold text-slate-700">Tiêu đề tờ trình tuyển dụng *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ví dụ: Kỹ Sư Backend Senior (Python / FastAPI)..."
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* SECTION 2: ĐỊNH BIÊN & LÝ DO TUYỂN DỤNG (AC01) */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Briefcase className="w-4 h-4 text-amber-600" />
+                  <span>2. Số Lượng Headcount & Lý Do Tuyển Dụng (AC01)</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                  {/* Quantity */}
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">Số lượng cần tuyển (Headcount) *</label>
                     <input
                       type="number"
                       min={1}
                       max={50}
                       required
-                      value={duplicateForm.targetCount}
-                      onChange={(e) => setDuplicateForm({ ...duplicateForm, targetCount: Number(e.target.value) })}
-                      className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-black text-blue-700 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      value={form.quantity}
+                      onChange={(e) => setForm({ ...form, quantity: Math.max(1, Number(e.target.value)) })}
+                      className="w-full h-[42px] px-3.5 bg-slate-50 border border-slate-200 rounded-[8px] font-black text-blue-700 focus:outline-none focus:border-blue-600 focus:bg-white transition-all text-xs"
                     />
                   </div>
 
-                  {/* Target Date (Ngày cần người) */}
-                  <div className="space-y-1">
-                    <label className="block font-bold text-slate-800">
-                      Ngày cần người (Target Date) *
-                    </label>
+                  {/* Reason Type (Standalone Equal Cards) */}
+                  <div className="space-y-1.5 col-span-1 md:col-span-2">
+                    <label className="block font-bold text-slate-700">Lý do tuyển dụng *</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, reason: 'replacement' })}
+                        className={clsx(
+                          'w-full h-[42px] px-2.5 rounded-[8px] border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                          form.reason === 'replacement'
+                            ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        )}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                        <span className="truncate">Tuyển thay thế</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, reason: 'expansion' })}
+                        className={clsx(
+                          'w-full h-[42px] px-2.5 rounded-[8px] border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                          form.reason === 'expansion'
+                            ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        )}
+                      >
+                        <TrendingUp className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                        <span className="truncate">Tăng mới định biên</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, reason: 'seasonal' })}
+                        className={clsx(
+                          'w-full h-[42px] px-2.5 rounded-[8px] border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                          form.reason === 'seasonal'
+                            ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                        )}
+                      >
+                        <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                        <span className="truncate">Thời vụ / Dự án</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Reason Detail */}
+                <div className="space-y-1.5">
+                  <label className="block font-bold text-slate-700">Chi tiết lý do đề xuất tuyển</label>
+                  <input
+                    type="text"
+                    placeholder="Ví dụ: Thay thế nhân sự nghỉ việc từ tháng 11; hoặc Bổ sung 2 dev cho dự án Core ATS..."
+                    value={form.reasonDetail}
+                    onChange={(e) => setForm({ ...form, reasonDetail: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* SECTION 3: DẢI LƯƠNG ĐỀ XUẤT & KIỂM TRA DẢI CHUẨN (AC01 & AC03) */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <DollarSign className="w-4 h-4 text-emerald-600" />
+                    <span>3. Dải Lương Đề Xuất & Thẩm Định Khung Chuẩn (AC03)</span>
+                  </div>
+                  {chosenTitle?.min_salary && chosenTitle?.max_salary ? (
+                    <span className="text-[11px] font-bold text-slate-500">
+                      Khung chuẩn chức danh: {formatVNDDisplay(chosenTitle.min_salary)} – {formatVNDDisplay(chosenTitle.max_salary)}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Min Salary */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block font-bold text-slate-700">Lương tối thiểu (VNĐ) *</label>
+                      {parseVND(form.minSalary) ? (
+                        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-[6px] border border-emerald-200">
+                          {formatVNDDisplay(form.minSalary)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        disabled={form.isSalaryNegotiable}
+                        placeholder="Ví dụ: 20.000.000"
+                        value={form.minSalary ? Number(String(form.minSalary).replace(/\D/g, '')).toLocaleString('vi-VN') : ''}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '');
+                          setForm({ ...form, minSalary: raw });
+                        }}
+                        className="w-full pl-8 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white disabled:opacity-50 text-xs"
+                      />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold select-none text-xs">
+                        ₫
+                      </span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold select-none text-xs">
+                        đ
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Max Salary */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="block font-bold text-slate-700">Lương tối đa (VNĐ) *</label>
+                      {parseVND(form.maxSalary) ? (
+                        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-[6px] border border-emerald-200">
+                          {formatVNDDisplay(form.maxSalary)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        disabled={form.isSalaryNegotiable}
+                        placeholder="Ví dụ: 30.000.000"
+                        value={form.maxSalary ? Number(String(form.maxSalary).replace(/\D/g, '')).toLocaleString('vi-VN') : ''}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\D/g, '');
+                          setForm({ ...form, maxSalary: raw });
+                        }}
+                        className="w-full pl-8 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white disabled:opacity-50 text-xs"
+                      />
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold select-none text-xs">
+                        ₫
+                      </span>
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold select-none text-xs">
+                        đ
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Presets */}
+                {!form.isSalaryNegotiable && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                    <span className="text-[11px] font-medium text-slate-400 mr-1">Gợi ý nhanh:</span>
+                    {[
+                      { label: '15 triệu', min: 15_000_000, max: 20_000_000 },
+                      { label: '20 triệu', min: 20_000_000, max: 25_000_000 },
+                      { label: '25 triệu', min: 25_000_000, max: 30_000_000 },
+                      { label: '30 triệu', min: 30_000_000, max: 35_000_000 },
+                      { label: '40 triệu', min: 40_000_000, max: 50_000_000 },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            minSalary: String(preset.min),
+                            maxSalary: String(preset.max),
+                          })
+                        }
+                        className="px-2 py-0.5 text-[11px] font-semibold bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-700 rounded-[6px] border border-slate-200/80 transition-all cursor-pointer"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Checkbox Thỏa thuận */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="negotiable"
+                    checked={form.isSalaryNegotiable}
+                    onChange={(e) => setForm({ ...form, isSalaryNegotiable: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 rounded-md border-slate-300 focus:ring-blue-500"
+                  />
+                  <label htmlFor="negotiable" className="font-semibold text-slate-700 cursor-pointer">
+                    Mức lương thỏa thuận theo năng lực ứng viên
+                  </label>
+                </div>
+
+                {/* Dynamic Status Pill / Alert for Salary Band */}
+                {isSalaryOutsideBand ? (
+                  <div className="p-3.5 rounded-[8px] bg-amber-50 border border-amber-200/90 text-amber-900 text-xs space-y-2 animate-in fade-in duration-150">
+                    <div className="flex items-center gap-2 font-bold text-amber-800">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                      <span>Cảnh báo: Dải lương đề xuất nằm ngoài khung chuẩn của chức danh</span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                      Theo tiêu chí <strong>S2-10-AC03</strong>, mức lương đề xuất nằm ngoài dải chuẩn công ty bắt buộc phải nhập giải trình để Hội đồng / Ban Giám đốc thẩm định.
+                    </p>
+                    <div className="space-y-1 pt-1">
+                      <label className="block font-bold text-amber-950">Giải trình lý do mức lương đề xuất *</label>
+                      <textarea
+                        required
+                        rows={2}
+                        value={form.salaryJustification}
+                        onChange={(e) => setForm({ ...form, salaryJustification: e.target.value })}
+                        placeholder="Nhập giải trình lý do (ví dụ: Yêu cầu chuyên gia công nghệ cao, thị trường cạnh tranh gay gắt...)"
+                        className="w-full px-3 py-2 bg-white border border-amber-300 rounded-[8px] font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      />
+                    </div>
+                  </div>
+                ) : (form.minSalary || form.maxSalary) && !checkingBand ? (
+                  <div className="p-2.5 rounded-[8px] bg-emerald-50/80 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 font-semibold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>✓ Dải lương đề xuất nằm trong khung tiêu chuẩn quy định của chức danh.</span>
+                  </div>
+                ) : null}
+              </div>
+
+              {/* SECTION 4: NGÀY CẦN NGƯỜI (AC04) */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-purple-600" />
+                  <span>4. Thời Hạn & Ngày Cần Người (AC04)</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">Ngày cần nhân sự nhận việc (Target Onboard Date) *</label>
                     <input
                       type="date"
                       required
                       min={getLocalTodayDateString()}
-                      value={duplicateForm.targetDate}
-                      onChange={(e) => setDuplicateForm({ ...duplicateForm, targetDate: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                      value={form.targetDate}
+                      onChange={(e) => setForm({ ...form, targetDate: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
                     />
-                    {duplicateForm.targetDate && isPastDate(duplicateForm.targetDate) && (
-                      <p className="text-[10px] text-rose-500 mt-1 font-medium">⚠️ Ngày cần người không được ở quá khứ</p>
+                    {form.targetDate && isPastDate(form.targetDate) && (
+                      <p className="text-[11px] text-rose-600 font-bold mt-1">⚠️ Ngày cần người không được ở quá khứ (S2-10-AC04).</p>
                     )}
                   </div>
+                </div>
+              </div>
 
-                  {/* Reason (Lý do tuyển dụng bổ sung - col-span-2) */}
-                  <div className="space-y-1 col-span-1 md:col-span-2">
-                    <label className="block font-bold text-slate-800">Lý do tuyển dụng bổ sung *</label>
-                    <input
-                      type="text"
-                      required
-                      value={duplicateForm.reason}
-                      onChange={(e) => setDuplicateForm({ ...duplicateForm, reason: e.target.value })}
-                      placeholder="Ví dụ: Dự án mở rộng, bổ sung nhân sự thay thế..."
-                      className="w-full px-3.5 py-2.5 bg-white border border-amber-300 rounded-xl font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+              {/* SECTION 5: MÔ TẢ CÔNG VIỆC & YÊU CẦU ỨNG VIÊN (AC02) */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <FileCheck className="w-4 h-4 text-blue-600" />
+                  <span>5. Hồ Sơ Chuyên Môn & Yêu Cầu Ứng Viên (AC02)</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Job Description */}
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">Mô tả công việc (JD)</label>
+                    <textarea
+                      rows={5}
+                      value={form.description}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      placeholder="Mô tả mục tiêu vị trí, trách nhiệm công việc chính..."
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white resize-y"
+                    />
+                  </div>
+
+                  {/* Requirements */}
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">Yêu cầu ứng viên</label>
+                    <textarea
+                      rows={5}
+                      value={form.requirements}
+                      onChange={(e) => setForm({ ...form, requirements: e.target.value })}
+                      placeholder="Yêu cầu về kinh nghiệm, kỹ năng, ngoại ngữ và trình độ học vấn..."
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white resize-y"
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Description & Requirements (Pre-filled) - 2 Column Grid for optimal screen usage */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                {/* Description (Pre-filled) */}
+                {/* Benefits */}
                 <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">Mô tả công việc (JD)</label>
+                  <label className="block font-bold text-slate-700">Quyền lợi & đãi ngộ</label>
                   <textarea
-                    rows={5}
-                    value={duplicateForm.description}
-                    onChange={(e) => setDuplicateForm({ ...duplicateForm, description: e.target.value })}
-                    placeholder="Mô tả công việc và trách nhiệm chính..."
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600 focus:bg-white transition-all resize-y"
-                  />
-                </div>
-
-                {/* Requirements (Pre-filled) */}
-                <div className="space-y-1.5">
-                  <label className="block font-bold text-slate-700">Yêu cầu chuyên môn</label>
-                  <textarea
-                    rows={5}
-                    value={duplicateForm.requirements}
-                    onChange={(e) => setDuplicateForm({ ...duplicateForm, requirements: e.target.value })}
-                    placeholder="Yêu cầu kinh nghiệm, kỹ năng và học vấn..."
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:border-blue-600 focus:bg-white transition-all resize-y"
+                    rows={2}
+                    value={form.benefits}
+                    onChange={(e) => setForm({ ...form, benefits: e.target.value })}
+                    placeholder="Chế độ thưởng, phụ cấp, bảo hiểm chăm sóc sức khỏe, đào tạo..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-[8px] font-medium text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white resize-y"
                   />
                 </div>
               </div>
 
-              {/* Modal Actions */}
-              <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              {/* MODAL ACTIONS: LƯU NHÁP & TRÌNH DUYỆT NGAY */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsDuplicateModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2.5 rounded-[8px] text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
                 >
                   Hủy
                 </button>
-                {!isCreateMode && (
+
+                <div className="flex items-center gap-3">
+                  {/* Action 1: Lưu Bản Nháp (AC02) */}
                   <button
                     type="button"
                     disabled={submitting}
-                    onClick={(e) => handleSubmitDuplicate(e, false)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                    onClick={(e) => handleSubmitForm(e, false)}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-[8px] border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
                   >
-                    <FileCheck className="w-4 h-4 text-slate-500" />
+                    <Save className="w-4 h-4 text-slate-500" />
                     <span>Lưu Bản Nháp</span>
                   </button>
-                )}
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={(e) => handleSubmitDuplicate(e, true)}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-md shadow-blue-500/30 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-                >
-                  <Send className="w-4 h-4" />
-                  <span>Trình Duyệt Ngay</span>
-                </button>
+
+                  {/* Action 2: Trình Duyệt Ngay */}
+                  <button
+                    type="button"
+                    disabled={submitting || (Boolean(form.targetDate) && isPastDate(form.targetDate))}
+                    onClick={(e) => handleSubmitForm(e, true)}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-[8px] bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow-md shadow-blue-500/25 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Trình Duyệt Ngay</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

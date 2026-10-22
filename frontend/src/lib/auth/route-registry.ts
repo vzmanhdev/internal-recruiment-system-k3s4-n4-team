@@ -101,6 +101,8 @@ const entries: Array<[string, Omit<RoutePolicy, "pattern">]> = [
   ["/hr/master-data/headcount", ws("hr", ["master_data:manage"])],
   ["/hr/master-data/approval-flows", ws("hr", ["master_data:manage"])],
   ["/hr/master-data/lookups", ws("hr", ["master_data:manage"])],
+  ["/hr/master-data/sla-rules", ws("hr", ["master_data:manage"])],
+  ["/hr/sla-rules", ws("hr", ["master_data:manage"])],
   ["/hr/categories", ws("hr", ["master_data:manage"])],
   ["/hr/competencies", ws("hr", ["master_data:manage"])],
   ["/hr/career-page-config", ws("hr", ["master_data:manage"])],

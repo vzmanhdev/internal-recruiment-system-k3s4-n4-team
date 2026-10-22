@@ -1,6 +1,23 @@
 import { apiRequest } from "@/lib/api-client";
 
-export interface Department { id: number; name: string; code: string; parent_id: number | null; head_user_id: number | null; sort_order: number; is_active: boolean }
+export interface Department {
+  id: number;
+  name: string;
+  code: string;
+  parent_id: number | null;
+  head_user_id: number | null;
+  description?: string;
+  sort_order: number;
+  is_active: boolean;
+  head_name?: string | null;
+  head_email?: string | null;
+  head_title?: string | null;
+  member_count?: number;
+  open_positions?: number;
+  open_requisitions_count?: number;
+  children_count?: number;
+  created_at?: string | null;
+}
 export interface JobTitle { id: number; name: string; department_id: number | null; level: string; min_salary?: number; max_salary?: number; description?: string; is_active: boolean }
 export interface Criterion { id?: string; code: string; name: string; description?: string; weight: number; category?: string | null; benchmark_low?: string | null; benchmark_mid?: string | null; benchmark_high?: string | null }
 export interface Framework { id: string; code: string; name: string; department?: string; applied_job_titles: string[]; status: string; criteria: Criterion[]; total_weight: number }
@@ -74,7 +91,7 @@ export interface ApprovalFlowVersionItem {
   created_at: string;
 }
 
-export interface Person { id: number; full_name: string; email: string; role?: string }
+export interface Person { id: number; full_name: string; email: string; role?: string; job_title?: string }
 export type { Framework as CompetencyFramework };
 export interface OnboardingTemplateItem { task_name: string; assigned_role: string; days_before_start: number; phase?: string | null; is_mandatory?: boolean; description?: string | null; sla_note?: string | null }
 export interface OnboardingTemplateRow { id: number; department_id: number | null; name: string; items: OnboardingTemplateItem[]; is_active: boolean }
@@ -87,9 +104,12 @@ export const masterDataService = {
     apiRequest<Department>(id ? `/hr/departments/${id}` : "/hr/departments", json(id ? "PUT" : "POST", d)),
   setDepartmentActive: (id: number, active: boolean) =>
     apiRequest<Department>(`/hr/departments/${id}/${active ? "activate" : "deactivate"}`, { method: "POST" }),
+  activateDepartment: (id: number) =>
+    apiRequest<Department>(`/hr/departments/${id}/activate`, { method: "POST" }),
   deactivateDepartment: (id: number) =>
     apiRequest<Department>(`/hr/departments/${id}/deactivate`, { method: "POST" }),
   deleteDepartment: (id: number) => apiRequest(`/hr/departments/${id}`, { method: "DELETE" }),
+  people: (role?: string) => apiRequest<Person[]>(`/hr/people${role ? `?role=${role}` : ""}`),
 
   jobTitles: () => apiRequest<JobTitle[]>("/hr/job-titles"),
   saveJobTitle: (t: Partial<JobTitle>, id?: number) => apiRequest<JobTitle>(id ? `/hr/job-titles/${id}` : "/hr/job-titles", json(id ? "PUT" : "POST", t)),
@@ -138,8 +158,6 @@ export const masterDataService = {
   deactivateApprovalFlow: (id: number) => apiRequest<ApprovalFlow>(`/hr/approval-flows/${id}/deactivate`, { method: "POST" }),
   deleteApprovalFlow: (id: number) => apiRequest<{ success: boolean; message: string; id: number }>(`/hr/approval-flows/${id}`, { method: "DELETE" }),
   approvalFlowVersions: (id: number) => apiRequest<ApprovalFlowVersionItem[]>(`/hr/approval-flows/${id}/versions`),
-
-  people: (role: string) => apiRequest<Person[]>(`/hr/people?role=${role}`),
 
   onboardingTemplates: () => apiRequest<OnboardingTemplateRow[]>("/hr/onboarding-templates"),
   /** Saving creates a new active version for the department (older versions are kept, inactive). */

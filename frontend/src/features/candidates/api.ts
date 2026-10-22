@@ -4,7 +4,7 @@
  * (Replaced the former mock candidate list.)
  */
 import { apiRequest, API_BASE_URL, ApiError } from "@/lib/api-client";
-import type { CandidateApplication, CandidateEmailLog, CandidateNote, UnifiedCandidate } from "./types";
+import type { CandidateApplication, CandidateEmailLog, CandidateNote, UnifiedCandidate, CandidateInterviewItem } from "./types";
 
 export interface ApiApplication {
   id: number;
@@ -18,6 +18,7 @@ export interface ApiApplication {
   current_position?: string | null;
   years_of_experience?: number | null;
   cv_url?: string | null;
+  linkedin_url?: string | null;
   status: string;
   rating?: number | null;
   tags?: string[];
@@ -29,11 +30,60 @@ export interface ApiApplication {
   created_at?: string | null;
   updated_at?: string | null;
   applied_date?: string | null;
+  stage_entered_at?: string | null;
+  is_overdue?: boolean | null;
+}
+
+export interface ManualCandidatePayload {
+  job_posting_id: number;
+  full_name: string;
+  email: string;
+  phone: string;
+  linkedin_url?: string;
+  source?: string;
+  current_company?: string;
+  current_position?: string;
+  years_of_experience?: number;
+  cv_url?: string;
+  cover_letter?: string;
+  notes?: string;
+  confirm_duplicate?: boolean;
+}
+
+export interface DuplicateCheckResult {
+  is_duplicate: boolean;
+  same_job_conflict: boolean;
+  active_application_in_job?: {
+    id: number;
+    tracking_code: string;
+    status: string;
+    job_title?: string | null;
+  } | null;
+  existing_applications: Array<{
+    id: number;
+    tracking_code?: string;
+    full_name: string;
+    email: string;
+    phone: string;
+    job_id?: number;
+    job_title?: string;
+    status: string;
+    created_at?: string | null;
+    cv_url?: string | null;
+  }>;
+  suggested_action: 'BLOCKED' | 'CONFIRM_LINK' | 'CLEAR';
+  message?: string;
 }
 
 export const STAGE_LABEL: Record<string, string> = {
-  submitted: "Hồ sơ mới", screening: "Sàng lọc", interviewing: "Phỏng vấn", offered: "Đề xuất offer",
-  hired: "Đã nhận việc", onboarded: "Đã onboard", rejected: "Đã loại", withdrawn: "Ứng viên rút",
+  submitted: "Hồ sơ mới",
+  screening: "Sàng lọc",
+  interviewing: "Phỏng vấn",
+  offered: "Đề xuất Offer",
+  hired: "Đã nhận việc",
+  onboarded: "Đã onboard",
+  rejected: "Đã từ chối",
+  withdrawn: "Ứng viên rút",
 };
 
 const appStatus = (s: string): CandidateApplication["status"] =>
@@ -72,11 +122,12 @@ export function toCandidates(apps: ApiApplication[]): UnifiedCandidate[] {
       name: latest.full_name,
       email: latest.email,
       phone: latest.phone || "",
-      linkedInUrl: "",
+      linkedInUrl: latest.linkedin_url || sorted.find((a) => a.linkedin_url)?.linkedin_url || "",
       address: "",
       dob: "",
       avatar: "",
       latestPosition: latest.job_title || latest.current_position || "",
+      latestStatusCode: latest.status,
       latestStatus: STAGE_LABEL[latest.status] || latest.status,
       source: latest.source || "Không rõ",
       expectedSalary: "",
@@ -99,6 +150,7 @@ interface ProfileResponse {
   previous_applications: ApiApplication[];
   notes: Array<{ id: number; content: string; author_name?: string | null; created_at?: string }>;
   timeline: Array<{ at: string | null; type: string; text: string; application_id: number }>;
+  interviews?: CandidateInterviewItem[];
 }
 
 interface EvaluationRow {
@@ -137,6 +189,7 @@ export const candidatesApi = {
       tags: p.application.tags || base.tags,
       notes,
       emailLogs,
+      interviews: p.interviews || [],
       evaluation: {
         technicalSkill: avg(evals.map((e) => e.technical_score)),
         softSkill: avg(evals.map((e) => e.communication_score)),
@@ -167,9 +220,21 @@ export const candidatesApi = {
     });
   },
 
+  /** S5-08: real-time duplicate candidate checking. */
+  async checkDuplicate(email?: string, phone?: string, jobPostingId?: number): Promise<DuplicateCheckResult> {
+    const params = new URLSearchParams();
+    if (email) params.append("email", email);
+    if (phone) params.append("phone", phone);
+    if (jobPostingId) params.append("job_posting_id", String(jobPostingId));
+    return apiRequest<DuplicateCheckResult>(`/applications/check-duplicate?${params.toString()}`);
+  },
+
   /** S5-08: a candidate sourced by a recruiter (goes through duplicate detection on the server). */
-  async addManual(data: { job_posting_id: number; full_name: string; email: string; phone: string; cv_url?: string; source?: string }) {
-    return apiRequest<ApiApplication>("/applications/manual", { method: "POST", body: JSON.stringify(data) });
+  async addManual(data: ManualCandidatePayload) {
+    return apiRequest<ApiApplication & { related_applications?: any[]; possible_duplicates?: any[] }>("/applications/manual", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   },
 
   /** S6-01: server-side export (scoped, no internal notes, formula-safe), downloaded as a file. */

@@ -35,7 +35,7 @@ interface ApprovalStep {
   approverName: string;
   approverRole: string;
   department: string;
-  status: 'COMPLETED' | 'IN_PROGRESS' | 'PENDING' | 'REJECTED';
+  status: 'COMPLETED' | 'IN_PROGRESS' | 'PENDING' | 'REJECTED' | 'CHANGES_REQUESTED';
   timestamp?: string;
   note?: string;
   waitingTime?: string;

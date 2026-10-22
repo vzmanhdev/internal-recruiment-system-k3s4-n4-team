@@ -19,6 +19,7 @@ class JobApplication(Base):
     cv_url = Column(String(4000000), nullable=True)
     cover_letter = Column(Text, nullable=True)
     referral_code = Column(String(50), nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
 
     # Workflow Status: submitted, screening, interviewing, offered, hired, rejected
     status = Column(String(50), default="submitted", nullable=False)
@@ -68,6 +69,7 @@ class JobApplication(Base):
             "cv_url": self.cv_url,
             "cover_letter": self.cover_letter,
             "referral_code": self.referral_code,
+            "linkedin_url": self.linkedin_url,
             "status": self.status,
             "public_status": self.PUBLIC_STATUS.get(self.status, "Đang xem xét"),
             "score": self.score,

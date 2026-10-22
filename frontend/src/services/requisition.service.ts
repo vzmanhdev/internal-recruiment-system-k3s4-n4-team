@@ -5,6 +5,10 @@ export interface RequisitionApprovalLog {
   requisition_id: number;
   approver_id?: number | null;
   approver_name?: string | null;
+  approver_email?: string | null;
+  approver_role?: string | null;
+  approver_department?: string | null;
+  step_code?: string | null;
   step_name?: string | null;
   action: string;
   comment?: string | null;
@@ -40,6 +44,21 @@ export interface RequisitionItem {
   approval_logs?: RequisitionApprovalLog[];
   approval_chain?: string[];
   approval_step_index?: number;
+  current_approver_info?: {
+    step_code: string;
+    step_label: string;
+    target_roles?: string[];
+    approvers: Array<{
+      id: number;
+      full_name: string;
+      email: string;
+      role: string;
+      department?: string;
+    }>;
+    waited_hours?: number;
+    is_overdue?: boolean;
+    reject_reason?: string;
+  };
   days_open?: number | null;
   days_remaining?: number | null;
   is_overdue?: boolean;
@@ -63,10 +82,37 @@ export interface HandoverHistoryItem {
   created_at: string;
 }
 
+export interface RequisitionFilterParams {
+  search?: string;
+  status_filter?: string;
+  department_id?: number;
+  recruiter_id?: number;
+  date_from?: string;
+  date_to?: string;
+  overdue_only?: boolean;
+  needs_handover_only?: boolean;
+}
+
 export const requisitionService = {
-  async getRequisitions(status_filter?: string): Promise<RequisitionItem[]> {
-    const query = status_filter ? `?status_filter=${status_filter}` : "";
-    return apiRequest<RequisitionItem[]>(`/requisitions${query}`);
+  async getRequisitions(params?: RequisitionFilterParams | string): Promise<RequisitionItem[]> {
+    if (typeof params === "string") {
+      const query = params ? `?status_filter=${encodeURIComponent(params)}` : "";
+      return apiRequest<RequisitionItem[]>(`/requisitions${query}`);
+    }
+    if (!params) {
+      return apiRequest<RequisitionItem[]>("/requisitions");
+    }
+    const searchParams = new URLSearchParams();
+    if (params.search) searchParams.set("search", params.search);
+    if (params.status_filter && params.status_filter !== "all") searchParams.set("status_filter", params.status_filter);
+    if (params.department_id) searchParams.set("department_id", String(params.department_id));
+    if (params.recruiter_id) searchParams.set("recruiter_id", String(params.recruiter_id));
+    if (params.date_from) searchParams.set("date_from", params.date_from);
+    if (params.date_to) searchParams.set("date_to", params.date_to);
+    if (params.overdue_only) searchParams.set("overdue_only", "true");
+    if (params.needs_handover_only) searchParams.set("needs_handover_only", "true");
+    const qs = searchParams.toString();
+    return apiRequest<RequisitionItem[]>(`/requisitions${qs ? `?${qs}` : ""}`);
   },
 
   async getRequisitionById(id: number): Promise<RequisitionItem> {
@@ -127,12 +173,38 @@ export const requisitionService = {
     return apiRequest<RequisitionItem>(`/requisitions/${id}/copy`, { method: "POST" });
   },
 
+  async cloneRequisition(
+    id: number,
+    payload?: { title?: string; quantity?: number; target_onboard_date?: string; reason?: string; reason_detail?: string }
+  ): Promise<RequisitionItem & { source_requisition_code?: string; source_requisition_id?: number }> {
+    return apiRequest<RequisitionItem & { source_requisition_code?: string; source_requisition_id?: number }>(
+      `/requisitions/${id}/clone`,
+      {
+        method: "POST",
+        body: payload ? JSON.stringify(payload) : undefined,
+      }
+    );
+  },
+
   /** Nudge the approvers of the current step (creator only, once per day). */
-  async remind(id: number): Promise<{ sent: number }> {
+  async remind(id: number): Promise<{
+    sent: number;
+    code?: string;
+    title?: string;
+    recipients?: Array<{ id: number; name: string; email: string; role: string }>;
+    message?: string;
+  }> {
     return apiRequest(`/requisitions/${id}/remind`, { method: "POST" });
   },
 
   async deleteDraft(id: number): Promise<{ success: boolean }> {
     return apiRequest(`/requisitions/${id}`, { method: "DELETE" });
+  },
+
+  async checkSalaryBand(job_title_id: number, min_salary?: number, max_salary?: number): Promise<{ outside: boolean; requires_justification: boolean }> {
+    const p = new URLSearchParams({ job_title_id: String(job_title_id) });
+    if (min_salary !== undefined && min_salary !== null) p.append("min_salary", String(min_salary));
+    if (max_salary !== undefined && max_salary !== null) p.append("max_salary", String(max_salary));
+    return apiRequest<{ outside: boolean; requires_justification: boolean }>(`/requisitions/check-salary-band?${p.toString()}`);
   },
 };
