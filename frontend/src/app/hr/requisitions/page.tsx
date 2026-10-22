@@ -629,7 +629,7 @@ export default function HRRequisitionsPage() {
                       <th className="py-3.5 px-3 whitespace-nowrap">Phòng ban</th>
                       <th className="py-3.5 px-3 text-center whitespace-nowrap">Chỉ tiêu</th>
                       <th className="py-3.5 px-3 whitespace-nowrap">Cảnh báo SLA phê duyệt</th>
-                      <th className="py-3.5 px-4 whitespace-nowrap">Phân công (Assign) Recruiter</th>
+                      <th className="py-3.5 px-4 whitespace-nowrap">Phân công Recruiter</th>
                       <th className="py-3.5 px-3 text-center whitespace-nowrap">Trạng thái REQ</th>
                       <th className="py-3.5 pl-4 pr-6 sm:pr-8 text-right whitespace-nowrap min-w-[270px] w-fit">Thao tác</th>
                     </tr>
@@ -672,7 +672,7 @@ export default function HRRequisitionsPage() {
                               /* Cảnh báo đỏ nhấp nháy nếu YC kẹt quá 3 ngày */
                               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 animate-pulse shadow-xs">
                                 <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                <span>Kẹt duyệt {req.pendingSinceDays} ngày (&gt;3d)</span>
+                                <span>Kẹt duyệt {req.pendingSinceDays} ngày (&gt;3 ngày)</span>
                               </div>
                             ) : req.slaStatus === "warning" ? (
                               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
@@ -687,7 +687,7 @@ export default function HRRequisitionsPage() {
                             )}
                           </td>
 
-                          {/* Cột Phân công (Assign) Dropdown & Nút Bàn giao */}
+                          {/* Cột Phân công Recruiter Dropdown & Nút Bàn giao */}
                           <td className="py-3.5 px-4 whitespace-nowrap">
                             <div className="flex items-center gap-1.5">
                               <select
@@ -715,7 +715,7 @@ export default function HRRequisitionsPage() {
                               {/* Nút mở Modal bàn giao kèm lý do (S3-06 & S1-10) */}
                               <button
                                 type="button"
-                                title="Bàn giao phụ trách (kèm lý do và lưu audit trail)"
+                                title="Bàn giao phụ trách (kèm lý do và lưu vết kiểm toán)"
                                 onClick={() => openHandoverModal(req)}
                                 className={`p-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shrink-0 ${
                                   req.needsHandover
@@ -1059,7 +1059,7 @@ export default function HRRequisitionsPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      Approval Engine Rule
+                      Quy tắc Luồng Phê Duyệt
                     </span>
                     <span className="text-xs text-slate-400">
                       Cấu hình tự động định tuyến tờ trình
@@ -1117,7 +1117,7 @@ export default function HRRequisitionsPage() {
                     {/* Chuỗi các bước phê duyệt nối tiếp (Workflow Steps Visual) */}
                     <div className="space-y-2">
                       <span className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
-                        Trình tự các bước duyệt (Sequential Chain):
+                        Trình tự các bước duyệt:
                       </span>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
