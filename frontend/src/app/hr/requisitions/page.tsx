@@ -620,18 +620,18 @@ export default function HRRequisitionsPage() {
             </div>
 
             {/* Table */}
-            <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
+            <div className="w-full border border-slate-200 rounded-lg overflow-hidden shadow-2xs bg-white">
+              <div className="w-full overflow-x-auto rounded-lg">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
-                      <th className="py-3.5 px-4 w-3/12">Mã REQ & Chức danh</th>
-                      <th className="py-3.5 px-3">Phòng ban</th>
-                      <th className="py-3.5 px-3 text-center">Chỉ tiêu</th>
-                      <th className="py-3.5 px-3">Cảnh báo SLA phê duyệt</th>
-                      <th className="py-3.5 px-4">Phân công (Assign) Recruiter</th>
-                      <th className="py-3.5 px-3 text-center">Trạng thái REQ</th>
-                      <th className="py-3.5 px-4 text-right">Thao tác dừng/mở</th>
+                      <th className="py-3.5 px-4 min-w-[200px]">Mã REQ & Chức danh</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap">Phòng ban</th>
+                      <th className="py-3.5 px-3 text-center whitespace-nowrap">Chỉ tiêu</th>
+                      <th className="py-3.5 px-3 whitespace-nowrap">Cảnh báo SLA phê duyệt</th>
+                      <th className="py-3.5 px-4 whitespace-nowrap">Phân công (Assign) Recruiter</th>
+                      <th className="py-3.5 px-3 text-center whitespace-nowrap">Trạng thái REQ</th>
+                      <th className="py-3.5 pl-4 pr-6 sm:pr-8 text-right whitespace-nowrap min-w-[270px] w-fit">Thao tác</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white font-medium">
@@ -655,19 +655,19 @@ export default function HRRequisitionsPage() {
                           </td>
 
                           {/* Phòng ban */}
-                          <td className="py-3.5 px-3 text-slate-700 text-xs">
+                          <td className="py-3.5 px-3 text-slate-700 text-xs whitespace-nowrap">
                             {req.department}
                           </td>
 
                           {/* Headcount */}
-                          <td className="py-3.5 px-3 text-center">
+                          <td className="py-3.5 px-3 text-center whitespace-nowrap">
                             <span className="font-black text-blue-700 text-xs bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
                               {req.headcount} nhân sự
                             </span>
                           </td>
 
                           {/* Badge Cảnh báo SLA trễ hạn */}
-                          <td className="py-3.5 px-3">
+                          <td className="py-3.5 px-3 whitespace-nowrap">
                             {isStuckOverdue || req.slaStatus === "overdue" ? (
                               /* Cảnh báo đỏ nhấp nháy nếu YC kẹt quá 3 ngày */
                               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-300 animate-pulse shadow-xs">
@@ -688,7 +688,7 @@ export default function HRRequisitionsPage() {
                           </td>
 
                           {/* Cột Phân công (Assign) Dropdown & Nút Bàn giao */}
-                          <td className="py-3.5 px-4">
+                          <td className="py-3.5 px-4 whitespace-nowrap">
                             <div className="flex items-center gap-1.5">
                               <select
                                 value={req.primaryRecruiter}
@@ -734,7 +734,7 @@ export default function HRRequisitionsPage() {
                           </td>
 
                           {/* Trạng thái REQ */}
-                          <td className="py-3.5 px-3 text-center">
+                          <td className="py-3.5 px-3 text-center whitespace-nowrap">
                             {req.status === "in_progress" && (
                               <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
                                 Đang tuyển
@@ -757,50 +757,57 @@ export default function HRRequisitionsPage() {
                             )}
                           </td>
 
-                          {/* Actions: Nút đổi trạng thái để dừng đăng tin lập tức */}
-                          <td className="py-3.5 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                          {/* Actions: Cố định kích thước 3 cột để các nút Chi tiết, Tạm dừng/Mở lại, X thẳng hàng tuyệt đối */}
+                          <td className="py-3.5 pl-4 pr-6 sm:pr-8 text-right whitespace-nowrap min-w-[270px] w-fit">
+                            <div className="flex items-center justify-end gap-2.5">
+                              {/* Cột 1: Chi tiết (cố định w-[88px]) */}
                               <Link
                                 href={`/hr/requisitions/${req.id}`}
-                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                                className="w-[88px] h-8 inline-flex items-center justify-center gap-1.5 px-2 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                                 title="Xem chi tiết và luồng phê duyệt"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-3.5 h-3.5 shrink-0" />
                                 <span>Chi tiết</span>
                               </Link>
 
-                              {req.status === "in_progress" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleQuickStatusChange(req, "paused")}
-                                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition-colors cursor-pointer"
-                                  title="Dừng đăng tin lập tức để rà soát"
-                                >
-                                  <PauseCircle className="w-3.5 h-3.5" />
-                                  <span>Tạm dừng</span>
-                                </button>
-                              ) : req.status === "paused" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleQuickStatusChange(req, "in_progress")}
-                                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
-                                  title="Kích hoạt lại tin tuyển dụng"
-                                >
-                                  <PlayCircle className="w-3.5 h-3.5" />
-                                  <span>Mở lại</span>
-                                </button>
-                              ) : null}
+                              {/* Cột 2: Nút Tạm dừng / Mở lại (cố định w-[100px] để luôn thẳng cột) */}
+                              <div className="w-[100px] h-8 flex items-center justify-center shrink-0">
+                                {req.status === "in_progress" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickStatusChange(req, "paused")}
+                                    className="w-full h-full inline-flex items-center justify-center gap-1.5 px-2 text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-md border border-amber-200 transition-colors whitespace-nowrap cursor-pointer"
+                                    title="Dừng đăng tin lập tức để rà soát"
+                                  >
+                                    <PauseCircle className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Tạm dừng</span>
+                                  </button>
+                                ) : req.status === "paused" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickStatusChange(req, "in_progress")}
+                                    className="w-full h-full inline-flex items-center justify-center gap-1.5 px-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md border border-emerald-200 transition-colors whitespace-nowrap cursor-pointer"
+                                    title="Kích hoạt lại tin tuyển dụng"
+                                  >
+                                    <PlayCircle className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Mở lại</span>
+                                  </button>
+                                ) : null}
+                              </div>
 
-                              {req.status !== "cancelled" && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleQuickStatusChange(req, "cancelled")}
-                                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                  title="Hủy bỏ yêu cầu này"
-                                >
-                                  <XCircle className="w-4 h-4" />
-                                </button>
-                              )}
+                              {/* Cột 3: Nút Hủy (X) (cố định w-8 để luôn thẳng cột) */}
+                              <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                                {req.status !== "cancelled" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickStatusChange(req, "cancelled")}
+                                    className="w-full h-full flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                    title="Hủy bỏ yêu cầu này"
+                                  >
+                                    <XCircle className="w-4 h-4 shrink-0" />
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                           </td>
                         </tr>
