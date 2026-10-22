@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   History,
   CheckCircle2,
@@ -35,14 +36,30 @@ export default function ApproverHistoryPage() {
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [selectedRecord, setSelectedRecord] = useState<HistoryRecord | null>(null);
 
-  const filtered = HISTORICAL_APPROVALS.filter((item) => {
-    const matchSearch =
-      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.department.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchType = typeFilter === 'ALL' || item.type === typeFilter;
-    return matchSearch && matchType;
-  });
+  const filtered = useMemo(() => {
+    return HISTORICAL_APPROVALS.filter((item) => {
+      const matchSearch =
+        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.department.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchType = typeFilter === 'ALL' || item.type === typeFilter;
+      return matchSearch && matchType;
+    });
+  }, [HISTORICAL_APPROVALS, searchQuery, typeFilter]);
+
+  // Pagination states & slices
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, typeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginatedHistory = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -103,7 +120,7 @@ export default function ApproverHistoryPage() {
           {loading && <LoadingState />}
           {!loading && !!error && <ErrorState error={error} onRetry={reload} />}
           {!loading && !error && filtered.length === 0 && <EmptyState hint="Bạn chưa có quyết định phê duyệt nào được ghi nhận." />}
-          {filtered.map((item) => (
+          {paginatedHistory.map((item) => (
             <div
               key={item.id}
               onClick={() => setSelectedRecord(item)}
@@ -142,6 +159,25 @@ export default function ApproverHistoryPage() {
               </div>
             </div>
           ))}
+
+          {/* Phân Trang Lịch Sử */}
+          {filtered.length > 0 && (
+            <div className="bg-white rounded-2xl p-3 border border-slate-100 shadow-xs">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={filtered.length}
+                pageSize={pageSize}
+                pageSizeOptions={[5, 10, 20, 50]}
+                onPageSizeChange={(sz) => {
+                  setPageSize(sz);
+                  setCurrentPage(1);
+                }}
+                onPageChange={(p) => setCurrentPage(p)}
+                itemLabel="bản ghi lịch sử"
+              />
+            </div>
+          )}
         </div>
 
         {/* Audit Timeline Sidebar Preview */}

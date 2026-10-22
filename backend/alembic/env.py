@@ -19,7 +19,10 @@ import app.models.rbac, app.models.auth_session, app.models.password_reset  # no
 config = context.config
 # The migration target is the application's configured DATABASE_URL (override with "-x url=...").
 _x_url = context.get_x_argument(as_dictionary=True).get("url")
-config.set_main_option("sqlalchemy.url", (_x_url or settings.DATABASE_URL).replace("%", "%%"))
+_target_url = _x_url or settings.DATABASE_URL
+if _target_url.startswith("postgres://"):
+    _target_url = _target_url.replace("postgres://", "postgresql://", 1)
+config.set_main_option("sqlalchemy.url", _target_url.replace("%", "%%"))
 
 if config.config_file_name:
     fileConfig(config.config_file_name)

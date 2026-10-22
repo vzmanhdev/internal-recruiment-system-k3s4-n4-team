@@ -153,7 +153,12 @@ export function SearchAutocompleteInput({
     }
   };
 
-  const heightClass = size === "sm" ? "h-9 text-xs" : size === "lg" ? "h-14 text-sm sm:text-base" : "h-12 text-xs sm:text-sm";
+  const heightClass =
+    size === "sm"
+      ? "h-8 text-xs rounded-lg"
+      : size === "lg"
+      ? "h-14 text-sm sm:text-base rounded-2xl"
+      : "h-12 text-xs sm:text-sm rounded-xl";
   const iconSize = size === "sm" ? "w-3.5 h-3.5" : size === "lg" ? "w-5 h-5" : "w-4 h-4";
   const iconLeftPad = size === "sm" ? "pl-8" : size === "lg" ? "pl-12" : "pl-11";
   const iconLeftPos = size === "sm" ? "left-2.5" : size === "lg" ? "left-4" : "left-3.5";
@@ -175,7 +180,7 @@ export function SearchAutocompleteInput({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           autoFocus={autoFocus}
-          className={`w-full ${heightClass} ${iconLeftPad} pr-10 bg-slate-50/80 hover:bg-slate-50 focus:bg-white border border-slate-200/90 hover:border-slate-300 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all shadow-2xs`}
+          className={`w-full ${heightClass} ${iconLeftPad} pr-10 bg-white hover:bg-slate-50 focus:bg-white border border-slate-200/90 hover:border-slate-300 font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all shadow-2xs`}
         />
 
         {/* Loading Spinner or Clear button */}

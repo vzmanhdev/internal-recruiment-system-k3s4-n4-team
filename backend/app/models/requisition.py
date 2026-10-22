@@ -54,8 +54,8 @@ class JobRequisition(Base):
 
     def timeline_metrics(self):
         """S3-08: days open and days remaining until the needed-by date."""
-        from datetime import date
-        today = date.today()
+        from datetime import date, datetime
+        today = datetime.utcnow().date()
         opened = (today - self.created_at.date()).days if self.created_at else None
         remaining = None
         if self.target_onboard_date:
@@ -110,8 +110,9 @@ class RequisitionApprovalLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     requisition_id = Column(Integer, ForeignKey("job_requisitions.id"), nullable=False)
     approver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    step_code = Column(String(50), nullable=True) # submit, manager, hr, executive
     step_name = Column(String(100), nullable=False) # Trưởng bộ phận, Giám đốc, HR Manager
-    action = Column(String(50), nullable=False) # approved, rejected, commented
+    action = Column(String(50), nullable=False) # submitted, approved, rejected, changes_requested
     comment = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -124,8 +125,24 @@ class RequisitionApprovalLog(Base):
             "requisition_id": self.requisition_id,
             "approver_id": self.approver_id,
             "approver_name": self.approver.full_name if self.approver else None,
+            "approver_email": self.approver.email if self.approver else None,
+            "approver_role": self.approver.role if self.approver else None,
+            "approver_department": self.approver.department if self.approver else None,
+            "step_code": self.step_code,
             "step_name": self.step_name,
             "action": self.action,
             "comment": self.comment,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+from sqlalchemy import event
+
+@event.listens_for(RequisitionApprovalLog, "before_update")
+def _prevent_update_approval_log(mapper, connection, target):
+    raise ValueError("RequisitionApprovalLog is immutable and cannot be updated.")
+
+@event.listens_for(RequisitionApprovalLog, "before_delete")
+def _prevent_delete_approval_log(mapper, connection, target):
+    raise ValueError("RequisitionApprovalLog is immutable and cannot be deleted.")
+

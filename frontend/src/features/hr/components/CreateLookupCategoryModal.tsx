@@ -7,6 +7,7 @@ export interface NewLookupCategoryData {
   name: string;
   code: string;
   description: string;
+  initialItem?: string;
   status: 'active' | 'inactive';
 }
 
@@ -24,6 +25,7 @@ export const CreateLookupCategoryModal: React.FC<CreateLookupCategoryModalProps>
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
+  const [initialItem, setInitialItem] = useState('');
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
   const [errors, setErrors] = useState<{ name?: string; code?: string }>({});
 
@@ -77,6 +79,7 @@ export const CreateLookupCategoryModal: React.FC<CreateLookupCategoryModalProps>
       name: name.trim(),
       code: code.trim(),
       description: description.trim(),
+      initialItem: initialItem.trim(),
       status,
     });
 
@@ -84,6 +87,7 @@ export const CreateLookupCategoryModal: React.FC<CreateLookupCategoryModalProps>
     setName('');
     setCode('');
     setDescription('');
+    setInitialItem('');
     setStatus('active');
     setErrors({});
     onClose();
@@ -177,6 +181,23 @@ export const CreateLookupCategoryModal: React.FC<CreateLookupCategoryModalProps>
               Định dạng chữ in hoa, không dấu, dùng làm key API & query cơ sở dữ liệu.
             </p>
             {errors.code && <p className="text-[11px] text-rose-500 mt-1 font-medium">{errors.code}</p>}
+          </div>
+
+          {/* Giá trị danh mục đầu tiên (Tùy chọn) */}
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1.5">
+              Giá trị danh mục đầu tiên (Khởi tạo ngay)
+            </label>
+            <input
+              type="text"
+              value={initialItem}
+              onChange={(e) => setInitialItem(e.target.value)}
+              placeholder="Ví dụ: Giá trị mặc định 1..."
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 font-medium placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-all"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Phần tử này sẽ được lưu trực tiếp vào cơ sở dữ liệu làm giá trị ban đầu cho nhóm.
+            </p>
           </div>
 
           {/* Mô tả danh mục */}

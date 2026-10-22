@@ -42,13 +42,16 @@ interface CustomRequestInit extends RequestInit {
   _retry?: boolean;
 }
 
+import { policyFor } from "@/lib/auth/route-registry";
+
 let refreshPromise: Promise<string | null> | null = null;
 
 function endLocalSession(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem("access_token");
   localStorage.removeItem("user_info");
-  if (!window.location.pathname.startsWith("/login")) {
+  const path = window.location.pathname;
+  if (!path.startsWith("/login") && !policyFor(path)?.public) {
     const next = window.location.pathname + window.location.search;
     window.location.href = `/login?next=${encodeURIComponent(next)}`;
   }
@@ -98,9 +101,9 @@ export async function apiRequest<T>(path: string, init?: CustomRequestInit): Pro
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  // 15 seconds timeout to prevent request hanging when Backend is offline
+  // 30 seconds timeout to handle cloud database cold-starts safely
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {

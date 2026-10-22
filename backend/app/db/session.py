@@ -23,18 +23,37 @@ def _configure_sqlite_connection(dbapi_connection, connection_record):
         dbapi_connection.create_function("unaccent", 1, unaccent_vn)
 
 
+def _normalize_db_url(url: str) -> str:
+    if not url:
+        return url
+    raw = url.strip()
+    if raw.startswith("postgres://"):
+        raw = raw.replace("postgres://", "postgresql://", 1)
+    return raw
+
+
 def _make_engine(url: str):
+    url = _normalize_db_url(url)
     if url.startswith("sqlite"):
         eng = create_engine(url, connect_args={"check_same_thread": False}, echo=False)
         event.listen(eng, "connect", _configure_sqlite_connection)
         return eng
-    return create_engine(url, pool_pre_ping=True, echo=False)
+    try:
+        return create_engine(url, pool_pre_ping=True, echo=False)
+    except Exception as exc:
+        if "postgresql://" in url and "+psycopg" not in url:
+            alt_url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+            try:
+                return create_engine(alt_url, pool_pre_ping=True, echo=False)
+            except Exception:
+                pass
+        raise exc
 
 
 def get_engine_and_session():
     db_url = settings.DATABASE_URL
-    engine = _make_engine(db_url)
     try:
+        engine = _make_engine(db_url)
         with engine.connect():
             pass
         logger.info("Connected to database (%s)", engine.url.render_as_string(hide_password=True))
@@ -42,7 +61,7 @@ def get_engine_and_session():
         # Production must never silently switch to another database.
         if settings.is_production or not settings.ALLOW_SQLITE_FALLBACK:
             raise RuntimeError(
-                f"Không kết nối được cơ sở dữ liệu đã cấu hình ({engine.url.render_as_string(hide_password=True)})."
+                f"Không kết nối được cơ sở dữ liệu đã cấu hình ({db_url})."
             ) from exc
         logger.warning(
             "Database unavailable (%s). APP_ENV=%s allows the development SQLite fallback %s.",

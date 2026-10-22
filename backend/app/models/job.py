@@ -37,6 +37,7 @@ class JobPosting(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     creator = relationship("User", foreign_keys=[created_by_id])
+    publisher = relationship("User", foreign_keys=[published_by_id])
     requisition = relationship("JobRequisition")
     department = relationship("Department")
     applications = relationship("JobApplication", back_populates="job_posting", cascade="all, delete-orphan")
@@ -67,7 +68,11 @@ class JobPosting(Base):
             "views_count": self.views_count,
             "applications_count": len(self.applications) if self.applications else self.applications_count,
             "created_by_id": self.created_by_id,
+            "creator_name": self.creator.full_name if self.creator else None,
+            "creator_email": self.creator.email if self.creator else None,
             "published_by_id": self.published_by_id,
+            "published_by_name": self.publisher.full_name if self.publisher else None,
+            "published_by_email": self.publisher.email if self.publisher else None,
             "published_at": self.published_at.isoformat() if self.published_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

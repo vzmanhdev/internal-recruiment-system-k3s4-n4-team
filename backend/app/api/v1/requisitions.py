@@ -56,6 +56,8 @@ class RequisitionCreate(BaseModel):
     def _validate_business_fields(self):
         if self.min_salary is not None and self.max_salary is not None and self.min_salary > self.max_salary:
             raise ValueError("Mức lương tối thiểu không được lớn hơn mức lương tối đa.")
+        if self.reason not in ("replacement", "expansion", "seasonal"):
+            raise ValueError("Lý do tuyển dụng không hợp lệ (phải là 'replacement', 'expansion' hoặc 'seasonal').")
         if self.target_onboard_date:
             try:
                 target = date.fromisoformat(self.target_onboard_date[:10])
@@ -89,6 +91,8 @@ class RequisitionUpdate(BaseModel):
     def _validate_business_fields(self):
         if self.min_salary is not None and self.max_salary is not None and self.min_salary > self.max_salary:
             raise ValueError("Mức lương tối thiểu không được lớn hơn mức lương tối đa.")
+        if self.reason is not None and self.reason not in ("replacement", "expansion", "seasonal"):
+            raise ValueError("Lý do tuyển dụng không hợp lệ (phải là 'replacement', 'expansion' hoặc 'seasonal').")
         if self.target_onboard_date:
             try:
                 target = date.fromisoformat(self.target_onboard_date[:10])
@@ -253,6 +257,28 @@ def _next_code(db: Session) -> str:
     return code
 
 
+@router.get("/check-salary-band")
+def check_salary_band_endpoint(
+    job_title_id: int,
+    min_salary: Optional[int] = None,
+    max_salary: Optional[int] = None,
+    current_user: User = Depends(require_permission("requisition:create")),
+    db: Session = Depends(get_db)
+):
+    """S2-10 AC3: Kiểm tra mức lương đề xuất có nằm ngoài dải chuẩn hay không mà không để lộ dải lương mật (S2-05)."""
+    title = db.query(JobTitle).filter(JobTitle.id == job_title_id).first()
+    if not title:
+        raise HTTPException(status_code=404, detail="Chức danh không tồn tại")
+    low = min_salary if min_salary is not None else max_salary
+    high = max_salary if max_salary is not None else min_salary
+    outside = (low is not None and low < title.min_salary) or (high is not None and high > title.max_salary)
+    return {
+        "job_title_id": job_title_id,
+        "outside": outside,
+        "requires_justification": outside,
+    }
+
+
 @router.get("")
 def list_requisitions(
     search: Optional[str] = None,
@@ -384,6 +410,74 @@ def get_requisition(
     res["recruiter_assignments"] = [
         a.to_dict() for a in db.query(RecruiterAssignment).filter(RecruiterAssignment.requisition_id == req.id).all()
     ]
+
+    # S3-03 AC1: Hiển thị chuỗi cấp duyệt, cấp nào đã duyệt, đang chờ ai (Current Approver Info)
+    current_approver_info = None
+    if req.status.startswith("pending_"):
+        step_key = req.status.replace("pending_", "", 1)
+        step_label = STEP_LABELS.get(step_key, "Phê duyệt")
+        target_roles = STEP_NOTIFY_ROLES.get(step_key, ["approver"])
+        uids = users_with_roles(db, target_roles, exclude_user_id=None)
+        approver_objs = db.query(User).filter(User.id.in_(uids)).all() if uids else []
+
+        # Tính thời gian hồ sơ đang dừng tại bước duyệt này
+        last_log = req.approval_logs[-1] if req.approval_logs else None
+        last_dt = last_log.created_at if last_log else req.created_at
+        waited_seconds = max((datetime.utcnow() - last_dt).total_seconds(), 0) if last_dt else 0
+        waited_hours = round(waited_seconds / 3600, 1)
+
+        current_approver_info = {
+            "step_code": step_key,
+            "step_label": step_label,
+            "target_roles": target_roles,
+            "approvers": [
+                {
+                    "id": u.id,
+                    "full_name": u.full_name,
+                    "email": u.email,
+                    "role": u.role,
+                    "department": u.department,
+                }
+                for u in approver_objs
+            ],
+            "waited_hours": waited_hours,
+            "is_overdue": waited_hours >= 48,
+        }
+    elif req.status == "approved":
+        current_approver_info = {
+            "step_code": "approved",
+            "step_label": "Đã hoàn thành phê duyệt tất cả các cấp",
+            "approvers": [],
+            "waited_hours": 0,
+            "is_overdue": False,
+        }
+    elif req.status == "rejected":
+        current_approver_info = {
+            "step_code": "rejected",
+            "step_label": "Đã từ chối phê duyệt",
+            "reject_reason": req.reject_reason,
+            "approvers": [],
+            "waited_hours": 0,
+            "is_overdue": False,
+        }
+    elif req.status == "changes_requested":
+        current_approver_info = {
+            "step_code": "changes_requested",
+            "step_label": "Yêu cầu bổ sung thông tin tờ trình",
+            "reject_reason": req.reject_reason,
+            "approvers": [],
+            "waited_hours": 0,
+            "is_overdue": False,
+        }
+    else:
+        current_approver_info = {
+            "step_code": req.status,
+            "step_label": "Bản nháp",
+            "approvers": [],
+            "waited_hours": 0,
+            "is_overdue": False,
+        }
+    res["current_approver_info"] = current_approver_info
     return res
 
 
@@ -419,12 +513,24 @@ def create_requisition(
             db.add(RequisitionApprovalLog(
                 requisition_id=req.id,
                 approver_id=current_user.id,
+                step_code="submit",
                 step_name="Tạo mới tờ trình",
                 action="submitted",
                 comment="Đã khởi tạo tờ trình tuyển dụng và gửi trình duyệt",
             ))
+            _notify_pending(db, req, initial_status, current_user.id)
+            notify(db, [current_user.id], "requisition_submitted",
+                   f"Trình duyệt tờ trình {req.code} thành công",
+                   f"Tờ trình '{req.title}' ({req.quantity} nhân sự) đã được gửi vào luồng phê duyệt.",
+                   link=f"/manager/requisitions?search={req.code}",
+                   entity_type="REQUISITION", entity_id=req.id)
+        else:
+            notify(db, [current_user.id], "requisition_created",
+                   f"Lưu nháp tờ trình {req.code} thành công",
+                   f"Tờ trình '{req.title}' ({req.quantity} nhân sự) đã được lưu bản nháp thành công.",
+                   link=f"/manager/requisitions?search={req.code}",
+                   entity_type="REQUISITION", entity_id=req.id)
         _audit(db, current_user, "REQUISITION_CREATE", req, {"status": initial_status, "code": req.code})
-        _notify_pending(db, req, initial_status, current_user.id)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -453,6 +559,7 @@ def update_requisition(
         setattr(req, key, value)
     if payload.job_title_id:
         req.job_title_name = db.query(JobTitle.name).filter(JobTitle.id == payload.job_title_id).scalar()
+    _check_salary_band(db, req)
     _audit(db, current_user, "REQUISITION_UPDATE", req, {"status": req.status})
     db.commit()
     db.refresh(req)
@@ -471,14 +578,24 @@ def submit_requisition(
     if req.status not in DRAFT_STATES:
         raise HTTPException(status_code=409, detail=f"Tờ trình đang ở trạng thái '{req.status}', không thể gửi duyệt.")
     from_status = req.status
+    _check_salary_band(db, req)
     _check_headcount(db, req)
     new_status = _enter_approval(db, req, from_status)
     db.add(RequisitionApprovalLog(
-        requisition_id=req.id, approver_id=current_user.id, step_name="Gửi trình duyệt",
-        action="submitted", comment="Gửi lại sau khi bổ sung" if from_status == "changes_requested" else "Gửi trình duyệt",
+        requisition_id=req.id,
+        approver_id=current_user.id,
+        step_code="submit",
+        step_name="Gửi trình duyệt",
+        action="submitted",
+        comment="Gửi lại sau khi bổ sung" if from_status == "changes_requested" else "Gửi trình duyệt",
     ))
     _audit(db, current_user, "REQUISITION_SUBMIT", req, {"from": from_status, "to": new_status})
     _notify_pending(db, req, new_status, current_user.id)
+    notify(db, [current_user.id], "requisition_submitted",
+           f"Trình duyệt tờ trình {req.code} thành công",
+           f"Tờ trình '{req.title}' ({req.quantity} nhân sự) đã được gửi vào luồng phê duyệt.",
+           link=f"/manager/requisitions?search={req.code}",
+           entity_type="REQUISITION", entity_id=req.id)
     db.commit()
     db.refresh(req)
     return req.to_dict()
@@ -496,7 +613,7 @@ def approve_requisition(
     req = _get_or_404(db, req_id)
 
     # Workflow state machine validation
-    if req.status not in PENDING_STATES:
+    if not (req.status.startswith("pending_") and req.status != "pending_approval"):
         raise HTTPException(
             status_code=400,
             detail=f"Tờ trình đã ở trạng thái '{req.status}', không thể thực hiện phê duyệt lại."
@@ -522,7 +639,7 @@ def approve_requisition(
 
     from_status = req.status
     if payload.action == "approved":
-        step_name = STEP_LABELS.get(step, "Phê duyệt")
+        step_name = STEP_LABELS.get(step, f"Phê duyệt cấp {step}")
         if index + 1 < len(chain):
             nxt = chain[index + 1]
             values = {"status": f"pending_{nxt}", "current_approval_step": nxt, "approval_step_index": index + 1}
@@ -539,6 +656,7 @@ def approve_requisition(
     db.add(RequisitionApprovalLog(
         requisition_id=req.id,
         approver_id=current_user.id,
+        step_code=step,
         step_name=step_name,
         action=payload.action,
         comment=comment or None,
@@ -764,6 +882,7 @@ def remind_current_approvers(
         raise HTTPException(status_code=409, detail="Tờ trình không ở trạng thái chờ duyệt.")
     roles = STEP_NOTIFY_ROLES.get(req.status.replace("pending_", "", 1), [])
     recipients = users_with_roles(db, roles, exclude_user_id=current_user.id)
+    recipient_users = db.query(User).filter(User.id.in_(recipients)).all() if recipients else []
     key_prefix = f"remind:{req.id}:{_date.today().isoformat()}"
     if db.query(Notification.id).filter(Notification.dedupe_key.like(key_prefix + ":%")).first():
         raise HTTPException(status_code=409, detail="Đã gửi nhắc nhở cho tờ trình này trong hôm nay.")
@@ -778,7 +897,20 @@ def remind_current_approvers(
             sent += 1
     _audit(db, current_user, "REQUISITION_REMIND", req, {"recipients": sent})
     db.commit()
-    return {"sent": sent}
+
+    recipient_details = [
+        {"id": u.id, "name": u.full_name, "email": u.email, "role": u.role}
+        for u in recipient_users
+    ]
+    recipient_names = ", ".join(u["name"] for u in recipient_details) or "người phê duyệt"
+    return {
+        "sent": sent,
+        "code": req.code,
+        "title": req.title,
+        "step_code": req.status.replace("pending_", "", 1),
+        "recipients": recipient_details,
+        "message": f"Đã gửi thông báo nhắc nhở duyệt tờ trình {req.code} tới {recipient_names} thành công."
+    }
 
 
 @router.delete("/{req_id}")
@@ -797,3 +929,20 @@ def delete_draft_requisition(
     db.delete(req)
     db.commit()
     return {"success": True}
+
+
+# S3-03 AC3 & TC-S3-03-X01: Bảo vệ tính bất biến của nhật ký phê duyệt (Immutable Audit Trail)
+@router.patch("/{req_id}/approval-logs/{log_id}")
+@router.put("/{req_id}/approval-logs/{log_id}")
+@router.delete("/{req_id}/approval-logs/{log_id}")
+def immutable_approval_log_protection(
+    req_id: int,
+    log_id: int,
+    current_user: User = Depends(get_current_user_obj)
+):
+    """S3-03 AC3 & TC-S3-03-X01: Lịch sử phê duyệt là dữ liệu kiểm toán bất biến (immutable audit log).
+    Nghiêm cấm mọi hành vi sửa đổi hoặc xoá đối với Admin hoặc bất kỳ vai trò nào."""
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Lịch sử phê duyệt là dữ liệu kiểm toán bất biến (immutable audit trail). Nghiêm cấm chỉnh sửa hoặc xóa theo chính sách tuân thủ ISO/SaaS."
+    )

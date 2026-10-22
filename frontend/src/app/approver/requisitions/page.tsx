@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import { Pagination } from '@/components/ui/Pagination';
 import {
   FileText,
   Search,
@@ -46,7 +48,13 @@ export default function ApproverRequisitionsPage() {
   const [selectedReq, setSelectedReq] = useState<RequisitionApprovalItem | null>(null);
   const [modalAction, setModalAction] = useState<string | null>(null);
   const [actionComment, setActionComment] = useState('');
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Toast Feedback Notification
   const [toast, setToast] = useState<{
@@ -58,7 +66,7 @@ export default function ApproverRequisitionsPage() {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
-    }, 4500);
+    }, 6000);
   };
 
   // Filtered List
@@ -79,22 +87,39 @@ export default function ApproverRequisitionsPage() {
     });
   }, [requisitions, searchQuery, selectedDept, selectedPriority]);
 
+  // Pagination states & slices
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedDept, selectedPriority]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRequisitions.length / pageSize));
+  const paginatedRequisitions = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredRequisitions.slice(start, start + pageSize);
+  }, [filteredRequisitions, currentPage, pageSize]);
+
   const handleOpenReqModal = (req: RequisitionApprovalItem) => {
     setSelectedReq(req);
     setModalAction(null);
     setActionComment('');
+    setCommentError(null);
   };
 
   const handleCloseModal = () => {
     setSelectedReq(null);
     setModalAction(null);
     setActionComment('');
+    setCommentError(null);
   };
 
   const handleSubmitReqAction = async (action: 'approved' | 'rejected' | 'changes_requested') => {
     if (!selectedReq) return;
 
     if ((action === 'rejected' || action === 'changes_requested') && !actionComment.trim()) {
+      setCommentError('Bắt buộc nhập ý kiến chỉ đạo / lý do cho hành động này!');
       showToast('Vui lòng nhập lý do / ý kiến chỉ đạo để các phòng ban thực hiện!', 'warning');
       return;
     }
@@ -117,7 +142,13 @@ export default function ApproverRequisitionsPage() {
       showToast(actionText, action === 'approved' ? 'success' : action === 'rejected' ? 'error' : 'warning');
       handleCloseModal();
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'Có lỗi xảy ra khi xử lý tờ trình.', 'error');
+      if (err instanceof ApiError && (err.status === 409 || (err.status === 400 && err.message.includes('trạng thái')))) {
+        showToast(err.message || 'Tờ trình đã thay đổi trạng thái. Đang cập nhật lại hàng đợi...', 'warning');
+        handleCloseModal();
+        reload();
+      } else {
+        showToast(err instanceof ApiError ? err.message : 'Có lỗi xảy ra khi xử lý tờ trình.', 'error');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -125,30 +156,6 @@ export default function ApproverRequisitionsPage() {
 
   return (
     <div className="w-full space-y-6 animate-in fade-in duration-500">
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed top-6 right-6 z-50 max-w-md animate-in slide-in-from-top-3 fade-in duration-300">
-          <div
-            className={clsx(
-              'rounded-2xl p-4 shadow-xl border flex items-start gap-3 backdrop-blur-md',
-              toast.type === 'success' && 'bg-emerald-50/95 border-emerald-200 text-emerald-900',
-              toast.type === 'error' && 'bg-rose-50/95 border-rose-200 text-rose-900',
-              toast.type === 'warning' && 'bg-amber-50/95 border-amber-200 text-amber-900',
-              toast.type === 'info' && 'bg-blue-50/95 border-blue-200 text-blue-900'
-            )}
-          >
-            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
-            {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />}
-            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />}
-            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />}
-            <div className="flex-1 text-xs font-semibold leading-relaxed">{toast.message}</div>
-            <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* 1. Header Trang Chuyên Biệt (Không còn 4 cards lớn ở trên) */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -252,7 +259,8 @@ export default function ApproverRequisitionsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -266,7 +274,7 @@ export default function ApproverRequisitionsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 text-xs">
-                  {filteredRequisitions.map((req) => {
+                  {paginatedRequisitions.map((req) => {
                     const isPending = req.status.startsWith('pending');
                     return (
                       <tr
@@ -368,6 +376,24 @@ export default function ApproverRequisitionsPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Phân Trang Requisitions */}
+            <div className="pt-4 border-t border-slate-100">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={filteredRequisitions.length}
+                pageSize={pageSize}
+                pageSizeOptions={[5, 10, 20, 50]}
+                onPageSizeChange={(sz) => {
+                  setPageSize(sz);
+                  setCurrentPage(1);
+                }}
+                onPageChange={(p) => setCurrentPage(p)}
+                itemLabel="yêu cầu tuyển dụng"
+              />
+            </div>
+            </>
           )}
         </div>
       </div>
@@ -526,10 +552,24 @@ export default function ApproverRequisitionsPage() {
                     <textarea
                       rows={3}
                       value={actionComment}
-                      onChange={(e) => setActionComment(e.target.value)}
+                      onChange={(e) => {
+                        setActionComment(e.target.value);
+                        if (commentError && e.target.value.trim()) setCommentError(null);
+                      }}
                       placeholder="Nhập ý kiến chỉ đạo, căn cứ duyệt hoặc lý do yêu cầu hiệu chỉnh..."
-                      className="w-full p-3 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all resize-none"
+                      className={clsx(
+                        "w-full p-3 rounded-xl border text-xs text-slate-800 placeholder-slate-400 focus:outline-none transition-all resize-none",
+                        commentError
+                          ? "border-rose-400 ring-2 ring-rose-500/20 bg-rose-50/30"
+                          : "border-slate-200 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+                      )}
                     />
+                    {commentError && (
+                      <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in duration-200">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <span>{commentError}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -548,7 +588,7 @@ export default function ApproverRequisitionsPage() {
                       className="px-3 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-md shadow-amber-500/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Hiệu Chỉnh</span>
+                      <span>Yêu Cầu Bổ Sung</span>
                     </button>
 
                     <button
@@ -557,7 +597,7 @@ export default function ApproverRequisitionsPage() {
                       className="px-3 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md shadow-rose-600/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <X className="w-4 h-4" />
-                      <span>Bác Bỏ</span>
+                      <span>Từ Chối</span>
                     </button>
                   </div>
                 </div>
@@ -565,6 +605,31 @@ export default function ApproverRequisitionsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Toast Feedback Notification (Always on top via createPortal directly to document.body with z-[99999]) */}
+      {mounted && toast && createPortal(
+        <div className="fixed top-6 right-6 z-[99999] max-w-md animate-in slide-in-from-top-3 fade-in duration-300 pointer-events-auto shadow-2xl">
+          <div
+            className={clsx(
+              'rounded-2xl p-4 shadow-2xl border flex items-start gap-3 backdrop-blur-md',
+              toast.type === 'success' && 'bg-emerald-50/95 border-emerald-200 text-emerald-900',
+              toast.type === 'error' && 'bg-rose-50/95 border-rose-200 text-rose-900',
+              toast.type === 'warning' && 'bg-amber-50/95 border-amber-200 text-amber-900',
+              toast.type === 'info' && 'bg-blue-50/95 border-blue-200 text-blue-900'
+            )}
+          >
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />}
+            {toast.type === 'error' && <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />}
+            {toast.type === 'warning' && <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />}
+            {toast.type === 'info' && <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />}
+            <div className="flex-1 text-xs font-semibold leading-relaxed">{toast.message}</div>
+            <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

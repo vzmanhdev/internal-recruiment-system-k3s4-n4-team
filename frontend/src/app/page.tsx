@@ -549,17 +549,34 @@ export default function LandingPage() {
                       </div>
                     </div>
 
-                    {/* Luminous Solid Blue Pill Button with Pure White Text */}
-                    <Link
-                      href="/login"
-                      className="btn-pill-apply mt-6 w-full py-3 rounded-full text-white !text-white font-black text-sm text-center shadow-md shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                      style={{ color: "#ffffff", backgroundColor: "#2563eb" }}
-                    >
-                      <span className="!text-white text-white font-black" style={{ color: "#ffffff" }}>
-                        Ứng Tuyển Ngay
-                      </span>
-                      <ArrowRight className="w-4 h-4 text-white !text-white" style={{ color: "#ffffff" }} />
-                    </Link>
+                    {/* Actions: Xem Chi Tiết & Ứng Tuyển */}
+                    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 mt-6 pt-4 border-t border-slate-100">
+                      <Link
+                        href={`/candidate/jobs/${job.id}`}
+                        className="py-2.5 px-3 rounded-full border border-blue-600 text-blue-600 hover:bg-blue-50 font-bold text-xs sm:text-sm text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs hover:border-blue-700"
+                      >
+                        <span>Xem Chi Tiết</span>
+                      </Link>
+                      {job.is_expired ? (
+                        <Link
+                          href={`/candidate/jobs/${job.id}`}
+                          className="py-2.5 px-3 rounded-full bg-slate-100 text-slate-500 font-bold text-xs sm:text-sm text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer hover:bg-slate-200"
+                        >
+                          <span>Hết Hạn</span>
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/candidate/apply/${job.id}`}
+                          className="btn-pill-apply py-2.5 px-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white !text-white font-bold text-xs sm:text-sm text-center shadow-md shadow-blue-500/25 hover:shadow-blue-500/40 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          style={{ color: "#ffffff", backgroundColor: "#2563eb" }}
+                        >
+                          <span className="!text-white text-white font-bold" style={{ color: "#ffffff" }}>
+                            Ứng Tuyển
+                          </span>
+                          <ArrowRight className="w-3.5 h-3.5 text-white !text-white" style={{ color: "#ffffff" }} />
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
