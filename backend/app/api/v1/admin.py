@@ -710,7 +710,15 @@ def commit_users_import(
                         break
 
             raw_pwd = row.get("password")
-            pwd_to_set = raw_pwd if (raw_pwd and len(raw_pwd) >= 6) else generate_secure_random_password(14)
+            valid_pwd = False
+            if raw_pwd:
+                try:
+                    from app.core.security import validate_password_complexity
+                    validate_password_complexity(str(raw_pwd))
+                    valid_pwd = True
+                except ValueError:
+                    valid_pwd = False
+            pwd_to_set = str(raw_pwd) if valid_pwd else generate_secure_random_password(16)
             hashed_pwd = hash_password(pwd_to_set)
 
             roles_to_assign = row.get("roles") or ["candidate"]
@@ -823,7 +831,15 @@ async def import_users_from_excel(
                     break
 
         raw_pwd = row.get("password")
-        pwd_to_set = raw_pwd if (raw_pwd and len(raw_pwd) >= 6) else generate_secure_random_password(14)
+        valid_pwd = False
+        if raw_pwd:
+            try:
+                from app.core.security import validate_password_complexity
+                validate_password_complexity(str(raw_pwd))
+                valid_pwd = True
+            except ValueError:
+                valid_pwd = False
+        pwd_to_set = str(raw_pwd) if valid_pwd else generate_secure_random_password(16)
         hashed_pwd = hash_password(pwd_to_set)
 
         roles_to_assign = row.get("roles") or ["candidate"]

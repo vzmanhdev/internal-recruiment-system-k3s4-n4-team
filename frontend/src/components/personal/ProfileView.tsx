@@ -28,6 +28,8 @@ import { authService, type UserItem } from "@/features/auth/services/auth.servic
 import { uploadFile, fileUrl } from "@/services/file.service";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/providers/auth-provider";
+import { PasswordStrengthCard } from "@/components/ui/PasswordStrengthCard";
+import { checkPasswordRules, getPasswordValidationErrorMessage } from "@/lib/validation/password";
 import { ErrorState, LoadingState } from "@/components/ui/DataStates";
 import { AvatarCropModal } from "@/components/profile/AvatarCropModal";
 import { getLocalTodayDateString } from "@/utils/dateUtils";
@@ -142,20 +144,6 @@ export function ProfileView() {
     }
   };
 
-  // Password strength calculator
-  const getPasswordStrength = (pwd: string) => {
-    if (!pwd) return { score: 0, label: "", color: "bg-slate-200", text: "" };
-    let score = 0;
-    if (pwd.length >= 8) score += 1;
-    if (/[A-Z]/.test(pwd)) score += 1;
-    if (/[0-9]/.test(pwd)) score += 1;
-    if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
-
-    if (score <= 1) return { score: 25, label: "Yếu", color: "bg-rose-500", text: "text-rose-600" };
-    if (score === 2 || score === 3)
-      return { score: 65, label: "Trung bình", color: "bg-amber-500", text: "text-amber-600" };
-    return { score: 100, label: "Mạnh (An toàn)", color: "bg-emerald-500", text: "text-emerald-600" };
-  };
 
   // Change password
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -166,8 +154,9 @@ export function ProfileView() {
       setPwNotice({ ok: false, text: "Mật khẩu xác nhận không khớp với mật khẩu mới." });
       return;
     }
-    if (pw.new_password.length < 8) {
-      setPwNotice({ ok: false, text: "Mật khẩu mới phải có tối thiểu 8 ký tự." });
+    const rules = checkPasswordRules(pw.new_password);
+    if (!rules.isValid) {
+      setPwNotice({ ok: false, text: getPasswordValidationErrorMessage(rules, "Mật khẩu mới") });
       return;
     }
 
@@ -199,7 +188,6 @@ export function ProfileView() {
   const roles = (me.roles || []).map((r) => (typeof r === "string" ? r : r.name));
   const roleDisplay = roles.join(", ");
   const avatar = me.avatar_url ? fileUrl(me.avatar_url) : null;
-  const strengthInfo = getPasswordStrength(pw.new_password);
 
   return (
     <div className="space-y-6">
@@ -612,23 +600,10 @@ export function ProfileView() {
                     </button>
                   </div>
 
-                  {/* Password Strength Indicator */}
-                  {pw.new_password && (
-                    <div className="space-y-1 pt-1">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-400 font-medium">Độ an toàn:</span>
-                        <span className={clsx("font-extrabold", strengthInfo.text)}>
-                          {strengthInfo.label}
-                        </span>
-                      </div>
-                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={clsx("h-full transition-all duration-300", strengthInfo.color)}
-                          style={{ width: `${strengthInfo.score}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
+                  {/* Password Strength Checklist (5 Criteria) */}
+                  <div className="mt-2">
+                    <PasswordStrengthCard password={pw.new_password} />
+                  </div>
                 </div>
 
                 {/* Confirm Password */}
@@ -654,27 +629,10 @@ export function ProfileView() {
                   </div>
                 </div>
 
-                {/* Requirements Checklist */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-600 space-y-1">
-                  <span className="font-bold text-slate-800 block">Tiêu chí mật khẩu bảo mật:</span>
-                  <div className="flex items-center gap-1.5">
-                    <Check className={clsx("w-3.5 h-3.5", pw.new_password.length >= 8 ? "text-emerald-600" : "text-slate-300")} />
-                    <span>Ít nhất 8 ký tự</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Check className={clsx("w-3.5 h-3.5", /[0-9]/.test(pw.new_password) ? "text-emerald-600" : "text-slate-300")} />
-                    <span>Chứa ít nhất một chữ số (0-9)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Check className={clsx("w-3.5 h-3.5", /[A-Z]/.test(pw.new_password) ? "text-emerald-600" : "text-slate-300")} />
-                    <span>Chứa chữ in hoa (A-Z)</span>
-                  </div>
-                </div>
-
                 <div className="pt-2">
                   <button
                     type="submit"
-                    disabled={pwBusy}
+                    disabled={pwBusy || !checkPasswordRules(pw.new_password).isValid || pw.new_password !== pw.confirm || !pw.current_password}
                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#4285F4] hover:bg-blue-600 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
                   >
                     {pwBusy && <Loader2 className="w-4 h-4 animate-spin" />}

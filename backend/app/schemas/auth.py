@@ -22,12 +22,8 @@ class RegistrationStartRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password_policy(cls, value: str) -> str:
-        from app.core.config import settings
-        if len(value) < settings.REGISTRATION_PASSWORD_MIN_LENGTH:
-            raise ValueError(f"Mật khẩu phải có ít nhất {settings.REGISTRATION_PASSWORD_MIN_LENGTH} ký tự")
-        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-            raise ValueError("Mật khẩu phải gồm ít nhất một chữ cái và một chữ số")
-        return value
+        from app.core.security import validate_password_complexity
+        return validate_password_complexity(value, field_name="Mật khẩu")
 
     @field_validator("confirm_password")
     @classmethod
@@ -131,9 +127,8 @@ class ChangePasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def validate_new_password(cls, value: str) -> str:
-        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-            raise ValueError("Mật khẩu mới phải gồm ít nhất một chữ và một số")
-        return value
+        from app.core.security import validate_password_complexity
+        return validate_password_complexity(value, field_name="Mật khẩu mới")
 
 class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)

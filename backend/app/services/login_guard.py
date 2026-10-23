@@ -17,7 +17,7 @@ CLIENT_COOKIE = "ats_login_client"
 CLIENT_COOKIE_MAX_AGE = 24 * 3600          # survives a browser restart within a day; incognito starts fresh
 MAX_FAILURES = 5
 LOCK_MINUTES = 15
-# Fallback for clients that do not keep cookies (scripts): per IP + e-mail, generous enough for real users.
+# Fallback for clients that do not keep cookies (scripts): per IP + e-mail, generous enough for other browsers/incognito on the same IP.
 IPMAIL_MAX_FAILURES = 20
 
 

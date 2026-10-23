@@ -28,9 +28,8 @@ class AdminCreateUserRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
-        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-            raise ValueError("Mật khẩu phải gồm ít nhất một chữ và một số")
-        return value
+        from app.core.security import validate_password_complexity
+        return validate_password_complexity(value, field_name="Mật khẩu")
 
     @field_validator("roles")
     @classmethod
@@ -66,8 +65,8 @@ class ResetUserPasswordRequest(BaseModel):
     @classmethod
     def validate_optional_password(cls, value: Optional[str]) -> Optional[str]:
         if value:
-            if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-                raise ValueError("Mật khẩu phải gồm ít nhất một chữ và một số")
+            from app.core.security import validate_password_complexity
+            return validate_password_complexity(value, field_name="Mật khẩu mới")
         return value
 
 

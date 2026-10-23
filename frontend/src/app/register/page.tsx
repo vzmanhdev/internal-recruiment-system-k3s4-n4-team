@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authService, type RegistrationChallenge } from "@/features/auth/services/auth.service";
 import { ApiError } from "@/lib/api-client";
+import { PasswordStrengthCard } from "@/components/ui/PasswordStrengthCard";
+import { checkPasswordRules, getPasswordValidationErrorMessage } from "@/lib/validation/password";
 
 // Only the challenge id (an opaque server handle) is kept in the tab, so a reload can ask the server for the
 // real state — lockout is decided by the backend, never restored from browser state. No code, no password.
@@ -114,8 +116,9 @@ export default function RegisterPage() {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setErrorMsg("Mật khẩu phải có độ dài tối thiểu từ 6 ký tự.");
+    const pwdRules = checkPasswordRules(formData.password);
+    if (!pwdRules.isValid) {
+      setErrorMsg(getPasswordValidationErrorMessage(pwdRules) || "Mật khẩu chưa đáp ứng tiêu chuẩn an toàn.");
       return;
     }
 
@@ -365,7 +368,7 @@ export default function RegisterPage() {
                   required
                   value={formData.password}
                   onChange={handleChange}
-                  placeholder="Tối thiểu 6 ký tự"
+                  placeholder="Tối thiểu 8 ký tự, gồm hoa, thường, số và ký tự đặc biệt"
                   className="w-full pl-4 pr-11 py-2.5 rounded-lg border border-gray-200 text-gray-900 placeholder:text-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white"
                 />
                 <button
@@ -385,6 +388,9 @@ export default function RegisterPage() {
                     </svg>
                   )}
                 </button>
+              </div>
+              <div className="mt-2">
+                <PasswordStrengthCard password={formData.password} />
               </div>
             </div>
 

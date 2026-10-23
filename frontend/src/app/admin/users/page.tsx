@@ -181,7 +181,7 @@ export default function AdminUsersManagementPage() {
         await userService.createUser({
           full_name: formData.full_name || "Nhân sự mới",
           email: formData.email || "",
-          password: "Password123!",
+          password: (formData as any).password || "Password123!",
           phone: formData.phone,
           roles: formData.roles || [formData.role || "candidate"],
           department: formData.department,
