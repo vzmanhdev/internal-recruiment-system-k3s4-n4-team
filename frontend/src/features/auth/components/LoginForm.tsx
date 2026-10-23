@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Mail, Lock, ArrowRight } from "lucide-react";
+import { Mail, Lock, ArrowRight, ShieldAlert, Info, Clock } from "lucide-react";
 import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -24,6 +24,29 @@ export function LoginForm() {
   const [errorMsg, setErrorMsg] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState("");
+  const [isSessionLocked, setIsSessionLocked] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  useEffect(() => {
+    if (isSessionLocked && cooldownSeconds > 0) {
+      const timer = setInterval(() => {
+        setCooldownSeconds((prev) => {
+          if (prev <= 1) {
+            setIsSessionLocked(false);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [isSessionLocked, cooldownSeconds]);
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +104,14 @@ export function LoginForm() {
         if (err.fieldErrors) {
           setFieldErrors(err.fieldErrors);
         }
+        if (
+          err.status === 429 ||
+          err.code === "LOGIN_SESSION_LOCKED" ||
+          (err.message && (err.message.includes("khóa") || err.message.includes("429")) && (err.message.includes("5/5") || err.message.includes("15 phút")))
+        ) {
+          setIsSessionLocked(true);
+          setCooldownSeconds(900);
+        }
       } else {
         setErrorMsg("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại dịch vụ Backend.");
       }
@@ -106,13 +137,36 @@ export function LoginForm() {
         </p>
       </div>
 
-      {errorMsg && (
+      {isSessionLocked ? (
+        <div className="mb-5 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 space-y-2.5 animate-in fade-in">
+          <div className="flex items-center gap-2 font-bold text-sm text-amber-800">
+            <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Tạm khóa phiên đăng nhập trên trình duyệt này</span>
+          </div>
+          <p className="text-xs text-amber-700 leading-relaxed">
+            Bạn đã nhập sai mật khẩu 5/5 lần liên tiếp. Phiên làm việc trên trình duyệt này tạm thời bị khóa trong 15 phút để bảo vệ an toàn.
+          </p>
+          <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-100/70 border border-amber-200">
+            <span className="text-[11px] font-semibold text-amber-800 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
+              Thời gian mở khóa sau:
+            </span>
+            <span className="font-mono font-bold text-amber-900 text-sm bg-white px-2 py-0.5 rounded-lg border border-amber-300 shadow-xs">
+              {formatTimer(cooldownSeconds)}
+            </span>
+          </div>
+          <div className="p-2.5 rounded-xl bg-white/90 border border-amber-200/80 text-[11px] text-slate-600 flex items-start gap-1.5">
+            <Info className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+            <span><strong>Tài khoản không bị khóa:</strong> Bạn vẫn có thể đăng nhập ngay với mật khẩu chính xác từ thiết bị hoặc trình duyệt khác (hoặc tab ẩn danh).</span>
+          </div>
+        </div>
+      ) : errorMsg ? (
         <div className="mb-5">
           <Alert variant="error" title="Đăng nhập không thành công">
             {errorMsg}
           </Alert>
         </div>
-      )}
+      ) : null}
 
       {successMsg && (
         <div className="mb-5">
@@ -176,11 +230,12 @@ export function LoginForm() {
             type="submit"
             variant="primary"
             size="lg"
+            disabled={isSessionLocked}
             isLoading={isLoading}
-            rightIcon={<ArrowRight className="w-[18px] h-[18px]" />}
-            className="w-full h-[48px] bg-[#3B82F6] hover:bg-[#2563EB] active:bg-[#1D4ED8] text-[16px] font-semibold text-white rounded-[12px] shadow-md shadow-blue-500/10 disabled:opacity-60 flex-row whitespace-nowrap"
+            rightIcon={!isSessionLocked ? <ArrowRight className="w-[18px] h-[18px]" /> : <Clock className="w-[18px] h-[18px]" />}
+            className="w-full h-[48px] bg-[#3B82F6] hover:bg-[#2563EB] active:bg-[#1D4ED8] text-[16px] font-semibold text-white rounded-[12px] shadow-md shadow-blue-500/10 disabled:opacity-60 disabled:cursor-not-allowed flex-row whitespace-nowrap"
           >
-            Đăng nhập
+            {isSessionLocked ? `Đang tạm khóa (${formatTimer(cooldownSeconds)})` : "Đăng nhập"}
           </Button>
         </div>
 

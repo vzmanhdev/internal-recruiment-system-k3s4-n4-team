@@ -24,6 +24,8 @@ import { AvatarCropModal } from "@/components/AvatarCropModal";
 import { CroppedAvatarResult } from "@/lib/cropImage";
 import { authService } from "@/features/auth/services/auth.service";
 import { getLocalTodayDateString } from "@/utils/dateUtils";
+import { PasswordStrengthCard } from "@/components/ui/PasswordStrengthCard";
+import { checkPasswordRules, getPasswordValidationErrorMessage } from "@/lib/validation/password";
 
 export interface UserProfileData {
   employeeCode?: string;
@@ -132,10 +134,7 @@ export function UserProfileModal({
   // Validation helpers
   const passwordsDoNotMatch =
     confirmPassword.length > 0 && newPassword !== confirmPassword;
-  const isNewPasswordTooShort =
-    newPassword.length > 0 && newPassword.length < 8;
-  const hasLetterAndNumber =
-    /[a-zA-Z]/.test(newPassword) && /[0-9]/.test(newPassword);
+  const newPasswordRules = checkPasswordRules(newPassword);
 
   // Avatar Upload Handler: Kích hoạt chọn file và mở Modal Crop
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -205,10 +204,10 @@ export function UserProfileModal({
       return;
     }
 
-    if (newPassword.length < 8 || !hasLetterAndNumber) {
+    if (!newPasswordRules.isValid) {
       setPasswordMessage({
         type: "error",
-        text: "Mật khẩu mới phải có tối thiểu 8 ký tự, bao gồm cả chữ và số.",
+        text: getPasswordValidationErrorMessage(newPasswordRules, "Mật khẩu mới"),
       });
       return;
     }
@@ -683,10 +682,11 @@ export function UserProfileModal({
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Nhập mật khẩu mới..."
-                      className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition-all ${isNewPasswordTooShort
-                        ? "border-amber-400 bg-amber-50/20"
-                        : "border-gray-200 bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                        }`}
+                      className={`w-full pl-3.5 pr-10 py-2.5 rounded-xl border text-xs sm:text-sm font-medium transition-all ${
+                        newPassword.length > 0 && !newPasswordRules.isValid
+                          ? "border-amber-400 bg-amber-50/20"
+                          : "border-gray-200 bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      }`}
                     />
                     <button
                       type="button"
@@ -702,15 +702,9 @@ export function UserProfileModal({
                     </button>
                   </div>
                   {/* Gợi ý tiêu chuẩn mật khẩu */}
-                  <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5">
-                    <span
-                      className={`inline-block w-1.5 h-1.5 rounded-full ${newPassword.length >= 8 && hasLetterAndNumber
-                        ? "bg-emerald-500"
-                        : "bg-slate-400"
-                        }`}
-                    />
-                    <span>Mật khẩu tối thiểu 8 ký tự, gồm cả chữ và số.</span>
-                  </p>
+                  <div className="mt-2.5">
+                    <PasswordStrengthCard password={newPassword} />
+                  </div>
                 </div>
 
                 {/* Ô 3: Xác nhận mật khẩu mới */}
@@ -774,7 +768,7 @@ export function UserProfileModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingPassword || passwordsDoNotMatch}
+                  disabled={isSubmittingPassword || passwordsDoNotMatch || !newPasswordRules.isValid || !currentPassword}
                   className="px-6 py-2.5 rounded-xl bg-[#4285F4] hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold transition-all shadow-md shadow-blue-500/25 cursor-pointer inline-flex items-center gap-1.5"
                 >
                   <ShieldCheck className="w-4 h-4" />

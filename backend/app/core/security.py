@@ -1,6 +1,7 @@
 import bcrypt
 import hashlib
 import hmac
+import re
 import secrets
 import string
 from datetime import datetime, timedelta
@@ -21,6 +22,27 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return bcrypt.checkpw(pwd_bytes, hashed_bytes)
     except Exception:
         return False
+
+def validate_password_complexity(password: str, field_name: str = "Mật khẩu") -> str:
+    """
+    Xác thực mật khẩu đáp ứng đầy đủ 5 tiêu chuẩn bảo mật bắt buộc:
+    1. Độ dài >= 8 ký tự
+    2. Có ít nhất một chữ cái thường (a-z)
+    3. Có ít nhất một chữ cái in hoa (A-Z)
+    4. Có ít nhất một chữ số (0-9)
+    5. Có ít nhất một ký tự đặc biệt (!@#$%^&*...)
+    """
+    if not password or len(password) < 8:
+        raise ValueError(f"{field_name} phải có độ dài tối thiểu từ 8 ký tự trở lên.")
+    if not re.search(r"[a-z]", password):
+        raise ValueError(f"{field_name} phải chứa ít nhất một chữ cái viết thường (a-z).")
+    if not re.search(r"[A-Z]", password):
+        raise ValueError(f"{field_name} phải chứa ít nhất một chữ cái viết hoa (A-Z).")
+    if not re.search(r"\d", password):
+        raise ValueError(f"{field_name} phải chứa ít nhất một chữ số (0-9).")
+    if not re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>\/?~`]", password):
+        raise ValueError(f"{field_name} phải chứa ít nhất một ký tự đặc biệt (!@#$%^&*...).")
+    return password
 
 def create_access_token(
     subject: Any, 

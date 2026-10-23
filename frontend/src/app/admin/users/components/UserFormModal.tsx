@@ -3,13 +3,15 @@
 import React, { useState, useEffect } from "react";
 import { UserPlus, UserCheck, X, AlertCircle } from "lucide-react";
 import { UserItem, ROLE_DEFINITIONS } from "./types";
+import { PasswordStrengthCard } from "@/components/ui/PasswordStrengthCard";
+import { checkPasswordRules, getPasswordValidationErrorMessage } from "@/lib/validation/password";
 
 interface UserFormModalProps {
   isOpen: boolean;
   mode: "create" | "edit";
   user?: UserItem | null;
   onClose: () => void;
-  onSave: (formData: Partial<UserItem>) => void;
+  onSave: (formData: Partial<UserItem> & { password?: string }) => void;
 }
 
 export function UserFormModal({
@@ -80,9 +82,16 @@ export function UserFormModal({
       setErrorMsg("Email không đúng định dạng (Ví dụ: name@company.com).");
       return;
     }
-    if (isCreate && !formData.password) {
-      setErrorMsg("Vui lòng thiết lập mật khẩu ban đầu.");
-      return;
+    if (isCreate) {
+      if (!formData.password) {
+        setErrorMsg("Vui lòng thiết lập mật khẩu ban đầu.");
+        return;
+      }
+      const rules = checkPasswordRules(formData.password);
+      if (!rules.isValid) {
+        setErrorMsg(getPasswordValidationErrorMessage(rules, "Mật khẩu ban đầu"));
+        return;
+      }
     }
 
     onSave({
@@ -93,6 +102,7 @@ export function UserFormModal({
       department: formData.department,
       roles: formData.roles,
       role: formData.roles[0],
+      password: formData.password,
     });
     onClose();
   };
@@ -223,11 +233,14 @@ export function UserFormModal({
                 <input
                   type="password"
                   required
-                  placeholder="Thiết lập mật khẩu tạm thời"
+                  placeholder="Tối thiểu 8 ký tự, gồm hoa, thường, số, ký tự đặc biệt"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs sm:text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
                 />
+                <div className="mt-2">
+                  <PasswordStrengthCard password={formData.password} />
+                </div>
               </div>
             ) : (
               <div>

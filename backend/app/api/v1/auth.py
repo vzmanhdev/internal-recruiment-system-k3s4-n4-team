@@ -145,7 +145,7 @@ def login(user_in: UserLogin, request: Request, response: JSONResponse, db: Sess
         httponly=True,
         samesite="lax",
         secure=settings.is_production,
-        path="/api/v1/auth",
+        path="/",
         max_age=login_guard.CLIENT_COOKIE_MAX_AGE,
     )
     return resp
@@ -153,13 +153,26 @@ def login(user_in: UserLogin, request: Request, response: JSONResponse, db: Sess
 
 def _locked_response(remaining_secs: int) -> JSONResponse:
     remaining_mins = max(1, (remaining_secs + 59) // 60)
+    msg = (
+        f"Phiên đăng nhập trên trình duyệt này đang bị tạm khóa {login_guard.LOCK_MINUTES} phút do nhập sai "
+        f"{login_guard.MAX_FAILURES}/{login_guard.MAX_FAILURES} lần liên tiếp. "
+        f"Tài khoản của bạn không bị khóa; bạn có thể thử lại sau {remaining_mins} phút hoặc đăng nhập từ thiết bị khác."
+    )
     return JSONResponse(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         headers={"Retry-After": str(remaining_secs)},
         content={
-            "detail": f"Phiên đăng nhập trên trình duyệt này đang bị tạm khóa {login_guard.LOCK_MINUTES} phút do nhập sai {login_guard.MAX_FAILURES}/{login_guard.MAX_FAILURES} lần liên tiếp. "
-                      f"Vui lòng thử lại sau {remaining_mins} phút.",
-            # "field_errors": {"password": f"Tạm khóa đăng nhập trên trình duyệt này. Thử lại sau {remaining_mins} phút ({remaining_secs} giây)."},
+            "detail": msg,
+            "error": {
+                "code": "LOGIN_SESSION_LOCKED",
+                "message": msg,
+                "remaining_seconds": remaining_secs,
+                "failed_count": login_guard.MAX_FAILURES,
+                "max_failures": login_guard.MAX_FAILURES,
+            },
+            "remaining_seconds": remaining_secs,
+            "failed_count": login_guard.MAX_FAILURES,
+            "max_failures": login_guard.MAX_FAILURES,
         },
     )
 
